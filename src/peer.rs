@@ -73,7 +73,7 @@ pub enum PeerReaction {
     SendRequest,
     SendUnchoke,
     SendChoke,
-    SendHave,
+    SendHave(usize),
     SendPiece,
     SendCancel,
     // used in endgame mode, cancel last piece, request a new one
@@ -91,8 +91,6 @@ enum State {
     Initial,
     // The handshake went through, the peer is valid
     Valid,
-    // The peer has nothing to offer us, waiting for HAVE messages
-    Uninteresting,
     // The peer has stuff we want, we're waiting for them to unchoke us
     AwaitingUnchoke,
     // We've been unchoked and can now download
@@ -198,7 +196,7 @@ impl Peer {
                 } else {
                     // If the peer doens't have this piece inform them
                     if !self.data.pieces.has_piece(p) {
-                        (s, PeerReaction::SendHave)
+                        (s, PeerReaction::SendHave(self.data.assigned_piece))
                     } else {
                         (s, PeerReaction::Nothing)
                     }
@@ -248,7 +246,7 @@ impl Peer {
             (s, PeerEvent::ReceivedExternalPiece(p)) => {
                 // If we got a piece from somewhere else, and they don't have it inform this peer
                 if !self.data.pieces.has_piece(p) {
-                    (s, PeerReaction::SendHave)
+                    (s, PeerReaction::SendHave(p))
                 } else {
                     (s, PeerReaction::Nothing)
                 }

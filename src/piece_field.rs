@@ -57,6 +57,23 @@ impl PieceField {
     }
 }
 
+use std::fmt;
+
+impl fmt::Debug for PieceField {
+    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+        write!(f, "PieceField {{ len: {}, pieces: ", self.len)?;
+        for i in 0..self.len {
+            if self.has_piece(i) {
+                write!(f, "1")?;
+            } else {
+                write!(f, "0")?;
+            }
+        }
+        write!(f, "}}")?;
+        Ok(())
+    }
+}
+
 #[test]
 fn test_create() {
     let pf = PieceField::new(10);
