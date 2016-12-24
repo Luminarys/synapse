@@ -1,5 +1,7 @@
 use std::mem;
 use std::time::Instant;
+use piece_field::PieceField;
+use manager::TorrentData;
 
 enum Interest {
     Interested,
@@ -10,15 +12,19 @@ struct PeerData {
     // Only maintain remote interest, state machine should track our state otherwise
     pub interest: Interest,
     pub received: usize,
-    pub last_action: Instant
+    pub last_action: Instant,
+    pub pieces: PieceField,
+    pub assigned_piece: usize,
 }
 
 impl PeerData {
-    fn new() -> PeerData {
+    fn new(pieces: usize) -> PeerData {
         PeerData {
             interest: Interest::Uninterested,
             received: 0,
             last_action: Instant::now(),
+            pieces: PieceField::new(pieces),
+            assigned_piece: 0,
         }
     }
 }
@@ -29,9 +35,9 @@ pub enum PeerEvent {
     // Got a handshake
     Handshake,
     // We got the piece bitfield
-    Bitfield(bool),
+    Bitfield(PieceField),
     // We received a piece from somewhere else
-    HavePiece,
+    HavePiece(usize),
     // We were unchoked
     Unchoked,
     // We received a piece from this peer
@@ -46,7 +52,7 @@ pub enum PeerEvent {
     RequestPiece,
 
     // We received a piece from somewhere else
-    ReceivedExternalPiece,
+    ReceivedExternalPiece(usize),
     // The manager(TBD) deems this a good peer, or optimistically unchoked, and should be allowed
     // to DL
     AllowReciprocation,
@@ -104,10 +110,10 @@ pub struct Peer {
 }
 
 impl Peer {
-    fn new() -> Peer {
+    fn new(tdata: &TorrentData) -> Peer {
         Peer {
             can_recip: false,
-            data: PeerData::new(),
+            data: PeerData::new(tdata.pieces.len()),
             state: State::Initial,
         }
     }
@@ -116,8 +122,12 @@ impl Peer {
         &self.data
     }
 
+    fn assign_piece(&mut self, piece: usize) {
+        self.data.assigned_piece = piece;
+    }
+
     // Drive the state machine
-    fn handle(&mut self, event: PeerEvent) -> PeerReaction {
+    fn handle(&mut self, event: PeerEvent, tdata: &TorrentData) -> PeerReaction {
         self.data.last_action = Instant::now();
         let old_state = mem::replace(&mut self.state, State::Null);
         let (new_state, resp) = match (old_state, event) {
@@ -125,8 +135,9 @@ impl Peer {
                 (State::Valid, PeerReaction::SendBF)
             }
             (State::Valid, PeerEvent::Bitfield(bf)) => {
+                self.data.pieces = bf;
                 // Check if bitfield is interesting - use bool as placeholder
-                if bf {
+                if tdata.pieces.usable(&self.data.pieces) {
                     // Try to get the peer to unchoke us, manager should priotiize seeding to this
                     // peer
                     (State::AwaitingUnchoke, PeerReaction::SendInterested)
@@ -142,7 +153,7 @@ impl Peer {
                 self.data.received += 1;
                 // If we still have pieces retrievable from this peer, send another request,
                 // otherwise send uninterested
-                if true {
+                if tdata.pieces.usable(&self.data.pieces) {
                     (State::AwaitingPiece, PeerReaction::SendRequest)
                 } else {
                     (State::Unchoked, PeerReaction::SendUninterested)
@@ -156,34 +167,37 @@ impl Peer {
                 // If we're choked while waiting for a piece, just wait
                 (State::AwaitingUnchoke, PeerReaction::ReleasePiece)
             }
-            (State::Unchoked, PeerEvent::HavePiece) => {
+            (State::Unchoked, PeerEvent::HavePiece(p)) => {
+                self.data.pieces.set_piece(p);
                 // If the peer got a piece we want and isn't choking us request it
-                if true {
+                if tdata.pieces.usable(&self.data.pieces) {
                     (State::AwaitingPiece, PeerReaction::SendRequest)
                 } else {
                     (State::Unchoked, PeerReaction::Nothing)
                 }
             }
-            (State::Valid, PeerEvent::HavePiece) => {
+            (State::Valid, PeerEvent::HavePiece(p)) => {
+                self.data.pieces.set_piece(p);
                 // If the peer got a piece we want and isn't choking us request it
-                if true {
+                if tdata.pieces.usable(&self.data.pieces) {
                     (State::AwaitingUnchoke, PeerReaction::SendInterested)
                 } else {
                     (State::Valid, PeerReaction::Nothing)
                 }
             }
-            (s, PeerEvent::HavePiece) => {
+            (s, PeerEvent::HavePiece(p)) => {
+                self.data.pieces.set_piece(p);
                 // Just modify state so we know we got the piece
                 (s, PeerReaction::Nothing)
             }
-            (State::AwaitingPiece, PeerEvent::ReceivedExternalPiece) => {
+            (State::AwaitingPiece, PeerEvent::ReceivedExternalPiece(p)) => {
                 // If this is a piece we want rn cancel and req, otherwise announce have
                 let s = State::AwaitingPiece;
-                if true {
+                if self.data.assigned_piece == p {
                     (s, PeerReaction::CancelAndReq)
                 } else {
                     // If the peer doens't have this piece inform them
-                    if true {
+                    if !self.data.pieces.has_piece(p) {
                         (s, PeerReaction::SendHave)
                     } else {
                         (s, PeerReaction::Nothing)
@@ -231,9 +245,9 @@ impl Peer {
                 self.data.interest = Interest::Uninterested;
                 (s, PeerReaction::Nothing)
             }
-            (s, PeerEvent::ReceivedExternalPiece) => {
+            (s, PeerEvent::ReceivedExternalPiece(p)) => {
                 // If we got a piece from somewhere else, and they don't have it inform this peer
-                if true {
+                if !self.data.pieces.has_piece(p) {
                     (s, PeerReaction::SendHave)
                 } else {
                     (s, PeerReaction::Nothing)

@@ -6,7 +6,7 @@ pub struct PieceField {
 }
 
 impl PieceField {
-    fn new(len: usize) -> PieceField {
+    pub fn new(len: usize) -> PieceField {
         let mut size = len/8;
         if len % 8 != 0 {
             size += 1;
@@ -18,7 +18,11 @@ impl PieceField {
         }
     }
 
-    fn has_piece(&self, pos: usize) -> bool {
+    pub fn len(&self) -> usize {
+        self.len
+    }
+
+    pub fn has_piece(&self, pos: usize) -> bool {
         if pos >= self.len {
             false
         } else {
@@ -29,7 +33,7 @@ impl PieceField {
         }
     }
 
-    fn set_piece(&mut self, pos: usize) {
+    pub fn set_piece(&mut self, pos: usize) {
         if pos < self.len {
             let block_pos = pos/8;
             let index = pos % 8;
@@ -38,7 +42,7 @@ impl PieceField {
         }
     }
 
-    fn usable(&self, other: &PieceField) -> bool {
+    pub fn usable(&self, other: &PieceField) -> bool {
         if self.len == other.len {
             for i in 0..self.data.len() {
                 // If we encounter a 0 for us and a 1 for them, return true.
