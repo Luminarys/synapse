@@ -3,24 +3,32 @@ use std::time::Instant;
 use piece_field::PieceField;
 use manager::TorrentData;
 
-enum Interest {
+pub enum Interest {
     Interested,
     Uninterested,
 }
 
-struct PeerData {
-    // Only maintain remote interest, state machine should track our state otherwise
+pub enum Choke {
+    Choked,
+    Unchoked,
+}
+
+pub struct PeerData {
+    // Remote Interest
     pub interest: Interest,
-    pub received: usize,
+    // Local choke
+    pub choking: Choke,
+    pub received: u32,
     pub last_action: Instant,
     pub pieces: PieceField,
-    pub assigned_piece: usize,
+    pub assigned_piece: u32,
 }
 
 impl PeerData {
-    fn new(pieces: usize) -> PeerData {
+    fn new(pieces: u32) -> PeerData {
         PeerData {
             interest: Interest::Uninterested,
+            choking: Choke::Choked,
             received: 0,
             last_action: Instant::now(),
             pieces: PieceField::new(pieces),
@@ -37,7 +45,7 @@ pub enum PeerEvent {
     // We got the piece bitfield
     Bitfield(PieceField),
     // We received a piece from somewhere else
-    HavePiece(usize),
+    HavePiece(u32),
     // We were unchoked
     Unchoked,
     // We received a piece from this peer
@@ -52,7 +60,7 @@ pub enum PeerEvent {
     RequestPiece,
 
     // We received a piece from somewhere else
-    ReceivedExternalPiece(usize),
+    ReceivedExternalPiece(u32),
     // The manager(TBD) deems this a good peer, or optimistically unchoked, and should be allowed
     // to DL
     AllowReciprocation,
@@ -60,8 +68,6 @@ pub enum PeerEvent {
     RevokeReciprocation,
     // The torrent was completed
     CompletedTorrent,
-    // No pieces can be requested from this peer
-    NotRequestable,
     // This connection should be terminated
     Terminate,
 }
@@ -73,7 +79,7 @@ pub enum PeerReaction {
     SendRequest,
     SendUnchoke,
     SendChoke,
-    SendHave(usize),
+    SendHave(u32),
     SendPiece,
     SendCancel,
     // used in endgame mode, cancel last piece, request a new one
@@ -108,7 +114,7 @@ pub struct Peer {
 }
 
 impl Peer {
-    fn new(tdata: &TorrentData) -> Peer {
+    pub fn new(tdata: &TorrentData) -> Peer {
         Peer {
             can_recip: false,
             data: PeerData::new(tdata.pieces.len()),
@@ -116,16 +122,16 @@ impl Peer {
         }
     }
 
-    fn data<'a>(&'a self) -> &'a PeerData {
+    pub fn data<'a>(&'a self) -> &'a PeerData {
         &self.data
     }
 
-    fn assign_piece(&mut self, piece: usize) {
+    pub fn assign_piece(&mut self, piece: u32) {
         self.data.assigned_piece = piece;
     }
 
     // Drive the state machine
-    fn handle(&mut self, event: PeerEvent, tdata: &TorrentData) -> PeerReaction {
+    pub fn handle(&mut self, event: PeerEvent, tdata: &TorrentData) -> PeerReaction {
         self.data.last_action = Instant::now();
         let old_state = mem::replace(&mut self.state, State::Null);
         let (new_state, resp) = match (old_state, event) {
@@ -205,6 +211,7 @@ impl Peer {
             (s, PeerEvent::AllowReciprocation) => {
                 self.can_recip = true;
                 if let Interest::Interested = self.data.interest {
+                    self.data.choking = Choke::Unchoked;
                     (s, PeerReaction::SendUnchoke)
                 } else {
                     (s, PeerReaction::Nothing)
@@ -212,7 +219,8 @@ impl Peer {
             }
             (s, PeerEvent::RevokeReciprocation) => {
                 self.can_recip = false;
-                if let Interest::Interested = self.data.interest {
+                if let Choke::Unchoked = self.data.choking {
+                    self.data.choking = Choke::Choked;
                     (s, PeerReaction::SendChoke)
                 } else {
                     (s, PeerReaction::Nothing)
@@ -222,7 +230,7 @@ impl Peer {
                 (State::Seeding, PeerReaction::SendPiece)
             }
             (s, PeerEvent::RequestPiece) => {
-                if self.can_recip {
+                if let Choke::Unchoked = self.data.choking {
                     (s, PeerReaction::SendPiece)
                 } else {
                     // Peers should not be requesting when we have choked them, kill conn
@@ -231,7 +239,12 @@ impl Peer {
             }
             (s, PeerEvent::Interested) => {
                 self.data.interest = Interest::Interested;
-                (s, PeerReaction::Nothing)
+                if self.can_recip {
+                    self.data.choking = Choke::Unchoked;
+                    (s, PeerReaction::SendUnchoke)
+                } else {
+                    (s, PeerReaction::Nothing)
+                }
             }
             (State::Seeding, PeerEvent::Uninterested) => {
                 // If we're seeding and for some reason the peer is uninterested, terminate
@@ -241,7 +254,12 @@ impl Peer {
             }
             (s, PeerEvent::Uninterested) => {
                 self.data.interest = Interest::Uninterested;
-                (s, PeerReaction::Nothing)
+                if let Choke::Unchoked = self.data.choking {
+                    self.data.choking = Choke::Choked;
+                    (s, PeerReaction::SendChoke)
+                } else {
+                    (s, PeerReaction::Nothing)
+                }
             }
             (s, PeerEvent::ReceivedExternalPiece(p)) => {
                 // If we got a piece from somewhere else, and they don't have it inform this peer

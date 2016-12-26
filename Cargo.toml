@@ -8,3 +8,6 @@ tokio-core = "0.1"
 tokio-timer = { git = "https://github.com/tokio-rs/tokio-timer" }
 tokio-proto = { git = "https://github.com/tokio-rs/tokio-proto" }
 tokio-service = { git = "https://github.com/tokio-rs/tokio-service" }
+nom = "2.0"
+byteorder = "0.5"
+vecio = "0.1"

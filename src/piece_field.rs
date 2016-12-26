@@ -1,12 +1,12 @@
-use std::mem;
-
+// Use u32 rather than usize because it conforms with bittorents network protocol
+// (4 byte big endian integers)
 pub struct PieceField {
-    len: usize,
+    len: u32,
     data: Box<[u8]>
 }
 
 impl PieceField {
-    pub fn new(len: usize) -> PieceField {
+    pub fn new(len: u32) -> PieceField {
         let mut size = len/8;
         if len % 8 != 0 {
             size += 1;
@@ -14,31 +14,42 @@ impl PieceField {
 
         PieceField {
             len: len,
-            data: vec![0; size].into_boxed_slice(),
+            data: vec![0; size as usize].into_boxed_slice(),
         }
     }
 
-    pub fn len(&self) -> usize {
+    pub fn from(b: Box<[u8]>, len: u32) -> PieceField {
+        PieceField {
+            len: len,
+            data: b,
+        }
+    }
+
+    pub fn extract(self) -> (Box<[u8]>, u32) {
+        (self.data, self.len)
+    }
+
+    pub fn len(&self) -> u32 {
         self.len
     }
 
-    pub fn has_piece(&self, pos: usize) -> bool {
+    pub fn has_piece(&self, pos: u32) -> bool {
         if pos >= self.len {
             false
         } else {
             let block_pos = pos/8;
             let index = pos % 8;
-            let block = self.data[block_pos];
+            let block = self.data[block_pos as usize];
             ((block >> index) & 1) == 1
         }
     }
 
-    pub fn set_piece(&mut self, pos: usize) {
+    pub fn set_piece(&mut self, pos: u32) {
         if pos < self.len {
             let block_pos = pos/8;
             let index = pos % 8;
-            let block = self.data[block_pos];
-            self.data[block_pos] = block | (1 << index);
+            let block = self.data[block_pos as usize];
+            self.data[block_pos as usize] = block | (1 << index);
         }
     }
 
@@ -69,7 +80,7 @@ impl fmt::Debug for PieceField {
                 write!(f, "0")?;
             }
         }
-        write!(f, "}}")?;
+        write!(f, " }}")?;
         Ok(())
     }
 }
@@ -103,9 +114,13 @@ fn test_set() {
 
 #[test]
 fn test_usable() {
-    let pf1 = PieceField::new(10);
+    let mut pf1 = PieceField::new(10);
     let mut pf2 = PieceField::new(10);
     assert!(pf1.usable(&pf2) == false);
     pf2.set_piece(9);
+    assert!(pf1.usable(&pf2) == true);
+    pf1.set_piece(9);
+    assert!(pf1.usable(&pf2) == false);
+    pf2.set_piece(5);
     assert!(pf1.usable(&pf2) == true);
 }
