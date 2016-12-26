@@ -11,3 +11,5 @@ tokio-service = { git = "https://github.com/tokio-rs/tokio-service" }
 nom = "2.0"
 byteorder = "0.5"
 vecio = "0.1"
+lazy_static = "0.1"
+rand = "0.3"

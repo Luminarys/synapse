@@ -4,6 +4,7 @@ use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use std::io::{self, Write};
 
 pub enum Message {
+    Handshake([u8; 8], [u8; 20], [u8; 20]),
     KeepAlive,
     Choke,
     Unchoke,
@@ -18,6 +19,7 @@ pub enum Message {
 
 pub struct MessageCodec {
     pieces: u32,
+    got_handshake: bool,
     len: Option<u32>,
 }
 
@@ -38,9 +40,36 @@ impl Codec for MessageCodec {
             }
         };
 
+        if !self.got_handshake {
+            if 49 + len as usize > buf.len() {
+                return Ok(None);
+            }
+            let expected_proto: &[u8] = "BitTorrent protocol".as_ref();
+            if buf.drain_to(len as usize).as_slice() != expected_proto {
+                return Err(io::Error::new(io::ErrorKind::InvalidData, "Handshake must be for the BitTorrent protocol"));
+            }
+            let mut reserved = [0u8; 8];
+            reserved.iter_mut().zip(buf.drain_to(8).as_slice()).map(|(v, c)| {
+                *v = *c;
+            }).last();
+            let mut hash = [0u8; 20];
+            hash.iter_mut().zip(buf.drain_to(20).as_slice()).map(|(v, c)| {
+                *v = *c;
+            }).last();
+            let mut pid = [0u8; 20];
+            pid.iter_mut().zip(buf.drain_to(20).as_slice()).map(|(v, c)| {
+                *v = *c;
+            }).last();
+            self.got_handshake = true;
+            return Ok(Some(Message::Handshake(reserved, hash, pid)));
+        }
+
+
         if len as usize > buf.len() {
             return Ok(None);
         }
+
+        self.len = None;
 
         if len == 0 {
             return Ok(Some(Message::KeepAlive));
@@ -101,6 +130,16 @@ impl Codec for MessageCodec {
 
     fn encode(&mut self, msg: Message, buf: &mut Vec<u8>) -> io::Result<()> {
         match msg {
+            Message::Handshake(reserved, hash, pid) => {
+                if pid.len() != 20 {
+                    return Err(io::Error::new(io::ErrorKind::InvalidData, "Invalid Peer ID"));
+                }
+                buf.write_u8(19)?;
+                buf.write_all("BitTorrent protocol".as_ref())?;
+                buf.write_all(&reserved)?;
+                buf.write_all(&hash)?;
+                buf.write_all(&pid)?;
+            }
             Message::KeepAlive => {
                 buf.write_u32::<BigEndian>(0)?;
             }
@@ -143,6 +182,8 @@ impl Codec for MessageCodec {
             Message::Piece(index, begin, data) => {
                 buf.write_u32::<BigEndian>(9 + data.len() as u32)?;
                 buf.write_u8(7)?;
+                buf.write_u32::<BigEndian>(index)?;
+                buf.write_u32::<BigEndian>(begin)?;
                 // This may be inefficient, as it's an extra copy.
                 buf.write_all(&data)?;
             }
