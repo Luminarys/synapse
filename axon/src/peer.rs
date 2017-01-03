@@ -1,18 +1,21 @@
 use std::mem;
 use std::time::Instant;
 use piece_field::PieceField;
-use manager::TorrentData;
+use torrent::TorrentStatus;
 
+#[derive(Debug)]
 pub enum Interest {
     Interested,
     Uninterested,
 }
 
+#[derive(Debug)]
 pub enum Choke {
     Choked,
     Unchoked,
 }
 
+#[derive(Debug)]
 pub struct PeerData {
     // Remote Interest
     pub interest: Interest,
@@ -37,11 +40,8 @@ impl PeerData {
     }
 }
 
+#[derive(Debug)]
 pub enum PeerEvent {
-    // Initialization
-    Init,
-    // Got a handshake
-    Handshake,
     // We got the piece bitfield
     Bitfield(PieceField),
     // We received a piece from somewhere else
@@ -72,6 +72,7 @@ pub enum PeerEvent {
     Terminate,
 }
 
+#[derive(Debug)]
 pub enum PeerReaction {
     SendBF,
     SendInterested,
@@ -91,6 +92,7 @@ pub enum PeerReaction {
     Nothing,
 }
 
+#[derive(Debug)]
 enum State {
     Null,
     // Starting state for an incomplete torrent, waiting for events
@@ -107,6 +109,7 @@ enum State {
     Seeding,
 }
 
+#[derive(Debug)]
 pub struct Peer {
     can_recip: bool,
     data: PeerData,
@@ -114,11 +117,11 @@ pub struct Peer {
 }
 
 impl Peer {
-    pub fn new(tdata: &TorrentData) -> Peer {
+    pub fn new(tdata: &TorrentStatus) -> Peer {
         Peer {
             can_recip: false,
             data: PeerData::new(tdata.pieces.len()),
-            state: State::Initial,
+            state: State::Valid,
         }
     }
 
@@ -131,13 +134,10 @@ impl Peer {
     }
 
     // Drive the state machine
-    pub fn handle(&mut self, event: PeerEvent, tdata: &TorrentData) -> PeerReaction {
+    pub fn handle(&mut self, event: PeerEvent, tdata: &TorrentStatus) -> PeerReaction {
         self.data.last_action = Instant::now();
         let old_state = mem::replace(&mut self.state, State::Null);
         let (new_state, resp) = match (old_state, event) {
-            (State::Initial, PeerEvent::Handshake) => {
-                (State::Valid, PeerReaction::SendBF)
-            }
             (State::Valid, PeerEvent::Bitfield(bf)) => {
                 self.data.pieces = bf;
                 // Check if bitfield is interesting - use bool as placeholder
