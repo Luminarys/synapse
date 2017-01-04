@@ -29,7 +29,7 @@ pub struct Torrent {
 }
 
 impl Torrent {
-    fn new(info: TorrentInfo, max_peers: usize) -> Torrent {
+    pub fn new(info: TorrentInfo, max_peers: usize) -> Torrent {
         Torrent {
             status: TorrentStatus::new((info.pieces.pieces.len()/20) as usize),
             peers: Slab::with_capacity(max_peers),
@@ -37,19 +37,19 @@ impl Torrent {
         }
     }
 
-    fn status<'a>(&'a self) -> &'a TorrentStatus {
+    pub fn status<'a>(&'a self) -> &'a TorrentStatus {
         &self.status
     }
 
-    fn info<'a>(&'a self) -> &'a TorrentInfo {
+    pub fn info<'a>(&'a self) -> &'a TorrentInfo {
         &self.info
     }
 
-    fn insert_peer(&mut self, peer_idx: usize) -> Result<usize, usize> {
+    pub fn insert_peer(&mut self, peer_idx: usize) -> Result<usize, usize> {
         self.peers.insert(peer_idx)
     }
 
-    fn remove_peer(&mut self, peer_idx: usize) {
+    pub fn remove_peer(&mut self, peer_idx: usize) {
         self.peers.remove(peer_idx);
     }
 }

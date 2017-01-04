@@ -1,5 +1,4 @@
 use std::mem;
-use std::time::Instant;
 use piece_field::PieceField;
 use torrent::TorrentStatus;
 
@@ -22,7 +21,6 @@ pub struct PeerData {
     // Local choke
     pub choking: Choke,
     pub received: u32,
-    pub last_action: Instant,
     pub pieces: PieceField,
     pub assigned_piece: u32,
 }
@@ -33,7 +31,6 @@ impl PeerData {
             interest: Interest::Uninterested,
             choking: Choke::Choked,
             received: 0,
-            last_action: Instant::now(),
             pieces: PieceField::new(pieces),
             assigned_piece: 0,
         }
@@ -135,7 +132,6 @@ impl Peer {
 
     // Drive the state machine
     pub fn handle(&mut self, event: PeerEvent, tdata: &TorrentStatus) -> PeerReaction {
-        self.data.last_action = Instant::now();
         let old_state = mem::replace(&mut self.state, State::Null);
         let (new_state, resp) = match (old_state, event) {
             (State::Valid, PeerEvent::Bitfield(bf)) => {

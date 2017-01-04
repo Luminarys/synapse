@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use mio::{channel, Events, Poll, PollOpt, Ready, Token};
 use mio::tcp::TcpStream;
 use piece_field::PieceField;
-use peer::Peer;
+use peer_conn::PeerConn;
 use torrent::{Torrent, TorrentInfo};
 use slab::Slab;
 use manager;
@@ -20,7 +20,7 @@ pub enum WorkerResp {
 pub struct Worker {
     manager_tx: channel::Sender<WorkerResp>,
     manager_rx: channel::Receiver<WorkerReq>,
-    peers: Slab<Peer>,
+    peers: Slab<PeerConn>,
     torrents: HashMap<[u8; 20], Torrent>,
 }
 
@@ -63,11 +63,18 @@ impl Worker {
                 return true;
             }
             Ok(WorkerReq::NewConn(hash, conn)) => {
-            
+                if !self.peers.has_available() {
+                    self.kill_peer_conn();
+                }
+                let entry = self.peers.vacant_entry().unwrap();
             }
             _ => { }
         };
         false
+    }
+
+    /// Kills a peer conn, prioritizing idle connections
+    fn kill_peer_conn(&mut self) {
     }
 
     fn cleanup(&mut self) {
