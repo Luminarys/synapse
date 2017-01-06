@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use mio::{channel, Events, Poll, PollOpt, Ready, Token};
 use mio::tcp::TcpStream;
 use piece_field::PieceField;
-use peer_conn::PeerConn;
+use peer::Peer;
 use torrent::{Torrent, TorrentInfo};
 use slab::Slab;
 use manager;
@@ -20,7 +20,7 @@ pub enum WorkerResp {
 pub struct Worker {
     manager_tx: channel::Sender<WorkerResp>,
     manager_rx: channel::Receiver<WorkerReq>,
-    peers: Slab<PeerConn>,
+    peers: Slab<Peer>,
     torrents: HashMap<[u8; 20], Torrent>,
 }
 

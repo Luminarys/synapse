@@ -1,4 +1,4 @@
-use peer::{Peer, PeerEvent};
+use peer::{Peer, PeerEvent, PeerResp};
 use torrent::Torrent;
 use message::Message;
 use mio::tcp::TcpStream;
@@ -103,6 +103,17 @@ impl PeerConn {
         self.recv_state = new_state;
         Ok(PeerConnResp::None)
     }
+
+    fn assign_piece(&mut self, piece: u32) {
+        self.peer.assign_piece(piece);
+    }
+
+    fn recieved_piece(&mut self, piece: u32) {
+        self.peer.handle();
+    }
+
+    fn send_piece(&mut self, piece: Arc<[u8; 16384]>) {
+    }
     
     fn writable(&mut self) {
         self.writable = true;
@@ -112,5 +123,3 @@ impl PeerConn {
         Ok(())
     }
 }
-
-fn process_message_data(&mut TcpStream, buf: [u8; 13], len: u32)

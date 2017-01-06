@@ -22,7 +22,7 @@ pub struct PeerData {
     pub choking: Choke,
     pub received: u32,
     pub pieces: PieceField,
-    pub assigned_piece: u32,
+    pub assigned_piece: Option<u32>,
 }
 
 impl PeerData {
@@ -32,7 +32,7 @@ impl PeerData {
             choking: Choke::Choked,
             received: 0,
             pieces: PieceField::new(pieces),
-            assigned_piece: 0,
+            assigned_piece: None,
         }
     }
 }
@@ -70,11 +70,11 @@ pub enum PeerEvent {
 }
 
 #[derive(Debug)]
-pub enum PeerReaction {
+pub enum PeerResp {
     SendBF,
     SendInterested,
     SendUninterested,
-    SendRequest,
+    SendRequest(u32),
     SendUnchoke,
     SendChoke,
     SendHave(u32),
@@ -127,80 +127,83 @@ impl Peer {
     }
 
     pub fn assign_piece(&mut self, piece: u32) {
-        self.data.assigned_piece = piece;
+        self.data.assigned_piece = Some(piece);
+    }
+
+    fn get_assigned(&mut self) -> Option<u32> {
+        mem::swap(&mut self.data.assigned_piece, None)
     }
 
     // Drive the state machine
-    pub fn handle(&mut self, event: PeerEvent, tdata: &TorrentStatus) -> PeerReaction {
+    pub fn handle(&mut self, event: PeerEvent) -> PeerResp {
         let old_state = mem::replace(&mut self.state, State::Null);
         let (new_state, resp) = match (old_state, event) {
             (State::Valid, PeerEvent::Bitfield(bf)) => {
                 self.data.pieces = bf;
-                // Check if bitfield is interesting - use bool as placeholder
-                if tdata.pieces.usable(&self.data.pieces) {
-                    // Try to get the peer to unchoke us, manager should priotiize seeding to this
-                    // peer
-                    (State::AwaitingUnchoke, PeerReaction::SendInterested)
+                if let Some(p) = self.get_assigned() {
+                    (State::AwaitingUnchoke, PeerResp::SendInterested)
                 } else {
                     // Just wait, no need to transition state here
-                    (State::Valid, PeerReaction::Nothing)
+                    (State::Valid, PeerResp::Nothing)
                 }
             }
             (State::AwaitingUnchoke, PeerEvent::Unchoked) => {
-                (State::AwaitingPiece, PeerReaction::SendRequest)
+                if let Some(p) = self.get_assigned() {
+                    (State::AwaitingPiece, PeerResp::SendRequest(p))
+                } else {
+                    (State::Unchoked, PeerResp::SendUninterested)
+                }
             }
             (State::AwaitingPiece, PeerEvent::ReceivedPiece) => {
                 self.data.received += 1;
-                // If we still have pieces retrievable from this peer, send another request,
-                // otherwise send uninterested
-                if tdata.pieces.usable(&self.data.pieces) {
-                    (State::AwaitingPiece, PeerReaction::SendRequest)
+                // If we get reassigned a piece, request it.
+                if let Some(p) = self.get_assigned() {
+                    (State::AwaitingPiece, PeerResp::SendRequest(p))
                 } else {
-                    (State::Unchoked, PeerReaction::SendUninterested)
+                    (State::Unchoked, PeerResp::SendUninterested)
                 }
             }
             (State::Unchoked, PeerEvent::Choked) => {
                 // If we're choked by an idle peer, just revert to valid
-                (State::Valid, PeerReaction::Nothing)
+                (State::Valid, PeerResp::Nothing)
             }
             (State::AwaitingPiece, PeerEvent::Choked) => {
                 // If we're choked while waiting for a piece, just wait
-                (State::AwaitingUnchoke, PeerReaction::ReleasePiece)
+                (State::AwaitingUnchoke, PeerResp::ReleasePiece)
             }
             (State::Unchoked, PeerEvent::HavePiece(p)) => {
                 self.data.pieces.set_piece(p);
                 // If the peer got a piece we want and isn't choking us request it
-                if tdata.pieces.usable(&self.data.pieces) {
-                    (State::AwaitingPiece, PeerReaction::SendRequest)
+                if let Some(p) = self.get_assigned() {
+                    (State::AwaitingPiece, PeerResp::SendRequest(p))
                 } else {
-                    (State::Unchoked, PeerReaction::Nothing)
+                    (State::Unchoked, PeerResp::Nothing)
                 }
             }
             (State::Valid, PeerEvent::HavePiece(p)) => {
                 self.data.pieces.set_piece(p);
-                // If the peer got a piece we want and isn't choking us request it
-                if tdata.pieces.usable(&self.data.pieces) {
-                    (State::AwaitingUnchoke, PeerReaction::SendInterested)
+                if self.data.assigned_piece.is_some() {
+                    (State::AwaitingPiece, PeerResp::SendInterested)
                 } else {
-                    (State::Valid, PeerReaction::Nothing)
+                    (State::Unchoked, PeerResp::Nothing)
                 }
             }
             (s, PeerEvent::HavePiece(p)) => {
                 self.data.pieces.set_piece(p);
                 // Just modify state so we know we got the piece
-                (s, PeerReaction::Nothing)
+                (s, PeerResp::Nothing)
             }
             (State::AwaitingPiece, PeerEvent::ReceivedExternalPiece(p)) => {
                 // If this is a piece we want rn cancel and req, otherwise announce have
                 let s = State::AwaitingPiece;
                 if self.data.assigned_piece == p {
-                    (s, PeerReaction::CancelAndReq)
+                    (s, PeerResp::CancelAndReq)
                 } else {
                     // If the peer doens't have this piece inform them
                     if !self.data.pieces.has_piece(p) {
-                        (s, PeerReaction::SendHave(self.data.assigned_piece))
+                        (s, PeerResp::SendHave(self.data.assigned_piece))
                     } else {
-                        (s, PeerReaction::Nothing)
+                        (s, PeerResp::Nothing)
                     }
                 }
             }
@@ -208,71 +211,71 @@ impl Peer {
                 self.can_recip = true;
                 if let Interest::Interested = self.data.interest {
                     self.data.choking = Choke::Unchoked;
-                    (s, PeerReaction::SendUnchoke)
+                    (s, PeerResp::SendUnchoke)
                 } else {
-                    (s, PeerReaction::Nothing)
+                    (s, PeerResp::Nothing)
                 }
             }
             (s, PeerEvent::RevokeReciprocation) => {
                 self.can_recip = false;
                 if let Choke::Unchoked = self.data.choking {
                     self.data.choking = Choke::Choked;
-                    (s, PeerReaction::SendChoke)
+                    (s, PeerResp::SendChoke)
                 } else {
-                    (s, PeerReaction::Nothing)
+                    (s, PeerResp::Nothing)
                 }
             }
             (State::Seeding, PeerEvent::RequestPiece) => {
-                (State::Seeding, PeerReaction::SendPiece)
+                (State::Seeding, PeerResp::SendPiece)
             }
             (s, PeerEvent::RequestPiece) => {
                 if let Choke::Unchoked = self.data.choking {
-                    (s, PeerReaction::SendPiece)
+                    (s, PeerResp::SendPiece)
                 } else {
                     // Peers should not be requesting when we have choked them, kill conn
-                    (s, PeerReaction::Terminate)
+                    (s, PeerResp::Terminate)
                 }
             }
             (s, PeerEvent::Interested) => {
                 self.data.interest = Interest::Interested;
                 if self.can_recip {
                     self.data.choking = Choke::Unchoked;
-                    (s, PeerReaction::SendUnchoke)
+                    (s, PeerResp::SendUnchoke)
                 } else {
-                    (s, PeerReaction::Nothing)
+                    (s, PeerResp::Nothing)
                 }
             }
             (State::Seeding, PeerEvent::Uninterested) => {
                 // If we're seeding and for some reason the peer is uninterested, terminate
                 // connection
                 self.data.interest = Interest::Uninterested;
-                (State::Seeding, PeerReaction::Terminate)
+                (State::Seeding, PeerResp::Terminate)
             }
             (s, PeerEvent::Uninterested) => {
                 self.data.interest = Interest::Uninterested;
                 if let Choke::Unchoked = self.data.choking {
                     self.data.choking = Choke::Choked;
-                    (s, PeerReaction::SendChoke)
+                    (s, PeerResp::SendChoke)
                 } else {
-                    (s, PeerReaction::Nothing)
+                    (s, PeerResp::Nothing)
                 }
             }
             (s, PeerEvent::ReceivedExternalPiece(p)) => {
                 // If we got a piece from somewhere else, and they don't have it inform this peer
                 if !self.data.pieces.has_piece(p) {
-                    (s, PeerReaction::SendHave(p))
+                    (s, PeerResp::SendHave(p))
                 } else {
-                    (s, PeerReaction::Nothing)
+                    (s, PeerResp::Nothing)
                 }
             }
             (State::AwaitingPiece, PeerEvent::CompletedTorrent) => {
-                (State::Seeding, PeerReaction::SendCancel)
+                (State::Seeding, PeerResp::SendCancel)
             }
             (_, PeerEvent::CompletedTorrent) => {
-                (State::Seeding, PeerReaction::Nothing)
+                (State::Seeding, PeerResp::Nothing)
             }
             (state, _event) => {
-                (state, PeerReaction::Nothing)
+                (state, PeerResp::Nothing)
             }
         };
         self.state = new_state;

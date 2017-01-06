@@ -2,6 +2,7 @@ use piece_field::PieceField;
 // use tokio_core::io::{Codec, EasyBuf};
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use std::io::{self, Write};
+use std::sync::Arc;
 //
 pub enum Message {
     Handshake([u8; 8], [u8; 20], [u8; 20]),
@@ -13,13 +14,46 @@ pub enum Message {
     Have(u32),
     Bitfield(PieceField),
     Request(u32, u32, u32),
-    Piece(u32, u32, Box<[u8]>),
+    Piece(u32, u32, [u8; 16384]),
+    SharedPiece(u32, u32, Arc<[u8; 16384]>),
     Cancel(u32, u32, u32),
 }
 
 impl Message {
-    fn encode(self, mut buf: &mut [u8]) -> io::Result<()> {
+    pub fn is_piece(&self) -> bool {
         match self {
+            Message::Piece(_, _, _) | Message::SharedPiece(_, _, _) => true,
+            _ => false,
+        }
+    }
+
+    pub fn is_special(&self) -> bool {
+        match self {
+            Message::Handshake(_, _, _) | Message::Bitfield(_, _, _) => true,
+            _ => false,
+        }
+    }
+
+    pub fn len(&self) -> usize {
+        match *self {
+            Message::Handshake(_ ,_, _) => 68,
+            Message::KeepAlive => 4,
+            Message::Choke => 5,
+            Message::Unchoke => 5,
+            Message::Interested => 5,
+            Message::Uninterested => 5,
+            Message::Have(_) => 9,
+            Message::Bitfield(pf) => 5 + pf.bytes(),
+            Message::Request(_, _, _) => 13,
+            Message::Piece(_, _, data) => 13 + data.len()
+            Message::SharedPiece(_, _, data) => 13 + data.len(),
+            Message::Cancel(_, _, _) => 13,
+        }
+    
+    }
+
+    pub fn encode(&self, mut buf: &mut [u8]) -> io::Result<()> {
+        match *self {
             Message::Handshake(reserved, hash, pid) => {
                 if pid.len() != 20 {
                     return Err(io::Error::new(io::ErrorKind::InvalidData, "Invalid Peer ID"));
@@ -49,11 +83,6 @@ impl Message {
                 buf.write_u32::<BigEndian>(1)?;
                 buf.write_u8(3)?;
             }
-            Message::Have(piece) => {
-                buf.write_u32::<BigEndian>(5)?;
-                buf.write_u8(4)?;
-                buf.write_u32::<BigEndian>(piece)?;
-            }
             Message::Bitfield(pf) => {
                 let (data, _) = pf.extract();
                 buf.write_u32::<BigEndian>(1 + data.len() as u32)?;
@@ -63,7 +92,7 @@ impl Message {
                 }
             }
             Message::Request(index, begin, length) => {
-                buf.write_u32::<BigEndian>(13)?;
+                buf.write_u32::<BigEndian>(9)?;
                 buf.write_u8(6)?;
                 buf.write_u32::<BigEndian>(index)?;
                 buf.write_u32::<BigEndian>(begin)?;
@@ -74,8 +103,12 @@ impl Message {
                 buf.write_u8(7)?;
                 buf.write_u32::<BigEndian>(index)?;
                 buf.write_u32::<BigEndian>(begin)?;
-                // This may be inefficient, as it's an extra copy.
-                buf.write_all(&data)?;
+            }
+            Message::SharedPiece(index, begin, data) => {
+                buf.write_u32::<BigEndian>(9 + data.len() as u32)?;
+                buf.write_u8(7)?;
+                buf.write_u32::<BigEndian>(index)?;
+                buf.write_u32::<BigEndian>(begin)?;
             }
             Message::Cancel(index, begin, length) => {
                 buf.write_u32::<BigEndian>(13)?;
