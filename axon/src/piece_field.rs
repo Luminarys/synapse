@@ -37,6 +37,10 @@ impl PieceField {
         self.data.len()
     }
 
+    pub fn byte_at(&self, pos: u32) -> u8 {
+        self.data[pos as usize]
+    }
+
     pub fn has_piece(&self, pos: u32) -> bool {
         if pos >= self.len {
             false

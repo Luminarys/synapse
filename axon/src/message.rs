@@ -21,15 +21,15 @@ pub enum Message {
 
 impl Message {
     pub fn is_piece(&self) -> bool {
-        match self {
+        match *self {
             Message::Piece(_, _, _) | Message::SharedPiece(_, _, _) => true,
             _ => false,
         }
     }
 
     pub fn is_special(&self) -> bool {
-        match self {
-            Message::Handshake(_, _, _) | Message::Bitfield(_, _, _) => true,
+        match *self {
+            Message::Handshake(_, _, _) | Message::Bitfield(_) => true,
             _ => false,
         }
     }
@@ -43,10 +43,10 @@ impl Message {
             Message::Interested => 5,
             Message::Uninterested => 5,
             Message::Have(_) => 9,
-            Message::Bitfield(pf) => 5 + pf.bytes(),
+            Message::Bitfield(ref pf) => 5 + pf.bytes(),
             Message::Request(_, _, _) => 13,
-            Message::Piece(_, _, data) => 13 + data.len()
-            Message::SharedPiece(_, _, data) => 13 + data.len(),
+            Message::Piece(_, _, ref data) => 13 + data.len(),
+            Message::SharedPiece(_, _, ref data) => 13 + data.len(),
             Message::Cancel(_, _, _) => 13,
         }
     
@@ -83,12 +83,16 @@ impl Message {
                 buf.write_u32::<BigEndian>(1)?;
                 buf.write_u8(3)?;
             }
-            Message::Bitfield(pf) => {
-                let (data, _) = pf.extract();
-                buf.write_u32::<BigEndian>(1 + data.len() as u32)?;
+            Message::Have(piece) => {
+                buf.write_u32::<BigEndian>(5)?;
+                buf.write_u8(4)?;
+                buf.write_u32::<BigEndian>(piece)?;
+            }
+            Message::Bitfield(ref pf) => {
+                buf.write_u32::<BigEndian>(1 + pf.bytes() as u32)?;
                 buf.write_u8(5)?;
-                for i in 0..data.len() {
-                    buf.write_u8(data[i])?;
+                for i in 0..pf.bytes() {
+                    buf.write_u8(pf.byte_at(i as u32))?;
                 }
             }
             Message::Request(index, begin, length) => {
@@ -104,7 +108,7 @@ impl Message {
                 buf.write_u32::<BigEndian>(index)?;
                 buf.write_u32::<BigEndian>(begin)?;
             }
-            Message::SharedPiece(index, begin, data) => {
+            Message::SharedPiece(index, begin, ref data) => {
                 buf.write_u32::<BigEndian>(9 + data.len() as u32)?;
                 buf.write_u8(7)?;
                 buf.write_u32::<BigEndian>(index)?;

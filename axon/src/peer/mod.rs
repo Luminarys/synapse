@@ -1,18 +1,19 @@
 mod reader;
 mod writer;
 
-use mio::net::TcpStream;
-use reader::Reader;
-use writer::Writer;
-use torrent::Torrent;
+use mio::tcp::TcpStream;
+use self::reader::Reader;
+use self::writer::Writer;
+use torrent::{Torrent, TorrentStatus};
 use piece_field::PieceField;
-use torrent::TorrentStatus;
+use message::Message;
+use std::io;
 
 pub struct Peer {
     conn: TcpStream,
     data: PeerData,
-    reader: RecvState,
-    writer: WriteState,
+    reader: Reader,
+    writer: Writer,
 }
 
 impl Peer {
@@ -26,17 +27,23 @@ impl Peer {
     }
 
     pub fn readable(&mut self) -> Result<(), ()> {
-        while let Some(msg) self.reader.readable().map(|_| ())? {
-            self.handle_msg(msg);
-        }
+        // while let Some(msg) = self.reader.readable().map(|_| ())? {
+        //     self.handle_msg(msg);
+        // }
+        Ok(())
     }
 
-    pub fn writable(&mut self) -> Result<(), ()> {
-        self.writer.writable()?;
+    pub fn writable(&mut self) -> io::Result<()> {
+        self.writer.writable(&mut self.conn)?;
+        Ok(())
+    }
+
+    pub fn alive(&mut self) -> bool {
+        unimplemented!();
     }
 
     fn handle_msg(&mut self, msg: Message) {
-    
+        unimplemented!();
     }
 }
 

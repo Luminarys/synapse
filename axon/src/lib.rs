@@ -8,7 +8,6 @@ extern crate mio;
 extern crate slab;
 
 mod peer;
-mod peer_conn;
 mod torrent;
 mod piece_field;
 mod manager;
