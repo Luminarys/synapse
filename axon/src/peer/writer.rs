@@ -4,10 +4,11 @@ use std::io::{self, Write};
 use std::sync::Arc;
 
 pub struct Writer {
-    chunks_written: usize,
+    blocks_written: usize,
     writable: bool,
     write_queue: VecDeque<Message>,
     state: WriteState,
+    upload_speed: f64,
 }
 
 enum WriteState {
@@ -23,7 +24,8 @@ impl Writer {
             writable: false,
             write_queue: VecDeque::new(),
             state: WriteState::Idle,
-            chunks_written: 0,
+            blocks_written: 0,
+            upload_speed: 0.0,
         }
     }
 
@@ -47,8 +49,8 @@ impl Writer {
         }
     }
 
-    pub fn chunks_written(&self) -> usize {
-        self.chunks_written
+    pub fn blocks_written(&self) -> usize {
+        self.blocks_written
     }
 
     fn setup_write(&mut self, msg: Message) {
@@ -78,6 +80,7 @@ impl Writer {
             if let Some(msg) = self.write_queue.pop_back() {
                 self.setup_write(msg);
             } else {
+                self.state = WriteState::Idle;
                 break;
             }
         }

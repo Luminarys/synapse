@@ -27,6 +27,13 @@ impl Message {
         }
     }
 
+    pub fn is_bitfield(&self) -> bool {
+        match *self {
+            Message::Bitfield(_) => true,
+            _ => false,
+        }
+    }
+
     pub fn is_special(&self) -> bool {
         match *self {
             Message::Handshake(_, _, _) | Message::Bitfield(_) => true,
@@ -44,12 +51,11 @@ impl Message {
             Message::Uninterested => 5,
             Message::Have(_) => 9,
             Message::Bitfield(ref pf) => 5 + pf.bytes(),
-            Message::Request(_, _, _) => 13,
+            Message::Request(_, _, _) => 17,
             Message::Piece(_, _, ref data) => 13 + data.len(),
             Message::SharedPiece(_, _, ref data) => 13 + data.len(),
-            Message::Cancel(_, _, _) => 13,
+            Message::Cancel(_, _, _) => 17,
         }
-    
     }
 
     pub fn encode(&self, mut buf: &mut [u8]) -> io::Result<()> {
