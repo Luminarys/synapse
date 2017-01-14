@@ -3,7 +3,7 @@ use piece_field::PieceField;
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use std::io::{self, Write};
 use std::sync::Arc;
-//
+
 pub enum Message {
     Handshake([u8; 8], [u8; 20], [u8; 20]),
     KeepAlive,
@@ -14,7 +14,7 @@ pub enum Message {
     Have(u32),
     Bitfield(PieceField),
     Request(u32, u32, u32),
-    Piece(u32, u32, [u8; 16384]),
+    Piece(u32, u32, Box<[u8; 16384]>),
     SharedPiece(u32, u32, Arc<[u8; 16384]>),
     Cancel(u32, u32, u32),
 }
@@ -30,6 +30,13 @@ impl Message {
     pub fn is_bitfield(&self) -> bool {
         match *self {
             Message::Bitfield(_) => true,
+            _ => false,
+        }
+    }
+
+    pub fn is_handshake(&self) -> bool {
+        match *self {
+            Message::Handshake(_, _, _) => true,
             _ => false,
         }
     }
@@ -108,7 +115,7 @@ impl Message {
                 buf.write_u32::<BigEndian>(begin)?;
                 buf.write_u32::<BigEndian>(length)?;
             }
-            Message::Piece(index, begin, data) => {
+            Message::Piece(index, begin, ref data) => {
                 buf.write_u32::<BigEndian>(9 + data.len() as u32)?;
                 buf.write_u8(7)?;
                 buf.write_u32::<BigEndian>(index)?;

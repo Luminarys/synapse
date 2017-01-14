@@ -1,4 +1,4 @@
-use std::io::{self, Read};
+use std::io::{self, Read, Cursor};
 use std::mem;
 use message::Message;
 use piece_field::PieceField;
@@ -8,7 +8,8 @@ pub struct Reader {
     state: ReadState,
     blocks_read: usize,
     download_speed: f64,
-    received_bitfield: bool,
+    can_receive_bf: bool,
+    received_handshake: bool,
 }
 
 enum ReadState {
@@ -17,7 +18,7 @@ enum ReadState {
     ReadingLen { data: [u8; 17], idx: u8 },
     ReadingId { data: [u8; 17], len: u32 },
     ReadingMsg { data: [u8; 17], idx: u8, len: u32 },
-    ReadingPiece { prefix: [u8; 17], data: [u8; 16384], idx: usize },
+    ReadingPiece { prefix: [u8; 17], data: Box<[u8; 16384]>, idx: usize },
     ReadingBitfield { data: Vec<u8>, idx: usize },
 }
 
@@ -100,8 +101,8 @@ impl ReadState {
             ReadState::ReadingBitfield { mut data, mut idx } => {
                 idx += conn.read(&mut data[idx as usize..])?;
                 let len = data.len();
-                if idx == len - 1 {
-                    Ok(Ok(Message::Bitfield(PieceField::from(data.into_boxed_slice(), len as u32))))
+                if idx == len {
+                    Ok(Ok(Message::Bitfield(PieceField::from(data.into_boxed_slice(), len as u32 * 8))))
                 } else {
                     Ok(Err(ReadState::ReadingBitfield { data: data, idx: idx }))
                 }
@@ -126,13 +127,13 @@ impl ReadState {
             2 => Ok(Ok(Message::Interested)),
             3 => Ok(Ok(Message::Uninterested)),
             5 => {
-                ReadState::ReadingBitfield { data: Vec::with_capacity(len as usize), idx: 0 }.next_state(conn)
+                ReadState::ReadingBitfield { data: vec![0; len as usize - 1], idx: 0 }.next_state(conn)
             },
             7 => {
                 if len != 16393 {
                     return Err(io::Error::new(io::ErrorKind::InvalidData, "Only piece sizes of 16384 are accepted"));
                 }
-                ReadState::ReadingPiece { prefix: buf, data: [0u8; 16384], idx: len as usize}.next_state(conn)
+                ReadState::ReadingPiece { prefix: buf, data: Box::new([0u8; 16384]), idx: len as usize}.next_state(conn)
             }
             _ => {
                 ReadState::ReadingMsg { data: buf, idx: 5, len: len }.next_state(conn)
@@ -141,7 +142,7 @@ impl ReadState {
     }
 
     fn process_message(buf: [u8; 17], len: u32) -> io::Result<Message> {
-        match buf[5] {
+        match buf[4] {
             4 => {
                 if len != 5 {
                     return Err(io::Error::new(io::ErrorKind::InvalidData, "Have message must be of len 5"));
@@ -179,7 +180,8 @@ impl Reader {
             state: ReadState::ReadingHandshake { data: [0u8; 68] , idx: 0 },
             blocks_read: 0,
             download_speed: 0.0,
-            received_bitfield: false,
+            can_receive_bf: true,
+            received_handshake: false,
         }
     }
 
@@ -188,12 +190,19 @@ impl Reader {
         let state = mem::replace(&mut self.state, ReadState::Idle);
         match state.next_state(conn)? {
             Ok(msg) => {
+                if !msg.is_handshake() && !self.received_handshake {
+                    return Err(io::Error::new(io::ErrorKind::InvalidData, "Must receive handshake first!"));
+                } else if msg.is_handshake() {
+                    self.received_handshake = true;
+                }
                 if msg.is_bitfield() {
-                    if self.received_bitfield {
+                    if !self.can_receive_bf {
                         return Err(io::Error::new(io::ErrorKind::InvalidData, "Bitfield cannot be received twice!"));
                     } else {
-                        self.received_bitfield = true;
+                        self.can_receive_bf = false;
                     }
+                } else if self.received_handshake {
+                    self.can_receive_bf = false;
                 }
                 self.state = ReadState::Idle;
                 Ok(Some(msg))
@@ -202,6 +211,162 @@ impl Reader {
                 self.state = new_state;
                 Ok(None)
             }
+        }
+    }
+}
+
+#[test]
+fn test_read_keepalive() {
+    let mut r = Reader::new();
+    r.state = ReadState::Idle;
+    r.can_receive_bf = false;
+    r.received_handshake = true;
+    let data = vec![0u8, 0, 0, 0];
+    // Test one shot
+    if let Message::KeepAlive = r.readable(&mut &data[..]).unwrap().unwrap() {
+    } else {
+        unreachable!();
+    }
+
+    // Test split up
+    if let None = r.readable(&mut &data[0..2]).unwrap() {
+    } else {
+        unreachable!();
+    }
+    if let Message::KeepAlive = r.readable(&mut &data[2..4]).unwrap().unwrap() {
+    } else {
+        unreachable!();
+    }
+}
+
+#[test]
+fn test_read_choke() {
+    let mut r = Reader::new();
+    r.state = ReadState::Idle;
+    r.can_receive_bf = false;
+    r.received_handshake = true;
+    let data = vec![0u8, 0, 0, 1, 0];
+    // Test one shot
+    if let Message::Choke = r.readable(&mut &data[..]).unwrap().unwrap() {
+    } else {
+        unreachable!();
+    }
+
+    // Test split up
+    if let None = r.readable(&mut &data[0..4]).unwrap() {
+    } else {
+        unreachable!();
+    }
+    // Simulate spurious read
+    if let None = r.readable(&mut &data[4..4]).unwrap() {
+    } else {
+        unreachable!();
+    }
+    if let Message::Choke = r.readable(&mut &data[4..5]).unwrap().unwrap() {
+    } else {
+        unreachable!();
+    }
+}
+
+#[test]
+fn test_read_unchoke() {
+    let mut r = Reader::new();
+    r.state = ReadState::Idle;
+    r.can_receive_bf = false;
+    r.received_handshake = true;
+    let data = vec![0u8, 0, 0, 1, 1];
+    // Test one shot
+    if let Message::Unchoke = r.readable(&mut &data[..]).unwrap().unwrap() {
+    } else {
+        unreachable!();
+    }
+}
+
+#[test]
+fn test_read_interested() {
+    let mut r = Reader::new();
+    r.state = ReadState::Idle;
+    r.can_receive_bf = false;
+    r.received_handshake = true;
+    let data = vec![0u8, 0, 0, 1, 2];
+    // Test one shot
+    if let Message::Interested = r.readable(&mut &data[..]).unwrap().unwrap() {
+    } else {
+        unreachable!();
+    }
+}
+
+#[test]
+fn test_read_uninterested() {
+    let mut r = Reader::new();
+    r.state = ReadState::Idle;
+    r.can_receive_bf = false;
+    r.received_handshake = true;
+    let data = vec![0u8, 0, 0, 1, 3];
+    // Test one shot
+    if let Message::Uninterested = r.readable(&mut &data[..]).unwrap().unwrap() {
+    } else {
+        unreachable!();
+    }
+}
+
+#[test]
+fn test_read_have() {
+    let mut r = Reader::new();
+    r.state = ReadState::Idle;
+    r.can_receive_bf = false;
+    r.received_handshake = true;
+    let data = vec![0u8, 0, 0, 5, 4, 0, 0, 0, 1];
+    // Test one shot
+    match r.readable(&mut &data[..]).unwrap().unwrap() {
+        Message::Have(piece) => {
+            if piece != 1 {
+                unreachable!();
+            }
+        }
+        _ => {
+            unreachable!();
+        }
+    }
+
+    // Test split up
+    if let None = r.readable(&mut &data[0..6]).unwrap() {
+    } else {
+        unreachable!();
+    }
+    // Simulate spurious read
+    if let None = r.readable(&mut &data[6..6]).unwrap() {
+    } else {
+        unreachable!();
+    }
+    match r.readable(&mut &data[6..9]).unwrap().unwrap() {
+        Message::Have(piece) => {
+            if piece != 1 {
+                unreachable!();
+            }
+        }
+        _ => {
+            unreachable!();
+        }
+    }
+}
+
+#[test]
+fn test_read_bitfield() {
+    let mut r = Reader::new();
+    r.state = ReadState::Idle;
+    r.can_receive_bf = true;
+    r.received_handshake = true;
+    let mut data = Cursor::new(vec![0u8, 0, 0, 5, 5, 0xff, 0xff, 0xff, 0xff]);
+    // Test one shot
+    match r.readable(&mut data).unwrap().unwrap() {
+        Message::Bitfield(pf) => {
+            for i in 0..32 {
+                assert!(pf.has_piece(i as u32));
+            }
+        }
+        _ => {
+            unreachable!();
         }
     }
 }
