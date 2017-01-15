@@ -109,7 +109,7 @@ impl Message {
                 }
             }
             Message::Request(index, begin, length) => {
-                buf.write_u32::<BigEndian>(9)?;
+                buf.write_u32::<BigEndian>(13)?;
                 buf.write_u8(6)?;
                 buf.write_u32::<BigEndian>(index)?;
                 buf.write_u32::<BigEndian>(begin)?;
