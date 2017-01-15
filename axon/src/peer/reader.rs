@@ -28,7 +28,7 @@ impl ReadState {
         match self {
             ReadState::ReadingHandshake { mut data, mut idx } => {
                 idx += conn.read(&mut data[idx as usize..])? as u8;
-                if idx == data.len() as u8 - 1 {
+                if idx == data.len() as u8 {
                     if &data[1..20] != b"BitTorrent protocol" {
                         return Err(io::Error::new(io::ErrorKind::InvalidData, "Invalid protocol used in handshake"));
                     }
@@ -133,7 +133,7 @@ impl ReadState {
                 if len != 16393 {
                     return Err(io::Error::new(io::ErrorKind::InvalidData, "Only piece sizes of 16384 are accepted"));
                 }
-                ReadState::ReadingPiece { prefix: buf, data: Box::new([0u8; 16384]), idx: len as usize}.next_state(conn)
+                ReadState::ReadingPiece { prefix: buf, data: Box::new([0u8; 16384]), idx: 5}.next_state(conn)
             }
             _ => {
                 ReadState::ReadingMsg { data: buf, idx: 5, len: len }.next_state(conn)
@@ -364,6 +364,90 @@ fn test_read_bitfield() {
             for i in 0..32 {
                 assert!(pf.has_piece(i as u32));
             }
+        }
+        _ => {
+            unreachable!();
+        }
+    }
+}
+
+#[test]
+fn test_read_request() {
+    let mut r = Reader::new();
+    r.state = ReadState::Idle;
+    r.can_receive_bf = true;
+    r.received_handshake = true;
+    let mut data = Cursor::new(vec![0u8, 0, 0, 13, 6, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1]);
+    // Test one shot
+    match r.readable(&mut data).unwrap().unwrap() {
+        Message::Request(i, b, l) => {
+            assert_eq!(i, 1);
+            assert_eq!(b, 1);
+            assert_eq!(l, 1);
+        }
+        _ => {
+            unreachable!();
+        }
+    }
+}
+
+#[test]
+fn test_read_piece() {
+    let mut r = Reader::new();
+    r.state = ReadState::Idle;
+    r.can_receive_bf = true;
+    r.received_handshake = true;
+    let mut info = Cursor::new(vec![0u8, 0, 0x40, 0x09, 7, 0, 0, 0, 1, 0, 0, 0, 1]);
+    let mut data = Cursor::new(vec![1u8; 16384]);
+    // Test partial read
+    assert!(r.readable(&mut info).unwrap().is_none());
+    match r.readable(&mut data).unwrap().unwrap() {
+        Message::Piece(i, b, d) => {
+            assert_eq!(i, 1);
+            assert_eq!(b, 1);
+            for i in 0..16384 {
+                assert_eq!(1, d[i]);
+            }
+        }
+        _ => {
+            unreachable!();
+        }
+    }
+}
+
+#[test]
+fn test_read_cancel() {
+    let mut r = Reader::new();
+    r.state = ReadState::Idle;
+    r.can_receive_bf = true;
+    r.received_handshake = true;
+    let mut data = Cursor::new(vec![0u8, 0, 0, 13, 8, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1]);
+    // Test one shot
+    match r.readable(&mut data).unwrap().unwrap() {
+        Message::Cancel(i, b, l) => {
+            assert_eq!(i, 1);
+            assert_eq!(b, 1);
+            assert_eq!(l, 1);
+        }
+        _ => {
+            unreachable!();
+        }
+    }
+}
+
+#[test]
+fn test_read_handshake() {
+    use ::PEER_ID;
+    let mut r = Reader::new();
+    let m = Message::Handshake([0; 8], [0; 20], *PEER_ID);
+    let mut data = vec![0; 68];
+    m.encode(&mut data[..]);
+    // Test one shot
+    match r.readable(&mut Cursor::new(data)).unwrap().unwrap() {
+        Message::Handshake(r, hash, pid) => {
+            assert_eq!(r, [0; 8]);
+            assert_eq!(hash, [0; 20]);
+            assert_eq!(pid, *PEER_ID);
         }
         _ => {
             unreachable!();
