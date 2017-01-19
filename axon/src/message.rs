@@ -1,11 +1,11 @@
 use piece_field::PieceField;
-// use tokio_core::io::{Codec, EasyBuf};
+use torrent::TorrentInfo;
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use std::io::{self, Write};
 use std::sync::Arc;
 
 pub enum Message {
-    Handshake([u8; 8], [u8; 20], [u8; 20]),
+    Handshake { rsv: [u8; 8], hash: [u8; 20], id: [u8; 20] },
     KeepAlive,
     Choke,
     Unchoke,
@@ -13,16 +13,25 @@ pub enum Message {
     Uninterested,
     Have(u32),
     Bitfield(PieceField),
-    Request(u32, u32, u32),
-    Piece(u32, u32, Box<[u8; 16384]>),
-    SharedPiece(u32, u32, Arc<[u8; 16384]>),
-    Cancel(u32, u32, u32),
+    Request { index: u32, begin: u32, length: u32 },
+    Piece { index: u32, begin: u32, data: Box<[u8; 16384]> },
+    SharedPiece{ index: u32, begin: u32, data: Arc<[u8; 16384]> },
+    Cancel{ index: u32, begin: u32, length: u32 },
 }
 
 impl Message {
+    pub fn handshake(torrent: &TorrentInfo) -> Message {
+        use ::PEER_ID;
+        Message::Handshake {
+            rsv: [0u8; 8],
+            hash: torrent.hash.clone(),
+            id: *PEER_ID
+        }
+    }
+
     pub fn is_piece(&self) -> bool {
         match *self {
-            Message::Piece(_, _, _) | Message::SharedPiece(_, _, _) => true,
+            Message::Piece{ index, begin, data: _ } | Message::SharedPiece { index, begin, data: _ } => true,
             _ => false,
         }
     }
@@ -36,21 +45,21 @@ impl Message {
 
     pub fn is_handshake(&self) -> bool {
         match *self {
-            Message::Handshake(_, _, _) => true,
+            Message::Handshake { rsv, hash, id } => true,
             _ => false,
         }
     }
 
     pub fn is_special(&self) -> bool {
         match *self {
-            Message::Handshake(_, _, _) | Message::Bitfield(_) => true,
+            Message::Handshake { rsv: _, hash: _, id: _ } | Message::Bitfield(_) => true,
             _ => false,
         }
     }
 
     pub fn len(&self) -> usize {
         match *self {
-            Message::Handshake(_ ,_, _) => 68,
+            Message::Handshake { rsv, hash, id } => 68,
             Message::KeepAlive => 4,
             Message::Choke => 5,
             Message::Unchoke => 5,
@@ -58,24 +67,24 @@ impl Message {
             Message::Uninterested => 5,
             Message::Have(_) => 9,
             Message::Bitfield(ref pf) => 5 + pf.bytes(),
-            Message::Request(_, _, _) => 17,
-            Message::Piece(_, _, ref data) => 13 + data.len(),
-            Message::SharedPiece(_, _, ref data) => 13 + data.len(),
-            Message::Cancel(_, _, _) => 17,
+            Message::Request{ index, begin, length } => 17,
+            Message::Piece{ index, begin, ref data } => 13 + data.len(),
+            Message::SharedPiece{ index, begin,  ref data } => 13 + data.len(),
+            Message::Cancel { index, begin, length } => 17,
         }
     }
 
     pub fn encode(&self, mut buf: &mut [u8]) -> io::Result<()> {
         match *self {
-            Message::Handshake(reserved, hash, pid) => {
-                if pid.len() != 20 {
+            Message::Handshake { rsv, hash, id } => {
+                if id.len() != 20 {
                     return Err(io::Error::new(io::ErrorKind::InvalidData, "Invalid Peer ID"));
                 }
                 buf.write_u8(19)?;
                 buf.write_all("BitTorrent protocol".as_ref())?;
-                buf.write_all(&reserved)?;
+                buf.write_all(&rsv)?;
                 buf.write_all(&hash)?;
-                buf.write_all(&pid)?;
+                buf.write_all(&id)?;
             }
             Message::KeepAlive => {
                 buf.write_u32::<BigEndian>(0)?;
@@ -108,26 +117,26 @@ impl Message {
                     buf.write_u8(pf.byte_at(i as u32))?;
                 }
             }
-            Message::Request(index, begin, length) => {
+            Message::Request{ index, begin, length } => {
                 buf.write_u32::<BigEndian>(13)?;
                 buf.write_u8(6)?;
                 buf.write_u32::<BigEndian>(index)?;
                 buf.write_u32::<BigEndian>(begin)?;
                 buf.write_u32::<BigEndian>(length)?;
             }
-            Message::Piece(index, begin, ref data) => {
+            Message::Piece{ index, begin, ref data } => {
                 buf.write_u32::<BigEndian>(9 + data.len() as u32)?;
                 buf.write_u8(7)?;
                 buf.write_u32::<BigEndian>(index)?;
                 buf.write_u32::<BigEndian>(begin)?;
             }
-            Message::SharedPiece(index, begin, ref data) => {
+            Message::SharedPiece{ index, begin, ref data } => {
                 buf.write_u32::<BigEndian>(9 + data.len() as u32)?;
                 buf.write_u8(7)?;
                 buf.write_u32::<BigEndian>(index)?;
                 buf.write_u32::<BigEndian>(begin)?;
             }
-            Message::Cancel(index, begin, length) => {
+            Message::Cancel{ index, begin, length } => {
                 buf.write_u32::<BigEndian>(13)?;
                 buf.write_u8(8)?;
                 buf.write_u32::<BigEndian>(index)?;
@@ -172,8 +181,8 @@ impl Message {
 //             if buf.drain_to(len as usize).as_slice() != b"BitTorrent protocol" {
 //                 return Err(io::Error::new(io::ErrorKind::InvalidData, "Handshake must be for the BitTorrent protocol"));
 //             }
-//             let mut reserved = [0u8; 8];
-//             reserved.iter_mut().zip(buf.drain_to(8).as_slice()).map(|(v, c)| {
+//             let mut rsv = [0u8; 8];
+//             rsv.iter_mut().zip(buf.drain_to(8).as_slice()).map(|(v, c)| {
 //                 *v = *c;
 //             }).last();
 //             let mut hash = [0u8; 20];
@@ -188,7 +197,7 @@ impl Message {
 //                 *v = *c;
 //             }).last();
 //             self.got_handshake = true;
-//             return Ok(Some(Message::Handshake(reserved, hash, pid)));
+//             return Ok(Some(Message::Handshake(rsv, hash, pid)));
 //         }
 //
 //
@@ -257,13 +266,13 @@ impl Message {
 //
 //     fn encode(&mut self, msg: Message, buf: &mut Vec<u8>) -> io::Result<()> {
 //         match msg {
-//             Message::Handshake(reserved, hash, pid) => {
+//             Message::Handshake(rsv, hash, pid) => {
 //                 if pid.len() != 20 {
 //                     return Err(io::Error::new(io::ErrorKind::InvalidData, "Invalid Peer ID"));
 //                 }
 //                 buf.write_u8(19)?;
 //                 buf.write_all("BitTorrent protocol".as_ref())?;
-//                 buf.write_all(&reserved)?;
+//                 buf.write_all(&rsv)?;
 //                 buf.write_all(&hash)?;
 //                 buf.write_all(&pid)?;
 //             }

@@ -60,7 +60,7 @@ impl Writer {
             // Should never go wrong
             msg.encode(&mut buf).unwrap();
             match msg {
-                Message::SharedPiece(_, _, data) => {
+                Message::SharedPiece{ begin, index, data } => {
                     WriteState::WritingPiece { prefix: buf, data: data, idx: 0 }
                 }
                 _ => {
@@ -205,7 +205,7 @@ fn test_write_bitfield() {
 fn test_write_request() {
     let mut w = Writer::new();
     let mut buf = [0u8; 17];
-    let m = Message::Request(1, 1, 1);
+    let m = Message::Request { index: 1, begin: 1, length: 1 };
     w.write_message(m, &mut &mut buf[..]);
     w.writable(&mut &mut buf[..]).unwrap();
     assert_eq!(buf, [0, 0, 0, 13, 6, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1])
@@ -218,7 +218,7 @@ fn test_write_piece() {
     let piece = Arc::new([1u8; 16384]);
     let mut sbuf = [0u8; 16384 + 13];
     let mut buf = Cursor::new(&mut sbuf[..]);
-    let m = Message::SharedPiece(1, 1, piece);
+    let m = Message::SharedPiece { index:1, begin: 1, data: piece };
     w.write_message(m, &mut buf);
     w.writable(&mut buf).unwrap();
     let buf = buf.into_inner();
@@ -232,7 +232,7 @@ fn test_write_piece() {
 fn test_write_cancel() {
     let mut w = Writer::new();
     let mut buf = [0u8; 17];
-    let m = Message::Cancel(1, 1, 1);
+    let m = Message::Cancel { index: 1, begin: 1, length: 1 };
     w.write_message(m, &mut &mut buf[..]);
     w.writable(&mut &mut buf[..]).unwrap();
     assert_eq!(buf, [0, 0, 0, 13, 8, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1])
@@ -242,7 +242,7 @@ fn test_write_cancel() {
 fn test_write_handshake() {
     use ::PEER_ID;
     let mut w = Writer::new();
-    let m = Message::Handshake([0; 8], [0; 20], *PEER_ID);
+    let m = Message::Handshake { rsv: [0; 8], hash: [0; 20], id: *PEER_ID };
     let mut buf = [0u8; 68];
     let mut abuf = [0u8; 68];
     m.encode(&mut abuf);

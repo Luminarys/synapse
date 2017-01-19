@@ -3,13 +3,12 @@ use std::mem;
 use message::Message;
 use piece_field::PieceField;
 use byteorder::{BigEndian, ReadBytesExt};
+use util::io_err;
 
 pub struct Reader {
     state: ReadState,
     blocks_read: usize,
     download_speed: f64,
-    can_receive_bf: bool,
-    received_handshake: bool,
 }
 
 enum ReadState {
@@ -30,15 +29,15 @@ impl ReadState {
                 idx += conn.read(&mut data[idx as usize..])? as u8;
                 if idx == data.len() as u8 {
                     if &data[1..20] != b"BitTorrent protocol" {
-                        return Err(io::Error::new(io::ErrorKind::InvalidData, "Invalid protocol used in handshake"));
+                        // return Err(io::Error::new(io::ErrorKind::InvalidData, "Invalid protocol used in handshake"));
                     }
-                    let mut reserved = [0; 8];
-                    reserved.clone_from_slice(&data[20..28]);
+                    let mut rsv = [0; 8];
+                    rsv.clone_from_slice(&data[20..28]);
                     let mut hash = [0; 20];
                     hash.clone_from_slice(&data[28..48]);
                     let mut pid = [0; 20];
                     pid.clone_from_slice(&data[48..68]);
-                    Ok(Ok(Message::Handshake(reserved, hash, pid)))
+                    Ok(Ok(Message::Handshake{ rsv: rsv, hash: hash, id: pid }))
                 } else {
                     Ok(Err(ReadState::ReadingHandshake { data: data, idx: idx }))
                 }
@@ -92,7 +91,7 @@ impl ReadState {
                     if idx - 13 == data.len() {
                         let idx = (&prefix[5..9]).read_u32::<BigEndian>()?;
                         let beg = (&prefix[9..13]).read_u32::<BigEndian>()?;
-                        Ok(Ok(Message::Piece(idx, beg, data)))
+                        Ok(Ok(Message::Piece{ index: idx, begin: beg, data: data }))
                     } else {
                         Ok(Err(ReadState::ReadingPiece { prefix: prefix, data: data, idx: idx }))
                     }
@@ -131,13 +130,25 @@ impl ReadState {
             },
             7 => {
                 if len != 16393 {
-                    return Err(io::Error::new(io::ErrorKind::InvalidData, "Only piece sizes of 16384 are accepted"));
+                    return io_err("Only piece sizes of 16384 are accepted");
                 }
                 ReadState::ReadingPiece { prefix: buf, data: Box::new([0u8; 16384]), idx: 5}.next_state(conn)
             }
-            _ => {
+            4 => {
+                if len != 5 {
+                    return io_err("Invalid Have message length");
+                }
                 ReadState::ReadingMsg { data: buf, idx: 5, len: len }.next_state(conn)
             },
+            6 | 8 => {
+                if len != 13 {
+                    return io_err("Invalid Request/Cancel message length");
+                }
+                ReadState::ReadingMsg { data: buf, idx: 5, len: len }.next_state(conn)
+            },
+            _ => {
+                io_err("Invalid ID provided!")
+            }
         }
     }
 
@@ -145,30 +156,30 @@ impl ReadState {
         match buf[4] {
             4 => {
                 if len != 5 {
-                    return Err(io::Error::new(io::ErrorKind::InvalidData, "Have message must be of len 5"));
+                    return io_err("Have message must be of len 5");
                 }
                 Ok(Message::Have((&buf[5..9]).read_u32::<BigEndian>()?))
             }
             6 => {
                 if len != 13 {
-                    return Err(io::Error::new(io::ErrorKind::InvalidData, "Request message must be of len 13"));
+                    return io_err("Request message must be of len 13");
                 }
                 let idx = (&buf[5..9]).read_u32::<BigEndian>()?;
                 let beg = (&buf[9..13]).read_u32::<BigEndian>()?;
                 let len = (&buf[13..17]).read_u32::<BigEndian>()?;
-                Ok(Message::Request(idx, beg, len))
+                Ok(Message::Request { index: idx, begin: beg, length: len })
             }
             8 => {
                 if len != 13 {
-                    return Err(io::Error::new(io::ErrorKind::InvalidData, "Cancel message must be of len 13"));
+                    return io_err("Cancel message must be of len 13");
                 }
                 let idx = (&buf[5..9]).read_u32::<BigEndian>()?;
                 let beg = (&buf[9..13]).read_u32::<BigEndian>()?;
                 let len = (&buf[13..17]).read_u32::<BigEndian>()?;
-                Ok(Message::Cancel(idx, beg, len))
+                Ok(Message::Cancel { index: idx, begin: beg, length: len })
             }
             _ => {
-                Err(io::Error::new(io::ErrorKind::InvalidData, "Invalid message ID"))
+                io_err("Invalid message ID")
             }
         }
     }
@@ -176,12 +187,22 @@ impl ReadState {
 
 impl Reader {
     pub fn new() -> Reader {
+        Reader::new_server()
+    }
+
+    pub fn new_client() -> Reader {
         Reader {
             state: ReadState::ReadingHandshake { data: [0u8; 68] , idx: 0 },
             blocks_read: 0,
             download_speed: 0.0,
-            can_receive_bf: true,
-            received_handshake: false,
+        }
+    }
+
+    pub fn new_server() -> Reader {
+        Reader {
+            state: ReadState::ReadingHandshake { data: [0u8; 68] , idx: 0 },
+            blocks_read: 0,
+            download_speed: 0.0,
         }
     }
 
@@ -190,20 +211,6 @@ impl Reader {
         let state = mem::replace(&mut self.state, ReadState::Idle);
         match state.next_state(conn)? {
             Ok(msg) => {
-                if !msg.is_handshake() && !self.received_handshake {
-                    return Err(io::Error::new(io::ErrorKind::InvalidData, "Must receive handshake first!"));
-                } else if msg.is_handshake() {
-                    self.received_handshake = true;
-                }
-                if msg.is_bitfield() {
-                    if !self.can_receive_bf {
-                        return Err(io::Error::new(io::ErrorKind::InvalidData, "Bitfield cannot be received twice!"));
-                    } else {
-                        self.can_receive_bf = false;
-                    }
-                } else if self.received_handshake {
-                    self.can_receive_bf = false;
-                }
                 self.state = ReadState::Idle;
                 Ok(Some(msg))
             }
@@ -219,8 +226,6 @@ impl Reader {
 fn test_read_keepalive() {
     let mut r = Reader::new();
     r.state = ReadState::Idle;
-    r.can_receive_bf = false;
-    r.received_handshake = true;
     let data = vec![0u8, 0, 0, 0];
     // Test one shot
     if let Message::KeepAlive = r.readable(&mut &data[..]).unwrap().unwrap() {
@@ -243,8 +248,6 @@ fn test_read_keepalive() {
 fn test_read_choke() {
     let mut r = Reader::new();
     r.state = ReadState::Idle;
-    r.can_receive_bf = false;
-    r.received_handshake = true;
     let data = vec![0u8, 0, 0, 1, 0];
     // Test one shot
     if let Message::Choke = r.readable(&mut &data[..]).unwrap().unwrap() {
@@ -272,8 +275,6 @@ fn test_read_choke() {
 fn test_read_unchoke() {
     let mut r = Reader::new();
     r.state = ReadState::Idle;
-    r.can_receive_bf = false;
-    r.received_handshake = true;
     let data = vec![0u8, 0, 0, 1, 1];
     // Test one shot
     if let Message::Unchoke = r.readable(&mut &data[..]).unwrap().unwrap() {
@@ -286,8 +287,6 @@ fn test_read_unchoke() {
 fn test_read_interested() {
     let mut r = Reader::new();
     r.state = ReadState::Idle;
-    r.can_receive_bf = false;
-    r.received_handshake = true;
     let data = vec![0u8, 0, 0, 1, 2];
     // Test one shot
     if let Message::Interested = r.readable(&mut &data[..]).unwrap().unwrap() {
@@ -300,8 +299,6 @@ fn test_read_interested() {
 fn test_read_uninterested() {
     let mut r = Reader::new();
     r.state = ReadState::Idle;
-    r.can_receive_bf = false;
-    r.received_handshake = true;
     let data = vec![0u8, 0, 0, 1, 3];
     // Test one shot
     if let Message::Uninterested = r.readable(&mut &data[..]).unwrap().unwrap() {
@@ -314,8 +311,6 @@ fn test_read_uninterested() {
 fn test_read_have() {
     let mut r = Reader::new();
     r.state = ReadState::Idle;
-    r.can_receive_bf = false;
-    r.received_handshake = true;
     let data = vec![0u8, 0, 0, 5, 4, 0, 0, 0, 1];
     // Test one shot
     match r.readable(&mut &data[..]).unwrap().unwrap() {
@@ -355,8 +350,6 @@ fn test_read_have() {
 fn test_read_bitfield() {
     let mut r = Reader::new();
     r.state = ReadState::Idle;
-    r.can_receive_bf = true;
-    r.received_handshake = true;
     let mut data = Cursor::new(vec![0u8, 0, 0, 5, 5, 0xff, 0xff, 0xff, 0xff]);
     // Test one shot
     match r.readable(&mut data).unwrap().unwrap() {
@@ -375,15 +368,13 @@ fn test_read_bitfield() {
 fn test_read_request() {
     let mut r = Reader::new();
     r.state = ReadState::Idle;
-    r.can_receive_bf = true;
-    r.received_handshake = true;
     let mut data = Cursor::new(vec![0u8, 0, 0, 13, 6, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1]);
     // Test one shot
     match r.readable(&mut data).unwrap().unwrap() {
-        Message::Request(i, b, l) => {
-            assert_eq!(i, 1);
-            assert_eq!(b, 1);
-            assert_eq!(l, 1);
+        Message::Request { index, begin, length } => {
+            assert_eq!(index, 1);
+            assert_eq!(begin, 1);
+            assert_eq!(length, 1);
         }
         _ => {
             unreachable!();
@@ -395,18 +386,16 @@ fn test_read_request() {
 fn test_read_piece() {
     let mut r = Reader::new();
     r.state = ReadState::Idle;
-    r.can_receive_bf = true;
-    r.received_handshake = true;
     let mut info = Cursor::new(vec![0u8, 0, 0x40, 0x09, 7, 0, 0, 0, 1, 0, 0, 0, 1]);
     let mut data = Cursor::new(vec![1u8; 16384]);
     // Test partial read
     assert!(r.readable(&mut info).unwrap().is_none());
     match r.readable(&mut data).unwrap().unwrap() {
-        Message::Piece(i, b, d) => {
-            assert_eq!(i, 1);
-            assert_eq!(b, 1);
+        Message::Piece { index, begin, data } => {
+            assert_eq!(index, 1);
+            assert_eq!(begin, 1);
             for i in 0..16384 {
-                assert_eq!(1, d[i]);
+                assert_eq!(1, data[i]);
             }
         }
         _ => {
@@ -419,15 +408,13 @@ fn test_read_piece() {
 fn test_read_cancel() {
     let mut r = Reader::new();
     r.state = ReadState::Idle;
-    r.can_receive_bf = true;
-    r.received_handshake = true;
     let mut data = Cursor::new(vec![0u8, 0, 0, 13, 8, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1]);
     // Test one shot
     match r.readable(&mut data).unwrap().unwrap() {
-        Message::Cancel(i, b, l) => {
-            assert_eq!(i, 1);
-            assert_eq!(b, 1);
-            assert_eq!(l, 1);
+        Message::Cancel { index, begin, length } => {
+            assert_eq!(index, 1);
+            assert_eq!(begin, 1);
+            assert_eq!(length, 1);
         }
         _ => {
             unreachable!();
@@ -439,15 +426,15 @@ fn test_read_cancel() {
 fn test_read_handshake() {
     use ::PEER_ID;
     let mut r = Reader::new();
-    let m = Message::Handshake([0; 8], [0; 20], *PEER_ID);
+    let m = Message::Handshake { rsv: [0; 8], hash: [0; 20], id: *PEER_ID };
     let mut data = vec![0; 68];
     m.encode(&mut data[..]);
     // Test one shot
     match r.readable(&mut Cursor::new(data)).unwrap().unwrap() {
-        Message::Handshake(r, hash, pid) => {
-            assert_eq!(r, [0; 8]);
+        Message::Handshake{ rsv, hash, id } => {
+            assert_eq!(rsv, [0; 8]);
             assert_eq!(hash, [0; 20]);
-            assert_eq!(pid, *PEER_ID);
+            assert_eq!(id, *PEER_ID);
         }
         _ => {
             unreachable!();

@@ -7,44 +7,112 @@ use self::writer::Writer;
 use torrent::{Torrent, TorrentStatus};
 use piece_field::PieceField;
 use message::Message;
+use util::io_err;
 use std::io;
+
+pub enum Event {
+    ReceivedPiece { piece: u32, offset: u32 },
+    CompletedTorrent,
+    AllowReciprocation,
+    RevokeReciprocation,
+}
 
 pub struct Peer {
     conn: TcpStream,
-    data: PeerData,
+    pub data: PeerData,
+    pub id: Option<[u8; 20]>,
+    received_bitfield: bool,
+    state: State,
     reader: Reader,
     writer: Writer,
 }
 
 impl Peer {
-    pub fn new(conn: TcpStream, tdata: &TorrentStatus) -> Peer {
+    /// Connection incoming from another client to us
+    pub fn new_client(mut conn: TcpStream, id: [u8; 20], torrent: &Torrent) -> Peer {
+        let mut w = Writer::new();
+        w.write_message(Message::handshake(torrent.info()), &mut conn);
         Peer {
-            data: PeerData::new(tdata.pieces.len()),
+            data: PeerData::new(torrent.status().pieces.len()),
             conn: conn,
-            reader: Reader::new(),
-            writer: Writer::new(),
+            reader: Reader::new_client(),
+            writer: w,
+            id: Some(id),
+            received_bitfield: false,
+            // We've already received the conn, must be valid
+            state: State::Valid,
         }
     }
 
-    pub fn readable(&mut self) -> Result<(), ()> {
-        // while let Some(msg) = self.reader.readable().map(|_| ())? {
-        //     self.handle_msg(msg);
-        // }
+    /// Connection outgoing from us to another client
+    pub fn new_server(mut conn: TcpStream, torrent: &Torrent) -> Peer {
+        let mut w = Writer::new();
+        w.write_message(Message::handshake(torrent.info()), &mut conn);
+        Peer {
+            data: PeerData::new(torrent.status().pieces.len()),
+            conn: conn,
+            reader: Reader::new_server(),
+            writer: w,
+            id: None,
+            received_bitfield: false,
+            state: State::Initial,
+        }
+    }
+
+    pub fn readable(&mut self, torrent: &mut Torrent) -> io::Result<()> {
+        while let Some(msg) = self.reader.readable(&mut self.conn)? {
+            self.handle_msg(msg, torrent)?;
+        }
         Ok(())
     }
 
-    pub fn writable(&mut self) -> io::Result<()> {
+    pub fn writable(&mut self, torrent: &mut Torrent) -> io::Result<()> {
         self.writer.writable(&mut self.conn)?;
         Ok(())
     }
 
-    pub fn alive(&mut self) -> bool {
+    pub fn alive(&mut self, torrent: &mut Torrent) -> bool {
         unimplemented!();
     }
 
-    fn handle_msg(&mut self, msg: Message) {
-        unimplemented!();
+    pub fn handle_ev(&mut self, torrent: &mut Torrent, event: Event) {
     }
+
+    fn handle_msg(&mut self, msg: Message, torrent: &mut Torrent) -> io::Result<()> {
+        match (self.state, msg) {
+            (State::Initial, Message::Handshake { rsv, hash, id }) => {
+                self.state = State::Valid;
+                self.id = Some(id);
+            }
+            (State::Initial, _) => { return io_err("Must receive handshake first!"); }
+            (State::Valid, Message::Bitfield(pf)) => {
+                if self.received_bitfield {
+                    return io_err("Can only receive bitfield once!");
+                }
+                self.received_bitfield = true;
+                self.data.pieces = pf;
+                torrent.pick(&self);
+            }
+            _ => { }
+        }
+        Ok(())
+    }
+}
+
+#[derive(Copy, Clone, Debug)]
+enum State {
+    // Starting state for an incomplete torrent, waiting for events
+    Initial,
+    // The handshake went through, the peer is valid
+    Valid,
+    // The peer has stuff we want, we're waiting for them to unchoke us
+    AwaitingUnchoke,
+    // We've been unchoked and can now download
+    Unchoked,
+    // We sent a request and are waiting for a piece back
+    AwaitingPiece,
+    // We have everything
+    Seeding,
 }
 
 #[derive(Debug)]

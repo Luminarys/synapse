@@ -1,5 +1,8 @@
 use piece_field::PieceField;
 use slab::Slab;
+use peer::Peer;
+
+mod picker;
 
 pub struct TorrentInfo {
     pub hash: [u8; 20],
@@ -26,6 +29,7 @@ pub struct Torrent {
     status: TorrentStatus,
     info: TorrentInfo,
     peers: Slab<usize>,
+    picker: picker::Picker,
 }
 
 impl Torrent {
@@ -34,6 +38,7 @@ impl Torrent {
             status: TorrentStatus::new((info.pieces.pieces.len()/20) as usize),
             peers: Slab::with_capacity(max_peers),
             info: info,
+            picker: picker::Picker::new(),
         }
     }
 
@@ -43,6 +48,10 @@ impl Torrent {
 
     pub fn info<'a>(&'a self) -> &'a TorrentInfo {
         &self.info
+    }
+
+    pub fn picker<'a>(&'a mut self) -> &'a mut Picker {
+        &mut self.picker
     }
 
     pub fn insert_peer(&mut self, peer_idx: usize) -> Result<usize, usize> {

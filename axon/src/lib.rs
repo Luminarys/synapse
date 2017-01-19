@@ -17,6 +17,7 @@ mod disk;
 mod pool;
 mod config;
 mod handle;
+mod util;
 
 pub use handle::Handle;
 
