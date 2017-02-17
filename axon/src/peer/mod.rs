@@ -63,7 +63,7 @@ impl Peer {
         let mut w = Writer::new();
         w.write_message(Message::handshake(torrent.info()), &mut conn);
         Peer {
-            data: PeerData::new(torrent.status().pieces.len()),
+            data: PeerData::new(torrent),
             conn: conn,
             reader: reader,
             writer: w,
@@ -79,7 +79,7 @@ impl Peer {
         let mut w = Writer::new();
         w.write_message(Message::handshake(torrent.info()), &mut conn);
         Peer {
-            data: PeerData::new(torrent.status().pieces.len()),
+            data: PeerData::new(torrent),
             conn: conn,
             reader: Reader::new(),
             writer: w,
@@ -87,6 +87,10 @@ impl Peer {
             received_bitfield: false,
             state: State::Initial,
         }
+    }
+
+    pub fn socket(&self) -> &TcpStream {
+        &self.conn
     }
 
     pub fn readable(&mut self, torrent: &mut Torrent) -> io::Result<()> {
@@ -170,16 +174,18 @@ pub struct PeerData {
     pub received: u32,
     pub pieces: PieceField,
     pub assigned_piece: Option<u32>,
+    pub torrent: [u8; 20],
 }
 
 impl PeerData {
-    fn new(pieces: u32) -> PeerData {
+    fn new(torrent: &Torrent) -> PeerData {
         PeerData {
             interest: Interest::Uninterested,
             choking: Choke::Choked,
             received: 0,
-            pieces: PieceField::new(pieces),
+            pieces: PieceField::new(torrent.status().pieces.len()),
             assigned_piece: None,
+            torrent: torrent.info().hash,
         }
     }
 }

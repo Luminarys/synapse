@@ -20,7 +20,7 @@ pub enum WorkerResp {
 pub struct Worker {
     manager_tx: channel::Sender<WorkerResp>,
     manager_rx: channel::Receiver<WorkerReq>,
-    peers: Slab<Peer>,
+    peers: Slab<Peer, Token>,
     torrents: HashMap<[u8; 20], Torrent>,
 }
 
@@ -37,7 +37,7 @@ impl Worker {
 
     pub fn run(&mut self) {
         const MANAGER_TOK: Token = Token(1_000_000);
-        let poll = Poll::new().unwrap();
+        let mut poll = Poll::new().unwrap();
         poll.register(&self.manager_rx, MANAGER_TOK, Ready::readable(), PollOpt::level());
 
         let mut events = Events::with_capacity(1024);
@@ -46,28 +46,48 @@ impl Worker {
             for event in events.iter() {
                 match event.token() {
                     MANAGER_TOK => {
-                        if self.handle_manager_ev() {
+                        if self.handle_manager_ev(&mut poll) {
                             self.cleanup();
                             break;
                         }
                     }
-                    _ => {
+                    tok => {
+                        if event.kind().is_hup() || event.kind().is_error() {
+                            self.peers.remove(tok);
+                        } else {
+                            let peer = self.peers.get_mut(tok).unwrap();
+                            let torrent = self.torrents.get_mut(&peer.data.torrent).unwrap();
+                            if event.kind().is_readable() {
+                                peer.readable(torrent);
+                            }
+                            if event.kind().is_writable() {
+                                peer.writable(torrent);
+                            }
+                            poll.reregister(peer.socket(), tok, Ready::all(), PollOpt::edge()).unwrap();
+                        }
                     }
                 }
             }
         }
     }
 
-    fn handle_manager_ev(&mut self) -> bool {
+    fn handle_manager_ev(&mut self, poll: &mut Poll) -> bool {
         match self.manager_rx.try_recv() {
             Ok(WorkerReq::Shutdown) => {
                 return true;
             }
-            Ok(WorkerReq::NewConn { id, hash, peer }) => {
+            Ok(WorkerReq::NewConn { id, hash, mut peer }) => {
                 if !self.peers.has_available() {
                     self.kill_peer_conn();
                 }
                 let entry = self.peers.vacant_entry().unwrap();
+                let tok = entry.index();
+                // We unwrap the entry in torrents because we know that if
+                // the manager thread let this msg go through it must be for
+                // a valid torrent.
+                let peer = Peer::new_client(peer, id, self.torrents.get(&hash).unwrap());
+                poll.register(peer.socket(), tok, Ready::all(), PollOpt::edge()).unwrap();
+                entry.insert(peer);
             }
             _ => { }
         };

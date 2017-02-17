@@ -111,8 +111,11 @@ impl Manager {
                             match msg {
                                 Message::Handshake { rsv, hash, id } => {
                                     let peer = self.incoming_conns.remove(t).unwrap();
-                                    let w = self.get_available_worker(&hash);
-                                    w.tx.send(WorkerReq::NewConn{ id: id, hash: hash, peer: peer });
+                                    // We must already have registered this torrent, otherwise drop
+                                    // conn.
+                                    if let Some(w) = self.get_available_worker(&hash) {
+                                        w.tx.send(WorkerReq::NewConn{ id: id, hash: hash, peer: peer });
+                                    }
                                 }
                                 _ => {
                                     unimplemented!();
@@ -128,14 +131,8 @@ impl Manager {
         }
     }
 
-    fn get_available_worker(&self, hash: &[u8; 20]) -> &WorkerData {
-        self.workers.iter()
-            .find(|w| w.torrents.contains(hash))
-            .unwrap_or_else(|| {
-                self.workers.iter().min_by_key(|w| {
-                    w.torrents.len()
-                }).unwrap()
-            })
+    fn get_available_worker(&self, hash: &[u8; 20]) -> Option<&WorkerData> {
+        self.workers.iter().find(|w| w.torrents.contains(hash))
     }
 
     fn process_handle_ev(&mut self) -> bool {
