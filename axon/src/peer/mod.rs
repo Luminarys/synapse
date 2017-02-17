@@ -17,6 +17,35 @@ pub enum Event {
     RevokeReciprocation,
 }
 
+pub struct IncomingPeer {
+    conn: TcpStream,
+    reader: Reader,
+}
+
+impl IncomingPeer {
+    pub fn new(conn: TcpStream) -> IncomingPeer {
+        IncomingPeer {
+            conn: conn,
+            reader: Reader::new(),
+        }
+    }
+
+    pub fn readable(&mut self) -> io::Result<Option<Message>> {
+        if let Some(msg) = self.reader.readable(&mut self.conn)? {
+            return Ok(Some(msg));
+        }
+        Ok(None)
+    }
+
+    pub fn socket(&self) -> &TcpStream {
+        &self.conn
+    }
+
+    fn consume(self) -> (TcpStream, Reader) {
+        (self.conn, self.reader)
+    }
+}
+
 pub struct Peer {
     conn: TcpStream,
     pub data: PeerData,
@@ -29,13 +58,14 @@ pub struct Peer {
 
 impl Peer {
     /// Connection incoming from another client to us
-    pub fn new_client(mut conn: TcpStream, id: [u8; 20], torrent: &Torrent) -> Peer {
+    pub fn new_client(mut p: IncomingPeer, id: [u8; 20], torrent: &Torrent) -> Peer {
+        let (mut conn, reader) = p.consume();
         let mut w = Writer::new();
         w.write_message(Message::handshake(torrent.info()), &mut conn);
         Peer {
             data: PeerData::new(torrent.status().pieces.len()),
             conn: conn,
-            reader: Reader::new_client(),
+            reader: reader,
             writer: w,
             id: Some(id),
             received_bitfield: false,
@@ -51,7 +81,7 @@ impl Peer {
         Peer {
             data: PeerData::new(torrent.status().pieces.len()),
             conn: conn,
-            reader: Reader::new_server(),
+            reader: Reader::new(),
             writer: w,
             id: None,
             received_bitfield: false,
@@ -91,11 +121,15 @@ impl Peer {
                 }
                 self.received_bitfield = true;
                 self.data.pieces = pf;
-                torrent.pick(&self);
+                torrent.picker().pick(&self.data.pieces);
             }
             _ => { }
         }
         Ok(())
+    }
+
+    pub fn has_piece(&self, idx: u32) -> bool {
+        return self.data.pieces.has_piece(idx);
     }
 }
 

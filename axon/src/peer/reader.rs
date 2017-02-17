@@ -187,18 +187,6 @@ impl ReadState {
 
 impl Reader {
     pub fn new() -> Reader {
-        Reader::new_server()
-    }
-
-    pub fn new_client() -> Reader {
-        Reader {
-            state: ReadState::ReadingHandshake { data: [0u8; 68] , idx: 0 },
-            blocks_read: 0,
-            download_speed: 0.0,
-        }
-    }
-
-    pub fn new_server() -> Reader {
         Reader {
             state: ReadState::ReadingHandshake { data: [0u8; 68] , idx: 0 },
             blocks_read: 0,

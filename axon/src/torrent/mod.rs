@@ -3,6 +3,7 @@ use slab::Slab;
 use peer::Peer;
 
 mod picker;
+use self::picker::Picker;
 
 pub struct TorrentInfo {
     pub hash: [u8; 20],
@@ -35,10 +36,10 @@ pub struct Torrent {
 impl Torrent {
     pub fn new(info: TorrentInfo, max_peers: usize) -> Torrent {
         Torrent {
+            picker: picker::Picker::new(),
             status: TorrentStatus::new((info.pieces.pieces.len()/20) as usize),
             peers: Slab::with_capacity(max_peers),
             info: info,
-            picker: picker::Picker::new(),
         }
     }
 
@@ -60,6 +61,10 @@ impl Torrent {
 
     pub fn remove_peer(&mut self, peer_idx: usize) {
         self.peers.remove(peer_idx);
+    }
+
+    pub fn piece_count(&self) -> usize {
+        (self.info.pieces.pieces.len()/20) as usize
     }
 }
 

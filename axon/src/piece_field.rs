@@ -74,6 +74,10 @@ impl PieceField {
         }
         return false
     }
+
+    pub fn iter<'a>(&'a self) -> PieceFieldIter<'a> {
+        PieceFieldIter::new(&self)
+    }
 }
 
 use std::fmt;
@@ -90,6 +94,36 @@ impl fmt::Debug for PieceField {
         }
         write!(f, " }}")?;
         Ok(())
+    }
+}
+
+pub struct PieceFieldIter<'a> {
+    pf: &'a PieceField,
+    idx: u32,
+}
+
+impl<'a> PieceFieldIter<'a> {
+    fn new(pf: &'a PieceField) -> PieceFieldIter<'a> {
+        PieceFieldIter {
+            pf: pf,
+            idx: 0,
+        }
+    }
+}
+
+impl<'a> Iterator for PieceFieldIter<'a> {
+    type Item = u32;
+
+    fn next(&mut self) -> Option<u32> {
+        while self.idx < self.pf.len() {
+            self.idx += 1;
+            if self.pf.has_piece(self.idx - 1) {
+                return Some(self.idx - 1);
+            } else {
+                continue;
+            }
+        }
+        None
     }
 }
 
@@ -131,4 +165,15 @@ fn test_usable() {
     assert!(pf1.usable(&pf2) == false);
     pf2.set_piece(5);
     assert!(pf1.usable(&pf2) == true);
+}
+
+#[test]
+fn test_iter() {
+    let mut pf = PieceField::new(10);
+    for i in 4..7 {
+        pf.set_piece(i as u32);
+    }
+    pf.iter().map(|r| {
+        assert!(r > 3 && r < 7);
+    }).collect::<Vec<_>>();
 }

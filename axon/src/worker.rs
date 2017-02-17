@@ -3,13 +3,13 @@ use std::collections::HashMap;
 use mio::{channel, Events, Poll, PollOpt, Ready, Token};
 use mio::tcp::TcpStream;
 use piece_field::PieceField;
-use peer::Peer;
+use peer::{IncomingPeer, Peer};
 use torrent::{Torrent, TorrentInfo};
 use slab::Slab;
 use manager;
 
 pub enum WorkerReq {
-    NewConn([u8; 20], TcpStream),
+    NewConn{ id: [u8; 20], hash: [u8; 20], peer: IncomingPeer },
     Shutdown,
     NewTorrent(TorrentInfo)
 }
@@ -63,7 +63,7 @@ impl Worker {
             Ok(WorkerReq::Shutdown) => {
                 return true;
             }
-            Ok(WorkerReq::NewConn(hash, conn)) => {
+            Ok(WorkerReq::NewConn { id, hash, peer }) => {
                 if !self.peers.has_available() {
                     self.kill_peer_conn();
                 }
