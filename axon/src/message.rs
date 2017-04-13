@@ -15,8 +15,8 @@ pub enum Message {
     Bitfield(PieceField),
     Request { index: u32, begin: u32, length: u32 },
     Piece { index: u32, begin: u32, data: Box<[u8; 16384]> },
-    SharedPiece{ index: u32, begin: u32, data: Arc<[u8; 16384]> },
-    Cancel{ index: u32, begin: u32, length: u32 },
+    SharedPiece { index: u32, begin: u32, data: Arc<[u8; 16384]> },
+    Cancel { index: u32, begin: u32, length: u32 },
 }
 
 impl Message {
@@ -26,6 +26,14 @@ impl Message {
             rsv: [0u8; 8],
             hash: torrent.hash.clone(),
             id: *PEER_ID
+        }
+    }
+
+    pub fn request(idx: u32, offset: u32) -> Message {
+        Message::Request {
+            index: idx,
+            begin: offset,
+            length: 16384,
         }
     }
 

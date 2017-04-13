@@ -2,20 +2,18 @@
 extern crate axon;
 extern crate num_cpus;
 
-use std::{process, thread, time};
-use axon::Handle;
+mod bencode;
+
+use std::env;
+use std::fs::File;
+use std::io;
+use std::io::Read;
 
 fn main() {
-    let cores = num_cpus::get();
-    let mut m = Handle::new(cores);
-    loop {
-        for ev in m.get_events() {
-            // do something
-        }
-        thread::sleep(time::Duration::from_millis(1000));
-    }
-    // match m.run() {
-    //     Ok(_) => process::exit(0),
-    //     Err(_) => process::exit(1),
-    // };
+    let torrent = env::args().nth(1).unwrap();
+}
+
+fn download_torrent(path: &str) -> Result<(), io::Error> {
+    let data = File::open(path)?.bytes();
+    Ok(())
 }

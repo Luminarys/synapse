@@ -10,7 +10,7 @@ unsafe impl Send for Pool { }
 impl Pool {
     pub fn new() -> Pool {
         Pool {
-            items: Mutex::new(vec![vec![0u8; 16384].into_boxed_slice(); 200]),
+            items: Mutex::new(vec![vec![0u8; 16384].into_boxed_slice(); 100]),
         }
     }
 

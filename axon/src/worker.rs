@@ -6,7 +6,12 @@ use piece_field::PieceField;
 use peer::{IncomingPeer, Peer};
 use torrent::{Torrent, TorrentInfo};
 use slab::Slab;
+use pool;
 use manager;
+
+thread_local! {
+    static MEM_POOL: pool::Pool = pool::Pool::new();
+}
 
 pub enum WorkerReq {
     NewConn{ id: [u8; 20], hash: [u8; 20], peer: IncomingPeer },

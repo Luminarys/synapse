@@ -93,6 +93,10 @@ impl Peer {
         &self.conn
     }
 
+    pub fn send_message(&mut self, msg: Message) {
+        self.writer.write_message(msg, &mut self.conn);
+    }
+
     pub fn readable(&mut self, torrent: &mut Torrent) -> io::Result<()> {
         while let Some(msg) = self.reader.readable(&mut self.conn)? {
             self.handle_msg(msg, torrent)?;
@@ -125,8 +129,31 @@ impl Peer {
                 }
                 self.received_bitfield = true;
                 self.data.pieces = pf;
-                torrent.picker().pick(&self.data.pieces);
+                if torrent.status().pieces.usable(&self.data.pieces) {
+                    self.state = State::AwaitingUnchoke;
+                    self.send_message(Message::Interested);
+                } else {
+                    self.send_message(Message::Uninterested);
+                }
             }
+            (State::AwaitingUnchoke, Message::Unchoke) => {
+                self.try_request_piece(torrent);
+            }
+            (State::AwaitingPiece, Message::Piece { index, begin, data } ) => {
+                // Piece { index: u32, begin: u32, data: Box<[u8; 16384]> },
+            }
+            (State::Valid, Message::Have(piece)) => {
+                self.data.pieces.set_piece(piece);
+                if torrent.status().pieces.usable(&self.data.pieces) {
+                    self.state = State::AwaitingUnchoke;
+                    self.send_message(Message::Interested);
+                }
+            }
+            (State::Unchoked, Message::Have(piece)) => {
+                self.data.pieces.set_piece(piece);
+                self.try_request_piece(torrent);
+            }
+            (_, Message::Have(piece)) => { self.data.pieces.set_piece(piece); }
             _ => { }
         }
         Ok(())
@@ -134,6 +161,15 @@ impl Peer {
 
     pub fn has_piece(&self, idx: u32) -> bool {
         return self.data.pieces.has_piece(idx);
+    }
+
+    fn try_request_piece(&mut self, torrent: &mut Torrent) {
+       if let Some((idx, begin)) = torrent.picker().pick(&self.data.pieces) {
+           self.send_message(Message::request(idx, begin));
+           self.state = State::AwaitingPiece;
+       } else {
+           self.state = State::Unchoked;
+       }
     }
 }
 
@@ -145,11 +181,11 @@ enum State {
     Valid,
     // The peer has stuff we want, we're waiting for them to unchoke us
     AwaitingUnchoke,
-    // We've been unchoked and can now download
+    // We've been unchoked but can't download anything right now
     Unchoked,
     // We sent a request and are waiting for a piece back
     AwaitingPiece,
-    // We have everything
+    // We have everything and are just seeding to them.
     Seeding,
 }
 
