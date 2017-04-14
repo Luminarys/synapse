@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
-use std::io::{Bytes, Cursor, Write, Read, self};
+use std::io::{Cursor, self};
+use std::str;
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum BEncode {
@@ -9,10 +10,83 @@ pub enum BEncode {
     Dict(BTreeMap<String, BEncode>),
 }
 
+impl BEncode {
+    pub fn to_int(self) -> Option<i64> {
+        match self {
+            BEncode::Int(v) => Some(v),
+            _ => None,
+        }
+    }
+
+    pub fn to_bytes(self) -> Option<Vec<u8>> {
+        match self {
+            BEncode::String(v) => Some(v),
+            _ => None,
+        }
+    }
+
+    pub fn to_string(self) -> Option<String> {
+        match self {
+            BEncode::String(v) => String::from_utf8(v).ok(),
+            _ => None,
+        }
+    }
+
+    pub fn to_list(self) -> Option<Vec<BEncode>> {
+        match self {
+            BEncode::List(v) => Some(v),
+            _ => None,
+        }
+    }
+
+    pub fn to_dict(self) -> Option<BTreeMap<String, BEncode>> {
+        match self {
+            BEncode::Dict(v) => Some(v),
+            _ => None,
+        }
+    }
+
+    pub fn as_int(&self) -> Option<&i64> {
+        match *self {
+            BEncode::Int(ref v) => Some(v),
+            _ => None,
+        }
+    }
+
+    pub fn as_bytes(&self) -> Option<&Vec<u8>> {
+        match *self {
+            BEncode::String(ref v) => Some(v),
+            _ => None,
+        }
+    }
+
+    pub fn as_str(&self) -> Option<&str> {
+        match *self {
+            BEncode::String(ref v) => str::from_utf8(v).ok(),
+            _ => None,
+        }
+    }
+
+    pub fn as_list(&self) -> Option<&Vec<BEncode>> {
+        match *self {
+            BEncode::List(ref v) => Some(v),
+            _ => None,
+        }
+    }
+
+    pub fn as_dict(&self) -> Option<&BTreeMap<String, BEncode>> {
+        match *self {
+            BEncode::Dict(ref v) => Some(v),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum BError {
     UTF8Decode,
     InvalidDict,
+    InvalidChar,
     ParseInt,
     EOF,
     IO,
@@ -45,11 +119,11 @@ pub fn encode<W: io::Write> (&ref b: &BEncode, w: &mut W) -> Result<(), io::Erro
     Ok(())
 }
 
-fn decode_buf(bytes: &[u8]) -> Result<BEncode, BError> {
+pub fn decode_buf(bytes: &[u8]) -> Result<BEncode, BError> {
     return decode(&mut Cursor::new(bytes));
 }
 
-fn decode<R: io::Read>(bytes: &mut R) -> Result<BEncode, BError> {
+pub fn decode<R: io::Read>(bytes: &mut R) -> Result<BEncode, BError> {
     match next_byte(bytes) {
         Ok(b'i') => {
             let s = read_until(bytes, b'e')?;
@@ -80,7 +154,7 @@ fn decode<R: io::Read>(bytes: &mut R) -> Result<BEncode, BError> {
             Ok(BEncode::Dict(d))
         }
         Err(BError::EOF) | Ok(b'e') => Err(BError::EOF),
-        Ok(d) => {
+        Ok(d @ b'0'...b'9') => {
             let mut slen = read_until(bytes, b':')?;
             slen.insert(0, d);
             let len = decode_int(slen)?;
@@ -88,7 +162,8 @@ fn decode<R: io::Read>(bytes: &mut R) -> Result<BEncode, BError> {
             bytes.read_exact(&mut v).map_err(|_| BError::EOF)?;
             Ok(BEncode::String(v))
         }
-        Err(e) => Err(e)
+        Err(e) => Err(e),
+        _ => Err(BError::InvalidChar),
     }
 }
 
