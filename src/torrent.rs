@@ -46,6 +46,7 @@ fn parse_bencode_files(mut data: BTreeMap<String, BEncode>) -> Result<Vec<File>,
             for f in fs {
                 let mut file = File::from_bencode(f)?;
                 file.path = path.join(file.path);
+                files.push(file);
             }
             return Ok(files);
         }
@@ -55,10 +56,10 @@ fn parse_bencode_files(mut data: BTreeMap<String, BEncode>) -> Result<Vec<File>,
 
 #[derive(Clone, Debug)]
 pub struct Torrent {
-    announce: String,
-    piece_len: usize,
-    hashes: Vec<Vec<u8>>,
-    files: Vec<File>,
+    pub announce: String,
+    pub piece_len: usize,
+    pub hashes: Vec<Vec<u8>>,
+    pub files: Vec<File>,
 }
 
 impl Torrent {
@@ -76,7 +77,6 @@ impl Torrent {
                 let hashes = i.remove("pieces")
                     .and_then(|p| p.to_bytes())
                     .map(|mut p| {
-                        println!("Hashes len: {:?}", p.len());
                         let mut v = Vec::new();
                         while p.len() != 0 {
                             let remaining = p.split_off(20);
