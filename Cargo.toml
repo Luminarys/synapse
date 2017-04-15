@@ -7,6 +7,10 @@ authors = ["Luminarys <postmaster@gensok.io>"]
 axon = { path = "axon" }
 mio = "0.6"
 slab = "0.3"
+byteorder = "0.5"
+lazy_static = "*"
+rand = "0.3"
+sha1 = "0.2.0"
 
 [profile.bench]
 opt-level = 3

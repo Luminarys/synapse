@@ -1,16 +1,40 @@
 extern crate axon;
 extern crate mio;
 extern crate slab;
+extern crate byteorder;
+extern crate rand;
+extern crate sha1;
+#[macro_use]
+extern crate lazy_static;
 
 mod bencode;
 mod torrent;
 mod ev_loop;
+mod util;
 
 use std::env;
 use std::fs::File;
 use std::io;
 use torrent::Torrent;
 use ev_loop::EvLoop;
+
+lazy_static! {
+    pub static ref PEER_ID: [u8; 20] = {
+        use rand::{self, Rng};
+
+        let mut pid = [0u8; 20];
+        let prefix = b"-AN0001-";
+        for i in 0..prefix.len() {
+            pid[i] = prefix[i];
+        }
+
+        let mut rng = rand::thread_rng();
+        for i in 8..19 {
+            pid[i] = rng.gen::<u8>();
+        }
+        pid
+    };
+}
 
 fn main() {
     let torrent = env::args().nth(1).unwrap();

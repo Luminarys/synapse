@@ -1,5 +1,6 @@
 mod reader;
 mod writer;
+mod message;
 
 use mio::tcp::TcpStream;
 use self::reader::Reader;

@@ -80,6 +80,33 @@ impl BEncode {
             _ => None,
         }
     }
+
+    pub fn encode<W: io::Write> (&self, w: &mut W) -> Result<(), io::Error> {
+        // TODO: Make this either procedural or add recursion limit.
+        match *self {
+            BEncode::Int(i) => write!(w, "i{}e", i)?,
+            BEncode::String(ref s) => {
+                write!(w, "{}:", s.len())?;
+                w.write(&s)?;
+            },
+            BEncode::List(ref v) => {
+                write!(w, "l")?;
+                for b in v.iter() {
+                    b.encode(w)?
+                }
+                write!(w, "e")?;
+            }
+            BEncode::Dict(ref d) => {
+                write!(w, "d")?;
+                for (k, v) in d.iter() {
+                    write!(w, "{}:{}", k.len(), k)?;
+                    v.encode(w)?;
+                }
+                write!(w, "e")?;
+            }
+        };
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -90,33 +117,6 @@ pub enum BError {
     ParseInt,
     EOF,
     IO,
-}
-
-pub fn encode<W: io::Write> (&ref b: &BEncode, w: &mut W) -> Result<(), io::Error> {
-    // TODO: Make this either procedural or add recursion limit.
-    match *b {
-        BEncode::Int(i) => write!(w, "i{}e", i)?,
-        BEncode::String(ref s) => {
-            write!(w, "{}:", s.len())?;
-            w.write(&s)?;
-        },
-        BEncode::List(ref v) => {
-            write!(w, "l")?;
-            for b in v.iter() {
-                encode(b, w)?
-            }
-            write!(w, "e")?;
-        }
-        BEncode::Dict(ref d) => {
-            write!(w, "d")?;
-            for (k, v) in d.iter() {
-                write!(w, "{}:{}", k.len(), k)?;
-                encode(v, w)?;
-            }
-            write!(w, "e")?;
-        }
-    };
-    Ok(())
 }
 
 pub fn decode_buf(bytes: &[u8]) -> Result<BEncode, BError> {
@@ -195,27 +195,27 @@ fn decode_int(v: Vec<u8>) -> Result<i64, BError> {
 }
 
 #[test]
-fn test_encode() {
+fn test_encode_decode() {
     let i = BEncode::Int(-10);
     let mut v = Vec::new();
-    encode(&i, &mut v).unwrap();
+    i.encode(&mut v).unwrap();
     assert_eq!(v, b"i-10e");
 
     let s = BEncode::String(Vec::from(&b"asdf"[..]));
     v = Vec::new();
-    encode(&s, &mut v).unwrap();
+    s.encode(&mut v).unwrap();
     assert_eq!(v, b"4:asdf");
 
     let l = BEncode::List(vec![i.clone(), s.clone()]);
     v = Vec::new();
-    encode(&l, &mut v).unwrap();
+    l.encode(&mut v).unwrap();
     assert_eq!(v, b"li-10e4:asdfe");
 
     let mut map = BTreeMap::new();
     map.insert(String::from("asdf"), i.clone());
     let d = BEncode::Dict(map);
     v = Vec::new();
-    encode(&d, &mut v).unwrap();
+    d.encode(&mut v).unwrap();
     assert_eq!(v, b"d4:asdfi-10ee");
 
     encode_decode(&i);
@@ -226,6 +226,6 @@ fn test_encode() {
 
 fn encode_decode(b: &BEncode) {
     let mut v = Vec::new();
-    encode(b, &mut v).unwrap();
+    b.encode(&mut v).unwrap();
     assert_eq!(b, &decode_buf(&v).unwrap());
 }

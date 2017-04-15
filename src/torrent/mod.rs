@@ -1,45 +1,28 @@
+mod info;
+mod peer;
+mod announcer;
+mod piece_field;
+
 use bencode::BEncode;
-use std::path::PathBuf;
-use std::collections::BTreeMap;
-use std::{io, fs};
+use self::peer::Peer;
+use self::announcer::Announcer;
+use slab::Slab;
 
-mod parse;
-
-#[derive(Clone, Debug)]
-pub struct File {
-    path: PathBuf,
-    length: usize,
-}
-
-impl File {
-    fn from_bencode(data: BEncode) -> Result<File, &'static str> {
-        parse::file_from_bencode(data)
-    }
-
-    fn create(&self) -> Result<(), io::Error> {
-        let f = fs::File::open(&self.path)?;
-        f.set_len(self.length as u64)?;
-        Ok(())
-    }
-}
-
-#[derive(Clone, Debug)]
 pub struct Torrent {
-    pub announce: String,
-    pub piece_len: usize,
-    pub hashes: Vec<Vec<u8>>,
-    pub files: Vec<File>,
+    pub info: info::Info,
+    peers: Slab<Peer, usize>,
+    announcer: Announcer,
 }
 
 impl Torrent {
     pub fn from_bencode(data: BEncode) -> Result<Torrent, &'static str> {
-        parse::torrent_from_bencode(data)
-    }
-
-    pub fn create_files(&self) -> Result<(), io::Error> {
-        for file in self.files.iter() {
-            file.create()?;
-        }
-        Ok(())
+        let info = info::Info::from_bencode(data)?;
+        let peers = Slab::with_capacity(32);
+        let announcer = Announcer::new().unwrap();
+        Ok(Torrent {
+            info: info,
+            peers: peers,
+            announcer: announcer,
+        })
     }
 }
