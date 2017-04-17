@@ -4,6 +4,8 @@ extern crate slab;
 extern crate byteorder;
 extern crate rand;
 extern crate sha1;
+extern crate url;
+extern crate reqwest;
 #[macro_use]
 extern crate lazy_static;
 
@@ -23,7 +25,7 @@ lazy_static! {
         use rand::{self, Rng};
 
         let mut pid = [0u8; 20];
-        let prefix = b"-AN0001-";
+        let prefix = b"-SYN001-";
         for i in 0..prefix.len() {
             pid[i] = prefix[i];
         }

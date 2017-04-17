@@ -5,9 +5,18 @@ use std::{io, fs};
 use sha1::Sha1;
 
 #[derive(Clone, Debug)]
+pub struct Info {
+    pub announce: String,
+    pub piece_len: usize,
+    pub hashes: Vec<Vec<u8>>,
+    pub hash: [u8; 20],
+    pub files: Vec<File>,
+}
+
+#[derive(Clone, Debug)]
 pub struct File {
-    path: PathBuf,
-    length: usize,
+    pub path: PathBuf,
+    pub length: usize,
 }
 
 impl File {
@@ -41,15 +50,6 @@ impl File {
         f.set_len(self.length as u64)?;
         Ok(())
     }
-}
-
-#[derive(Clone, Debug)]
-pub struct Info {
-    pub announce: String,
-    pub piece_len: usize,
-    pub hashes: Vec<Vec<u8>>,
-    pub hash: [u8; 20],
-    pub files: Vec<File>,
 }
 
 impl Info {

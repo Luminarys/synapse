@@ -1,12 +1,16 @@
 use mio::tcp::TcpStream;
+use std::net::SocketAddr;
 use std::io;
 
-pub struct Announcer {
+pub struct Tracker {
     conn: TcpStream,
+    id: Option<String>,
+    interval: u32,
+    peers: Vec<SocketAddr>,
 }
 
-impl Announcer {
-    pub fn new() -> io::Result<Announcer> {
+impl Tracker {
+    pub fn new() -> io::Result<Tracker> {
         unimplemented!();
     }
 

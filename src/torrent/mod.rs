@@ -1,28 +1,36 @@
 mod info;
 mod peer;
-mod announcer;
+mod tracker;
 mod piece_field;
 
 use bencode::BEncode;
 use self::peer::Peer;
-use self::announcer::Announcer;
+use self::tracker::Tracker;
 use slab::Slab;
 
 pub struct Torrent {
     pub info: info::Info,
     peers: Slab<Peer, usize>,
-    announcer: Announcer,
+    // tracker: Tracker,
 }
 
 impl Torrent {
     pub fn from_bencode(data: BEncode) -> Result<Torrent, &'static str> {
         let info = info::Info::from_bencode(data)?;
         let peers = Slab::with_capacity(32);
-        let announcer = Announcer::new().unwrap();
+        // let tracker = Tracker::new().unwrap();
         Ok(Torrent {
             info: info,
             peers: peers,
-            announcer: announcer,
+            // tracker: tracker,
         })
+    }
+
+    pub fn file_size(&self) -> usize {
+        let mut size = 0;
+        for file in self.info.files.iter() {
+            size += file.length;
+        }
+        size
     }
 }

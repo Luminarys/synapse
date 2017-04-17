@@ -11,6 +11,31 @@ pub struct Reader {
     download_speed: f64,
 }
 
+impl Reader {
+    pub fn new() -> Reader {
+        Reader {
+            state: ReadState::ReadingHandshake { data: [0u8; 68] , idx: 0 },
+            blocks_read: 0,
+            download_speed: 0.0,
+        }
+    }
+
+    /// Attempts to read a single message from the connection
+    pub fn readable<R: Read>(&mut self, conn: &mut R) -> io::Result<Option<Message>> {
+        let state = mem::replace(&mut self.state, ReadState::Idle);
+        match state.next_state(conn)? {
+            Ok(msg) => {
+                self.state = ReadState::Idle;
+                Ok(Some(msg))
+            }
+            Err(new_state) => {
+                self.state = new_state;
+                Ok(None)
+            }
+        }
+    }
+}
+
 enum ReadState {
     Idle,
     ReadingHandshake { data: [u8; 68], idx: u8 },
@@ -180,31 +205,6 @@ impl ReadState {
             }
             _ => {
                 io_err("Invalid message ID")
-            }
-        }
-    }
-}
-
-impl Reader {
-    pub fn new() -> Reader {
-        Reader {
-            state: ReadState::ReadingHandshake { data: [0u8; 68] , idx: 0 },
-            blocks_read: 0,
-            download_speed: 0.0,
-        }
-    }
-
-    /// Attempts to read a single message from the connection
-    pub fn readable<R: Read>(&mut self, conn: &mut R) -> io::Result<Option<Message>> {
-        let state = mem::replace(&mut self.state, ReadState::Idle);
-        match state.next_state(conn)? {
-            Ok(msg) => {
-                self.state = ReadState::Idle;
-                Ok(Some(msg))
-            }
-            Err(new_state) => {
-                self.state = new_state;
-                Ok(None)
             }
         }
     }

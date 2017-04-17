@@ -10,6 +10,16 @@ pub enum BEncode {
     Dict(BTreeMap<String, BEncode>),
 }
 
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub enum BError {
+    UTF8Decode,
+    InvalidDict,
+    InvalidChar,
+    ParseInt,
+    EOF,
+    IO,
+}
+
 impl BEncode {
     pub fn to_int(self) -> Option<i64> {
         match self {
@@ -81,13 +91,13 @@ impl BEncode {
         }
     }
 
-    pub fn encode<W: io::Write> (&self, w: &mut W) -> Result<(), io::Error> {
+    pub fn encode<W: io::Write> (&self, w: &mut W) -> io::Result<()> {
         // TODO: Make this either procedural or add recursion limit.
         match *self {
             BEncode::Int(i) => write!(w, "i{}e", i)?,
             BEncode::String(ref s) => {
                 write!(w, "{}:", s.len())?;
-                w.write(&s)?;
+                w.write_all(&s)?;
             },
             BEncode::List(ref v) => {
                 write!(w, "l")?;
@@ -107,16 +117,6 @@ impl BEncode {
         };
         Ok(())
     }
-}
-
-#[derive(Debug, Clone, Eq, PartialEq)]
-pub enum BError {
-    UTF8Decode,
-    InvalidDict,
-    InvalidChar,
-    ParseInt,
-    EOF,
-    IO,
 }
 
 pub fn decode_buf(bytes: &[u8]) -> Result<BEncode, BError> {
@@ -206,6 +206,13 @@ fn test_encode_decode() {
     s.encode(&mut v).unwrap();
     assert_eq!(v, b"4:asdf");
 
+    let s2r = [1u8,2,3,4];
+    let s2e = [52u8, 58, 1, 2, 3, 4];
+    let s2 = BEncode::String(Vec::from(&s2r[..]));
+    v = Vec::new();
+    s2.encode(&mut v).unwrap();
+    assert_eq!(v, &s2e);
+
     let l = BEncode::List(vec![i.clone(), s.clone()]);
     v = Vec::new();
     l.encode(&mut v).unwrap();
@@ -213,13 +220,17 @@ fn test_encode_decode() {
 
     let mut map = BTreeMap::new();
     map.insert(String::from("asdf"), i.clone());
+    map.insert(String::from("qwerty"), i.clone());
     let d = BEncode::Dict(map);
     v = Vec::new();
     d.encode(&mut v).unwrap();
-    assert_eq!(v, b"d4:asdfi-10ee");
+    assert_eq!(v, b"d4:asdfi-10e6:qwertyi-10ee");
+
+    decode_encode(b"d4:asdfi-10e6:qwertyi-10ee");
 
     encode_decode(&i);
     encode_decode(&s);
+    encode_decode(&s2);
     encode_decode(&l);
     encode_decode(&d);
 }
@@ -228,4 +239,10 @@ fn encode_decode(b: &BEncode) {
     let mut v = Vec::new();
     b.encode(&mut v).unwrap();
     assert_eq!(b, &decode_buf(&v).unwrap());
+}
+
+fn decode_encode(d: &[u8]) {
+    let mut v = Vec::new();
+    decode_buf(d).unwrap().encode(&mut v);
+    assert_eq!(d, &v[..]);
 }
