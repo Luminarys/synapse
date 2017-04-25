@@ -1,4 +1,4 @@
-use std::io::{self, Read, Cursor};
+use std::io::{self, Read, Cursor, ErrorKind};
 use std::mem;
 use torrent::peer::message::Message;
 use torrent::piece_field::PieceField;
@@ -21,18 +21,29 @@ impl Reader {
     }
 
     /// Attempts to read a single message from the connection
-    pub fn readable<R: Read>(&mut self, conn: &mut R) -> io::Result<Option<Message>> {
-        let state = mem::replace(&mut self.state, ReadState::Idle);
-        match state.next_state(conn)? {
-            Ok(msg) => {
-                self.state = ReadState::Idle;
-                Ok(Some(msg))
-            }
-            Err(new_state) => {
-                self.state = new_state;
-                Ok(None)
-            }
+    pub fn readable<R: Read>(&mut self, conn: &mut R) -> io::Result<Vec<Message>> {
+        let mut v = Vec::with_capacity(1);
+        loop {
+            // Keep on trying to read until we get an EWOULDBLOCK error.
+            let state = mem::replace(&mut self.state, ReadState::Idle);
+            match state.next_state(conn) {
+                Ok(Ok(msg)) => {
+                    self.state = ReadState::Idle;
+                    v.push(msg);
+                }
+                Ok(Err(new_state)) => {
+                    self.state = new_state;
+                }
+                Err(e) => {
+                    if e.kind() == ErrorKind::WouldBlock {
+                        break;
+                    } else {
+                        return Err(e);
+                    }
+                }
+            };
         }
+        return Ok(v);
     }
 }
 

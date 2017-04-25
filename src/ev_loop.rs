@@ -2,18 +2,25 @@ use std::io::{self, Read};
 use mio::{channel, Event, Events, Poll, PollOpt, Ready, Token};
 use mio::tcp::{TcpListener, TcpStream};
 use slab::Slab;
-use torrent::Torrent;
+use torrent::{Torrent, tracker};
+use torrent::peer::Peer;
 use reqwest::{self, Url};
 use url::percent_encoding::{percent_encode_byte};
 use PEER_ID;
 use bencode;
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 enum Handle {
     Peer { torrent: usize, pid: usize },
     Tracker(usize),
     Incoming(usize),
     Listener,
+}
+
+impl Handle {
+    pub fn peer(torrent: usize, pid: usize) -> Handle {
+        Handle::Peer { torrent: torrent, pid: pid }
+    }
 }
 
 pub struct EvLoop {
@@ -68,7 +75,14 @@ impl EvLoop {
         Ok(())
     }
 
-    fn handle_peer_ev(&mut self, torrent: usize, peer: usize, event: Event) -> io::Result<()> {
+    fn handle_peer_ev(&mut self, tid: usize, pid: usize, event: Event) -> io::Result<()> {
+        println!("Handling ev {:?}!", event);
+        // if event.readiness.readable() {
+        //     self.torrents.get(torrent).unwrap();
+        // }
+        // if event.readiness.writable() {
+        //     self.torrents.get(torrent).unwrap();
+        // }
         Ok(())
     }
 
@@ -84,6 +98,7 @@ impl EvLoop {
         append_pair(&mut url, "info_hash", &encode_param(&torrent.info.hash));
         append_pair(&mut url, "peer_id", &encode_param(&PEER_ID[..]));
         append_pair(&mut url, "uploaded", "0");
+        append_pair(&mut url, "numwant", "5");
         append_pair(&mut url, "downloaded", "0");
         append_pair(&mut url, "left", &torrent.file_size().to_string());
         append_pair(&mut url, "compact", "1");
@@ -91,6 +106,16 @@ impl EvLoop {
         append_pair(&mut url, "port", "9999");
         let mut resp = reqwest::get(&url).unwrap();
         let mut content = bencode::decode(&mut resp).unwrap();
+        let response = tracker::Response::from_bencode(content).unwrap();
+        let tid = self.torrents.insert(torrent).unwrap();
+        let ref mut torrent = self.torrents.get_mut(tid).unwrap();
+        for ip in response.peers.iter() {
+            let peer = Peer::new_outgoing(ip, &torrent.info).unwrap();
+            let pid = torrent.insert_peer(peer).unwrap();
+            let tok = self.handles.insert(Handle::peer(tid, pid)).unwrap();
+            self.poll.register(&torrent.get_peer_mut(pid).unwrap().conn, tok, Ready::all(), PollOpt::edge() | PollOpt::oneshot()).unwrap();
+        }
+        println!("{:?}", response);
     }
 }
 

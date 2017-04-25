@@ -1,6 +1,6 @@
 use torrent::peer::message::Message;
 use std::collections::VecDeque;
-use std::io::{self, Write};
+use std::io::{self, Write, ErrorKind};
 use std::sync::Arc;
 
 pub struct Writer {
@@ -74,12 +74,24 @@ impl Writer {
     }
 
     fn write<W: Write>(&mut self, conn: &mut W) -> io::Result<()> {
-        while self.write_(conn)? {
-            if let Some(msg) = self.write_queue.pop_back() {
-                self.setup_write(msg);
-            } else {
-                self.state = WriteState::Idle;
-                break;
+        loop {
+            match self.write_(conn) {
+                Ok(true) => {
+                    if let Some(msg) = self.write_queue.pop_back() {
+                        self.setup_write(msg);
+                    } else {
+                        self.state = WriteState::Idle;
+                        break;
+                    }
+                }
+                Ok(false) => { /* Keep on trying to write until we get EWOULDBLOCK */ }
+                Err(e) => {
+                    if e.kind() == ErrorKind::WouldBlock {
+                        break;
+                    } else {
+                        return Err(e);
+                    }
+                }
             }
         }
         Ok(())
