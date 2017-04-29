@@ -2,6 +2,7 @@ use torrent::peer::message::Message;
 use std::collections::VecDeque;
 use std::io::{self, Write, ErrorKind};
 use std::sync::Arc;
+use util::io_err;
 
 pub struct Writer {
     blocks_written: usize,
@@ -32,6 +33,10 @@ impl Writer {
     pub fn writable<W: Write>(&mut self, conn: &mut W) -> io::Result<()> {
         self.writable = true;
         self.write(conn)
+    }
+
+    pub fn is_writable(&self) -> bool {
+        return self.writable;
     }
 
     pub fn write_message<W: Write>(&mut self, msg: Message, conn: &mut W) -> io::Result<()> {
@@ -102,6 +107,9 @@ impl Writer {
             WriteState::Idle => Ok(false),
             WriteState::WritingMsg { ref data, ref len, ref mut idx } => {
                 let amnt = conn.write(&data[(*idx as usize)..(*len as usize)])?;
+                if amnt == 0 {
+                    return io_err("EOF");
+                }
                 *idx += amnt as u8;
                 if idx == len {
                     Ok(true)
@@ -112,7 +120,11 @@ impl Writer {
             }
             WriteState::WritingPiece { ref prefix, ref data, ref mut idx } => {
                 if *idx < 13 as u16 {
-                    *idx += conn.write(&prefix[(*idx as usize)..13])? as u16;
+                    let amnt = conn.write(&prefix[(*idx as usize)..13])? as u16;
+                    if amnt == 0 {
+                        return io_err("EOF");
+                    }
+                    *idx += amnt;
                     if *idx != 13 as u16 {
                         self.writable = false;
                         return Ok(false);
@@ -120,6 +132,9 @@ impl Writer {
                 }
 
                 let amnt = conn.write(&data[(*idx as usize - 13)..])?;
+                if amnt == 0 {
+                    return io_err("EOF");
+                }
                 // piece should never exceed u16 size
                 *idx += amnt as u16;
                 if *idx == (prefix.len() + data.len()) as u16 {
@@ -131,6 +146,9 @@ impl Writer {
             }
             WriteState::WritingOther { ref data, ref mut idx } => {
                 let amnt = conn.write(&data[(*idx as usize)..])?;
+                if amnt == 0 {
+                    return io_err("EOF");
+                }
                 *idx += amnt as u16;
                 if *idx == data.len() as u16 {
                     Ok(true)
@@ -143,6 +161,7 @@ impl Writer {
     }
 }
 
+/*
 #[test]
 fn test_write_keepalive() {
     let mut w = Writer::new();
@@ -260,3 +279,4 @@ fn test_write_handshake() {
     w.writable(&mut &mut buf[..]).unwrap();
     assert_eq!(buf[..], abuf[..])
 }
+*/

@@ -7,7 +7,7 @@ use bencode::BEncode;
 use self::peer::Peer;
 use self::tracker::Tracker;
 use slab::Slab;
-use std::fmt;
+use std::{fmt, io};
 use mio::Poll;
 
 pub struct Torrent {
@@ -34,12 +34,30 @@ impl Torrent {
         })
     }
 
+    pub fn peer_readable(&mut self, peer: usize) -> io::Result<()> {
+        let res = self.peers.get_mut(peer).unwrap().readable()?;
+        if res.len() > 0 {
+            println!("Got message(s): {:?}!", res);
+        } else {
+            println!("No messages read!");
+        }
+        Ok(())
+    }
+
+    pub fn peer_writable(&mut self, peer: usize) -> io::Result<bool> {
+        self.peers.get_mut(peer).unwrap().writable()
+    }
+
     pub fn file_size(&self) -> usize {
         let mut size = 0;
         for file in self.info.files.iter() {
             size += file.length;
         }
         size
+    }
+
+    pub fn remove_peer(&mut self, id: usize) {
+        self.peers.remove(id);
     }
 
     pub fn insert_peer(&mut self, peer: Peer) -> Option<usize> {

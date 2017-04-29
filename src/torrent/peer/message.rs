@@ -3,6 +3,7 @@ use torrent::info::Info as TorrentInfo;
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use std::io::{self, Write};
 use std::sync::Arc;
+use std::fmt;
 
 pub enum Message {
     Handshake { rsv: [u8; 8], hash: [u8; 20], id: [u8; 20] },
@@ -17,6 +18,59 @@ pub enum Message {
     Piece { index: u32, begin: u32, data: Box<[u8; 16384]> },
     SharedPiece { index: u32, begin: u32, data: Arc<[u8; 16384]> },
     Cancel { index: u32, begin: u32, length: u32 },
+}
+
+impl fmt::Debug for Message {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match *self {
+            Message::Handshake { rsv, hash, id } => write!(f, "Message::Handshake {{ extensions: {:?} }}", &rsv[..]),
+            Message::KeepAlive => write!(f, "Message::KeepAlive"),
+            Message::Choke => write!(f, "Message::Choke"),
+            Message::Unchoke => write!(f, "Message::Unchoke"),
+            Message::Interested => write!(f, "Message::Interested"),
+            Message::Uninterested => write!(f, "Message::Uninterested"),
+            Message::Have(p) => write!(f, "Message::Have({})", p),
+            Message::Bitfield(ref pf) => write!(f, "Message::Bitfield"),
+            Message::Request{ index, begin, length } => write!(f, "Message::Request {{ idx: {}, begin: {}, len: {} }}", index, begin, length),
+            Message::Piece{ index, begin, ref data } => write!(f, "Message::Piece {{ idx: {}, begin: {} }}", index, begin),
+            Message::SharedPiece{ index, begin, ref data } => write!(f, "Message::SPiece {{ idx: {}, begin: {} }}", index, begin),
+            Message::Cancel { index, begin, length } => write!(f, "Message::Cancel {{ idx: {}, begin: {}, len: {} }}", index, begin, length),
+        }
+    }
+}
+
+impl PartialEq for Message {
+    fn eq(&self, other: &Message) -> bool {
+        match (self, other) {
+            (&Message::Handshake { rsv, hash, id }, &Message::Handshake { rsv: rsv_, hash: hash_, id: id_ }) => {
+                rsv == rsv_ && hash == hash_ && id == id_
+            },
+            (&Message::KeepAlive, &Message::KeepAlive) => true,
+            (&Message::Choke, &Message::Choke) => true,
+            (&Message::Unchoke, &Message::Unchoke) => true,
+            (&Message::Interested, &Message::Interested) => true,
+            (&Message::Uninterested, &Message::Uninterested) => true,
+            (&Message::Have(p), &Message::Have(p_)) => p == p_,
+            (&Message::Request { index, begin, length }, &Message::Request { index: i, begin: b, length: l }) => {
+                index == i && begin == b && length == l
+            },
+            (&Message::Cancel { index, begin, length }, &Message::Cancel { index: i, begin: b, length: l }) => {
+                index == i && begin == b && length == l
+            },
+            _ => false
+            //Message::KeepAlive => true,
+            //Message::Choke => write!(f, "Message::Choke"),
+            //Message::Unchoke => write!(f, "Message::Unchoke"),
+            //Message::Interested => write!(f, "Message::Interested"),
+            //Message::Uninterested => write!(f, "Message::Uninterested"),
+            //Message::Have(p) => write!(f, "Message::Have({})", p),
+            //Message::Bitfield(ref pf) => write!(f, "Message::Bitfield"),
+            //Message::Request{ index, begin, length } => write!(f, "Message::Request {{ idx: {}, begin: {}, len: {} }}", index, begin, length),
+            //Message::Piece{ index, begin, ref data } => write!(f, "Message::Piece {{ idx: {}, begin: {} }}", index, begin),
+            //Message::SharedPiece{ index, begin, ref data } => write!(f, "Message::SPiece {{ idx: {}, begin: {} }}", index, begin),
+            //Message::Cancel { index, begin, length } => write!(f, "Message::Cancel {{ idx: {}, begin: {}, len: {} }}", index, begin, length),
+        }
+    }
 }
 
 impl Message {
@@ -155,190 +209,3 @@ impl Message {
         Ok(())
     }
 }
-//
-// pub struct MessageCodec {
-//     hash: [u8; 20],
-//     pieces: u32,
-//     got_handshake: bool,
-//     len: Option<u32>,
-// }
-//
-// impl Codec for MessageCodec {
-//     type In = Message;
-//     type Out = Message;
-//
-//     fn decode(&mut self, buf: &mut EasyBuf) -> Result<Option<Message>, io::Error> {
-//         let len = match (self.len, buf.len()) {
-//             (Some(l), _) => l,
-//             (None, l) => {
-//                 if l < 4 {
-//                     return Ok(None);
-//                 }
-//                 let len = buf.drain_to(4).as_slice().read_u32::<BigEndian>()?;
-//                 self.len = Some(len);
-//                 len
-//             }
-//         };
-//
-//         if !self.got_handshake {
-//             // If we wanted to follow the spec 100% we'd try to get hash ID before peer ID,
-//             // but these days connections are so fast it should not matter
-//             if 49 + len as usize > buf.len() {
-//                 return Ok(None);
-//             }
-//             if buf.drain_to(len as usize).as_slice() != b"BitTorrent protocol" {
-//                 return Err(io::Error::new(io::ErrorKind::InvalidData, "Handshake must be for the BitTorrent protocol"));
-//             }
-//             let mut rsv = [0u8; 8];
-//             rsv.iter_mut().zip(buf.drain_to(8).as_slice()).map(|(v, c)| {
-//                 *v = *c;
-//             }).last();
-//             let mut hash = [0u8; 20];
-//             hash.iter_mut().zip(buf.drain_to(20).as_slice()).map(|(v, c)| {
-//                 *v = *c;
-//             }).last();
-//             if hash != self.hash {
-//                 return Err(io::Error::new(io::ErrorKind::InvalidData, "Hashes must match!"));
-//             }
-//             let mut pid = [0u8; 20];
-//             pid.iter_mut().zip(buf.drain_to(20).as_slice()).map(|(v, c)| {
-//                 *v = *c;
-//             }).last();
-//             self.got_handshake = true;
-//             return Ok(Some(Message::Handshake(rsv, hash, pid)));
-//         }
-//
-//
-//         if len as usize > buf.len() {
-//             return Ok(None);
-//         }
-//
-//         self.len = None;
-//
-//         if len == 0 {
-//             return Ok(Some(Message::KeepAlive));
-//         }
-//
-//         // Drain out the necessary portion for the frame, use that
-//         let mut mbuf = buf.drain_to(len as usize);
-//
-//         let id = mbuf.drain_to(1).as_slice().read_u8()?;
-//
-//         match id {
-//             0 => Ok(Some(Message::Choke)),
-//             1 => Ok(Some(Message::Unchoke)),
-//             2 => Ok(Some(Message::Interested)),
-//             3 => Ok(Some(Message::Uninterested)),
-//             4 => {
-//                 if mbuf.len() != 4 {
-//                     return Err(io::Error::new(io::ErrorKind::InvalidData, "Have message must have length 5"));
-//                 }
-//                 Ok(Some(Message::Have(mbuf.as_slice().read_u32::<BigEndian>()?)))
-//             }
-//             5 => {
-//                 if mbuf.len() != ((self.pieces - 1)/8 + 1) as usize {
-//                     return Err(io::Error::new(io::ErrorKind::InvalidData, "Bitfield message must have length according to the pieces in the torrent"));
-//                 }
-//                 let mut mmb = mbuf.get_mut();
-//                 let pf = PieceField::from(mmb.drain(0..).collect::<Vec<u8>>().into_boxed_slice(), self.pieces);
-//                 Ok(Some(Message::Bitfield(pf)))
-//             }
-//             6 | 8 => {
-//                 if mbuf.len() != 12 {
-//                     return Err(io::Error::new(io::ErrorKind::InvalidData, "Request/Cancel message must have length 13"));
-//                 }
-//                 let index = mbuf.drain_to(4).as_slice().read_u32::<BigEndian>()?;
-//                 let begin = mbuf.drain_to(4).as_slice().read_u32::<BigEndian>()?;
-//                 let length = mbuf.drain_to(4).as_slice().read_u32::<BigEndian>()?;
-//                 if id == 6 {
-//                     Ok(Some(Message::Request(index, begin, length)))
-//                 } else {
-//                     Ok(Some(Message::Cancel(index, begin, length)))
-//                 }
-//             }
-//             7 => {
-//                 if mbuf.len() < 8 {
-//                     return Err(io::Error::new(io::ErrorKind::InvalidData, "Piece message must have length at least 9"));
-//                 }
-//                 let index = mbuf.drain_to(4).as_slice().read_u32::<BigEndian>()?;
-//                 let begin = mbuf.drain_to(4).as_slice().read_u32::<BigEndian>()?;
-//                 let mut mmb = mbuf.get_mut();
-//                 let data = mmb.drain(0..).collect::<Vec<u8>>().into_boxed_slice();
-//                 Ok(Some(Message::Piece(index, begin, data)))
-//             }
-//             _ => {
-//                 Err(io::Error::new(io::ErrorKind::InvalidData, "Invalid ID"))
-//             }
-//         }
-//     }
-//
-//     fn encode(&mut self, msg: Message, buf: &mut Vec<u8>) -> io::Result<()> {
-//         match msg {
-//             Message::Handshake(rsv, hash, pid) => {
-//                 if pid.len() != 20 {
-//                     return Err(io::Error::new(io::ErrorKind::InvalidData, "Invalid Peer ID"));
-//                 }
-//                 buf.write_u8(19)?;
-//                 buf.write_all("BitTorrent protocol".as_ref())?;
-//                 buf.write_all(&rsv)?;
-//                 buf.write_all(&hash)?;
-//                 buf.write_all(&pid)?;
-//             }
-//             Message::KeepAlive => {
-//                 buf.write_u32::<BigEndian>(0)?;
-//             }
-//             Message::Choke => {
-//                 buf.write_u32::<BigEndian>(1)?;
-//                 buf.write_u8(0)?;
-//             }
-//             Message::Unchoke => {
-//                 buf.write_u32::<BigEndian>(1)?;
-//                 buf.write_u8(1)?;
-//             }
-//             Message::Interested => {
-//                 buf.write_u32::<BigEndian>(1)?;
-//                 buf.write_u8(2)?;
-//             }
-//             Message::Uninterested => {
-//                 buf.write_u32::<BigEndian>(1)?;
-//                 buf.write_u8(3)?;
-//             }
-//             Message::Have(piece) => {
-//                 buf.write_u32::<BigEndian>(5)?;
-//                 buf.write_u8(4)?;
-//                 buf.write_u32::<BigEndian>(piece)?;
-//             }
-//             Message::Bitfield(pf) => {
-//                 let (data, _) = pf.extract();
-//                 buf.write_u32::<BigEndian>(1 + data.len() as u32)?;
-//                 buf.write_u8(5)?;
-//                 for i in 0..data.len() {
-//                     buf.write_u8(data[i])?;
-//                 }
-//             }
-//             Message::Request(index, begin, length) => {
-//                 buf.write_u32::<BigEndian>(13)?;
-//                 buf.write_u8(6)?;
-//                 buf.write_u32::<BigEndian>(index)?;
-//                 buf.write_u32::<BigEndian>(begin)?;
-//                 buf.write_u32::<BigEndian>(length)?;
-//             }
-//             Message::Piece(index, begin, data) => {
-//                 buf.write_u32::<BigEndian>(9 + data.len() as u32)?;
-//                 buf.write_u8(7)?;
-//                 buf.write_u32::<BigEndian>(index)?;
-//                 buf.write_u32::<BigEndian>(begin)?;
-//                 // This may be inefficient, as it's an extra copy.
-//                 buf.write_all(&data)?;
-//             }
-//             Message::Cancel(index, begin, length) => {
-//                 buf.write_u32::<BigEndian>(13)?;
-//                 buf.write_u8(8)?;
-//                 buf.write_u32::<BigEndian>(index)?;
-//                 buf.write_u32::<BigEndian>(begin)?;
-//                 buf.write_u32::<BigEndian>(length)?;
-//             }
-//         };
-//         Ok(())
-//     }
-// }

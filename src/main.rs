@@ -6,6 +6,7 @@ extern crate rand;
 extern crate sha1;
 extern crate url;
 extern crate reqwest;
+extern crate iovec;
 #[macro_use]
 extern crate lazy_static;
 
@@ -13,6 +14,7 @@ mod bencode;
 mod torrent;
 mod ev_loop;
 mod util;
+mod socket;
 
 use std::env;
 use std::fs::File;

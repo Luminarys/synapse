@@ -76,13 +76,23 @@ impl EvLoop {
     }
 
     fn handle_peer_ev(&mut self, tid: usize, pid: usize, event: Event) -> io::Result<()> {
-        println!("Handling ev {:?}!", event);
-        // if event.readiness.readable() {
-        //     self.torrents.get(torrent).unwrap();
-        // }
-        // if event.readiness.writable() {
-        //     self.torrents.get(torrent).unwrap();
-        // }
+        let mut torrent = self.torrents.get_mut(tid).unwrap();
+        let mut ready = Ready::all();
+        if event.readiness().is_readable() {
+            println!("Peer {:?} readable!", pid);
+            if torrent.peer_readable(pid).is_err() {
+                println!("Peer {:?} error'd, removing", pid);
+                torrent.remove_peer(pid);
+                return Ok(());
+            }
+        }
+        if event.readiness().is_writable() {
+            println!("Peer {:?} writable!", pid);
+            if !torrent.peer_writable(pid)? {
+                ready.remove(Ready::writable());
+            }
+        }
+        self.poll.reregister(&torrent.get_peer_mut(pid).unwrap().conn, event.token(), ready, PollOpt::edge() | PollOpt::oneshot()).unwrap();
         Ok(())
     }
 
@@ -112,6 +122,7 @@ impl EvLoop {
         for ip in response.peers.iter() {
             let peer = Peer::new_outgoing(ip, &torrent.info).unwrap();
             let pid = torrent.insert_peer(peer).unwrap();
+            println!("Regiserting peer {:?}", pid);
             let tok = self.handles.insert(Handle::peer(tid, pid)).unwrap();
             self.poll.register(&torrent.get_peer_mut(pid).unwrap().conn, tok, Ready::all(), PollOpt::edge() | PollOpt::oneshot()).unwrap();
         }

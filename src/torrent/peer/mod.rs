@@ -20,30 +20,34 @@ impl Peer {
     pub fn new_outgoing(ip: &SocketAddr, torrent: &Info) -> io::Result<Peer> {
         let mut conn = TcpStream::connect(ip)?;
         let mut writer = Writer::new();
+        let mut reader = Reader::new();
         writer.write_message(Message::handshake(torrent), &mut conn)?;
         Ok(Peer {
             conn: conn,
-            reader: Reader::new(),
+            reader: reader,
             writer: writer,
         })
     }
 
     pub fn new_incoming(mut conn: TcpStream, torrent: &Info) -> io::Result<Peer> {
         let mut writer = Writer::new();
+        let mut reader = Reader::new();
         writer.write_message(Message::handshake(torrent), &mut conn)?;
         Ok(Peer {
             conn: conn,
-            reader: Reader::new(),
+            reader: reader,
             writer: writer,
         })
     }
 
-    fn readable(&mut self) -> io::Result<Vec<Message>> {
+    pub fn readable(&mut self) -> io::Result<Vec<Message>> {
         return self.reader.readable(&mut self.conn);
     }
 
-    fn writable(&mut self) -> io::Result<()> {
+    /// Returns a boolean indicating whether or not the
+    /// socket should be re-registered
+    pub fn writable(&mut self) -> io::Result<bool> {
         self.writer.writable(&mut self.conn);
-        Ok(())
+        Ok(!self.writer.is_writable())
     }
 }
