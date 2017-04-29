@@ -51,13 +51,21 @@ enum ReadState {
 }
 
 enum ReadRes {
+    /// A complete message was read
     Message(Message),
+    /// WouldBlock error was encountered, cannot
+    /// complete read.
     Incomplete(ReadState),
+    /// 0 bytes were read, indicating EOF
     EOF,
+    /// An unknown IO Error occured.
     Err(io::Error),
 }
 
 impl ReadState {
+    /// Continuously reads fron conn until a WouldBlock error is received,
+    /// a complete message is read, EOF is encountered, or some other
+    /// IO error is encountered.
     fn next_state<R: Read>(self, conn: &mut R) -> ReadRes {
         // I don't think this could feasibly stack overflow, but possibility should be considered.
         match self {
@@ -78,7 +86,7 @@ impl ReadState {
                             pid.clone_from_slice(&data[48..68]);
                             ReadRes::Message(Message::Handshake{ rsv: rsv, hash: hash, id: pid })
                         } else {
-                            ReadRes::Incomplete(ReadState::ReadingHandshake { data: data, idx: idx })
+                            ReadState::ReadingHandshake { data: data, idx: idx }.next_state(conn)
                         }
                     }
                     Err(ref e) if e.kind() == ErrorKind::WouldBlock => {
@@ -93,7 +101,7 @@ impl ReadState {
                     Ok(0) => ReadRes::EOF,
                     Ok(4) => ReadState::process_len(data, conn),
                     Ok(idx) => {
-                        ReadRes::Incomplete(ReadState::ReadingLen { data, idx: idx as u8 })
+                        ReadState::ReadingLen { data, idx: idx as u8 }.next_state(conn)
                     }
                     Err(ref e) if e.kind() == ErrorKind::WouldBlock => {
                         ReadRes::Incomplete(ReadState::Idle)
@@ -107,7 +115,7 @@ impl ReadState {
                     Ok(4) => ReadState::process_len(data, conn),
                     Ok(amnt) => {
                         idx += amnt as u8; 
-                        ReadRes::Incomplete(ReadState::ReadingLen { data, idx })
+                        ReadState::ReadingLen { data, idx }.next_state(conn)
                     },
                     Err(ref e) if e.kind() == ErrorKind::WouldBlock => {
                         ReadRes::Incomplete(ReadState::ReadingLen { data, idx })
@@ -134,7 +142,7 @@ impl ReadState {
                     }
                     Ok(amnt) => {
                         idx += amnt as u8;
-                        ReadRes::Incomplete(ReadState::ReadingMsg { data, idx, len })
+                        ReadState::ReadingMsg { data, idx, len }.next_state(conn)
                     }
                     Err(ref e) if e.kind() == ErrorKind::WouldBlock => {
                         ReadRes::Incomplete(ReadState::ReadingMsg { data, idx, len })
@@ -150,7 +158,7 @@ impl ReadState {
                         Ok(13) => ReadState::ReadingPiece { prefix, data, idx }.next_state(conn),
                         Ok(amnt) => { 
                             idx += amnt;
-                            ReadRes::Incomplete(ReadState::ReadingPiece { prefix, data, idx })
+                            ReadState::ReadingPiece { prefix, data, idx }.next_state(conn)
                         }
                         Err(ref e) if e.kind() == ErrorKind::WouldBlock => {
                             ReadRes::Incomplete(ReadState::ReadingPiece { prefix, data, idx })
@@ -167,7 +175,7 @@ impl ReadState {
                         }
                         Ok(amnt) => {
                             idx += amnt;
-                            ReadRes::Incomplete(ReadState::ReadingPiece { prefix, data, idx })
+                            ReadState::ReadingPiece { prefix, data, idx }.next_state(conn)
                         }
                         Err(ref e) if e.kind() == ErrorKind::WouldBlock => {
                             ReadRes::Incomplete(ReadState::ReadingPiece { prefix, data, idx })
@@ -185,7 +193,7 @@ impl ReadState {
                     }
                     Ok(amnt) => {
                         idx += amnt;
-                        ReadRes::Incomplete(ReadState::ReadingBitfield { data, idx })
+                        ReadState::ReadingBitfield { data, idx }.next_state(conn)
                     }
                     Err(ref e) if e.kind() == ErrorKind::WouldBlock => {
                         ReadRes::Incomplete(ReadState::ReadingBitfield { data, idx })
