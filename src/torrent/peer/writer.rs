@@ -22,7 +22,7 @@ enum WriteState {
 impl Writer {
     pub fn new() -> Writer {
         Writer {
-            writable: false,
+            writable: true,
             write_queue: VecDeque::new(),
             state: WriteState::Idle,
             blocks_written: 0,
@@ -79,6 +79,9 @@ impl Writer {
     }
 
     fn write<W: Write>(&mut self, conn: &mut W) -> io::Result<()> {
+        if let WriteState::Idle = self.state {
+            return Ok(());
+        }
         loop {
             match self.write_(conn) {
                 Ok(true) => {
@@ -89,7 +92,7 @@ impl Writer {
                         break;
                     }
                 }
-                Ok(false) => { /* Keep on trying to write until we get EWOULDBLOCK */ }
+                Ok(false) => { }
                 Err(e) => {
                     if e.kind() == ErrorKind::WouldBlock {
                         break;
@@ -161,7 +164,6 @@ impl Writer {
     }
 }
 
-/*
 #[test]
 fn test_write_keepalive() {
     let mut w = Writer::new();
@@ -198,11 +200,12 @@ fn test_write_interested() {
     let mut buf = [0u8; 5];
     let m = Message::Interested;
     w.write_message(m, &mut &mut buf[..]);
+    assert_eq!(buf, [0, 0, 0, 1, 2]);
     // test split write
     w.writable(&mut &mut buf[0..1]).unwrap();
     w.writable(&mut &mut buf[1..3]).unwrap();
     w.writable(&mut &mut buf[3..]).unwrap();
-    assert_eq!(buf, [0, 0, 0, 1, 2])
+    assert_eq!(buf, [0, 0, 0, 1, 2]);
 }
 
 #[test]
@@ -247,9 +250,8 @@ fn test_write_piece() {
     let piece = Arc::new([1u8; 16384]);
     let mut sbuf = [0u8; 16384 + 13];
     let mut buf = Cursor::new(&mut sbuf[..]);
-    let m = Message::SharedPiece { index:1, begin: 1, data: piece };
+    let m = Message::SharedPiece { index: 1, begin: 1, data: piece };
     w.write_message(m, &mut buf);
-    w.writable(&mut buf).unwrap();
     let buf = buf.into_inner();
     assert_eq!(buf[0..13], [0, 0, 0x40, 0x09, 7, 0, 0, 0, 1, 0, 0, 0, 1]);
     for i in 0..16384 {
@@ -263,7 +265,6 @@ fn test_write_cancel() {
     let mut buf = [0u8; 17];
     let m = Message::Cancel { index: 1, begin: 1, length: 1 };
     w.write_message(m, &mut &mut buf[..]);
-    w.writable(&mut &mut buf[..]).unwrap();
     assert_eq!(buf, [0, 0, 0, 13, 8, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1])
 }
 
@@ -279,4 +280,3 @@ fn test_write_handshake() {
     w.writable(&mut &mut buf[..]).unwrap();
     assert_eq!(buf[..], abuf[..])
 }
-*/

@@ -80,16 +80,22 @@ impl EvLoop {
         let mut ready = Ready::all();
         if event.readiness().is_readable() {
             println!("Peer {:?} readable!", pid);
-            if torrent.peer_readable(pid).is_err() {
-                println!("Peer {:?} error'd, removing", pid);
+            if let Err(e) = torrent.peer_readable(pid) {
+                println!("Peer {:?} error'd with {:?}, removing", pid, e);
                 torrent.remove_peer(pid);
                 return Ok(());
             }
         }
         if event.readiness().is_writable() {
             println!("Peer {:?} writable!", pid);
-            if !torrent.peer_writable(pid)? {
-                ready.remove(Ready::writable());
+            match torrent.peer_writable(pid) {
+                Ok(false) => ready.remove(Ready::writable()),
+                Ok(true) => { }
+                Err(e) => {
+                    println!("Peer {:?} error'd with {:?}, removing", pid, e);
+                    torrent.remove_peer(pid);
+                    return Ok(());
+                }
             }
         }
         self.poll.reregister(&torrent.get_peer_mut(pid).unwrap().conn, event.token(), ready, PollOpt::edge() | PollOpt::oneshot()).unwrap();
