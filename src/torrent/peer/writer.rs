@@ -1,4 +1,4 @@
-use torrent::peer::message::Message;
+use torrent::peer::Message;
 use std::collections::VecDeque;
 use std::io::{self, Write, ErrorKind};
 use std::sync::Arc;

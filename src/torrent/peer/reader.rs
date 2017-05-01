@@ -1,6 +1,6 @@
 use std::io::{self, Read, ErrorKind};
 use std::mem;
-use torrent::peer::message::Message;
+use torrent::peer::Message;
 use torrent::piece_field::PieceField;
 use byteorder::{BigEndian, ReadBytesExt};
 use util::{io_err, io_err_val};

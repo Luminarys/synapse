@@ -41,6 +41,8 @@ lazy_static! {
 }
 
 fn main() {
+    // TODO: http://geocar.sdf1.org/fast-servers.html maybe?
+    // This design could actually be really good
     let torrent = env::args().nth(1).unwrap();
     download_torrent(&torrent);
 }

@@ -2,16 +2,19 @@ mod reader;
 mod writer;
 mod message;
 
+pub use self::message::Message;
 use self::reader::Reader;
 use self::writer::Writer;
-use self::message::Message;
 use mio::tcp::TcpStream;
 use std::net::SocketAddr;
 use std::io;
 use torrent::info::Info;
+use torrent::PieceField;
 
 pub struct Peer {
     pub conn: TcpStream,
+    pub pieces: PieceField,
+    pub being_choked: bool,
     reader: Reader,
     writer: Writer,
 }
@@ -23,9 +26,11 @@ impl Peer {
         let mut reader = Reader::new();
         writer.write_message(Message::handshake(torrent), &mut conn)?;
         Ok(Peer {
+            being_choked: true,
             conn: conn,
             reader: reader,
             writer: writer,
+            pieces: PieceField::new(torrent.hashes.len() as u32),
         })
     }
 
@@ -34,9 +39,11 @@ impl Peer {
         let mut reader = Reader::new();
         writer.write_message(Message::handshake(torrent), &mut conn)?;
         Ok(Peer {
+            being_choked: true,
             conn: conn,
             reader: reader,
             writer: writer,
+            pieces: PieceField::new(torrent.hashes.len() as u32),
         })
     }
 

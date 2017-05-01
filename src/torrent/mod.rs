@@ -3,15 +3,19 @@ pub mod peer;
 pub mod tracker;
 pub mod piece_field;
 
+pub use self::piece_field::PieceField;
+pub use self::info::Info;
 use bencode::BEncode;
 use self::peer::Peer;
 use self::tracker::Tracker;
+use self::peer::Message;
 use slab::Slab;
 use std::{fmt, io};
 use mio::Poll;
 
 pub struct Torrent {
-    pub info: info::Info,
+    pub info: Info,
+    pub pieces: PieceField,
     peers: Slab<Peer, usize>,
     // tracker: Tracker,
 }
@@ -24,24 +28,39 @@ impl fmt::Debug for Torrent {
 
 impl Torrent {
     pub fn from_bencode(data: BEncode) -> Result<Torrent, &'static str> {
-        let info = info::Info::from_bencode(data)?;
+        let info = Info::from_bencode(data)?;
         let peers = Slab::with_capacity(32);
+        let pieces = PieceField::new(info.hashes.len() as u32);
         // let tracker = Tracker::new().unwrap();
-        Ok(Torrent {
-            info: info,
-            peers: peers,
-            // tracker: tracker,
-        })
+        Ok(Torrent { info, peers, pieces })
     }
 
     pub fn peer_readable(&mut self, peer: usize) -> io::Result<()> {
         let res = self.peers.get_mut(peer).unwrap().readable()?;
-        if res.len() > 0 {
-            println!("Got message(s): {:?}!", res);
-        } else {
-            println!("No messages read!");
+        for msg in res {
+            self.handle_msg(msg, peer);
         }
         Ok(())
+    }
+
+    fn handle_msg(&mut self, msg: Message, peer: usize) {
+        let peer = self.peers.get_mut(peer).unwrap();
+        match msg {
+            Message::Unchoke => {
+                peer.being_choked = false;
+            }
+            Message::Choke => {
+                peer.being_choked = true;
+            }
+            Message::Piece { index, begin, data } => {
+            
+            }
+            _ => { }
+        }
+    }
+
+    fn request_next_piece(&mut self) {
+        let m = Message::Request { index: 1, begin: 1, length: 16384 };
     }
 
     pub fn peer_writable(&mut self, peer: usize) -> io::Result<bool> {
