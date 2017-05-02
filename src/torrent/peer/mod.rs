@@ -15,6 +15,7 @@ pub struct Peer {
     pub conn: TcpStream,
     pub pieces: PieceField,
     pub being_choked: bool,
+    pub queued: u16,
     reader: Reader,
     writer: Writer,
 }
@@ -27,9 +28,10 @@ impl Peer {
         writer.write_message(Message::handshake(torrent), &mut conn)?;
         Ok(Peer {
             being_choked: true,
-            conn: conn,
-            reader: reader,
-            writer: writer,
+            conn,
+            reader,
+            writer,
+            queued: 0,
             pieces: PieceField::new(torrent.hashes.len() as u32),
         })
     }
@@ -43,6 +45,7 @@ impl Peer {
             conn: conn,
             reader: reader,
             writer: writer,
+            queued: 0,
             pieces: PieceField::new(torrent.hashes.len() as u32),
         })
     }
@@ -56,5 +59,9 @@ impl Peer {
     pub fn writable(&mut self) -> io::Result<bool> {
         self.writer.writable(&mut self.conn);
         Ok(!self.writer.is_writable())
+    }
+
+    pub fn send_message(&mut self, msg: Message) -> io::Result<()> {
+        return self.writer.write_message(msg, &mut self.conn);
     }
 }

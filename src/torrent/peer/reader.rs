@@ -151,7 +151,6 @@ impl ReadState {
                 }
             }
             ReadState::ReadingPiece { mut prefix, mut data, mut idx } => {
-                println!("Reading piece, idx {:?}!", idx);
                 if idx < 13 {
                     match conn.read(&mut prefix[idx as usize..13]) {
                         Ok(0) => ReadRes::EOF,

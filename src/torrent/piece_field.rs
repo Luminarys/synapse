@@ -62,7 +62,7 @@ impl PieceField {
     }
 
     pub fn usable(&self, other: &PieceField) -> bool {
-        if self.len == other.len {
+        if self.len <= other.len {
             for i in 0..self.data.len() {
                 // If we encounter a 0 for us and a 1 for them, return true.
                 // XOR will make sure that 0/0 and 1/1 are invalid, and the & with self ensures
