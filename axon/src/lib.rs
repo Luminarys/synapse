@@ -37,8 +37,6 @@ lazy_static! {
         }
         pid
     };
-
-    pub static ref MEM_POOL: pool::Pool = pool::Pool::new();
 }
 
 #[cfg(test)]

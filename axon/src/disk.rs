@@ -1,3 +1,6 @@
-pub struct Disk {
+pub enum DiskRequest {
 
+}
+
+pub struct Disk {
 }
