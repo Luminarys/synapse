@@ -33,6 +33,10 @@ impl PieceField {
         self.len
     }
 
+    pub fn cap(&mut self, len: u32) {
+        self.len = len;
+    }
+
     pub fn bytes(&self) -> usize {
         self.data.len()
     }
@@ -46,7 +50,7 @@ impl PieceField {
             false
         } else {
             let block_pos = pos/8;
-            let index = pos % 8;
+            let index = 7 - (pos % 8);
             let block = self.data[block_pos as usize];
             ((block >> index) & 1) == 1
         }
@@ -55,7 +59,7 @@ impl PieceField {
     pub fn set_piece(&mut self, pos: u32) {
         if pos < self.len {
             let block_pos = pos/8;
-            let index = pos % 8;
+            let index = 7 - (pos % 8);
             let block = self.data[block_pos as usize];
             self.data[block_pos as usize] = block | (1 << index);
         }

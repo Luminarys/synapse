@@ -1,10 +1,9 @@
-use std::io::{self, Read};
-use mio::{channel, Event, Events, Poll, PollOpt, Ready, Token};
-use mio::tcp::{TcpListener, TcpStream};
+use std::io;
+use mio::{Event, Events, Poll, PollOpt, Ready, Token};
 use slab::Slab;
 use torrent::{Torrent, tracker};
 use torrent::peer::Peer;
-use reqwest::{self, Url};
+use reqwest;
 use url::percent_encoding::{percent_encode_byte};
 use PEER_ID;
 use bencode;
@@ -51,7 +50,7 @@ impl EvLoop {
             self.poll.poll(&mut events, None)?;
             for event in events.iter() {
                 match self.handle_event(event) {
-                    Err(e) => {
+                    Err(_) => {
                     
                     }
                     _ => (),
@@ -77,9 +76,8 @@ impl EvLoop {
 
     fn handle_peer_ev(&mut self, tid: usize, pid: usize, event: Event) -> io::Result<()> {
         let mut torrent = self.torrents.get_mut(tid).unwrap();
-        let mut ready = Ready::all();
+        let mut ready = Ready::readable() | Ready::writable();
         if event.readiness().is_readable() {
-            println!("Peer {:?} readable!", pid);
             if let Err(e) = torrent.peer_readable(pid) {
                 println!("Peer {:?} error'd with {:?}, removing", pid, e);
                 torrent.remove_peer(pid);
@@ -87,7 +85,6 @@ impl EvLoop {
             }
         }
         if event.readiness().is_writable() {
-            println!("Peer {:?} writable!", pid);
             match torrent.peer_writable(pid) {
                 Ok(false) => ready.remove(Ready::writable()),
                 Ok(true) => { }

@@ -15,6 +15,7 @@ mod torrent;
 mod ev_loop;
 mod util;
 mod socket;
+mod disk;
 
 use std::env;
 use std::fs::File;
@@ -38,6 +39,11 @@ lazy_static! {
         }
         pid
     };
+
+    pub static ref DISK: disk::Handle = {
+        disk::start()
+    };
+
 }
 
 fn main() {

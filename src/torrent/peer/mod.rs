@@ -6,13 +6,14 @@ pub use self::message::Message;
 use self::reader::Reader;
 use self::writer::Writer;
 use mio::tcp::TcpStream;
+use socket::Socket;
 use std::net::SocketAddr;
 use std::io;
 use torrent::info::Info;
 use torrent::PieceField;
 
 pub struct Peer {
-    pub conn: TcpStream,
+    pub conn: Socket,
     pub pieces: PieceField,
     pub being_choked: bool,
     pub queued: u16,
@@ -22,7 +23,7 @@ pub struct Peer {
 
 impl Peer {
     pub fn new_outgoing(ip: &SocketAddr, torrent: &Info) -> io::Result<Peer> {
-        let mut conn = TcpStream::connect(ip)?;
+        let mut conn = Socket::new(TcpStream::connect(ip)?);
         let mut writer = Writer::new();
         let mut reader = Reader::new();
         writer.write_message(Message::handshake(torrent), &mut conn)?;
@@ -42,7 +43,7 @@ impl Peer {
         writer.write_message(Message::handshake(torrent), &mut conn)?;
         Ok(Peer {
             being_choked: true,
-            conn: conn,
+            conn: Socket::new(conn),
             reader: reader,
             writer: writer,
             queued: 0,

@@ -46,7 +46,7 @@ enum ReadState {
     ReadingLen { data: [u8; 17], idx: u8 },
     ReadingId { data: [u8; 17], len: u32 },
     ReadingMsg { data: [u8; 17], idx: u8, len: u32 },
-    ReadingPiece { prefix: [u8; 17], data: Box<[u8; 16384]>, idx: usize },
+    ReadingPiece { prefix: [u8; 17], data: Box<[u8; 16384]>, len: u32, idx: usize },
     ReadingBitfield { data: Vec<u8>, idx: usize },
 }
 
@@ -150,34 +150,34 @@ impl ReadState {
                     Err(e) => ReadRes::Err(e)
                 }
             }
-            ReadState::ReadingPiece { mut prefix, mut data, mut idx } => {
+            ReadState::ReadingPiece { mut prefix, mut data, len, mut idx } => {
                 if idx < 13 {
                     match conn.read(&mut prefix[idx as usize..13]) {
                         Ok(0) => ReadRes::EOF,
-                        Ok(13) => ReadState::ReadingPiece { prefix, data, idx }.next_state(conn),
+                        Ok(13) => ReadState::ReadingPiece { prefix, data, len, idx }.next_state(conn),
                         Ok(amnt) => { 
                             idx += amnt;
-                            ReadState::ReadingPiece { prefix, data, idx }.next_state(conn)
+                            ReadState::ReadingPiece { prefix, data, len, idx }.next_state(conn)
                         }
                         Err(ref e) if e.kind() == ErrorKind::WouldBlock => {
-                            ReadRes::Incomplete(ReadState::ReadingPiece { prefix, data, idx })
+                            ReadRes::Incomplete(ReadState::ReadingPiece { prefix, data, len, idx })
                         }
                         Err(e) => ReadRes::Err(e)
                     }
                 } else {
                     match conn.read(&mut data[(idx - 13)..]) {
                         Ok(0) => ReadRes::EOF,
-                        Ok(amnt) if idx + amnt - 13 == data.len() => {
+                        Ok(amnt) if idx + amnt - 13 == len as usize => {
                             let idx = (&prefix[5..9]).read_u32::<BigEndian>().unwrap();
                             let beg = (&prefix[9..13]).read_u32::<BigEndian>().unwrap();
                             ReadRes::Message(Message::Piece{ index: idx, begin: beg, data })
                         }
                         Ok(amnt) => {
                             idx += amnt;
-                            ReadState::ReadingPiece { prefix, data, idx }.next_state(conn)
+                            ReadState::ReadingPiece { prefix, data, len, idx }.next_state(conn)
                         }
                         Err(ref e) if e.kind() == ErrorKind::WouldBlock => {
-                            ReadRes::Incomplete(ReadState::ReadingPiece { prefix, data, idx })
+                            ReadRes::Incomplete(ReadState::ReadingPiece { prefix, data, len, idx })
                         }
                         Err(e) => ReadRes::Err(e)
                     }
@@ -223,10 +223,10 @@ impl ReadState {
                 ReadState::ReadingBitfield { data: vec![0; len as usize - 1], idx: 0 }.next_state(conn)
             },
             7 => {
-                if len != 16393 {
-                    return ReadRes::Err(io_err_val("Only piece sizes of 16384 are accepted"));
+                if len > 16393 {
+                    return ReadRes::Err(io_err_val("Only piece sizes of 16384 or less are accepted"));
                 }
-                ReadState::ReadingPiece { prefix: buf, data: Box::new([0u8; 16384]), idx: 5}.next_state(conn)
+                ReadState::ReadingPiece { prefix: buf, data: Box::new([0u8; 16384]), len: len - 9, idx: 5}.next_state(conn)
             }
             4 => {
                 if len != 5 {

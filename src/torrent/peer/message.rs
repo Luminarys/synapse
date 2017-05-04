@@ -83,11 +83,11 @@ impl Message {
         }
     }
 
-    pub fn request(idx: u32, offset: u32) -> Message {
+    pub fn request(idx: u32, offset: u32, len: u32) -> Message {
         Message::Request {
             index: idx,
             begin: offset,
-            length: 16384,
+            length: len,
         }
     }
 

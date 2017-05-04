@@ -46,7 +46,7 @@ impl File {
     }
 
     fn create(&self) -> Result<(), io::Error> {
-        let f = fs::File::open(&self.path)?;
+        let f = fs::OpenOptions::new().write(true).create(true).open(&self.path)?;
         f.set_len(self.length as u64)?;
         Ok(())
     }
@@ -99,6 +99,10 @@ impl Info {
             file.create()?;
         }
         Ok(())
+    }
+
+    pub fn last_piece_len(&self) -> u32 {
+        (self.files.last().unwrap().length % 16384) as u32
     }
 }
 
