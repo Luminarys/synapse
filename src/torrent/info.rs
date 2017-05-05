@@ -8,6 +8,7 @@ use sha1::Sha1;
 pub struct Info {
     pub announce: String,
     pub piece_len: usize,
+    pub total_len: usize,
     pub hashes: Vec<Vec<u8>>,
     pub hash: [u8; 20],
     pub files: Vec<File>,
@@ -84,12 +85,14 @@ impl Info {
                     })
                     .ok_or("Info must provide valid hashes")?;
                 let files = parse_bencode_files(i)?;
+                let total_len = files.iter().map(|f| f.length).sum();
                 Ok(Info {
                     announce: a,
                     piece_len: pl as usize,
-                    hashes: hashes,
-                    hash: hash,
-                    files: files,
+                    hashes,
+                    hash,
+                    files,
+                    total_len,
                 })
             })
     }
@@ -102,7 +105,26 @@ impl Info {
     }
 
     pub fn last_piece_len(&self) -> u32 {
-        (self.files.last().unwrap().length % 16384) as u32
+        let res = (self.total_len % 16384) as u32;
+        if res == 0 {
+            16384
+        } else {
+            res
+        }
+    }
+
+    pub fn is_last_piece(&self, (idx, offset): (u32, u32)) -> bool {
+        let last_piece_len = (self.total_len - self.piece_len * (self.pieces() as usize - 1)) as u32;
+        if offset < last_piece_len {
+            let last_offset = last_piece_len - offset;
+            idx == self.pieces() - 1 && last_offset <= 16384
+        } else {
+            false
+        }
+    }
+
+    pub fn pieces(&self) -> u32 {
+        self.hashes.len() as u32
     }
 }
 

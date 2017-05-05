@@ -107,21 +107,33 @@ impl EvLoop {
         // TODO: Add the tracker request into the event loop
         let mut url = torrent.info.announce.clone();
         // The fact that I have to do this is genuinely depressing.
+        // This will be rewritten as a proper http protocol
+        // encoder in the event loop eventually.
         url.push_str("?");
         append_pair(&mut url, "info_hash", &encode_param(&torrent.info.hash));
         append_pair(&mut url, "peer_id", &encode_param(&PEER_ID[..]));
         append_pair(&mut url, "uploaded", "0");
-        append_pair(&mut url, "numwant", "5");
+        append_pair(&mut url, "numwant", "10");
         append_pair(&mut url, "downloaded", "0");
         append_pair(&mut url, "left", &torrent.file_size().to_string());
         append_pair(&mut url, "compact", "1");
         append_pair(&mut url, "event", "started");
         append_pair(&mut url, "port", "9999");
-        let mut resp = reqwest::get(&url).unwrap();
-        let mut content = bencode::decode(&mut resp).unwrap();
-        let response = tracker::Response::from_bencode(content).unwrap();
+        let mut response = if false {
+            let mut resp = reqwest::get(&url).unwrap();
+            let content = bencode::decode(&mut resp).unwrap();
+            tracker::Response::from_bencode(content).unwrap()
+        } else {
+            tracker::Response {
+                peers: vec![],
+                interval: 900,
+                id: None,
+            }
+        };
         let tid = self.torrents.insert(torrent).unwrap();
         let ref mut torrent = self.torrents.get_mut(tid).unwrap();
+        response.peers.push("127.0.0.1:51413".parse().unwrap());
+        response.peers.push("127.0.0.1:8999".parse().unwrap());
         for ip in response.peers.iter() {
             let peer = Peer::new_outgoing(ip, &torrent.info).unwrap();
             let pid = torrent.insert_peer(peer).unwrap();

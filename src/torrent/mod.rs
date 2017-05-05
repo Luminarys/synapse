@@ -10,16 +10,12 @@ pub use self::info::Info;
 pub use self::peer::Peer;
 
 use bencode::BEncode;
-use self::tracker::Tracker;
 use self::peer::Message;
 use self::picker::Picker;
 use slab::Slab;
 use std::{fmt, io};
-use std::io::Write;
-use mio::Poll;
 use disk;
 use std::sync::mpsc;
-use std::fs::File;
 
 pub struct Torrent {
     pub info: Info,
@@ -39,11 +35,11 @@ impl fmt::Debug for Torrent {
 impl Torrent {
     pub fn from_bencode(data: BEncode) -> Result<Torrent, &'static str> {
         let info = Info::from_bencode(data)?;
-        println!("Handling with torrent with {:?} pl, {:?} pieces", info.piece_len, info.hashes.len());
+        println!("Handling with torrent with {:?} pl, {:?} pieces, {:?} sf len", info.piece_len, info.pieces(), info.files.last().unwrap().length);
         // Create dummy files
         info.create_files().unwrap();
         let peers = Slab::with_capacity(32);
-        let pieces = PieceField::new(info.hashes.len() as u32);
+        let pieces = PieceField::new(info.pieces());
         let picker = Picker::new(&info);
         let disk = ::DISK.get();
         // let tracker = Tracker::new().unwrap();
@@ -53,12 +49,12 @@ impl Torrent {
     pub fn peer_readable(&mut self, peer: usize) -> io::Result<()> {
         let res = self.peers.get_mut(peer).unwrap().readable()?;
         for msg in res {
-            self.handle_msg(msg, peer);
+            self.handle_msg(msg, peer)?;
         }
         Ok(())
     }
 
-    fn handle_msg(&mut self, msg: Message, peer: usize) {
+    fn handle_msg(&mut self, msg: Message, peer: usize) -> io::Result<()> {
         let peer = self.peers.get_mut(peer).unwrap();
         match msg {
             Message::Bitfield(mut pf) => {
@@ -66,7 +62,7 @@ impl Torrent {
                 peer.pieces = pf;
                 if self.pieces.usable(&peer.pieces) {
                     println!("Peer is interesting!");
-                    peer.send_message(Message::Interested);
+                    peer.send_message(Message::Interested)?;
                 }
             }
             Message::Have(idx) => {
@@ -76,7 +72,7 @@ impl Torrent {
             Message::Unchoke => {
                 println!("Unchoked, attempting request!");
                 peer.being_choked = false;
-                Torrent::make_requests(&mut self.picker, peer, &self.info);
+                Torrent::make_requests(&mut self.picker, peer, &self.info)?;
             }
             Message::Choke => {
                 peer.being_choked = true;
@@ -84,7 +80,7 @@ impl Torrent {
             Message::Piece { index, begin, data } => {
                 peer.queued -= 1;
                 println!("Piece {:?}, {:?} received!", index, begin);
-                let len = if index as usize != self.info.hashes.len() - 1 {
+                let len = if !self.info.is_last_piece((index, begin)) {
                     16384
                 } else {
                     self.info.last_piece_len()
@@ -95,13 +91,15 @@ impl Torrent {
                     // Broadcast HAVE to everyone who needs it.
                 }
                 if !peer.being_choked {
-                    Torrent::make_requests(&mut self.picker, peer, &self.info);
+                    Torrent::make_requests(&mut self.picker, peer, &self.info)?;
                 }
             }
             _ => { }
         }
+        Ok(())
     }
 
+    #[inline(always)]
     fn write_piece(info: &Info, index: u32, begin: u32, len: u32, data: Box<[u8; 16384]>, disk: &mpsc::Sender<disk::Request>) {
         let mut idx = 0;
         let mut fidx = 0;
@@ -119,22 +117,24 @@ impl Torrent {
         disk.send(req).unwrap();
     }
 
-    fn make_requests(picker: &mut Picker, peer: &mut Peer, info: &Info) {
+    #[inline(always)]
+    fn make_requests(picker: &mut Picker, peer: &mut Peer, info: &Info) -> io::Result<()> {
         // keep 5 outstanding reuqests?
         while peer.queued < 5 {
             if let Some((idx, offset)) = picker.pick(&peer) {
                 println!("Requesting {:?}, {:?}!", idx, offset);
-                if idx as usize == info.hashes.len()  - 1{
+                if info.is_last_piece((idx, offset)) {
                     println!("Requesting final piece, len {:?}!", info.last_piece_len());
-                    peer.send_message(Message::request(idx, offset, info.last_piece_len()));
+                    peer.send_message(Message::request(idx, offset, info.last_piece_len()))?;
                 } else {
-                    peer.send_message(Message::request(idx, offset, 16384));
+                    peer.send_message(Message::request(idx, offset, 16384))?;
                 }
                 peer.queued += 1;
             } else {
                 break;
             }
         }
+        Ok(())
     }
 
     pub fn peer_writable(&mut self, peer: usize) -> io::Result<bool> {
