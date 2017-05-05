@@ -46,6 +46,7 @@ impl PieceField {
     }
 
     pub fn has_piece(&self, pos: u32) -> bool {
+        debug_assert!(pos < self.len);
         if pos >= self.len {
             false
         } else {
@@ -57,6 +58,7 @@ impl PieceField {
     }
 
     pub fn set_piece(&mut self, pos: u32) {
+        debug_assert!(pos < self.len);
         if pos < self.len {
             let block_pos = pos/8;
             let index = 7 - (pos % 8);
@@ -66,6 +68,7 @@ impl PieceField {
     }
 
     pub fn usable(&self, other: &PieceField) -> bool {
+        debug_assert!(self.len <= other.len);
         if self.len <= other.len {
             for i in 0..self.data.len() {
                 // If we encounter a 0 for us and a 1 for them, return true.

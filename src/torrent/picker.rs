@@ -9,11 +9,23 @@ pub struct Picker {
 
 impl Picker {
     pub fn new(info: &Info) -> Picker {
-        let scale: u32 = info.piece_len as u32/16384;
-        let pieces = PieceField::new((scale * (info.hashes.len() as u32)) as u32);
+        let scale = info.piece_len/16384;
+        // The n - 1 piece length, since the last one is (usually) shorter.
+        let compl_piece_len = scale * (info.pieces() as usize - 1);
+        // the nth piece length
+        let mut last_piece_len = (info.total_len - info.piece_len * (info.pieces() as usize - 1));
+        if last_piece_len % 16384 == 0 {
+            last_piece_len /= 16384;
+        } else {
+            last_piece_len /= 16384;
+            last_piece_len += 1;
+        }
+        let len = compl_piece_len + last_piece_len;
+        println!("Creating picker with len: {:?}", len);
+        let pieces = PieceField::new(len as u32);
         Picker {
             pieces,
-            scale,
+            scale: scale as u32,
             waiting: HashSet::new(),
         }
     }
@@ -22,7 +34,9 @@ impl Picker {
         for idx in peer.pieces.iter() {
             let start = idx * self.scale;
             for i in 0..self.scale {
-                if !self.pieces.has_piece(start + i) {
+                // On the last piece check, we won't check the whole range.
+                if start + i < self.pieces.len() && !self.pieces.has_piece(start + i) {
+                    println!("Picking idx {:?}", start + i);
                     self.pieces.set_piece(start + i);
                     self.waiting.insert(start + i);
                     return Some((idx, i * 16384));
@@ -38,10 +52,26 @@ impl Picker {
         idx *= self.scale;
         self.waiting.remove(&(idx + offset));
         for i in 0..self.scale {
-            if !self.pieces.has_piece(idx + i) {
+            if idx + i < self.pieces.len() && !self.pieces.has_piece(idx + i) {
                 return false;
             }
         }
         true
     }
+}
+
+#[test]
+fn test_piece_size() {
+    let info = Info {
+        announce: String::from(""),
+        piece_len: 262144,
+        total_len: 2000000,
+        hashes: vec![vec![0u8]; 8],
+        hash: [0u8; 20],
+        files: vec![],
+    };
+
+    let mut picker = Picker::new(&info);
+    assert_eq!(picker.scale as usize, info.piece_len/16384);
+    assert_eq!(picker.pieces.len(), 123);
 }
