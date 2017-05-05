@@ -9,6 +9,7 @@ extern crate reqwest;
 extern crate iovec;
 #[macro_use]
 extern crate lazy_static;
+extern crate pbr;
 
 mod bencode;
 mod torrent;

@@ -21,7 +21,6 @@ impl Picker {
             last_piece_len += 1;
         }
         let len = compl_piece_len + last_piece_len;
-        println!("Creating picker with len: {:?}", len);
         let pieces = PieceField::new(len as u32);
         Picker {
             pieces,
@@ -36,7 +35,6 @@ impl Picker {
             for i in 0..self.scale {
                 // On the last piece check, we won't check the whole range.
                 if start + i < self.pieces.len() && !self.pieces.has_piece(start + i) {
-                    println!("Picking idx {:?}", start + i);
                     self.pieces.set_piece(start + i);
                     self.waiting.insert(start + i);
                     return Some((idx, i * 16384));
@@ -57,6 +55,10 @@ impl Picker {
             }
         }
         true
+    }
+
+    pub fn chunks(&self) -> u32 {
+        self.pieces.len()
     }
 }
 

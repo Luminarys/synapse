@@ -16,6 +16,7 @@ use slab::Slab;
 use std::{fmt, io};
 use disk;
 use std::sync::mpsc;
+use pbr::ProgressBar;
 
 pub struct Torrent {
     pub info: Info,
@@ -23,6 +24,7 @@ pub struct Torrent {
     peers: Slab<Peer, usize>,
     picker: Picker,
     disk: mpsc::Sender<disk::Request>,
+    pb: ProgressBar<io::Stdout>,
     // tracker: Tracker,
 }
 
@@ -41,9 +43,10 @@ impl Torrent {
         let peers = Slab::with_capacity(32);
         let pieces = PieceField::new(info.pieces());
         let picker = Picker::new(&info);
+        let pb = ProgressBar::new(info.pieces() as u64);
         let disk = ::DISK.get();
         // let tracker = Tracker::new().unwrap();
-        Ok(Torrent { info, peers, pieces, picker, disk })
+        Ok(Torrent { info, peers, pieces, picker, disk, pb })
     }
 
     pub fn peer_readable(&mut self, peer: usize) -> io::Result<()> {
@@ -61,16 +64,13 @@ impl Torrent {
                 pf.cap(self.pieces.len());
                 peer.pieces = pf;
                 if self.pieces.usable(&peer.pieces) {
-                    println!("Peer is interesting!");
                     peer.send_message(Message::Interested)?;
                 }
             }
             Message::Have(idx) => {
-                println!("Setting have for peer!");
                 peer.pieces.set_piece(idx);
             }
             Message::Unchoke => {
-                println!("Unchoked, attempting request!");
                 peer.being_choked = false;
                 Torrent::make_requests(&mut self.picker, peer, &self.info)?;
             }
@@ -79,15 +79,18 @@ impl Torrent {
             }
             Message::Piece { index, begin, data } => {
                 peer.queued -= 1;
-                println!("Piece {:?}, {:?} received!", index, begin);
                 let len = if !self.info.is_last_piece((index, begin)) {
                     16384
                 } else {
                     self.info.last_piece_len()
                 };
                 Torrent::write_piece(&self.info, index, begin, len, data, &self.disk);
-                if self.picker.completed(index, begin) {
+                if self.picker.completed(index, begin) && !self.pieces.has_piece(index) {
+                    self.pb.inc();
                     self.pieces.set_piece(index);
+                    if self.pieces.complete() {
+                        self.pb.finish_print("Downloaded!");
+                    }
                     // Broadcast HAVE to everyone who needs it.
                 }
                 if !peer.being_choked {
@@ -122,9 +125,7 @@ impl Torrent {
         // keep 5 outstanding reuqests?
         while peer.queued < 5 {
             if let Some((idx, offset)) = picker.pick(&peer) {
-                println!("Requesting {:?}, {:?}!", idx, offset);
                 if info.is_last_piece((idx, offset)) {
-                    println!("Requesting final piece, len {:?}!", info.last_piece_len());
                     peer.send_message(Message::request(idx, offset, info.last_piece_len()))?;
                 } else {
                     peer.send_message(Message::request(idx, offset, 16384))?;

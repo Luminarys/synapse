@@ -137,11 +137,9 @@ impl EvLoop {
         for ip in response.peers.iter() {
             let peer = Peer::new_outgoing(ip, &torrent.info).unwrap();
             let pid = torrent.insert_peer(peer).unwrap();
-            println!("Regiserting peer {:?}", pid);
             let tok = self.handles.insert(Handle::peer(tid, pid)).unwrap();
             self.poll.register(&torrent.get_peer_mut(pid).unwrap().conn, tok, Ready::all(), PollOpt::edge() | PollOpt::oneshot()).unwrap();
         }
-        println!("{:?}", response);
     }
 }
 

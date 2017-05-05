@@ -45,6 +45,23 @@ impl PieceField {
         self.data[pos as usize]
     }
 
+    pub fn complete(&self) -> bool {
+        for i in 0..self.data.len() - 1 {
+            if !(self.data[i]) != 0 {
+                return false;
+            }
+        }
+        if self.len % 8 == 0 {
+            return !self.data.last().unwrap() != 0;
+        }
+        for i in 0..(self.len % 8) {
+            if !self.has_piece(self.len - i - 1) {
+                return false
+            }
+        }
+        true
+    }
+
     pub fn has_piece(&self, pos: u32) -> bool {
         debug_assert!(pos < self.len);
         if pos >= self.len {

@@ -39,13 +39,11 @@ impl Disk {
     pub fn run(&mut self) {
         loop {
             if let Ok(m) = self.queue.recv() {
-                println!("Received piece at {:?}, len {:?} writing!", m.offset, m.end);
                 OpenOptions::new().write(true).open(&m.file).and_then(|mut f| {
                     f.seek(SeekFrom::Start(m.offset)).unwrap();
                     f.write(&m.data[m.start..m.end])
                 }).unwrap();
             } else {
-                println!("DT shutting down!");
                 break;
             }
         }
