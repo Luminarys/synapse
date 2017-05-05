@@ -50,7 +50,7 @@ impl Picker {
         idx *= self.scale;
         self.waiting.remove(&(idx + offset));
         for i in 0..self.scale {
-            if idx + i < self.pieces.len() && !self.pieces.has_piece(idx + i) {
+            if (idx + i < self.pieces.len() && !self.pieces.has_piece(idx + i)) || self.waiting.contains(&(idx + i)) {
                 return false;
             }
         }

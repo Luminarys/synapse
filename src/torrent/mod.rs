@@ -85,7 +85,7 @@ impl Torrent {
                     self.info.last_piece_len()
                 };
                 Torrent::write_piece(&self.info, index, begin, len, data, &self.disk);
-                if self.picker.completed(index, begin) && !self.pieces.has_piece(index) {
+                if self.picker.completed(index, begin) {
                     self.pb.inc();
                     self.pieces.set_piece(index);
                     if self.pieces.complete() {
