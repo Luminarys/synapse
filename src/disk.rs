@@ -1,4 +1,4 @@
-use std::sync::mpsc;
+use std::sync::{mpsc, Arc};
 use std::fs::OpenOptions;
 use std::thread;
 use std::io::{Seek, SeekFrom, Write};
@@ -23,7 +23,7 @@ unsafe impl Sync for Handle {}
 
 pub struct Request {
     pub file: PathBuf,
-    pub data: Box<[u8; 16384]>,
+    pub data: Arc<Box<[u8; 16384]>>,
     pub offset: u64,
     pub start: usize,
     pub end: usize,
@@ -39,6 +39,7 @@ impl Disk {
     pub fn run(&mut self) {
         loop {
             if let Ok(m) = self.queue.recv() {
+                // println!("Got request for file {:?}, at offset {:?}, data from {:?}-{:?}", m.file, m.offset, m.start, m.end);
                 OpenOptions::new().write(true).open(&m.file).and_then(|mut f| {
                     f.seek(SeekFrom::Start(m.offset)).unwrap();
                     f.write(&m.data[m.start..m.end])

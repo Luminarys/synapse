@@ -13,9 +13,9 @@ use bencode::BEncode;
 use self::peer::Message;
 use self::picker::Picker;
 use slab::Slab;
-use std::{fmt, io};
+use std::{fmt, io, cmp};
 use disk;
-use std::sync::mpsc;
+use std::sync::{mpsc, Arc};
 use pbr::ProgressBar;
 
 pub struct Torrent {
@@ -103,21 +103,53 @@ impl Torrent {
     }
 
     #[inline(always)]
-    fn write_piece(info: &Info, index: u32, begin: u32, len: u32, data: Box<[u8; 16384]>, disk: &mpsc::Sender<disk::Request>) {
-        let mut idx = 0;
+    /// Writes a piece of torrent info, with piece index idx,
+    /// piece offset begin, piece length of len, and data bytes.
+    /// The disk send handle is also provided.
+    fn write_piece(info: &Info, index: u32, begin: u32, mut len: u32, data: Box<[u8; 16384]>, disk: &mpsc::Sender<disk::Request>) {
+        let data = Arc::new(data);
+        // The absolute byte offset where we start writing data.
+        let mut cur_start = index * info.piece_len as u32 + begin;
+        // Current index of the data block we're writing
+        let mut data_start = 0;
+        // The current file end length.
         let mut fidx = 0;
-        for _ in 0..index {
-            idx += info.piece_len;
-            if idx > info.files[fidx].length {
-                idx -= info.files[fidx].length;
-                fidx += 1;
+        // Iterate over all file lengths, if we find any which end a bigger
+        // idx than cur_start, write from cur_start..cur_start + file_write_len for that file
+        // and continue if we're now at the end of the file.
+        for f in info.files.iter() {
+            fidx += f.length;
+            if (cur_start as usize) < fidx {
+                let file_write_len = cmp::min(fidx - cur_start as usize, len as usize);
+                let offset = (cur_start - (fidx - f.length) as u32) as u64;
+                if file_write_len == len as usize {
+                    // The file is longer than our len, just write to it,
+                    // exit loop
+                    let req = disk::Request {
+                        file: f.path.clone(),
+                        data: data.clone(),
+                        offset,
+                        start: data_start,
+                        end: data_start + file_write_len
+                    };
+                    disk.send(req).unwrap();
+                    break;
+                } else {
+                    // Write to the end of file, continue
+                    let req = disk::Request {
+                        file: f.path.clone(),
+                        data: data.clone(),
+                        offset,
+                        start: data_start,
+                        end: data_start + file_write_len as usize
+                    };
+                    len -= file_write_len as u32;
+                    cur_start += file_write_len as u32;
+                    data_start += file_write_len;
+                    disk.send(req).unwrap();
+                }
             }
         }
-        // TODO: Handle the multi file boundary!
-        let offset = idx as u64 + begin as u64;
-        let file = info.files[fidx].path.clone();
-        let req = disk::Request { file, data, offset, start: 0, end: len as usize };
-        disk.send(req).unwrap();
     }
 
     #[inline(always)]

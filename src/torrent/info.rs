@@ -47,6 +47,9 @@ impl File {
     }
 
     fn create(&self) -> Result<(), io::Error> {
+        if let Some(parent) = self.path.parent() {
+            fs::create_dir_all(parent)?;
+        }
         let f = fs::OpenOptions::new().write(true).create(true).open(&self.path)?;
         f.set_len(self.length as u64)?;
         Ok(())
