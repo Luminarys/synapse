@@ -1,25 +1,56 @@
-use mio::tcp::TcpStream;
+mod http;
+mod udp;
+
 use std::net::{SocketAddr, SocketAddrV4, Ipv4Addr};
 use std::io;
 use bencode::BEncode;
 use byteorder::{BigEndian, ReadBytesExt};
 
+/// A tracker represents a connection to a bittorrent tracker
+/// and associated metadata.
 pub struct Tracker {
-    conn: TcpStream,
-    id: Option<Vec<u8>>,
     interval: u32,
     peers: Vec<SocketAddr>,
+    conn: TrackerConn,
 }
+
+pub enum TrackerConn {
+    HTTP(http::HttpTracker),
+    UDP(udp::UdpTracker),
+}
+
+#[derive(Debug)]
+pub struct Request {
+    hash: [u8; 20],
+    port: u16,
+    uploaded: usize,
+    downloaded: usize,
+    left: usize,
+    event: Event,
+}
+
+#[derive(Debug)]
+pub enum Event {
+    Started,
+    Stopped,
+    Completed,
+}
+
 
 #[derive(Debug)]
 pub struct Response {
     pub peers: Vec<SocketAddr>,
     pub interval: u32,
-    pub id: Option<Vec<u8>>,
+    pub leechers: u32,
+    pub seeders: u32,
 }
 
 impl Tracker {
-    pub fn new() -> io::Result<Tracker> {
+    pub fn new_http() -> io::Result<Tracker> {
+        unimplemented!();
+    }
+
+    pub fn new_udp() -> io::Result<Tracker> {
         unimplemented!();
     }
 
@@ -33,14 +64,18 @@ impl Tracker {
 }
 
 impl Response {
+    pub fn empty() -> Response {
+        Response {
+            peers: vec![],
+            interval: 900,
+            leechers: 0,
+            seeders: 0,
+        }
+    }
+
     pub fn from_bencode(data: BEncode) -> Result<Response, String> {
         let mut d = data.to_dict().ok_or("File must be a dictionary type!".to_string())?;
-        let peers = Vec::new();
-        let mut resp = Response {
-            peers: peers,
-            interval: 900,
-            id: None,
-        };
+        let mut resp = Response::empty();
         match d.remove("peers") {
             Some(BEncode::String(ref data)) => {
                 for p in data.chunks(6) {
@@ -60,12 +95,6 @@ impl Response {
             _ => {
                 return Err("Response must have interval!".to_string());
             }
-        };
-        match d.remove("tracker id") {
-            Some(BEncode::String(ref s)) => {
-                resp.id = Some(s.clone());
-            }
-            _ => ()
         };
         Ok(resp)
     }

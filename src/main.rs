@@ -44,8 +44,9 @@ lazy_static! {
     pub static ref DISK: disk::Handle = {
         disk::start()
     };
-
 }
+
+thread_local!(pub static POLL: mio::Poll = mio::Poll::new().unwrap());
 
 fn main() {
     // TODO: http://geocar.sdf1.org/fast-servers.html maybe?

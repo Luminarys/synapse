@@ -124,16 +124,12 @@ impl EvLoop {
             let content = bencode::decode(&mut resp).unwrap();
             tracker::Response::from_bencode(content).unwrap()
         } else {
-            tracker::Response {
-                peers: vec![],
-                interval: 900,
-                id: None,
-            }
+            tracker::Response::empty()
         };
         let tid = self.torrents.insert(torrent).unwrap();
         let ref mut torrent = self.torrents.get_mut(tid).unwrap();
         // response.peers.push("127.0.0.1:51413".parse().unwrap());
-        // response.peers.push("127.0.0.1:8999".parse().unwrap());
+        response.peers.push("127.0.0.1:8999".parse().unwrap());
         for ip in response.peers.iter() {
             let peer = Peer::new_outgoing(ip, &torrent.info).unwrap();
             let pid = torrent.insert_peer(peer).unwrap();
