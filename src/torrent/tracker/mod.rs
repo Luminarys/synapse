@@ -54,12 +54,16 @@ impl Tracker {
         unimplemented!();
     }
 
-    pub fn readable(&mut self) {
-    
+    pub fn new_request(&mut self, req: Request) -> io::Result<()> {
+        Ok(())
     }
 
-    pub fn writable(&mut self) {
-    
+    pub fn readable(&mut self) -> io::Result<Option<Response>> {
+        Ok(None)
+    }
+
+    pub fn writable(&mut self) -> io::Result<()> {
+        Ok(())
     }
 }
 
