@@ -2,7 +2,6 @@ use std::sync::{mpsc, Arc};
 use std::fs::OpenOptions;
 use std::thread;
 use std::io::{Seek, SeekFrom, Write};
-use std::ops::Range;
 use std::path::PathBuf;
 
 pub struct Disk {

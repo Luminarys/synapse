@@ -1,6 +1,5 @@
 pub mod info;
 pub mod peer;
-pub mod tracker;
 mod picker;
 
 pub mod piece_field;
@@ -14,8 +13,8 @@ use self::peer::Message;
 use self::picker::Picker;
 use slab::Slab;
 use std::{fmt, io, cmp};
-use disk;
-use std::sync::{mpsc, Arc};
+use {disk, DISK};
+use std::sync::Arc;
 use pbr::ProgressBar;
 
 pub struct Torrent {
@@ -25,7 +24,6 @@ pub struct Torrent {
     pub downloaded: usize,
     peers: Slab<Peer, usize>,
     picker: Picker,
-    disk: mpsc::Sender<disk::Request>,
     pb: ProgressBar<io::Stdout>,
     // tracker: Tracker,
 }
@@ -46,9 +44,8 @@ impl Torrent {
         let pieces = PieceField::new(info.pieces());
         let picker = Picker::new(&info);
         let pb = ProgressBar::new(info.pieces() as u64);
-        let disk = ::DISK.get();
         // let tracker = Tracker::new().unwrap();
-        Ok(Torrent { info, peers, pieces, picker, disk, pb, uploaded: 0, downloaded: 0 })
+        Ok(Torrent { info, peers, pieces, picker, pb, uploaded: 0, downloaded: 0 })
     }
 
     pub fn peer_readable(&mut self, peer: usize) -> io::Result<()> {
@@ -86,7 +83,7 @@ impl Torrent {
                 } else {
                     self.info.last_piece_len()
                 };
-                Torrent::write_piece(&self.info, index, begin, len, data, &self.disk);
+                Torrent::write_piece(&self.info, index, begin, len, data);
                 if self.picker.completed(index, begin) {
                     self.pb.inc();
                     self.pieces.set_piece(index);
@@ -108,7 +105,7 @@ impl Torrent {
     /// Writes a piece of torrent info, with piece index idx,
     /// piece offset begin, piece length of len, and data bytes.
     /// The disk send handle is also provided.
-    fn write_piece(info: &Info, index: u32, begin: u32, mut len: u32, data: Box<[u8; 16384]>, disk: &mpsc::Sender<disk::Request>) {
+    fn write_piece(info: &Info, index: u32, begin: u32, mut len: u32, data: Box<[u8; 16384]>) {
         let data = Arc::new(data);
         // The absolute byte offset where we start writing data.
         let mut cur_start = index * info.piece_len as u32 + begin;
@@ -134,7 +131,7 @@ impl Torrent {
                         start: data_start,
                         end: data_start + file_write_len
                     };
-                    disk.send(req).unwrap();
+                    DISK.tx.send(req).unwrap();
                     break;
                 } else {
                     // Write to the end of file, continue
@@ -148,7 +145,7 @@ impl Torrent {
                     len -= file_write_len as u32;
                     cur_start += file_write_len as u32;
                     data_start += file_write_len;
-                    disk.send(req).unwrap();
+                    DISK.tx.send(req).unwrap();
                 }
             }
         }

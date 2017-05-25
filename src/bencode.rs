@@ -1,5 +1,5 @@
 use std::collections::BTreeMap;
-use std::io::{Cursor, self};
+use std::io;
 use std::str;
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -119,6 +119,7 @@ impl BEncode {
     }
 }
 
+#[test]
 pub fn decode_buf(bytes: &[u8]) -> Result<BEncode, BError> {
     return decode(&mut Cursor::new(bytes));
 }
@@ -195,6 +196,9 @@ fn decode_int(v: Vec<u8>) -> Result<i64, BError> {
 }
 
 #[test]
+use std::io::Cursor;
+
+#[test]
 fn test_encode_decode() {
     let i = BEncode::Int(-10);
     let mut v = Vec::new();
@@ -235,12 +239,14 @@ fn test_encode_decode() {
     encode_decode(&d);
 }
 
+#[test]
 fn encode_decode(b: &BEncode) {
     let mut v = Vec::new();
     b.encode(&mut v).unwrap();
     assert_eq!(b, &decode_buf(&v).unwrap());
 }
 
+#[test]
 fn decode_encode(d: &[u8]) {
     let mut v = Vec::new();
     decode_buf(d).unwrap().encode(&mut v);

@@ -8,7 +8,6 @@ use util::{io_err, io_err_val};
 pub struct Reader {
     state: ReadState,
     blocks_read: usize,
-    download_speed: f64,
 }
 
 impl Reader {
@@ -16,7 +15,6 @@ impl Reader {
         Reader {
             state: ReadState::ReadingHandshake { data: [0u8; 68] , idx: 0 },
             blocks_read: 0,
-            download_speed: 0.0,
         }
     }
 
@@ -29,6 +27,7 @@ impl Reader {
             match state.next_state(conn) {
                 ReadRes::Message(msg) => {
                     self.state = ReadState::Idle;
+                    if msg.is_piece() { self.blocks_read += 1 }
                     v.push(msg);
                 }
                 ReadRes::Incomplete(state) => { self.state = state; break; },
@@ -280,17 +279,20 @@ impl ReadState {
 }
 
 /// Cursor to emulate a mio socket using readv.
+#[test]
 struct Cursor {
     data: Vec<u8>,
     idx: usize,
 }
 
+#[test]
 impl Cursor {
     fn new(data: Vec<u8>) -> Cursor {
         Cursor { data, idx: 0 }
     }
 }
 
+#[test]
 impl Read for Cursor {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         if self.idx >= self.data.len() {
@@ -308,6 +310,7 @@ impl Read for Cursor {
     }
 }
 
+#[test]
 fn test_message(data: Vec<u8>, msg: Message) {
     let mut r = Reader::new();
     r.state = ReadState::Idle;

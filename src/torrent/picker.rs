@@ -56,10 +56,6 @@ impl Picker {
         }
         true
     }
-
-    pub fn chunks(&self) -> u32 {
-        self.pieces.len()
-    }
 }
 
 #[test]

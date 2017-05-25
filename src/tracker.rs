@@ -1,13 +1,8 @@
-use std::sync::{mpsc, Arc};
+use std::sync::mpsc;
 use byteorder::{BigEndian, ReadBytesExt};
 use std::net::{SocketAddr, SocketAddrV4, Ipv4Addr};
-use std::fs::OpenOptions;
 use std::thread;
-use std::io::{Seek, SeekFrom, Write};
-use std::ops::Range;
-use std::path::PathBuf;
-use util::{io_err, encode_param, append_pair};
-use url::Url;
+use util::{encode_param, append_pair};
 use {PEER_ID, CONTROL, reqwest, bencode};
 use bencode::BEncode;
 use torrent::Torrent;

@@ -8,7 +8,6 @@ use util::io_err;
 pub struct Reader {
     state: ReadState,
     blocks_read: usize,
-    download_speed: f64,
 }
 
 enum ReadState {
@@ -190,7 +189,6 @@ impl Reader {
         Reader {
             state: ReadState::ReadingHandshake { data: [0u8; 68] , idx: 0 },
             blocks_read: 0,
-            download_speed: 0.0,
         }
     }
 
@@ -200,6 +198,7 @@ impl Reader {
         match state.next_state(conn)? {
             Ok(msg) => {
                 self.state = ReadState::Idle;
+                if msg.is_piece() { self.blocks_read += 1 }
                 Ok(Some(msg))
             }
             Err(new_state) => {

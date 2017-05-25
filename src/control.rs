@@ -70,7 +70,7 @@ impl Control {
             TRK_RX => self.handle_trk_ev(),
             DISK_RX => self.handle_disk_ev(),
             CTRL_RX => self.handle_ctrl_ev(),
-            tok => self.handle_peer_ev(event),
+            _ => self.handle_peer_ev(event),
         }
     }
 
@@ -78,7 +78,6 @@ impl Control {
         loop {
             match self.trk_rx.try_recv() {
                 Ok(mut resp) => {
-                    println!("Received trk resp for {:?}", resp.id);
                     let ref mut torrent = self.torrents.get_mut(resp.id).unwrap();
                     resp.peers.push("127.0.0.1:8999".parse().unwrap());
                     for ip in resp.peers.iter() {
@@ -102,11 +101,10 @@ impl Control {
     fn handle_ctrl_ev(&mut self) {
         loop {
             match self.ctrl_rx.try_recv() {
-                Ok(Request::AddTorrent(mut t)) => {
+                Ok(Request::AddTorrent(t)) => {
                     let tid = self.torrents.insert(t).unwrap();
                     let ref mut torrent = self.torrents.get_mut(tid).unwrap();
-                    TRACKER.tx.send(tracker::Request::new(tid, 5678, torrent, tracker::Event::Started));
-                    println!("Dispatching trk req for {:?}", tid);
+                    TRACKER.tx.send(tracker::Request::new(tid, 5678, torrent, tracker::Event::Started)).unwrap();
                 }
                 Err(TryRecvError::Empty) => { break; }
                 _ => { unreachable!(); }
@@ -116,7 +114,28 @@ impl Control {
     }
 
     fn handle_peer_ev(&mut self, event: Event) {
-    
+        let (tid, pid) = tok_dec(event.token().0);
+        let mut torrent = self.torrents.get_mut(tid).unwrap();
+        let mut ready = Ready::readable() | Ready::writable();
+        if event.readiness().is_readable() {
+            if let Err(e) = torrent.peer_readable(pid) {
+                println!("Peer {:?} error'd with {:?}, removing", pid, e);
+                torrent.remove_peer(pid);
+                return;
+            }
+        }
+        if event.readiness().is_writable() {
+            match torrent.peer_writable(pid) {
+                Ok(false) => ready.remove(Ready::writable()),
+                Ok(true) => { }
+                Err(e) => {
+                    println!("Peer {:?} error'd with {:?}, removing", pid, e);
+                    torrent.remove_peer(pid);
+                    return;
+                }
+            }
+        }
+        self.poll.reregister(&torrent.get_peer_mut(pid).unwrap().conn, event.token(), ready, PollOpt::edge() | PollOpt::oneshot()).unwrap();
     }
 }
 

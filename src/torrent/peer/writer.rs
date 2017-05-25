@@ -9,7 +9,6 @@ pub struct Writer {
     writable: bool,
     write_queue: VecDeque<Message>,
     state: WriteState,
-    upload_speed: f64,
 }
 
 enum WriteState {
@@ -26,7 +25,6 @@ impl Writer {
             write_queue: VecDeque::new(),
             state: WriteState::Idle,
             blocks_written: 0,
-            upload_speed: 0.0,
         }
     }
 
@@ -52,10 +50,6 @@ impl Writer {
         }
     }
 
-    pub fn blocks_written(&self) -> usize {
-        self.blocks_written
-    }
-
     fn setup_write(&mut self, msg: Message) {
         self.state = if !msg.is_special() {
             let mut buf = [0; 17];
@@ -63,7 +57,7 @@ impl Writer {
             // Should never go wrong
             msg.encode(&mut buf).unwrap();
             match msg {
-                Message::SharedPiece{ begin, index, data } => {
+                Message::SharedPiece{ data, .. } => {
                     WriteState::WritingPiece { prefix: buf, data: data, idx: 0 }
                 }
                 _ => {
@@ -141,6 +135,7 @@ impl Writer {
                 // piece should never exceed u16 size
                 *idx += amnt as u16;
                 if *idx == (prefix.len() + data.len()) as u16 {
+                    self.blocks_written += 1;
                     Ok(true)
                 } else {
                     self.writable = false;

@@ -4,7 +4,6 @@ version = "0.1.0"
 authors = ["Luminarys <postmaster@gensok.io>"]
 
 [dependencies]
-axon = { path = "axon" }
 mio = "0.6.6"
 slab = "0.3"
 byteorder = "0.5"

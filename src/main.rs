@@ -1,4 +1,5 @@
-extern crate axon;
+#![allow(deprecated)]
+
 extern crate mio;
 extern crate slab;
 extern crate byteorder;
@@ -13,7 +14,6 @@ extern crate pbr;
 
 mod bencode;
 mod torrent;
-mod ev_loop;
 mod util;
 mod socket;
 mod disk;
@@ -23,7 +23,6 @@ mod control;
 use std::{env, io, thread, time};
 use std::fs::File;
 use torrent::Torrent;
-use ev_loop::EvLoop;
 
 lazy_static! {
     pub static ref PEER_ID: [u8; 20] = {
@@ -55,19 +54,17 @@ lazy_static! {
     };
 }
 
-thread_local!(pub static POLL: mio::Poll = mio::Poll::new().unwrap());
-
 fn main() {
     // TODO: http://geocar.sdf1.org/fast-servers.html maybe?
     // This design could actually be really good
     let torrent = env::args().nth(1).unwrap();
-    download_torrent(&torrent);
+    download_torrent(&torrent).unwrap();
     thread::sleep(time::Duration::from_secs(99999));
 }
 
 fn download_torrent(path: &str) -> Result<(), io::Error> {
     let mut data = File::open(path)?;
     let t = Torrent::from_bencode(bencode::decode(&mut data).unwrap()).unwrap();
-    CONTROL.ctrl_tx.send(control::Request::AddTorrent(t));
+    CONTROL.ctrl_tx.send(control::Request::AddTorrent(t)).unwrap();
     Ok(())
 }
