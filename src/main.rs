@@ -17,10 +17,11 @@ mod ev_loop;
 mod util;
 mod socket;
 mod disk;
+mod tracker;
+mod control;
 
-use std::env;
+use std::{env, io, thread, time};
 use std::fs::File;
-use std::io;
 use torrent::Torrent;
 use ev_loop::EvLoop;
 
@@ -44,6 +45,14 @@ lazy_static! {
     pub static ref DISK: disk::Handle = {
         disk::start()
     };
+
+    pub static ref CONTROL: control::Handle = {
+        control::start()
+    };
+
+    pub static ref TRACKER: tracker::Handle = {
+        tracker::start()
+    };
 }
 
 thread_local!(pub static POLL: mio::Poll = mio::Poll::new().unwrap());
@@ -53,13 +62,12 @@ fn main() {
     // This design could actually be really good
     let torrent = env::args().nth(1).unwrap();
     download_torrent(&torrent);
+    thread::sleep(time::Duration::from_secs(99999));
 }
 
 fn download_torrent(path: &str) -> Result<(), io::Error> {
     let mut data = File::open(path)?;
     let t = Torrent::from_bencode(bencode::decode(&mut data).unwrap()).unwrap();
-    let mut e = EvLoop::new()?;
-    e.add_torrent(t);
-    e.run()?;
+    CONTROL.ctrl_tx.send(control::Request::AddTorrent(t));
     Ok(())
 }

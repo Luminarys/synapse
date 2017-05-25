@@ -128,7 +128,6 @@ impl EvLoop {
         };
         let tid = self.torrents.insert(torrent).unwrap();
         let ref mut torrent = self.torrents.get_mut(tid).unwrap();
-        // response.peers.push("127.0.0.1:51413".parse().unwrap());
         response.peers.push("127.0.0.1:8999".parse().unwrap());
         for ip in response.peers.iter() {
             let peer = Peer::new_outgoing(ip, &torrent.info).unwrap();

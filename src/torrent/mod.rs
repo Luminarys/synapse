@@ -21,6 +21,8 @@ use pbr::ProgressBar;
 pub struct Torrent {
     pub info: Info,
     pub pieces: PieceField,
+    pub uploaded: usize,
+    pub downloaded: usize,
     peers: Slab<Peer, usize>,
     picker: Picker,
     disk: mpsc::Sender<disk::Request>,
@@ -46,7 +48,7 @@ impl Torrent {
         let pb = ProgressBar::new(info.pieces() as u64);
         let disk = ::DISK.get();
         // let tracker = Tracker::new().unwrap();
-        Ok(Torrent { info, peers, pieces, picker, disk, pb })
+        Ok(Torrent { info, peers, pieces, picker, disk, pb, uploaded: 0, downloaded: 0 })
     }
 
     pub fn peer_readable(&mut self, peer: usize) -> io::Result<()> {

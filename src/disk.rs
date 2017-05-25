@@ -10,12 +10,12 @@ pub struct Disk {
 }
 
 pub struct Handle {
-    sender: mpsc::Sender<Request>,
+    pub tx: mpsc::Sender<Request>,
 }
 
 impl Handle {
     pub fn get(&self) -> mpsc::Sender<Request> {
-        self.sender.clone()
+        self.tx.clone()
     }
 }
 
@@ -29,6 +29,10 @@ pub struct Request {
     pub end: usize,
 }
 
+pub struct Response {
+
+}
+
 impl Disk {
     pub fn new(queue: mpsc::Receiver<Request>) -> Disk {
         Disk {
@@ -39,7 +43,6 @@ impl Disk {
     pub fn run(&mut self) {
         loop {
             if let Ok(m) = self.queue.recv() {
-                // println!("Got request for file {:?}, at offset {:?}, data from {:?}-{:?}", m.file, m.offset, m.start, m.end);
                 OpenOptions::new().write(true).open(&m.file).and_then(|mut f| {
                     f.seek(SeekFrom::Start(m.offset)).unwrap();
                     f.write(&m.data[m.start..m.end])
@@ -54,8 +57,7 @@ impl Disk {
 pub fn start() -> Handle {
     let (tx, rx) = mpsc::channel();
     thread::spawn(move || {
-        let mut d = Disk::new(rx);
-        d.run();
+        Disk::new(rx).run();
     });
-    Handle { sender: tx }
+    Handle { tx }
 }
