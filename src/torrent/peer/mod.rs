@@ -16,6 +16,8 @@ pub struct Peer {
     pub conn: Socket,
     pub pieces: PieceField,
     pub being_choked: bool,
+    pub choked: bool,
+    pub interested: bool,
     pub queued: u16,
     reader: Reader,
     writer: Writer,
@@ -29,6 +31,8 @@ impl Peer {
         writer.write_message(Message::handshake(torrent), &mut conn)?;
         Ok(Peer {
             being_choked: true,
+            choked: true,
+            interested: false,
             conn,
             reader,
             writer,
@@ -43,6 +47,8 @@ impl Peer {
         writer.write_message(Message::handshake(torrent), &mut conn)?;
         Ok(Peer {
             being_choked: true,
+            choked: true,
+            interested: false,
             conn: Socket::new(conn),
             reader: reader,
             writer: writer,

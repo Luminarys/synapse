@@ -23,7 +23,20 @@ unsafe impl Sync for Handle {}
 
 pub enum Request {
     Write { data: Box<[u8; 16384]>, locations: Vec<Location> },
-    Read { id: usize, data: Box<[u8; 16384]>, locations: Vec<Location> }
+    Read { data: Box<[u8; 16384]>, locations: Vec<Location>, context: Ctx }
+}
+
+pub struct Ctx {
+    pub id: usize,
+    pub idx: u32,
+    pub begin: u32,
+    pub length: u32,
+}
+
+impl Ctx {
+    pub fn new(id: usize, idx: u32, begin: u32, length: u32) -> Ctx {
+        Ctx { id, idx, begin, length }
+    }
 }
 
 impl Request {
@@ -31,8 +44,8 @@ impl Request {
         Request::Write { data, locations }
     }
 
-    pub fn read(id: usize, data: Box<[u8; 16384]>, locations: Vec<Location>) -> Request {
-        Request::Read { id, data, locations }
+    pub fn read(context: Ctx, data: Box<[u8; 16384]>, locations: Vec<Location>) -> Request {
+        Request::Read { context, data, locations }
     }
 }
 
@@ -50,7 +63,7 @@ impl Location {
 }
 
 pub struct Response {
-    pub id: usize,
+    pub context: Ctx,
     pub data: Box<[u8; 16384]>,
 }
 
@@ -72,14 +85,14 @@ impl Disk {
                         }).unwrap();
                     }
                 }
-                Ok(Request::Read { id, mut data, locations } ) =>  {
+                Ok(Request::Read { context, mut data, locations } ) =>  {
                     for loc in locations {
                         OpenOptions::new().read(true).open(&loc.file).and_then(|mut f| {
                             f.seek(SeekFrom::Start(loc.offset)).unwrap();
                             f.read(&mut data[loc.start..loc.end])
                         }).unwrap();
                     }
-                    CONTROL.disk_tx.send(Response { id, data }).unwrap();
+                    CONTROL.disk_tx.send(Response { context, data }).unwrap();
                 }
                 _ => break,
             }

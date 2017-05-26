@@ -169,7 +169,7 @@ impl ReadState {
                         Ok(amnt) if idx + amnt - 13 == len as usize => {
                             let idx = (&prefix[5..9]).read_u32::<BigEndian>().unwrap();
                             let beg = (&prefix[9..13]).read_u32::<BigEndian>().unwrap();
-                            ReadRes::Message(Message::Piece{ index: idx, begin: beg, data })
+                            ReadRes::Message(Message::Piece{ index: idx, begin: beg, length: len, data })
                         }
                         Ok(amnt) => {
                             idx += amnt;
@@ -279,20 +279,17 @@ impl ReadState {
 }
 
 /// Cursor to emulate a mio socket using readv.
-#[test]
 struct Cursor {
     data: Vec<u8>,
     idx: usize,
 }
 
-#[test]
 impl Cursor {
     fn new(data: Vec<u8>) -> Cursor {
         Cursor { data, idx: 0 }
     }
 }
 
-#[test]
 impl Read for Cursor {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         if self.idx >= self.data.len() {
@@ -310,7 +307,7 @@ impl Read for Cursor {
     }
 }
 
-#[test]
+#[allow(dead_code)]
 fn test_message(data: Vec<u8>, msg: Message) {
     let mut r = Reader::new();
     r.state = ReadState::Idle;
@@ -411,9 +408,10 @@ fn test_read_piece() {
     // Test partial read
     assert!(r.readable(&mut info).unwrap().is_empty());
     match r.readable(&mut data).unwrap()[0] {
-        Message::Piece { index, begin, ref data } => {
+        Message::Piece { index, begin, length, ref data } => {
             assert_eq!(index, 1);
             assert_eq!(begin, 1);
+            assert_eq!(length, 16384);
             for i in 0..16384 {
                 assert_eq!(1, data[i]);
             }

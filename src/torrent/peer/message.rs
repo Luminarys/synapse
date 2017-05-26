@@ -15,7 +15,7 @@ pub enum Message {
     Have(u32),
     Bitfield(PieceField),
     Request { index: u32, begin: u32, length: u32 },
-    Piece { index: u32, begin: u32, data: Box<[u8; 16384]> },
+    Piece { index: u32, begin: u32, length: u32, data: Box<[u8; 16384]> },
     SharedPiece { index: u32, begin: u32, data: Arc<[u8; 16384]> },
     Cancel { index: u32, begin: u32, length: u32 },
 }
@@ -78,6 +78,10 @@ impl Message {
             begin: offset,
             length: len,
         }
+    }
+
+    pub fn piece(index: u32, begin: u32, length: u32, data: Box<[u8; 16384]>) -> Message {
+        Message::Piece { index, begin, data, length }
     }
 
     pub fn is_piece(&self) -> bool {
@@ -175,8 +179,8 @@ impl Message {
                 buf.write_u32::<BigEndian>(begin)?;
                 buf.write_u32::<BigEndian>(length)?;
             }
-            Message::Piece{ index, begin, ref data } => {
-                buf.write_u32::<BigEndian>(9 + data.len() as u32)?;
+            Message::Piece{ index, begin, length, .. } => {
+                buf.write_u32::<BigEndian>(9 + length)?;
                 buf.write_u8(7)?;
                 buf.write_u32::<BigEndian>(index)?;
                 buf.write_u32::<BigEndian>(begin)?;

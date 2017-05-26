@@ -4,6 +4,7 @@ use mio::{channel, Event, Events, Poll, PollOpt, Ready, Token};
 use torrent::{Torrent, Peer};
 use slab::Slab;
 use std::sync::mpsc::TryRecvError;
+use util::{tok_enc, tok_dec};
 
 pub struct Control {
     trk_rx: channel::Receiver<tracker::Response>,
@@ -68,7 +69,7 @@ impl Control {
     fn handle_event(&mut self, event: Event) {
         match event.token() {
             TRK_RX => self.handle_trk_ev(),
-            DISK_RX => self.handle_disk_ev(),
+            DISK_RX => self.handle_disk_ev(event),
             CTRL_RX => self.handle_ctrl_ev(),
             _ => self.handle_peer_ev(event),
         }
@@ -94,7 +95,18 @@ impl Control {
         self.poll.reregister(&self.trk_rx, TRK_RX, Ready::readable(), PollOpt::edge() | PollOpt::oneshot()).unwrap();
     }
 
-    fn handle_disk_ev(&mut self) {
+    fn handle_disk_ev(&mut self, event: Event) {
+        loop {
+            match self.disk_rx.try_recv() {
+                Ok(resp) => {
+                    let (tid, pid) = tok_dec(event.token().0);
+                    let ref mut torrent = self.torrents.get_mut(tid).unwrap();
+                    torrent.block_available(pid, resp).unwrap();
+                }
+                Err(TryRecvError::Empty) => { break; }
+                _ => { unreachable!(); }
+            }
+        }
         self.poll.reregister(&self.disk_rx, DISK_RX, Ready::readable(), PollOpt::edge() | PollOpt::oneshot()).unwrap();
     }
 
@@ -104,6 +116,7 @@ impl Control {
                 Ok(Request::AddTorrent(t)) => {
                     let tid = self.torrents.insert(t).unwrap();
                     let ref mut torrent = self.torrents.get_mut(tid).unwrap();
+                    torrent.id = tid;
                     TRACKER.tx.send(tracker::Request::new(tid, 5678, torrent, tracker::Event::Started)).unwrap();
                 }
                 Err(TryRecvError::Empty) => { break; }
@@ -137,24 +150,6 @@ impl Control {
         }
         self.poll.reregister(&torrent.get_peer_mut(pid).unwrap().conn, event.token(), ready, PollOpt::edge() | PollOpt::oneshot()).unwrap();
     }
-}
-
-fn tok_enc(tid: usize, pid: usize) -> usize {
-    pid | (tid << 31)
-}
-
-fn tok_dec(tok: usize) -> (usize, usize) {
-    let pid = tok & 0xFFFFFFFF;
-    let tid = tok >> 31;
-    (tid, pid)
-}
-
-#[test]
-fn tok_check() {
-    let tid = 0x1234;
-    let pid = 0x4321;
-    let tok = tok_enc(tid, pid);
-    assert_eq!((tid, pid), tok_dec(tok));
 }
 
 pub fn start() -> Handle {
