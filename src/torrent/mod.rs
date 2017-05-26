@@ -14,7 +14,6 @@ use self::picker::Picker;
 use slab::Slab;
 use std::{fmt, io, cmp};
 use {disk, DISK};
-use std::sync::Arc;
 use pbr::ProgressBar;
 
 pub struct Torrent {
@@ -106,7 +105,6 @@ impl Torrent {
     /// piece offset begin, piece length of len, and data bytes.
     /// The disk send handle is also provided.
     fn write_piece(info: &Info, index: u32, begin: u32, mut len: u32, data: Box<[u8; 16384]>) {
-        let data = Arc::new(data);
         // The absolute byte offset where we start writing data.
         let mut cur_start = index * info.piece_len as u32 + begin;
         // Current index of the data block we're writing
@@ -116,6 +114,7 @@ impl Torrent {
         // Iterate over all file lengths, if we find any which end a bigger
         // idx than cur_start, write from cur_start..cur_start + file_write_len for that file
         // and continue if we're now at the end of the file.
+        let mut locs = Vec::new();
         for f in info.files.iter() {
             fidx += f.length;
             if (cur_start as usize) < fidx {
@@ -124,31 +123,18 @@ impl Torrent {
                 if file_write_len == len as usize {
                     // The file is longer than our len, just write to it,
                     // exit loop
-                    let req = disk::Request {
-                        file: f.path.clone(),
-                        data: data.clone(),
-                        offset,
-                        start: data_start,
-                        end: data_start + file_write_len
-                    };
-                    DISK.tx.send(req).unwrap();
+                    locs.push(disk::Location::new(f.path.clone(), offset, data_start, data_start + file_write_len));
                     break;
                 } else {
                     // Write to the end of file, continue
-                    let req = disk::Request {
-                        file: f.path.clone(),
-                        data: data.clone(),
-                        offset,
-                        start: data_start,
-                        end: data_start + file_write_len as usize
-                    };
+                    locs.push(disk::Location::new(f.path.clone(), offset, data_start, data_start + file_write_len as usize));
                     len -= file_write_len as u32;
                     cur_start += file_write_len as u32;
                     data_start += file_write_len;
-                    DISK.tx.send(req).unwrap();
                 }
             }
         }
+        DISK.tx.send(disk::Request::write(data, locs)).unwrap();
     }
 
     #[inline(always)]
