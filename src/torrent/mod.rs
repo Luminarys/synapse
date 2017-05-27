@@ -44,7 +44,6 @@ impl Torrent {
         let pieces = PieceField::new(info.pieces());
         let picker = Picker::new(&info);
         let pb = ProgressBar::new(info.pieces() as u64);
-        // let tracker = Tracker::new().unwrap();
         Ok(Torrent { id: 0, info, peers, pieces, picker, pb, uploaded: 0, downloaded: 0 })
     }
 
@@ -63,7 +62,7 @@ impl Torrent {
         Ok(())
     }
 
-    fn handle_msg(&mut self, msg: Message, pid: usize) -> io::Result<()> {
+    pub fn handle_msg(&mut self, msg: Message, pid: usize) -> io::Result<()> {
         let peer = self.peers.get_mut(pid).unwrap();
         match msg {
             Message::Bitfield(mut pf) => {
@@ -92,7 +91,7 @@ impl Torrent {
                     if self.pieces.complete() {
                         self.pb.finish_print("Downloaded!");
                     }
-                    // Broadcast HAVE to everyone who needs it.
+                    // TODO: Broadcast HAVE to everyone who needs it.
                 }
                 if !peer.being_choked {
                     Torrent::make_requests(&mut self.picker, peer, &self.info)?;

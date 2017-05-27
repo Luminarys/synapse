@@ -19,6 +19,7 @@ mod socket;
 mod disk;
 mod tracker;
 mod control;
+mod listener;
 
 use std::{env, io, thread, time};
 use std::fs::File;
@@ -52,11 +53,21 @@ lazy_static! {
     pub static ref TRACKER: tracker::Handle = {
         tracker::start()
     };
+
+    pub static ref LISTENER: listener::Handle = {
+        listener::start()
+    };
 }
 
 fn main() {
     // TODO: http://geocar.sdf1.org/fast-servers.html maybe?
     // This design could actually be really good
+
+    // TODO: Switch to amy. https://github.com/andrewjstone/amy.
+    // Mio is just too damn shite.
+
+    // lol
+    LISTENER.dr();
     let torrent = env::args().nth(1).unwrap();
     download_torrent(&torrent).unwrap();
     thread::sleep(time::Duration::from_secs(99999));

@@ -105,6 +105,13 @@ impl Message {
         }
     }
 
+    pub fn get_handshake_hash(&self) -> [u8; 20] {
+        match *self {
+            Message::Handshake { hash, .. } => hash,
+            _ => unreachable!(),
+        }
+    }
+
     pub fn is_special(&self) -> bool {
         match *self {
             Message::Handshake { rsv: _, hash: _, id: _ } | Message::Bitfield(_) => true,
