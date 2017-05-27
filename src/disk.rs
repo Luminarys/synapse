@@ -1,32 +1,70 @@
-use std::sync::{mpsc, Arc};
+use std::sync::mpsc;
 use std::fs::OpenOptions;
 use std::thread;
-use std::io::{Seek, SeekFrom, Write};
-use std::ops::Range;
+use std::io::{Seek, SeekFrom, Write, Read};
 use std::path::PathBuf;
+use CONTROL;
 
 pub struct Disk {
     queue: mpsc::Receiver<Request>,
 }
 
 pub struct Handle {
-    sender: mpsc::Sender<Request>,
+    pub tx: mpsc::Sender<Request>,
 }
 
 impl Handle {
     pub fn get(&self) -> mpsc::Sender<Request> {
-        self.sender.clone()
+        self.tx.clone()
     }
 }
 
 unsafe impl Sync for Handle {}
 
-pub struct Request {
+pub enum Request {
+    Write { data: Box<[u8; 16384]>, locations: Vec<Location> },
+    Read { data: Box<[u8; 16384]>, locations: Vec<Location>, context: Ctx }
+}
+
+pub struct Ctx {
+    pub id: usize,
+    pub idx: u32,
+    pub begin: u32,
+    pub length: u32,
+}
+
+impl Ctx {
+    pub fn new(id: usize, idx: u32, begin: u32, length: u32) -> Ctx {
+        Ctx { id, idx, begin, length }
+    }
+}
+
+impl Request {
+    pub fn write(data: Box<[u8; 16384]>, locations: Vec<Location>) -> Request {
+        Request::Write { data, locations }
+    }
+
+    pub fn read(context: Ctx, data: Box<[u8; 16384]>, locations: Vec<Location>) -> Request {
+        Request::Read { context, data, locations }
+    }
+}
+
+pub struct Location {
     pub file: PathBuf,
-    pub data: Arc<Box<[u8; 16384]>>,
     pub offset: u64,
     pub start: usize,
     pub end: usize,
+}
+
+impl Location {
+    pub fn new(file: PathBuf, offset: u64, start: usize, end: usize) -> Location {
+        Location { file, offset, start, end }
+    }
+}
+
+pub struct Response {
+    pub context: Ctx,
+    pub data: Box<[u8; 16384]>,
 }
 
 impl Disk {
@@ -38,14 +76,25 @@ impl Disk {
 
     pub fn run(&mut self) {
         loop {
-            if let Ok(m) = self.queue.recv() {
-                // println!("Got request for file {:?}, at offset {:?}, data from {:?}-{:?}", m.file, m.offset, m.start, m.end);
-                OpenOptions::new().write(true).open(&m.file).and_then(|mut f| {
-                    f.seek(SeekFrom::Start(m.offset)).unwrap();
-                    f.write(&m.data[m.start..m.end])
-                }).unwrap();
-            } else {
-                break;
+            match self.queue.recv() {
+                Ok(Request::Write { data, locations } ) => {
+                    for loc in locations {
+                        OpenOptions::new().write(true).open(&loc.file).and_then(|mut f| {
+                            f.seek(SeekFrom::Start(loc.offset)).unwrap();
+                            f.write(&data[loc.start..loc.end])
+                        }).unwrap();
+                    }
+                }
+                Ok(Request::Read { context, mut data, locations } ) =>  {
+                    for loc in locations {
+                        OpenOptions::new().read(true).open(&loc.file).and_then(|mut f| {
+                            f.seek(SeekFrom::Start(loc.offset)).unwrap();
+                            f.read(&mut data[loc.start..loc.end])
+                        }).unwrap();
+                    }
+                    CONTROL.disk_tx.send(Response { context, data }).unwrap();
+                }
+                _ => break,
             }
         }
     }
@@ -54,8 +103,7 @@ impl Disk {
 pub fn start() -> Handle {
     let (tx, rx) = mpsc::channel();
     thread::spawn(move || {
-        let mut d = Disk::new(rx);
-        d.run();
+        Disk::new(rx).run();
     });
-    Handle { sender: tx }
+    Handle { tx }
 }

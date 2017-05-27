@@ -1,5 +1,5 @@
 use std::collections::BTreeMap;
-use std::io::{Cursor, self};
+use std::io;
 use std::str;
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -194,6 +194,8 @@ fn decode_int(v: Vec<u8>) -> Result<i64, BError> {
     })
 }
 
+use std::io::Cursor;
+
 #[test]
 fn test_encode_decode() {
     let i = BEncode::Int(-10);
@@ -235,14 +237,16 @@ fn test_encode_decode() {
     encode_decode(&d);
 }
 
+#[allow(dead_code)]
 fn encode_decode(b: &BEncode) {
     let mut v = Vec::new();
     b.encode(&mut v).unwrap();
     assert_eq!(b, &decode_buf(&v).unwrap());
 }
 
+#[allow(dead_code)]
 fn decode_encode(d: &[u8]) {
     let mut v = Vec::new();
-    decode_buf(d).unwrap().encode(&mut v);
+    decode_buf(d).unwrap().encode(&mut v).unwrap();
     assert_eq!(d, &v[..]);
 }

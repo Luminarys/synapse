@@ -8,7 +8,6 @@ use util::{io_err, io_err_val};
 pub struct Reader {
     state: ReadState,
     blocks_read: usize,
-    download_speed: f64,
 }
 
 impl Reader {
@@ -16,7 +15,6 @@ impl Reader {
         Reader {
             state: ReadState::ReadingHandshake { data: [0u8; 68] , idx: 0 },
             blocks_read: 0,
-            download_speed: 0.0,
         }
     }
 
@@ -29,6 +27,7 @@ impl Reader {
             match state.next_state(conn) {
                 ReadRes::Message(msg) => {
                     self.state = ReadState::Idle;
+                    if msg.is_piece() { self.blocks_read += 1 }
                     v.push(msg);
                 }
                 ReadRes::Incomplete(state) => { self.state = state; break; },
@@ -170,7 +169,7 @@ impl ReadState {
                         Ok(amnt) if idx + amnt - 13 == len as usize => {
                             let idx = (&prefix[5..9]).read_u32::<BigEndian>().unwrap();
                             let beg = (&prefix[9..13]).read_u32::<BigEndian>().unwrap();
-                            ReadRes::Message(Message::Piece{ index: idx, begin: beg, data })
+                            ReadRes::Message(Message::Piece{ index: idx, begin: beg, length: len, data })
                         }
                         Ok(amnt) => {
                             idx += amnt;
@@ -308,6 +307,7 @@ impl Read for Cursor {
     }
 }
 
+#[allow(dead_code)]
 fn test_message(data: Vec<u8>, msg: Message) {
     let mut r = Reader::new();
     r.state = ReadState::Idle;
@@ -408,9 +408,10 @@ fn test_read_piece() {
     // Test partial read
     assert!(r.readable(&mut info).unwrap().is_empty());
     match r.readable(&mut data).unwrap()[0] {
-        Message::Piece { index, begin, ref data } => {
+        Message::Piece { index, begin, length, ref data } => {
             assert_eq!(index, 1);
             assert_eq!(begin, 1);
+            assert_eq!(length, 16384);
             for i in 0..16384 {
                 assert_eq!(1, data[i]);
             }

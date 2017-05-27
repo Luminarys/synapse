@@ -13,7 +13,7 @@ impl Picker {
         // The n - 1 piece length, since the last one is (usually) shorter.
         let compl_piece_len = scale * (info.pieces() as usize - 1);
         // the nth piece length
-        let mut last_piece_len = (info.total_len - info.piece_len * (info.pieces() as usize - 1));
+        let mut last_piece_len = info.total_len - info.piece_len * (info.pieces() as usize - 1);
         if last_piece_len % 16384 == 0 {
             last_piece_len /= 16384;
         } else {
@@ -55,10 +55,6 @@ impl Picker {
             }
         }
         true
-    }
-
-    pub fn chunks(&self) -> u32 {
-        self.pieces.len()
     }
 }
 

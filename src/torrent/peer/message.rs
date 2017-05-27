@@ -1,6 +1,6 @@
 use torrent::piece_field::PieceField;
 use torrent::info::Info as TorrentInfo;
-use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
+use byteorder::{BigEndian, WriteBytesExt};
 use std::io::{self, Write};
 use std::sync::Arc;
 use std::fmt;
@@ -15,7 +15,7 @@ pub enum Message {
     Have(u32),
     Bitfield(PieceField),
     Request { index: u32, begin: u32, length: u32 },
-    Piece { index: u32, begin: u32, data: Box<[u8; 16384]> },
+    Piece { index: u32, begin: u32, length: u32, data: Box<[u8; 16384]> },
     SharedPiece { index: u32, begin: u32, data: Arc<[u8; 16384]> },
     Cancel { index: u32, begin: u32, length: u32 },
 }
@@ -23,17 +23,17 @@ pub enum Message {
 impl fmt::Debug for Message {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
-            Message::Handshake { rsv, hash, id } => write!(f, "Message::Handshake {{ extensions: {:?} }}", &rsv[..]),
+            Message::Handshake { rsv, .. } => write!(f, "Message::Handshake {{ extensions: {:?} }}", &rsv[..]),
             Message::KeepAlive => write!(f, "Message::KeepAlive"),
             Message::Choke => write!(f, "Message::Choke"),
             Message::Unchoke => write!(f, "Message::Unchoke"),
             Message::Interested => write!(f, "Message::Interested"),
             Message::Uninterested => write!(f, "Message::Uninterested"),
             Message::Have(p) => write!(f, "Message::Have({})", p),
-            Message::Bitfield(ref pf) => write!(f, "Message::Bitfield"),
+            Message::Bitfield(_) => write!(f, "Message::Bitfield"),
             Message::Request{ index, begin, length } => write!(f, "Message::Request {{ idx: {}, begin: {}, len: {} }}", index, begin, length),
-            Message::Piece{ index, begin, ref data } => write!(f, "Message::Piece {{ idx: {}, begin: {} }}", index, begin),
-            Message::SharedPiece{ index, begin, ref data } => write!(f, "Message::SPiece {{ idx: {}, begin: {} }}", index, begin),
+            Message::Piece{ index, begin, .. } => write!(f, "Message::Piece {{ idx: {}, begin: {} }}", index, begin),
+            Message::SharedPiece{ index, begin, .. } => write!(f, "Message::SPiece {{ idx: {}, begin: {} }}", index, begin),
             Message::Cancel { index, begin, length } => write!(f, "Message::Cancel {{ idx: {}, begin: {}, len: {} }}", index, begin, length),
         }
     }
@@ -58,17 +58,6 @@ impl PartialEq for Message {
                 index == i && begin == b && length == l
             },
             _ => false
-            //Message::KeepAlive => true,
-            //Message::Choke => write!(f, "Message::Choke"),
-            //Message::Unchoke => write!(f, "Message::Unchoke"),
-            //Message::Interested => write!(f, "Message::Interested"),
-            //Message::Uninterested => write!(f, "Message::Uninterested"),
-            //Message::Have(p) => write!(f, "Message::Have({})", p),
-            //Message::Bitfield(ref pf) => write!(f, "Message::Bitfield"),
-            //Message::Request{ index, begin, length } => write!(f, "Message::Request {{ idx: {}, begin: {}, len: {} }}", index, begin, length),
-            //Message::Piece{ index, begin, ref data } => write!(f, "Message::Piece {{ idx: {}, begin: {} }}", index, begin),
-            //Message::SharedPiece{ index, begin, ref data } => write!(f, "Message::SPiece {{ idx: {}, begin: {} }}", index, begin),
-            //Message::Cancel { index, begin, length } => write!(f, "Message::Cancel {{ idx: {}, begin: {}, len: {} }}", index, begin, length),
         }
     }
 }
@@ -91,9 +80,13 @@ impl Message {
         }
     }
 
+    pub fn piece(index: u32, begin: u32, length: u32, data: Box<[u8; 16384]>) -> Message {
+        Message::Piece { index, begin, data, length }
+    }
+
     pub fn is_piece(&self) -> bool {
         match *self {
-            Message::Piece{ index, begin, data: _ } | Message::SharedPiece { index, begin, data: _ } => true,
+            Message::Piece{ .. } | Message::SharedPiece { .. } => true,
             _ => false,
         }
     }
@@ -107,8 +100,15 @@ impl Message {
 
     pub fn is_handshake(&self) -> bool {
         match *self {
-            Message::Handshake { rsv, hash, id } => true,
+            Message::Handshake { .. } => true,
             _ => false,
+        }
+    }
+
+    pub fn get_handshake_hash(&self) -> [u8; 20] {
+        match *self {
+            Message::Handshake { hash, .. } => hash,
+            _ => unreachable!(),
         }
     }
 
@@ -121,7 +121,7 @@ impl Message {
 
     pub fn len(&self) -> usize {
         match *self {
-            Message::Handshake { rsv, hash, id } => 68,
+            Message::Handshake { .. } => 68,
             Message::KeepAlive => 4,
             Message::Choke => 5,
             Message::Unchoke => 5,
@@ -129,10 +129,10 @@ impl Message {
             Message::Uninterested => 5,
             Message::Have(_) => 9,
             Message::Bitfield(ref pf) => 5 + pf.bytes(),
-            Message::Request{ index, begin, length } => 17,
-            Message::Piece{ index, begin, ref data } => 13 + data.len(),
-            Message::SharedPiece{ index, begin,  ref data } => 13 + data.len(),
-            Message::Cancel { index, begin, length } => 17,
+            Message::Request{ .. } => 17,
+            Message::Piece{ ref data, .. } => 13 + data.len(),
+            Message::SharedPiece{ ref data, .. } => 13 + data.len(),
+            Message::Cancel { .. } => 17,
         }
     }
 
@@ -186,8 +186,8 @@ impl Message {
                 buf.write_u32::<BigEndian>(begin)?;
                 buf.write_u32::<BigEndian>(length)?;
             }
-            Message::Piece{ index, begin, ref data } => {
-                buf.write_u32::<BigEndian>(9 + data.len() as u32)?;
+            Message::Piece{ index, begin, length, .. } => {
+                buf.write_u32::<BigEndian>(9 + length)?;
                 buf.write_u8(7)?;
                 buf.write_u32::<BigEndian>(index)?;
                 buf.write_u32::<BigEndian>(begin)?;

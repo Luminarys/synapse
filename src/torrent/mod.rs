@@ -1,6 +1,5 @@
 pub mod info;
 pub mod peer;
-pub mod tracker;
 mod picker;
 
 pub mod piece_field;
@@ -14,18 +13,19 @@ use self::peer::Message;
 use self::picker::Picker;
 use slab::Slab;
 use std::{fmt, io, cmp};
-use disk;
-use std::sync::{mpsc, Arc};
+use {disk, DISK};
 use pbr::ProgressBar;
+use util::tok_enc;
 
 pub struct Torrent {
     pub info: Info,
     pub pieces: PieceField,
+    pub uploaded: usize,
+    pub downloaded: usize,
+    pub id: usize,
     peers: Slab<Peer, usize>,
     picker: Picker,
-    disk: mpsc::Sender<disk::Request>,
     pb: ProgressBar<io::Stdout>,
-    // tracker: Tracker,
 }
 
 impl fmt::Debug for Torrent {
@@ -44,9 +44,14 @@ impl Torrent {
         let pieces = PieceField::new(info.pieces());
         let picker = Picker::new(&info);
         let pb = ProgressBar::new(info.pieces() as u64);
-        let disk = ::DISK.get();
-        // let tracker = Tracker::new().unwrap();
-        Ok(Torrent { info, peers, pieces, picker, disk, pb })
+        Ok(Torrent { id: 0, info, peers, pieces, picker, pb, uploaded: 0, downloaded: 0 })
+    }
+
+    pub fn block_available(&mut self, pid: usize, resp: disk::Response) -> io::Result<()> {
+        let ctx = resp.context;
+        let p = Message::piece(ctx.idx, ctx.begin, ctx.length, resp.data);
+        self.peers.get_mut(pid).unwrap().send_message(p)?;
+        Ok(())
     }
 
     pub fn peer_readable(&mut self, peer: usize) -> io::Result<()> {
@@ -57,8 +62,8 @@ impl Torrent {
         Ok(())
     }
 
-    fn handle_msg(&mut self, msg: Message, peer: usize) -> io::Result<()> {
-        let peer = self.peers.get_mut(peer).unwrap();
+    pub fn handle_msg(&mut self, msg: Message, pid: usize) -> io::Result<()> {
+        let peer = self.peers.get_mut(pid).unwrap();
         match msg {
             Message::Bitfield(mut pf) => {
                 pf.cap(self.pieces.len());
@@ -77,24 +82,41 @@ impl Torrent {
             Message::Choke => {
                 peer.being_choked = true;
             }
-            Message::Piece { index, begin, data } => {
+            Message::Piece { index, begin, data, length } => {
                 peer.queued -= 1;
-                let len = if !self.info.is_last_piece((index, begin)) {
-                    16384
-                } else {
-                    self.info.last_piece_len()
-                };
-                Torrent::write_piece(&self.info, index, begin, len, data, &self.disk);
+                Torrent::write_piece(&self.info, index, begin, length, data);
                 if self.picker.completed(index, begin) {
                     self.pb.inc();
                     self.pieces.set_piece(index);
                     if self.pieces.complete() {
                         self.pb.finish_print("Downloaded!");
                     }
-                    // Broadcast HAVE to everyone who needs it.
+                    // TODO: Broadcast HAVE to everyone who needs it.
                 }
                 if !peer.being_choked {
                     Torrent::make_requests(&mut self.picker, peer, &self.info)?;
+                }
+            }
+            Message::Request { index, begin, length } => {
+                let tok = tok_enc(self.id, pid);
+                // TODO get this from some sort of allocator.
+                Torrent::request_read(tok, &self.info, index, begin, length, Box::new([0u8; 16384]));
+            }
+            Message::Interested => {
+                peer.interested = true;
+                // If we're in seed mode, upload, otherwise
+                // use the general tit for tat heuristic for unchoking.
+                // TODO: implement said heuristic
+                if self.pieces.complete() {
+                    peer.choked = false;
+                    peer.send_message(Message::Unchoke)?;
+                }
+            }
+            Message::Uninterested => {
+                peer.interested = false;
+                if !peer.choked {
+                    peer.choked = true;
+                    peer.send_message(Message::Choke)?;
                 }
             }
             _ => { }
@@ -102,13 +124,9 @@ impl Torrent {
         Ok(())
     }
 
-    #[inline(always)]
-    /// Writes a piece of torrent info, with piece index idx,
-    /// piece offset begin, piece length of len, and data bytes.
-    /// The disk send handle is also provided.
-    fn write_piece(info: &Info, index: u32, begin: u32, mut len: u32, data: Box<[u8; 16384]>, disk: &mpsc::Sender<disk::Request>) {
-        let data = Arc::new(data);
-        // The absolute byte offset where we start writing data.
+    /// Calculates the file offsets for a given index, begin, and block length.
+    fn calc_block_locs(info: &Info, index: u32, begin: u32, mut len: u32) -> Vec<disk::Location> {
+        // The absolute byte offset where we start processing data.
         let mut cur_start = index * info.piece_len as u32 + begin;
         // Current index of the data block we're writing
         let mut data_start = 0;
@@ -117,6 +135,7 @@ impl Torrent {
         // Iterate over all file lengths, if we find any which end a bigger
         // idx than cur_start, write from cur_start..cur_start + file_write_len for that file
         // and continue if we're now at the end of the file.
+        let mut locs = Vec::new();
         for f in info.files.iter() {
             fidx += f.length;
             if (cur_start as usize) < fidx {
@@ -125,31 +144,35 @@ impl Torrent {
                 if file_write_len == len as usize {
                     // The file is longer than our len, just write to it,
                     // exit loop
-                    let req = disk::Request {
-                        file: f.path.clone(),
-                        data: data.clone(),
-                        offset,
-                        start: data_start,
-                        end: data_start + file_write_len
-                    };
-                    disk.send(req).unwrap();
+                    locs.push(disk::Location::new(f.path.clone(), offset, data_start, data_start + file_write_len));
                     break;
                 } else {
                     // Write to the end of file, continue
-                    let req = disk::Request {
-                        file: f.path.clone(),
-                        data: data.clone(),
-                        offset,
-                        start: data_start,
-                        end: data_start + file_write_len as usize
-                    };
+                    locs.push(disk::Location::new(f.path.clone(), offset, data_start, data_start + file_write_len as usize));
                     len -= file_write_len as u32;
                     cur_start += file_write_len as u32;
                     data_start += file_write_len;
-                    disk.send(req).unwrap();
                 }
             }
         }
+        locs
+    }
+
+    #[inline(always)]
+    /// Writes a piece of torrent info, with piece index idx,
+    /// piece offset begin, piece length of len, and data bytes.
+    /// The disk send handle is also provided.
+    fn write_piece(info: &Info, index: u32, begin: u32, len: u32, data: Box<[u8; 16384]>) {
+        let locs = Torrent::calc_block_locs(info, index, begin, len);
+        DISK.tx.send(disk::Request::write(data, locs)).unwrap();
+    }
+
+    #[inline(always)]
+    /// Issues a read request of the given torrent
+    fn request_read(id: usize, info: &Info, index: u32, begin: u32, len: u32, data: Box<[u8; 16384]>) {
+        let locs = Torrent::calc_block_locs(info, index, begin, len);
+        let ctx = disk::Ctx::new(id, index, begin, len);
+        DISK.tx.send(disk::Request::read(ctx, data, locs)).unwrap();
     }
 
     #[inline(always)]
