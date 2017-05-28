@@ -11,11 +11,10 @@ pub use self::peer::Peer;
 use bencode::BEncode;
 use self::peer::Message;
 use self::picker::Picker;
-use slab::Slab;
 use std::{fmt, io, cmp};
 use {disk, DISK};
 use pbr::ProgressBar;
-use util::tok_enc;
+use std::collections::HashSet;
 
 pub struct Torrent {
     pub info: Info,
@@ -23,7 +22,7 @@ pub struct Torrent {
     pub uploaded: usize,
     pub downloaded: usize,
     pub id: usize,
-    peers: Slab<Peer, usize>,
+    peers: HashSet<usize>,
     picker: Picker,
     pb: ProgressBar<io::Stdout>,
 }
@@ -40,30 +39,29 @@ impl Torrent {
         println!("Handling with torrent with {:?} pl, {:?} pieces, {:?} sf len", info.piece_len, info.pieces(), info.files.last().unwrap().length);
         // Create dummy files
         info.create_files().unwrap();
-        let peers = Slab::with_capacity(32);
+        let peers = HashSet::new();
         let pieces = PieceField::new(info.pieces());
         let picker = Picker::new(&info);
         let pb = ProgressBar::new(info.pieces() as u64);
         Ok(Torrent { id: 0, info, peers, pieces, picker, pb, uploaded: 0, downloaded: 0 })
     }
 
-    pub fn block_available(&mut self, pid: usize, resp: disk::Response) -> io::Result<()> {
+    pub fn block_available(&mut self, peer: &mut Peer, resp: disk::Response) -> io::Result<()> {
         let ctx = resp.context;
         let p = Message::piece(ctx.idx, ctx.begin, ctx.length, resp.data);
-        self.peers.get_mut(pid).unwrap().send_message(p)?;
+        peer.send_message(p)?;
         Ok(())
     }
 
-    pub fn peer_readable(&mut self, peer: usize) -> io::Result<()> {
-        let res = self.peers.get_mut(peer).unwrap().readable()?;
+    pub fn peer_readable(&mut self, peer: &mut Peer) -> io::Result<()> {
+        let res = peer.readable()?;
         for msg in res {
             self.handle_msg(msg, peer)?;
         }
         Ok(())
     }
 
-    pub fn handle_msg(&mut self, msg: Message, pid: usize) -> io::Result<()> {
-        let peer = self.peers.get_mut(pid).unwrap();
+    pub fn handle_msg(&mut self, msg: Message, peer: &mut Peer) -> io::Result<()> {
         match msg {
             Message::Bitfield(mut pf) => {
                 pf.cap(self.pieces.len());
@@ -98,9 +96,8 @@ impl Torrent {
                 }
             }
             Message::Request { index, begin, length } => {
-                let tok = tok_enc(self.id, pid);
                 // TODO get this from some sort of allocator.
-                Torrent::request_read(tok, &self.info, index, begin, length, Box::new([0u8; 16384]));
+                Torrent::request_read(peer.id, &self.info, index, begin, length, Box::new([0u8; 16384]));
             }
             Message::Interested => {
                 peer.interested = true;
@@ -193,8 +190,8 @@ impl Torrent {
         Ok(())
     }
 
-    pub fn peer_writable(&mut self, peer: usize) -> io::Result<bool> {
-        self.peers.get_mut(peer).unwrap().writable()
+    pub fn peer_writable(&mut self, peer: &mut Peer) -> io::Result<bool> {
+        peer.writable()
     }
 
     pub fn file_size(&self) -> usize {
@@ -205,19 +202,11 @@ impl Torrent {
         size
     }
 
-    pub fn remove_peer(&mut self, id: usize) {
+    pub fn remove_peer(&mut self, id: &usize) {
         self.peers.remove(id);
     }
 
-    pub fn insert_peer(&mut self, peer: Peer) -> Option<usize> {
-        self.peers.insert(peer).ok()
-    }
-
-    pub fn get_peer(&self, id: usize) -> Option<&Peer> {
-        self.peers.get(id)
-    }
-
-    pub fn get_peer_mut(&mut self, id: usize) -> Option<&mut Peer> {
-        self.peers.get_mut(id)
+    pub fn insert_peer(&mut self, id: usize) {
+        self.peers.insert(id);
     }
 }

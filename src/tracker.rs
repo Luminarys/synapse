@@ -3,12 +3,13 @@ use byteorder::{BigEndian, ReadBytesExt};
 use std::net::{SocketAddr, SocketAddrV4, Ipv4Addr};
 use std::thread;
 use util::{encode_param, append_pair};
-use {PEER_ID, CONTROL, reqwest, bencode};
+use {PEER_ID, CONTROL, reqwest, bencode, amy};
 use bencode::BEncode;
 use torrent::Torrent;
 
 pub struct Tracker {
     queue: mpsc::Receiver<Request>,
+    trk_tx: amy::Sender<Response>,
 }
 
 pub struct Handle {
@@ -107,7 +108,7 @@ impl Response {
 impl Tracker {
     pub fn new(queue: mpsc::Receiver<Request>) -> Tracker {
         Tracker {
-            queue
+            queue, trk_tx: CONTROL.trk_tx(),
         }
     }
 
@@ -132,7 +133,7 @@ impl Tracker {
                     let content = bencode::decode(&mut resp).unwrap();
                     Response::from_bencode(req.id, content).unwrap()
                 };
-                CONTROL.trk_tx.send(response).unwrap();
+                self.trk_tx.send(response).unwrap();
             } else {
                 break;
             }

@@ -1,7 +1,7 @@
-use mio::net::TcpStream;
-use mio;
+use std::net::{TcpStream, SocketAddr};
+use std::os::unix::io::{RawFd, AsRawFd};
 use std::io;
-use iovec::IoVec;
+use net2::{TcpBuilder, TcpStreamExt};
 
 /// Wrapper type over Mio sockets, allowing for use of UDP/TCP, encryption,
 /// rate limiting, etc.
@@ -10,42 +10,55 @@ pub struct Socket {
 }
 
 impl Socket {
-    pub fn new(conn: TcpStream) -> Socket {
-        Socket { conn }
+    pub fn new(addr: &SocketAddr) -> io::Result<Socket> {
+        let sock = (match *addr {
+            SocketAddr::V4(..) => TcpBuilder::new_v4(),
+            SocketAddr::V6(..) => TcpBuilder::new_v6(),
+        })?;
+        let conn = sock.to_tcp_stream()?;
+        conn.set_nonblocking(true)?;
+        // TODO: Need to reliably check this.
+        conn.connect(addr);
+        Ok(Socket { conn })
+    }
+
+    pub fn from_stream(conn: TcpStream) -> io::Result<Socket> {
+        conn.set_nonblocking(true)?;
+        Ok(Socket { conn })
+    }
+
+    /// Used to get around the drop requirement of amy.
+    pub fn fd(&self) -> FDH {
+        FDH(self.conn.as_raw_fd())
+    }
+}
+
+pub struct FDH(RawFd);
+
+impl AsRawFd for FDH {
+    fn as_raw_fd(&self) -> RawFd {
+        self.0
+    }
+}
+
+impl AsRawFd for Socket {
+    fn as_raw_fd(&self) -> RawFd {
+        self.conn.as_raw_fd()
     }
 }
 
 impl io::Read for Socket {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        let res = {
-            let mut b: [&mut IoVec; 1] = [buf.into()];
-            self.conn.read_bufs(&mut b)
-        };
-        res
+        self.conn.read(buf)
     }
 }
 
 impl io::Write for Socket {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        let b: [&IoVec; 1] = [buf.into()];
-        self.conn.write_bufs(&b)
+        self.conn.write(buf)
     }
 
     fn flush(&mut self) -> io::Result<()> {
         self.conn.flush()
-    }
-}
-
-impl mio::Evented for Socket {
-    fn register(&self, poll: &mio::Poll, token: mio::Token, interest: mio::Ready, opts: mio::PollOpt) -> io::Result<()> {
-        self.conn.register(poll, token, interest, opts)
-    }
-
-    fn reregister(&self, poll: &mio::Poll, token: mio::Token, interest: mio::Ready, opts: mio::PollOpt) -> io::Result<()> {
-        self.conn.reregister(poll, token, interest, opts)
-    }
-
-    fn deregister(&self, poll: &mio::Poll) -> io::Result<()> {
-        self.conn.deregister(poll)
     }
 }

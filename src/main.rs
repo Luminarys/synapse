@@ -1,16 +1,15 @@
 #![allow(deprecated)]
 
-extern crate mio;
-extern crate slab;
+extern crate amy;
 extern crate byteorder;
 extern crate rand;
 extern crate sha1;
 extern crate url;
 extern crate reqwest;
-extern crate iovec;
 #[macro_use]
 extern crate lazy_static;
 extern crate pbr;
+extern crate net2;
 
 mod bencode;
 mod torrent;
@@ -63,9 +62,6 @@ fn main() {
     // TODO: http://geocar.sdf1.org/fast-servers.html maybe?
     // This design could actually be really good
 
-    // TODO: Switch to amy. https://github.com/andrewjstone/amy.
-    // Mio is just too damn shite.
-
     // lol
     LISTENER.dr();
     let torrent = env::args().nth(1).unwrap();
@@ -76,6 +72,6 @@ fn main() {
 fn download_torrent(path: &str) -> Result<(), io::Error> {
     let mut data = File::open(path)?;
     let t = Torrent::from_bencode(bencode::decode(&mut data).unwrap()).unwrap();
-    CONTROL.ctrl_tx.send(control::Request::AddTorrent(t)).unwrap();
+    CONTROL.ctrl_tx().send(control::Request::AddTorrent(t)).unwrap();
     Ok(())
 }

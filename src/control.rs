@@ -1,39 +1,40 @@
 use std::thread;
 use {tracker, disk, TRACKER};
-use mio::{channel, Event, Events, Poll, PollOpt, Ready, Token};
+use amy::{self, Poller, Registrar};
 use torrent::{Torrent, Peer};
 use torrent::peer::Message;
-use slab::Slab;
-use std::sync::mpsc::TryRecvError;
 use std::collections::HashMap;
-use util::{tok_enc, tok_dec};
+use std::fmt;
 
 pub struct Control {
-    trk_rx: channel::Receiver<tracker::Response>,
-    disk_rx: channel::Receiver<disk::Response>,
-    ctrl_rx: channel::Receiver<Request>,
-    poll: Poll,
-    torrents: Slab<Torrent, usize>,
+    trk_rx: amy::Receiver<tracker::Response>,
+    disk_rx: amy::Receiver<disk::Response>,
+    ctrl_rx: amy::Receiver<Request>,
+    reg: Registrar,
+    poll: Poller,
+    tid_cnt: usize,
+    torrents: HashMap<usize, Torrent>,
+    peers: HashMap<usize, Peer>,
     hash_idx: HashMap<[u8; 20], usize>,
 }
 
 pub struct Handle {
-    pub trk_tx: channel::Sender<tracker::Response>,
-    pub disk_tx: channel::Sender<disk::Response>,
-    pub ctrl_tx: channel::Sender<Request>,
+    trk_tx: amy::Sender<tracker::Response>,
+    disk_tx: amy::Sender<disk::Response>,
+    ctrl_tx: amy::Sender<Request>,
 }
 
 impl Handle {
-    pub fn trk_tx(&self) -> channel::Sender<tracker::Response> {
-        self.trk_tx.clone()
+    pub fn trk_tx(&self) -> amy::Sender<tracker::Response> {
+        self.trk_tx.try_clone().unwrap()
     }
 
-    pub fn disk_tx(&self) -> channel::Sender<disk::Response> {
-        self.disk_tx.clone()
+    pub fn disk_tx(&self) -> amy::Sender<disk::Response> {
+        self.disk_tx.try_clone().unwrap()
     }
 
-    pub fn ctrl_tx(&self) -> channel::Sender<Request> {
-        self.ctrl_tx.clone()
+    pub fn ctrl_tx(&self) -> amy::Sender<Request> {
+        self.ctrl_tx.try_clone().unwrap()
     }
 }
 
@@ -44,39 +45,38 @@ pub enum Request {
     AddPeer(Peer, [u8; 20], Vec<Message>),
 }
 
-const TRK_RX: Token = Token(1 << 63);
-const DISK_RX: Token = Token(1 << 63 | 1);
-const CTRL_RX: Token = Token(1 << 63 | 2);
+impl fmt::Debug for Request {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "Request")
+    }
+}
 
 impl Control {
-    pub fn new(trk_rx: channel::Receiver<tracker::Response>,
-               disk_rx: channel::Receiver<disk::Response>,
-               ctrl_rx: channel::Receiver<Request>) -> Control {
-        let poll = Poll::new().unwrap();
-        let torrents = Slab::with_capacity(128);
-        poll.register(&trk_rx, TRK_RX, Ready::readable(), PollOpt::edge() | PollOpt::oneshot()).unwrap();
-        poll.register(&disk_rx, DISK_RX, Ready::readable(), PollOpt::edge() | PollOpt::oneshot()).unwrap();
-        poll.register(&ctrl_rx, CTRL_RX, Ready::readable(), PollOpt::edge() | PollOpt::oneshot()).unwrap();
+    pub fn new(poll: Poller,
+               trk_rx: amy::Receiver<tracker::Response>,
+               disk_rx: amy::Receiver<disk::Response>,
+               ctrl_rx: amy::Receiver<Request>) -> Control {
+        let torrents = HashMap::new();
+        let peers = HashMap::new();
         let hash_idx = HashMap::new();
-        Control { trk_rx, disk_rx, ctrl_rx, poll, torrents, hash_idx }
+        let reg = poll.get_registrar().unwrap();
+        Control { trk_rx, disk_rx, ctrl_rx, poll, torrents, peers, hash_idx, reg, tid_cnt: 0 }
     }
 
     pub fn run(&mut self) {
-        let mut events = Events::with_capacity(256);
         loop {
-            self.poll.poll(&mut events, None).unwrap();
-            for event in events.iter() {
+            for event in self.poll.wait(5).unwrap() {
                 self.handle_event(event);
             }
         }
     }
 
-    fn handle_event(&mut self, event: Event) {
-        match event.token() {
-            TRK_RX => self.handle_trk_ev(),
-            DISK_RX => self.handle_disk_ev(event),
-            CTRL_RX => self.handle_ctrl_ev(),
-            _ => self.handle_peer_ev(event),
+    fn handle_event(&mut self, not: amy::Notification) {
+        match not.id {
+            id if id == self.trk_rx.get_id() => self.handle_trk_ev(),
+            id if id == self.disk_rx.get_id() => self.handle_disk_ev(),
+            id if id == self.ctrl_rx.get_id() => self.handle_ctrl_ev(),
+            _ => self.handle_peer_ev(not),
         }
     }
 
@@ -84,101 +84,105 @@ impl Control {
         loop {
             match self.trk_rx.try_recv() {
                 Ok(mut resp) => {
-                    let ref mut torrent = self.torrents.get_mut(resp.id).unwrap();
+                    let ref mut torrent = self.torrents.get_mut(&resp.id).unwrap();
                     resp.peers.push("127.0.0.1:8999".parse().unwrap());
+                    resp.peers.clear();
                     for ip in resp.peers.iter() {
-                        let peer = Peer::new_outgoing(ip, &torrent.info).unwrap();
-                        let pid = torrent.insert_peer(peer).unwrap();
-                        let tok = Token(tok_enc(resp.id, pid));
-                        self.poll.register(&torrent.get_peer_mut(pid).unwrap().conn, tok, Ready::all(), PollOpt::edge() | PollOpt::oneshot()).unwrap();
+                        if let Ok(mut peer) = Peer::new_outgoing(ip, &torrent) {
+                            let pid = self.reg.register(&peer.conn, amy::Event::Both).unwrap();
+                            peer.id = pid;
+                            self.peers.insert(pid, peer);
+                        }
                     }
                 }
-                Err(TryRecvError::Empty) => { break; }
-                _ => { unreachable!(); }
+                Err(_) => { break; }
             }
         }
-        self.poll.reregister(&self.trk_rx, TRK_RX, Ready::readable(), PollOpt::edge() | PollOpt::oneshot()).unwrap();
     }
 
-    fn handle_disk_ev(&mut self, event: Event) {
+    fn handle_disk_ev(&mut self) {
         loop {
             match self.disk_rx.try_recv() {
                 Ok(resp) => {
-                    let (tid, pid) = tok_dec(event.token().0);
-                    let ref mut torrent = self.torrents.get_mut(tid).unwrap();
-                    torrent.block_available(pid, resp).unwrap();
+                    let pid = resp.context.id;
+                    let ref mut peer = self.peers.get_mut(&pid).unwrap();
+                    let ref mut torrent = self.torrents.get_mut(&peer.tid).unwrap();
+                    torrent.block_available(peer, resp).unwrap();
                 }
-                Err(TryRecvError::Empty) => { break; }
-                _ => { unreachable!(); }
+                Err(_) => { break; }
             }
         }
-        self.poll.reregister(&self.disk_rx, DISK_RX, Ready::readable(), PollOpt::edge() | PollOpt::oneshot()).unwrap();
     }
 
     fn handle_ctrl_ev(&mut self) {
         loop {
             match self.ctrl_rx.try_recv() {
-                Ok(Request::AddTorrent(t)) => {
-                    let tid = self.torrents.insert(t).unwrap();
-                    let ref mut torrent = self.torrents.get_mut(tid).unwrap();
-                    torrent.id = tid;
-                    TRACKER.tx.send(tracker::Request::new(tid, 5678, torrent, tracker::Event::Started)).unwrap();
-                    self.hash_idx.insert(torrent.info.hash, tid);
+                Ok(Request::AddTorrent(mut t)) => {
+                    let tid = self.tid_cnt;
+                    t.id = tid;
+                    TRACKER.tx.send(tracker::Request::new(tid, 5678, &t, tracker::Event::Started)).unwrap();
+                    self.hash_idx.insert(t.info.hash, tid);
+
+                    self.tid_cnt += 1;
+                    self.torrents.insert(tid, t);
                 }
                 Ok(Request::AddPeer(mut p, hash, msgs)) => {
                     let tid = self.hash_idx.get(&hash).unwrap();
-                    let ref mut torrent = self.torrents.get_mut(*tid).unwrap();
-
-                    p.set_torrent(&torrent.info).unwrap();
-                    let pid = torrent.insert_peer(p).unwrap();
+                    let ref mut torrent = self.torrents.get_mut(tid).unwrap();
+                    p.set_torrent(torrent).unwrap();
+                    let pid = self.reg.register(&p.conn, amy::Event::Both).unwrap();
+                    p.id = pid;
+                    let mut err = false;
                     for msg in msgs {
-                        if let Err(_) = torrent.handle_msg(msg, pid) {
-                            torrent.remove_peer(pid);
-                            continue;
+                        if let Err(_) = torrent.handle_msg(msg, &mut p) {
+                            err = true;
+                            break;
                         }
                     }
-                    let tok = Token(tok_enc(*tid, pid));
-                    self.poll.register(&torrent.get_peer_mut(pid).unwrap().conn, tok, Ready::all(), PollOpt::edge() | PollOpt::oneshot()).unwrap();
+                    if !err {
+                        self.peers.insert(pid, p);
+                    }
                 }
-                Err(TryRecvError::Empty) => { break; }
-                Err(_) => { unreachable!(); }
+                Err(_) => { break; }
             }
         }
-        self.poll.reregister(&self.ctrl_rx, CTRL_RX, Ready::readable(), PollOpt::edge() | PollOpt::oneshot()).unwrap();
     }
 
-    fn handle_peer_ev(&mut self, event: Event) {
-        let (tid, pid) = tok_dec(event.token().0);
-        let mut torrent = self.torrents.get_mut(tid).unwrap();
-        let mut ready = Ready::readable() | Ready::writable();
-        if event.readiness().is_readable() {
-            if let Err(e) = torrent.peer_readable(pid) {
+    fn handle_peer_ev(&mut self, not: amy::Notification) {
+        let pid = not.id;
+        if not.event.readable() {
+            if let Err(e) = {
+                let peer = self.peers.get_mut(&pid).unwrap();
+                let torrent = self.torrents.get_mut(&peer.tid).unwrap();
+                torrent.peer_readable(peer)
+            } {
                 println!("Peer {:?} error'd with {:?}, removing", pid, e);
-                torrent.remove_peer(pid);
+                self.peers.remove(&pid);
                 return;
             }
         }
-        if event.readiness().is_writable() {
-            match torrent.peer_writable(pid) {
-                Ok(false) => ready.remove(Ready::writable()),
-                Ok(true) => { }
-                Err(e) => {
-                    println!("Peer {:?} error'd with {:?}, removing", pid, e);
-                    torrent.remove_peer(pid);
-                    return;
-                }
+        if not.event.writable() {
+            if let Err(e) = {
+                let peer = self.peers.get_mut(&pid).unwrap();
+                let torrent = self.torrents.get_mut(&peer.tid).unwrap();
+                torrent.peer_writable(peer)
+            } {
+                println!("Peer {:?} error'd with {:?}, removing", pid, e);
+                self.peers.remove(&pid);
+                return;
             }
         }
-        self.poll.reregister(&torrent.get_peer_mut(pid).unwrap().conn, event.token(), ready, PollOpt::edge() | PollOpt::oneshot()).unwrap();
     }
 }
 
 pub fn start() -> Handle {
-    let (trk_tx, trk_rx) = channel::channel();
-    let (disk_tx, disk_rx) = channel::channel();
-    let (ctrl_tx, ctrl_rx) = channel::channel();
+    let poll = amy::Poller::new().unwrap();
+    let mut reg = poll.get_registrar().unwrap();
+    let (trk_tx, trk_rx) = reg.channel().unwrap();
+    let (disk_tx, disk_rx) = reg.channel().unwrap();
+    let (ctrl_tx, ctrl_rx) = reg.channel().unwrap();
     thread::spawn(move || {
-        Control::new(trk_rx, disk_rx, ctrl_rx).run();
+        Control::new(poll, trk_rx, disk_rx, ctrl_rx).run();
     });
     Handle { trk_tx, disk_tx, ctrl_tx }
 }
