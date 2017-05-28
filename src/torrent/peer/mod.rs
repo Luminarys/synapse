@@ -71,6 +71,7 @@ impl Peer {
         self.writer.write_message(Message::handshake(&t.info), &mut self.conn)?;
         self.pieces = PieceField::new(t.info.hashes.len() as u32);
         self.tid = t.id;
+        self.writer.write_message(Message::Bitfield(t.pieces.clone()), &mut self.conn)?;
         Ok(())
     }
 

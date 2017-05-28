@@ -1,4 +1,4 @@
-use std::sync::mpsc;
+use std::sync::{mpsc, Arc};
 use std::fs::OpenOptions;
 use std::{fmt, thread};
 use std::io::{Seek, SeekFrom, Write, Read};
@@ -65,7 +65,7 @@ impl Location {
 
 pub struct Response {
     pub context: Ctx,
-    pub data: Box<[u8; 16384]>,
+    pub data: Arc<Box<[u8; 16384]>>,
 }
 
 impl fmt::Debug for Response {
@@ -100,6 +100,7 @@ impl Disk {
                             f.read(&mut data[loc.start..loc.end])
                         }).unwrap();
                     }
+                    let data = Arc::new(data);
                     self.disk_tx.send(Response { context, data }).unwrap();
                 }
                 _ => break,

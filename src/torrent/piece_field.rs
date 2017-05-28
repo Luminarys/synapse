@@ -1,5 +1,6 @@
 // Use u32 rather than usize because it conforms with bittorents network protocol
 // (4 byte big endian integers)
+#[derive(Clone)]
 pub struct PieceField {
     len: u32,
     data: Box<[u8]>

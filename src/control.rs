@@ -86,7 +86,6 @@ impl Control {
                 Ok(mut resp) => {
                     let ref mut torrent = self.torrents.get_mut(&resp.id).unwrap();
                     resp.peers.push("127.0.0.1:8999".parse().unwrap());
-                    resp.peers.clear();
                     for ip in resp.peers.iter() {
                         if let Ok(mut peer) = Peer::new_outgoing(ip, &torrent) {
                             let pid = self.reg.register(&peer.conn, amy::Event::Both).unwrap();

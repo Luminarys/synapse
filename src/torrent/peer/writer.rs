@@ -15,7 +15,7 @@ enum WriteState {
     Idle,
     WritingMsg { data: [u8; 17], len: u8, idx: u8 },
     WritingOther { data: Vec<u8>, idx: u16 },
-    WritingPiece { prefix: [u8; 17], data: Arc<[u8; 16384]>, idx: u16 }
+    WritingPiece { prefix: [u8; 17], data: Arc<Box<[u8; 16384]>>, idx: u16 }
 }
 
 impl Writer {
@@ -134,7 +134,7 @@ impl Writer {
                 }
                 // piece should never exceed u16 size
                 *idx += amnt as u16;
-                if *idx == (prefix.len() + data.len()) as u16 {
+                if *idx == (13 + data.len()) as u16 {
                     self.blocks_written += 1;
                     Ok(true)
                 } else {

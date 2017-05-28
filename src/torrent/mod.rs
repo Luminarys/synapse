@@ -48,7 +48,7 @@ impl Torrent {
 
     pub fn block_available(&mut self, peer: &mut Peer, resp: disk::Response) -> io::Result<()> {
         let ctx = resp.context;
-        let p = Message::piece(ctx.idx, ctx.begin, ctx.length, resp.data);
+        let p = Message::s_piece(ctx.idx, ctx.begin, ctx.length, resp.data);
         peer.send_message(p)?;
         Ok(())
     }
