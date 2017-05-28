@@ -4,16 +4,15 @@ version = "0.1.0"
 authors = ["Luminarys <postmaster@gensok.io>"]
 
 [dependencies]
-mio = "0.6.6"
-slab = "0.3"
+amy = "0.7.2"
 byteorder = "0.5"
 lazy_static = "*"
 rand = "0.3"
 sha1 = "0.2.0"
 reqwest = "0.5.1"
 url = "1.4.0"
-iovec = "0.1"
 pbr = "1.0"
+net2 = "0.2"
 
 [profile.bench]
 opt-level = 3

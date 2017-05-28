@@ -5,12 +5,11 @@ mod message;
 pub use self::message::Message;
 use self::reader::Reader;
 use self::writer::Writer;
-use mio::tcp::TcpStream;
+use std::net::TcpStream;
 use socket::Socket;
 use std::net::SocketAddr;
 use std::io;
-use torrent::info::Info;
-use torrent::PieceField;
+use torrent::{Torrent, PieceField};
 
 pub struct Peer {
     pub conn: Socket,
@@ -19,17 +18,19 @@ pub struct Peer {
     pub choked: bool,
     pub interested: bool,
     pub queued: u16,
+    pub tid: usize,
+    pub id: usize,
     reader: Reader,
     writer: Writer,
 }
 
 impl Peer {
     /// Creates a new peer for a torrent which will connect to another client
-    pub fn new_outgoing(ip: &SocketAddr, torrent: &Info) -> io::Result<Peer> {
-        let mut conn = Socket::new(TcpStream::connect(ip)?);
+    pub fn new_outgoing(ip: &SocketAddr, t: &Torrent) -> io::Result<Peer> {
+        let mut conn = Socket::new(ip)?;
         let mut writer = Writer::new();
         let reader = Reader::new();
-        writer.write_message(Message::handshake(torrent), &mut conn)?;
+        writer.write_message(Message::handshake(&t.info), &mut conn)?;
         Ok(Peer {
             being_choked: true,
             choked: true,
@@ -38,7 +39,9 @@ impl Peer {
             reader,
             writer,
             queued: 0,
-            pieces: PieceField::new(torrent.hashes.len() as u32),
+            pieces: PieceField::new(t.info.hashes.len() as u32),
+            tid: t.id,
+            id: 0,
         })
     }
 
@@ -52,19 +55,22 @@ impl Peer {
             being_choked: true,
             choked: true,
             interested: false,
-            conn: Socket::new(conn),
+            conn: Socket::from_stream(conn)?,
             reader: reader,
             writer: writer,
             queued: 0,
             pieces: PieceField::new(8),
+            tid: 0,
+            id: 0,
         })
     }
 
     /// Sets the peer's metadata to the given torrent info and sends a
     /// handshake.
-    pub fn set_torrent(&mut self, torrent: &Info) -> io::Result<()> {
-        self.writer.write_message(Message::handshake(torrent), &mut self.conn)?;
-        self.pieces = PieceField::new(torrent.hashes.len() as u32);
+    pub fn set_torrent(&mut self, t: &Torrent) -> io::Result<()> {
+        self.writer.write_message(Message::handshake(&t.info), &mut self.conn)?;
+        self.pieces = PieceField::new(t.info.hashes.len() as u32);
+        self.tid = t.id;
         Ok(())
     }
 

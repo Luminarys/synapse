@@ -1,12 +1,13 @@
 use std::sync::mpsc;
 use std::fs::OpenOptions;
-use std::thread;
+use std::{fmt, thread};
 use std::io::{Seek, SeekFrom, Write, Read};
 use std::path::PathBuf;
-use CONTROL;
+use {amy, CONTROL};
 
 pub struct Disk {
     queue: mpsc::Receiver<Request>,
+    disk_tx: amy::Sender<Response>,
 }
 
 pub struct Handle {
@@ -67,10 +68,17 @@ pub struct Response {
     pub data: Box<[u8; 16384]>,
 }
 
+impl fmt::Debug for Response {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "disk::Response")
+    }
+}
+
 impl Disk {
     pub fn new(queue: mpsc::Receiver<Request>) -> Disk {
         Disk {
-            queue
+            queue,
+            disk_tx: CONTROL.disk_tx(),
         }
     }
 
@@ -92,7 +100,7 @@ impl Disk {
                             f.read(&mut data[loc.start..loc.end])
                         }).unwrap();
                     }
-                    CONTROL.disk_tx.send(Response { context, data }).unwrap();
+                    self.disk_tx.send(Response { context, data }).unwrap();
                 }
                 _ => break,
             }
