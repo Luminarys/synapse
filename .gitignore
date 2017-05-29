@@ -1,3 +1,7 @@
 target
 spec/
 *.torrent
+oprofile*
+perf*
+*.svg
+*.iso

@@ -29,7 +29,7 @@ lazy_static! {
         use rand::{self, Rng};
 
         let mut pid = [0u8; 20];
-        let prefix = b"-SYN001-";
+        let prefix = b"-SN0001-";
         for i in 0..prefix.len() {
             pid[i] = prefix[i];
         }

@@ -15,6 +15,7 @@ use std::{fmt, io, cmp};
 use {disk, DISK};
 use pbr::ProgressBar;
 use std::collections::HashSet;
+use util::io_err;
 
 pub struct Torrent {
     pub info: Info,
@@ -63,6 +64,10 @@ impl Torrent {
 
     pub fn handle_msg(&mut self, msg: Message, peer: &mut Peer) -> io::Result<()> {
         match msg {
+            Message::Handshake { .. } => {
+                println!("Connection established with peer {:?}", peer.id);
+                peer.send_message(Message::Bitfield(self.pieces.clone()))?;
+            }
             Message::Bitfield(mut pf) => {
                 pf.cap(self.pieces.len());
                 peer.pieces = pf;
@@ -102,7 +107,11 @@ impl Torrent {
             }
             Message::Request { index, begin, length } => {
                 // TODO get this from some sort of allocator.
-                Torrent::request_read(peer.id, &self.info, index, begin, length, Box::new([0u8; 16384]));
+                if !peer.choked {
+                    Torrent::request_read(peer.id, &self.info, index, begin, length, Box::new([0u8; 16384]));
+                } else {
+                    return io_err("Peer requested while choked!");
+                }
             }
             Message::Interested => {
                 peer.interested = true;

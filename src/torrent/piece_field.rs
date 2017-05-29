@@ -30,6 +30,7 @@ impl PieceField {
         (self.data, self.len)
     }
 
+    #[inline]
     pub fn len(&self) -> u32 {
         self.len
     }

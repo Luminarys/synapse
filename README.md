@@ -6,7 +6,9 @@ Experimental Bittorrent Client.
 * Leeching
 
 ## Features TODO:
-* Efficient piece picking
+* Rarest first piece picking
+* UDP tracker
+* DHT
 * Endgame mode
 * Optimistic unchoking
 * RPC
