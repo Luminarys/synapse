@@ -123,7 +123,7 @@ impl Tracker {
                 append_pair(&mut url, "info_hash", &encode_param(&req.hash));
                 append_pair(&mut url, "peer_id", &encode_param(&PEER_ID[..]));
                 append_pair(&mut url, "uploaded", &req.uploaded.to_string());
-                append_pair(&mut url, "numwant", "25");
+                append_pair(&mut url, "numwant", "45");
                 append_pair(&mut url, "downloaded", &req.downloaded.to_string());
                 append_pair(&mut url, "left", &req.left.to_string());
                 append_pair(&mut url, "compact", "1");

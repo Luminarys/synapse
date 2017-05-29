@@ -83,7 +83,8 @@ impl Torrent {
             Message::Piece { index, begin, data, length } => {
                 peer.queued -= 1;
                 Torrent::write_piece(&self.info, index, begin, length, data);
-                if self.picker.completed(index, begin) {
+                let (piece_done, mut peers) = self.picker.completed(index, begin);
+                if piece_done {
                     self.pb.inc();
                     self.pieces.set_piece(index);
                     if self.pieces.complete() {
@@ -91,7 +92,11 @@ impl Torrent {
                     }
                     // TODO: Broadcast HAVE to everyone who needs it.
                 }
-                if !peer.being_choked {
+                if peers.len() > 1 {
+                    peers.remove(&peer.id);
+                    // TODO Send cancellation to all other peers.
+                }
+                if !peer.being_choked && !self.pieces.complete() {
                     Torrent::make_requests(&mut self.picker, peer, &self.info)?;
                 }
             }
@@ -174,7 +179,7 @@ impl Torrent {
 
     #[inline(always)]
     fn make_requests(picker: &mut Picker, peer: &mut Peer, info: &Info) -> io::Result<()> {
-        // keep 5 outstanding reuqests?
+        // keep 5 outstanding requests?
         while peer.queued < 5 {
             if let Some((idx, offset)) = picker.pick(&peer) {
                 if info.is_last_piece((idx, offset)) {

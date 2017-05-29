@@ -1,12 +1,13 @@
-use std::collections::{HashSet};
+use std::collections::{HashSet, HashMap};
 use torrent::{PieceField, Info, Peer};
-use std::cmp;
 
 pub struct Picker {
+    endgame_cnt: u32,
     piece_idx: u32,
     pieces: PieceField,
     scale: u32,
     waiting: HashSet<u32>,
+    waiting_peers: HashMap<u32, HashSet<usize>>,
 }
 
 impl Picker {
@@ -29,6 +30,8 @@ impl Picker {
             piece_idx: 0,
             scale: scale as u32,
             waiting: HashSet::new(),
+            endgame_cnt: len as u32,
+            waiting_peers: HashMap::new(),
         }
     }
 
@@ -40,25 +43,47 @@ impl Picker {
                 if start + i < self.pieces.len() && !self.pieces.has_piece(start + i) {
                     self.pieces.set_piece(start + i);
                     self.waiting.insert(start + i);
+                    let mut hs = HashSet::with_capacity(1);
+                    hs.insert(peer.id);
+                    self.waiting_peers.insert(start + i, hs);
+                    if self.endgame_cnt == 1 {
+                        println!("Entering endgame!");
+                    }
+                    self.endgame_cnt = self.endgame_cnt.saturating_sub(1);
                     return Some((idx, i * 16384));
                 }
+            }
+        }
+        if self.endgame_cnt == 0 {
+            let mut idx = None;
+            for piece in self.waiting.iter() {
+                if peer.pieces.has_piece(*piece/self.scale) {
+                    idx = Some(*piece);
+                    break;
+                }
+            }
+            if let Some(i) = idx {
+                self.waiting_peers.get_mut(&i).unwrap().insert(peer.id);
+                return Some((i/self.scale, (i % self.scale) * 16384));
             }
         }
         None
     }
 
     /// Returns whether or not the whole piece is complete.
-    pub fn completed(&mut self, mut idx: u32, mut offset: u32) -> bool {
+    pub fn completed(&mut self, mut idx: u32, mut offset: u32) -> (bool, HashSet<usize>) {
         offset /= 16384;
         idx *= self.scale;
         self.waiting.remove(&(idx + offset));
+        // TODO: make this less hacky
+        let peers = self.waiting_peers.remove(&(idx + offset)).unwrap_or(HashSet::with_capacity(0));
         for i in 0..self.scale {
             if (idx + i < self.pieces.len() && !self.pieces.has_piece(idx + i)) || self.waiting.contains(&(idx + i)) {
-                return false;
+                return (false, peers);
             }
         }
         self.update_piece_idx();
-        true
+        (true, peers)
     }
 
     fn update_piece_idx(&mut self) {
