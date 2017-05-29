@@ -7,5 +7,6 @@ Experimental Bittorrent Client.
 
 ## Features TODO:
 * Efficient piece picking
+* Endgame mode
 * Optimistic unchoking
 * RPC

@@ -1,7 +1,9 @@
 use std::collections::{HashSet};
 use torrent::{PieceField, Info, Peer};
+use std::cmp;
 
 pub struct Picker {
+    piece_idx: u32,
     pieces: PieceField,
     scale: u32,
     waiting: HashSet<u32>,
@@ -24,13 +26,14 @@ impl Picker {
         let pieces = PieceField::new(len as u32);
         Picker {
             pieces,
+            piece_idx: 0,
             scale: scale as u32,
             waiting: HashSet::new(),
         }
     }
 
     pub fn pick(&mut self, peer: &Peer) -> Option<(u32, u32)> {
-        for idx in peer.pieces.iter() {
+        for idx in peer.pieces.iter_from(self.piece_idx) {
             let start = idx * self.scale;
             for i in 0..self.scale {
                 // On the last piece check, we won't check the whole range.
@@ -54,7 +57,24 @@ impl Picker {
                 return false;
             }
         }
+        self.update_piece_idx();
         true
+    }
+
+    fn update_piece_idx(&mut self) {
+        let mut idx = self.piece_idx * self.scale;
+        loop {
+            for i in 0..self.scale {
+                if (idx + i < self.pieces.len() && !self.pieces.has_piece(idx + i)) || self.waiting.contains(&(idx + i)) {
+                    return;
+                }
+            }
+            self.piece_idx += 1;
+            idx += self.scale;
+            if idx > self.pieces.len() {
+                return;
+            }
+        }
     }
 }
 

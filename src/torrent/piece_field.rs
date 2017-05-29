@@ -103,6 +103,10 @@ impl PieceField {
     pub fn iter<'a>(&'a self) -> PieceFieldIter<'a> {
         PieceFieldIter::new(&self)
     }
+
+    pub fn iter_from<'a>(&'a self, idx: u32) -> PieceFieldIter<'a> {
+        PieceFieldIter::from_pos(&self, idx)
+    }
 }
 
 use std::fmt;
@@ -132,6 +136,13 @@ impl<'a> PieceFieldIter<'a> {
         PieceFieldIter {
             pf: pf,
             idx: 0,
+        }
+    }
+
+    fn from_pos(pf: &'a PieceField, idx: u32) -> PieceFieldIter<'a> {
+        PieceFieldIter {
+            pf: pf,
+            idx: idx,
         }
     }
 }
