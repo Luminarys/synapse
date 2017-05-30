@@ -1,9 +1,9 @@
-use std::sync::mpsc;
+use std::sync::{mpsc, atomic};
 use byteorder::{BigEndian, ReadBytesExt};
 use std::net::{SocketAddr, SocketAddrV4, Ipv4Addr};
 use std::thread;
 use util::{encode_param, append_pair};
-use {PEER_ID, CONTROL, reqwest, bencode, amy};
+use {PEER_ID, CONTROL, PORT, reqwest, bencode, amy};
 use bencode::BEncode;
 use torrent::Torrent;
 
@@ -33,21 +33,37 @@ pub struct Request {
     uploaded: usize,
     downloaded: usize,
     left: usize,
-    event: Event,
+    event: Option<Event>,
 }
 
 impl Request {
-    pub fn new(id: usize, port: u16, torrent: &Torrent, event: Event) -> Request {
+    pub fn new(id: usize, torrent: &Torrent, event: Option<Event>) -> Request {
         Request {
             id,
             url: torrent.info.announce.clone(),
             hash: torrent.info.hash,
-            port,
+            port: PORT.load(atomic::Ordering::Relaxed) as u16,
             uploaded: torrent.uploaded,
             downloaded: torrent.downloaded,
             left: torrent.info.total_len - torrent.downloaded,
             event,
         }
+    }
+
+    pub fn started(id: usize, torrent: &Torrent) -> Request {
+        Request::new(id, torrent, Some(Event::Started))
+    }
+
+    pub fn stopped(id: usize, torrent: &Torrent) -> Request {
+        Request::new(id, torrent, Some(Event::Started))
+    }
+
+    pub fn completed(id: usize, torrent: &Torrent) -> Request {
+        Request::new(id, torrent, Some(Event::Completed))
+    }
+
+    pub fn interval(id: usize, torrent: &Torrent) -> Request {
+        Request::new(id, torrent, None)
     }
 }
 
@@ -128,6 +144,18 @@ impl Tracker {
                 append_pair(&mut url, "left", &req.left.to_string());
                 append_pair(&mut url, "compact", "1");
                 append_pair(&mut url, "port", &req.port.to_string());
+                match req.event {
+                    Some(Event::Started) => {
+                        append_pair(&mut url, "event", "started");
+                    }
+                    Some(Event::Stopped) => {
+                        append_pair(&mut url, "event", "started");
+                    }
+                    Some(Event::Completed) => {
+                        append_pair(&mut url, "event", "commpleted");
+                    }
+                    None => { }
+                }
                 let response = {
                     let mut resp = reqwest::get(&*url).unwrap();
                     let content = bencode::decode(&mut resp).unwrap();

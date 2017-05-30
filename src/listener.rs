@@ -1,10 +1,11 @@
 use std::thread;
 use std::io::ErrorKind;
-use std::net::TcpListener;
+use std::net::{SocketAddrV4, Ipv4Addr, TcpListener};
+use std::sync::atomic;
 use amy::{self, Poller, Registrar};
 use std::collections::HashMap;
 use torrent::Peer;
-use {control, CONTROL};
+use {control, CONTROL, PORT};
 
 pub struct Listener {
     listener: TcpListener,
@@ -24,7 +25,9 @@ unsafe impl Sync for Handle {}
 
 impl Listener {
     pub fn new() -> Listener {
-        let listener = TcpListener::bind("127.0.0.1:13264").unwrap();
+        let ip = Ipv4Addr::new(0, 0, 0, 0);
+        let port = PORT.load(atomic::Ordering::Relaxed) as u16;
+        let listener = TcpListener::bind(SocketAddrV4::new(ip, port)).unwrap();
         listener.set_nonblocking(true).unwrap();
         let poll = Poller::new().unwrap();
         let reg = poll.get_registrar().unwrap();

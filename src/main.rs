@@ -21,6 +21,7 @@ mod control;
 mod listener;
 
 use std::{env, io, thread, time};
+use std::sync::atomic;
 use std::fs::File;
 use torrent::Torrent;
 
@@ -39,6 +40,13 @@ lazy_static! {
             pid[i] = rng.gen::<u8>();
         }
         pid
+    };
+
+    pub static ref PORT: atomic::AtomicUsize = {
+        use rand::Rng;
+        let mut rng = rand::thread_rng();
+        let num = rng.gen_range(5000, 30000);
+        atomic::AtomicUsize::new(num)
     };
 
     pub static ref DISK: disk::Handle = {

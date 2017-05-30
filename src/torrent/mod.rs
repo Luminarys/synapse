@@ -12,7 +12,7 @@ use bencode::BEncode;
 use self::peer::Message;
 use self::picker::Picker;
 use std::{fmt, io, cmp};
-use {disk, DISK};
+use {disk, DISK, tracker, TRACKER};
 use pbr::ProgressBar;
 use std::collections::HashSet;
 use util::io_err;
@@ -90,9 +90,11 @@ impl Torrent {
                 Torrent::write_piece(&self.info, index, begin, length, data);
                 let (piece_done, mut peers) = self.picker.completed(index, begin);
                 if piece_done {
+                    self.downloaded += 1;
                     self.pb.inc();
                     self.pieces.set_piece(index);
                     if self.pieces.complete() {
+                        TRACKER.tx.send(tracker::Request::completed(self.id, &self)).unwrap();
                         self.pb.finish_print("Downloaded!");
                     }
                     // TODO: Broadcast HAVE to everyone who needs it.
