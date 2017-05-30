@@ -46,6 +46,7 @@ lazy_static! {
         use rand::Rng;
         let mut rng = rand::thread_rng();
         let num = rng.gen_range(5000, 30000);
+        println!("Listening on port {:?}", num);
         atomic::AtomicUsize::new(num)
     };
 
@@ -67,9 +68,6 @@ lazy_static! {
 }
 
 fn main() {
-    // TODO: http://geocar.sdf1.org/fast-servers.html maybe?
-    // This design could actually be really good
-
     // lol
     LISTENER.dr();
     let torrent = env::args().nth(1).unwrap();

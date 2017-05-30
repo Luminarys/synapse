@@ -18,24 +18,20 @@ impl Reader {
         }
     }
 
-    /// Attempts to read a single message from the connection
-    pub fn readable<R: Read>(&mut self, conn: &mut R) -> io::Result<Vec<Message>> {
-        let mut v = Vec::with_capacity(1);
-        loop {
-            // Keep on trying to read until we get an EWOULDBLOCK error.
-            let state = mem::replace(&mut self.state, ReadState::Idle);
-            match state.next_state(conn) {
-                ReadRes::Message(msg) => {
-                    self.state = ReadState::Idle;
-                    if msg.is_piece() { self.blocks_read += 1 }
-                    v.push(msg);
-                }
-                ReadRes::Incomplete(state) => { self.state = state; break; },
-                ReadRes::EOF => return io_err("EOF"),
-                ReadRes::Err(e) => return Err(e),
-            };
-        }
-        Ok(v)
+    /// Attempts to read a message from the connection
+    pub fn readable<R: Read>(&mut self, conn: &mut R) -> io::Result<Option<Message>> {
+       // Keep on trying to read until we get an EWOULDBLOCK error.
+       let state = mem::replace(&mut self.state, ReadState::Idle);
+       match state.next_state(conn) {
+           ReadRes::Message(msg) => {
+               self.state = ReadState::Idle;
+               if msg.is_piece() { self.blocks_read += 1 }
+               Ok(Some(msg))
+           }
+           ReadRes::Incomplete(state) => { self.state = state; Ok(None) },
+           ReadRes::EOF => return io_err("EOF"),
+           ReadRes::Err(e) => return Err(e),
+       }
     }
 }
 
@@ -312,7 +308,7 @@ fn test_message(data: Vec<u8>, msg: Message) {
     let mut r = Reader::new();
     r.state = ReadState::Idle;
     let mut data = Cursor::new(data);
-    assert_eq!(msg, r.readable(&mut data).unwrap()[0])
+    assert_eq!(msg, r.readable(&mut data).unwrap().unwrap())
 }
 
 #[test]

@@ -2,7 +2,6 @@ use std::thread;
 use {tracker, disk, TRACKER};
 use amy::{self, Poller, Registrar};
 use torrent::{Torrent, Peer};
-use torrent::peer::Message;
 use std::collections::HashMap;
 use std::fmt;
 
@@ -42,7 +41,7 @@ unsafe impl Sync for Handle {}
 
 pub enum Request {
     AddTorrent(Torrent),
-    AddPeer(Peer, [u8; 20], Vec<Message>),
+    AddPeer(Peer, [u8; 20]),
 }
 
 impl fmt::Debug for Request {
@@ -83,14 +82,11 @@ impl Control {
     fn handle_trk_ev(&mut self) {
         loop {
             match self.trk_rx.try_recv() {
-                Ok(mut resp) => {
-                    let ref mut torrent = self.torrents.get_mut(&resp.id).unwrap();
-                    // resp.peers.push("127.0.0.1:8999".parse().unwrap());
+                Ok(resp) => {
                     for ip in resp.peers.iter() {
-                        if let Ok(mut peer) = Peer::new_outgoing(ip, &torrent) {
-                            let pid = self.reg.register(&peer.conn, amy::Event::Both).unwrap();
-                            peer.id = pid;
-                            self.peers.insert(pid, peer);
+                        if let Ok(peer) = Peer::new_outgoing(ip) {
+                            println!("Adding outgoing peer!");
+                            self.add_peer(resp.id, peer);
                         }
                     }
                 }
@@ -119,28 +115,16 @@ impl Control {
                 Ok(Request::AddTorrent(mut t)) => {
                     let tid = self.tid_cnt;
                     t.id = tid;
-                    TRACKER.tx.send(tracker::Request::started(tid, &t)).unwrap();
+                    TRACKER.tx.send(tracker::Request::started(&t)).unwrap();
                     self.hash_idx.insert(t.info.hash, tid);
 
                     self.tid_cnt += 1;
                     self.torrents.insert(tid, t);
                 }
-                Ok(Request::AddPeer(mut p, hash, msgs)) => {
-                    let tid = self.hash_idx.get(&hash).unwrap();
-                    let ref mut torrent = self.torrents.get_mut(tid).unwrap();
-                    p.set_torrent(torrent).unwrap();
-                    let pid = self.reg.register(&p.conn, amy::Event::Both).unwrap();
-                    p.id = pid;
-                    let mut err = false;
-                    for msg in msgs {
-                        if let Err(_) = torrent.handle_msg(msg, &mut p) {
-                            err = true;
-                            break;
-                        }
-                    }
-                    if !err {
-                        self.peers.insert(pid, p);
-                    }
+                Ok(Request::AddPeer(p, hash)) => {
+                    println!("Adding incoming peer");
+                    let tid = *self.hash_idx.get(&hash).unwrap();
+                    self.add_peer(tid, p);
                 }
                 Err(_) => { break; }
             }
@@ -155,8 +139,8 @@ impl Control {
                 let torrent = self.torrents.get_mut(&peer.tid).unwrap();
                 torrent.peer_readable(peer)
             } {
-                println!("Peer {:?} error, removing", pid);
-                self.peers.remove(&pid);
+                println!("Peer {:?} error removing", pid);
+                self.remove_peer(pid);
                 return;
             }
         }
@@ -167,10 +151,23 @@ impl Control {
                 torrent.peer_writable(peer)
             } {
                 println!("Peer {:?} error, removing", pid);
-                self.peers.remove(&pid);
+                self.remove_peer(pid);
                 return;
             }
         }
+    }
+
+    fn add_peer(&mut self, id: usize, mut peer: Peer) {
+        let torrent = self.torrents.get_mut(&id).unwrap();
+        let pid = self.reg.register(&peer.conn, amy::Event::Both).unwrap();
+        peer.id = pid;
+        torrent.add_peer(&mut peer).unwrap();
+        self.peers.insert(pid, peer);
+    }
+
+    fn remove_peer(&mut self, id: usize) {
+        let peer = self.peers.remove(&id).unwrap();
+        self.reg.deregister(peer.conn).unwrap();
     }
 }
 

@@ -37,9 +37,9 @@ pub struct Request {
 }
 
 impl Request {
-    pub fn new(id: usize, torrent: &Torrent, event: Option<Event>) -> Request {
+    pub fn new(torrent: &Torrent, event: Option<Event>) -> Request {
         Request {
-            id,
+            id: torrent.id,
             url: torrent.info.announce.clone(),
             hash: torrent.info.hash,
             port: PORT.load(atomic::Ordering::Relaxed) as u16,
@@ -50,20 +50,20 @@ impl Request {
         }
     }
 
-    pub fn started(id: usize, torrent: &Torrent) -> Request {
-        Request::new(id, torrent, Some(Event::Started))
+    pub fn started(torrent: &Torrent) -> Request {
+        Request::new(torrent, Some(Event::Started))
     }
 
-    pub fn stopped(id: usize, torrent: &Torrent) -> Request {
-        Request::new(id, torrent, Some(Event::Started))
+    pub fn stopped(torrent: &Torrent) -> Request {
+        Request::new(torrent, Some(Event::Started))
     }
 
-    pub fn completed(id: usize, torrent: &Torrent) -> Request {
-        Request::new(id, torrent, Some(Event::Completed))
+    pub fn completed(torrent: &Torrent) -> Request {
+        Request::new(torrent, Some(Event::Completed))
     }
 
-    pub fn interval(id: usize, torrent: &Torrent) -> Request {
-        Request::new(id, torrent, None)
+    pub fn interval(torrent: &Torrent) -> Request {
+        Request::new(torrent, None)
     }
 }
 
@@ -139,7 +139,7 @@ impl Tracker {
                 append_pair(&mut url, "info_hash", &encode_param(&req.hash));
                 append_pair(&mut url, "peer_id", &encode_param(&PEER_ID[..]));
                 append_pair(&mut url, "uploaded", &req.uploaded.to_string());
-                append_pair(&mut url, "numwant", "45");
+                append_pair(&mut url, "numwant", "75");
                 append_pair(&mut url, "downloaded", &req.downloaded.to_string());
                 append_pair(&mut url, "left", &req.left.to_string());
                 append_pair(&mut url, "compact", "1");

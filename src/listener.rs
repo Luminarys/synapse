@@ -73,21 +73,15 @@ impl Listener {
 
     fn handle_peer(&mut self, not: amy::Notification) {
         let pid = not.id;
-        let res = self.incoming.get_mut(&pid).unwrap().readable().map(|mut msgs| {
-            if msgs.len() > 0 {
-                Some((msgs.remove(0), msgs))
-            } else {
-                None
-            }
-        });
+        let res = self.incoming.get_mut(&pid).unwrap().read();
         match res {
-            Ok(Some((hs, rest))) => {
+            Ok(Some(hs)) => {
                 println!("Got HS {:?}, transferring peer!", hs);
                 let peer = self.incoming.remove(&pid).unwrap();
                 self.reg.deregister(peer.conn.fd()).unwrap();
-                self.ctrl_tx.send(control::Request::AddPeer(peer, hs.get_handshake_hash(), rest)).unwrap();
+                self.ctrl_tx.send(control::Request::AddPeer(peer, hs.get_handshake_hash())).unwrap();
             }
-            Ok(_) => { println!("Reading HS"); }
+            Ok(_) => { }
             Err(_) => {
                 println!("Bad incoming connection, removing!");
                 self.incoming.remove(&pid);

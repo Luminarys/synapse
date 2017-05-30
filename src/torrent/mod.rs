@@ -66,7 +66,6 @@ impl Torrent {
         match msg {
             Message::Handshake { .. } => {
                 println!("Connection established with peer {:?}", peer.id);
-                peer.send_message(Message::Bitfield(self.pieces.clone()))?;
             }
             Message::Bitfield(mut pf) => {
                 pf.cap(self.pieces.len());
@@ -86,6 +85,10 @@ impl Torrent {
                 peer.being_choked = true;
             }
             Message::Piece { index, begin, data, length } => {
+                if self.pieces.complete() {
+                    return Ok(())
+                }
+
                 peer.queued -= 1;
                 Torrent::write_piece(&self.info, index, begin, length, data);
                 let (piece_done, mut peers) = self.picker.completed(index, begin);
@@ -94,7 +97,7 @@ impl Torrent {
                     self.pb.inc();
                     self.pieces.set_piece(index);
                     if self.pieces.complete() {
-                        TRACKER.tx.send(tracker::Request::completed(self.id, &self)).unwrap();
+                        TRACKER.tx.send(tracker::Request::completed(&self)).unwrap();
                         self.pb.finish_print("Downloaded!");
                     }
                     // TODO: Broadcast HAVE to everyone who needs it.
@@ -218,11 +221,13 @@ impl Torrent {
         size
     }
 
-    pub fn remove_peer(&mut self, id: &usize) {
-        self.peers.remove(id);
+    pub fn add_peer(&mut self, peer: &mut Peer) -> io::Result<()> {
+        peer.set_torrent(&self)?;
+        self.peers.insert(peer.id);
+        Ok(())
     }
 
-    pub fn insert_peer(&mut self, id: usize) {
-        self.peers.insert(id);
+    pub fn remove_peer(&mut self, peer: &mut Peer) {
+        self.peers.remove(&peer.id);
     }
 }

@@ -25,48 +25,37 @@ pub struct Peer {
 }
 
 impl Peer {
-    /// Creates a new peer for a torrent which will connect to another client
-    pub fn new_outgoing(ip: &SocketAddr, t: &Torrent) -> io::Result<Peer> {
-        let mut conn = Socket::new(ip)?;
-        let mut writer = Writer::new();
+    fn new (conn: Socket) -> Peer {
+        let writer = Writer::new();
         let reader = Reader::new();
-        writer.write_message(Message::handshake(&t.info), &mut conn)?;
-        Ok(Peer {
+        Peer {
             being_choked: true,
             choked: true,
             interested: false,
             conn,
-            reader,
-            writer,
-            queued: 0,
-            pieces: PieceField::new(t.info.hashes.len() as u32),
-            tid: t.id,
-            id: 0,
-        })
-    }
-
-    /// Creates a peer for an unidentified incoming peer.
-    /// Note that set_torrent will need to be called once the handshake is
-    /// processed.
-    pub fn new_incoming(conn: TcpStream) -> io::Result<Peer> {
-        let writer = Writer::new();
-        let reader = Reader::new();
-        Ok(Peer {
-            being_choked: true,
-            choked: true,
-            interested: false,
-            conn: Socket::from_stream(conn)?,
             reader: reader,
             writer: writer,
             queued: 0,
             pieces: PieceField::new(8),
             tid: 0,
             id: 0,
-        })
+        }
+    }
+
+    /// Creates a new peer for a torrent which will connect to another client
+    pub fn new_outgoing(ip: &SocketAddr) -> io::Result<Peer> {
+        Ok(Peer::new(Socket::new(ip)?))
+    }
+
+    /// Creates a peer for an unidentified incoming peer.
+    /// Note that set_torrent will need to be called once the handshake is
+    /// processed.
+    pub fn new_incoming(conn: TcpStream) -> io::Result<Peer> {
+        Ok(Peer::new(Socket::from_stream(conn)?))
     }
 
     /// Sets the peer's metadata to the given torrent info and sends a
-    /// handshake.
+    /// handshake and bitfield.
     pub fn set_torrent(&mut self, t: &Torrent) -> io::Result<()> {
         self.writer.write_message(Message::handshake(&t.info), &mut self.conn)?;
         self.pieces = PieceField::new(t.info.hashes.len() as u32);
@@ -76,6 +65,18 @@ impl Peer {
     }
 
     pub fn readable(&mut self) -> io::Result<Vec<Message>> {
+        let mut msgs = Vec::with_capacity(1);
+        loop {
+            if let Some(msg) = self.reader.readable(&mut self.conn)? {
+                msgs.push(msg);
+            } else {
+                break;
+            }
+        }
+        Ok(msgs)
+    }
+
+    pub fn read(&mut self) -> io::Result<Option<Message>> {
         return self.reader.readable(&mut self.conn);
     }
 
