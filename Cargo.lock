@@ -2,7 +2,7 @@
 name = "synapse"
 version = "0.1.0"
 dependencies = [
- "amy 0.7.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "amy 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "byteorder 0.5.3 (registry+https://github.com/rust-lang/crates.io-index)",
  "lazy_static 0.2.8 (registry+https://github.com/rust-lang/crates.io-index)",
  "net2 0.2.29 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -24,7 +24,7 @@ dependencies = [
 
 [[package]]
 name = "amy"
-version = "0.7.2"
+version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 dependencies = [
  "libc 0.2.22 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -515,7 +515,7 @@ dependencies = [
 
 [metadata]
 "checksum advapi32-sys 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)" = "e06588080cb19d0acb6739808aafa5f26bfb2ca015b2b6370028b44cf7cb8a9a"
-"checksum amy 0.7.2 (registry+https://github.com/rust-lang/crates.io-index)" = "ca2815413de45416b94fad6becdedbb08f24b1ab393cd7ceff71a236b44618b6"
+"checksum amy 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)" = "f6eb3b3ef5f3df924efd861d347350f4f2beb088f39702c881d50721dc52a265"
 "checksum antidote 1.0.0 (registry+https://github.com/rust-lang/crates.io-index)" = "34fde25430d87a9388dadbe6e34d7f72a462c8b43ac8d309b42b0a8505d7e2a5"
 "checksum bitflags 0.4.0 (registry+https://github.com/rust-lang/crates.io-index)" = "8dead7461c1127cf637931a1e50934eb6eee8bff2f74433ac7909e9afcee04a3"
 "checksum bitflags 0.8.2 (registry+https://github.com/rust-lang/crates.io-index)" = "1370e9fc2a6ae53aea8b7a5110edbd08836ed87c88736dfabccade1c2b44bff4"

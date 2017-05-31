@@ -26,26 +26,13 @@ impl Socket {
         conn.set_nonblocking(true)?;
         Ok(Socket { conn })
     }
-
-    /// Used to get around the drop requirement of amy.
-    pub fn fd(&self) -> FDH {
-        FDH(self.conn.as_raw_fd())
-    }
-}
-
-pub struct FDH(RawFd);
-
-impl AsRawFd for FDH {
-    fn as_raw_fd(&self) -> RawFd {
-        self.0
-    }
 }
 
 impl AsRawFd for Socket {
     fn as_raw_fd(&self) -> RawFd {
         self.conn.as_raw_fd()
     }
-}
+ }
 
 impl io::Read for Socket {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {

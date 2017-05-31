@@ -192,7 +192,7 @@ impl Control {
         let mut peer = self.peers.remove(&id).unwrap();
         let torrent = self.torrents.get_mut(&peer.tid).unwrap();
         torrent.remove_peer(&mut peer);
-        self.reg.deregister(peer.conn).unwrap();
+        self.reg.deregister(&peer.conn).unwrap();
     }
 }
 

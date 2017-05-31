@@ -78,7 +78,7 @@ impl Listener {
             Ok(Some(hs)) => {
                 println!("Got HS {:?}, transferring peer!", hs);
                 let peer = self.incoming.remove(&pid).unwrap();
-                self.reg.deregister(peer.conn.fd()).unwrap();
+                self.reg.deregister(&peer.conn).unwrap();
                 self.ctrl_tx.send(control::Request::AddPeer(peer, hs.get_handshake_hash())).unwrap();
             }
             Ok(_) => { }

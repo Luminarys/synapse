@@ -4,7 +4,7 @@ version = "0.1.0"
 authors = ["Luminarys <postmaster@gensok.io>"]
 
 [dependencies]
-amy = "0.7.2"
+amy = "0.8.0"
 byteorder = "0.5"
 lazy_static = "*"
 rand = "0.3"
