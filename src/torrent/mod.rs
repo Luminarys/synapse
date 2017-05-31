@@ -113,7 +113,7 @@ impl Torrent {
                 if peers.len() > 1 {
                     peers.remove(&peer.id);
                     let m = Message::Cancel { index, begin, length };
-                    v.push(Broadcast { msg: m, peers: self.peers.clone() });
+                    v.push(Broadcast { msg: m, peers });
                 }
                 if !peer.being_choked && !self.pieces.complete() {
                     Torrent::make_requests(&mut self.picker, peer, &self.info)?;
