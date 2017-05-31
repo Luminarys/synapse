@@ -34,6 +34,11 @@ impl fmt::Debug for Torrent {
     }
 }
 
+pub struct Broadcast {
+    pub msg: Message,
+    pub peers: HashSet<usize>,
+}
+
 impl Torrent {
     pub fn from_bencode(data: BEncode) -> Result<Torrent, &'static str> {
         let info = Info::from_bencode(data)?;
@@ -54,15 +59,17 @@ impl Torrent {
         Ok(())
     }
 
-    pub fn peer_readable(&mut self, peer: &mut Peer) -> io::Result<()> {
+    pub fn peer_readable(&mut self, peer: &mut Peer) -> io::Result<Vec<Broadcast>> {
+        let mut resp = Vec::new();
         let res = peer.readable()?;
         for msg in res {
-            self.handle_msg(msg, peer)?;
+            resp.extend(self.handle_msg(msg, peer)?);
         }
-        Ok(())
+        Ok(resp)
     }
 
-    pub fn handle_msg(&mut self, msg: Message, peer: &mut Peer) -> io::Result<()> {
+    pub fn handle_msg(&mut self, msg: Message, peer: &mut Peer) -> io::Result<Vec<Broadcast>> {
+        let mut v = Vec::with_capacity(1);
         match msg {
             Message::Handshake { .. } => {
                 println!("Connection established with peer {:?}", peer.id);
@@ -86,7 +93,7 @@ impl Torrent {
             }
             Message::Piece { index, begin, data, length } => {
                 if self.pieces.complete() {
-                    return Ok(())
+                    return Ok(v);
                 }
 
                 peer.queued -= 1;
@@ -100,11 +107,13 @@ impl Torrent {
                         TRACKER.tx.send(tracker::Request::completed(&self)).unwrap();
                         self.pb.finish_print("Downloaded!");
                     }
-                    // TODO: Broadcast HAVE to everyone who needs it.
+                    let m = Message::Have(index);
+                    v.push(Broadcast { msg: m, peers: self.peers.clone() });
                 }
                 if peers.len() > 1 {
                     peers.remove(&peer.id);
-                    // TODO Send cancellation to all other peers.
+                    let m = Message::Cancel { index, begin, length };
+                    v.push(Broadcast { msg: m, peers: self.peers.clone() });
                 }
                 if !peer.being_choked && !self.pieces.complete() {
                     Torrent::make_requests(&mut self.picker, peer, &self.info)?;
@@ -137,7 +146,7 @@ impl Torrent {
             }
             _ => { }
         }
-        Ok(())
+        Ok(v)
     }
 
     /// Calculates the file offsets for a given index, begin, and block length.

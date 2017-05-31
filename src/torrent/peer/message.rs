@@ -4,6 +4,7 @@ use byteorder::{BigEndian, WriteBytesExt};
 use std::io::{self, Write};
 use std::sync::Arc;
 use std::fmt;
+use std::clone::Clone;
 
 pub enum Message {
     Handshake { rsv: [u8; 8], hash: [u8; 20], id: [u8; 20] },
@@ -35,6 +36,31 @@ impl fmt::Debug for Message {
             Message::Piece{ index, begin, .. } => write!(f, "Message::Piece {{ idx: {}, begin: {} }}", index, begin),
             Message::SharedPiece{ index, begin, .. } => write!(f, "Message::SPiece {{ idx: {}, begin: {} }}", index, begin),
             Message::Cancel { index, begin, length } => write!(f, "Message::Cancel {{ idx: {}, begin: {}, len: {} }}", index, begin, length),
+        }
+    }
+}
+
+impl Clone for Message {
+    fn clone(&self) -> Message {
+        match *self {
+            Message::Handshake { rsv, hash, id } => Message::Handshake { rsv, hash, id},
+            Message::KeepAlive => Message::KeepAlive,
+            Message::Choke => Message::Choke,
+            Message::Unchoke => Message::Unchoke,
+            Message::Interested => Message::Interested,
+            Message::Uninterested => Message::Uninterested,
+            Message::Have(p) => Message::Have(p),
+            Message::Bitfield(ref b) => Message::Bitfield(b.clone()),
+            Message::Request{ index, begin, length } => Message::Request { index, begin, length },
+            Message::Piece { index, begin, length, ref data } => {
+                let mut nd = Box::new([0u8; 16384]);
+                for i in 0..length {
+                    nd[i as usize] = data[i as usize];
+                }
+                Message::Piece { index, begin, length, data: nd }
+            }
+            Message::SharedPiece { index, begin, length, ref data } => Message::SharedPiece { index, begin, length, data: data.clone() },
+            Message::Cancel { index, begin, length } => Message::Cancel { index, begin, length },
         }
     }
 }

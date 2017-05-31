@@ -2,6 +2,7 @@ use std::thread;
 use {tracker, disk, TRACKER};
 use amy::{self, Poller, Registrar};
 use torrent::{Torrent, Peer};
+use torrent::peer::Message;
 use std::collections::HashMap;
 use std::fmt;
 
@@ -85,7 +86,6 @@ impl Control {
                 Ok(resp) => {
                     for ip in resp.peers.iter() {
                         if let Ok(peer) = Peer::new_outgoing(ip) {
-                            println!("Adding outgoing peer!");
                             self.add_peer(resp.id, peer);
                         }
                     }
@@ -122,7 +122,6 @@ impl Control {
                     self.torrents.insert(tid, t);
                 }
                 Ok(Request::AddPeer(p, hash)) => {
-                    println!("Adding incoming peer");
                     let tid = *self.hash_idx.get(&hash).unwrap();
                     self.add_peer(tid, p);
                 }
@@ -134,14 +133,38 @@ impl Control {
     fn handle_peer_ev(&mut self, not: amy::Notification) {
         let pid = not.id;
         if not.event.readable() {
-            if let Err(_) = {
+            let res = {
                 let peer = self.peers.get_mut(&pid).unwrap();
                 let torrent = self.torrents.get_mut(&peer.tid).unwrap();
                 torrent.peer_readable(peer)
-            } {
-                println!("Peer {:?} error removing", pid);
-                self.remove_peer(pid);
-                return;
+            };
+            match res {
+                Ok(v) => {
+                    for bc in v {
+                        match bc.msg {
+                            Message::Cancel { .. } => {
+                                for pid in bc.peers {
+                                    let mut peer = self.peers.get_mut(&pid).unwrap();
+                                    peer.send_message(bc.msg.clone());
+                                }
+                            }
+                            Message::Have(idx) => {
+                                for pid in bc.peers {
+                                    let mut peer = self.peers.get_mut(&pid).unwrap();
+                                    if !peer.pieces.has_piece(idx) {
+                                        peer.send_message(bc.msg.clone());
+                                    }
+                                }
+                            }
+                            _ => { }
+                        }
+                    }
+                }
+                Err(_) => {
+                    println!("Peer {:?} error, removing", pid);
+                    self.remove_peer(pid);
+                    return;
+                }
             }
         }
         if not.event.writable() {
@@ -166,7 +189,9 @@ impl Control {
     }
 
     fn remove_peer(&mut self, id: usize) {
-        let peer = self.peers.remove(&id).unwrap();
+        let mut peer = self.peers.remove(&id).unwrap();
+        let torrent = self.torrents.get_mut(&peer.tid).unwrap();
+        torrent.remove_peer(&mut peer);
         self.reg.deregister(peer.conn).unwrap();
     }
 }

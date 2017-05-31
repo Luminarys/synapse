@@ -9,6 +9,5 @@ Experimental Bittorrent Client.
 * Rarest first piece picking
 * UDP tracker
 * DHT
-* Endgame mode
 * Optimistic unchoking
 * RPC

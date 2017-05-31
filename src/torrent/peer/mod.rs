@@ -11,6 +11,7 @@ use std::net::SocketAddr;
 use std::io;
 use torrent::{Torrent, PieceField};
 
+/// Peer connection and associated metadata.
 pub struct Peer {
     pub conn: Socket,
     pub pieces: PieceField,
@@ -36,20 +37,20 @@ impl Peer {
             reader: reader,
             writer: writer,
             queued: 0,
-            pieces: PieceField::new(8),
+            pieces: PieceField::new(0),
             tid: 0,
             id: 0,
         }
     }
 
-    /// Creates a new peer for a torrent which will connect to another client
+    /// Creates a new "outgoing" peer, which acts as a client.
+    /// Once created, set_torrent should be called.
     pub fn new_outgoing(ip: &SocketAddr) -> io::Result<Peer> {
         Ok(Peer::new(Socket::new(ip)?))
     }
 
-    /// Creates a peer for an unidentified incoming peer.
-    /// Note that set_torrent will need to be called once the handshake is
-    /// processed.
+    /// Creates a peer where we are acting as the server.
+    /// Once the handshake is received, set_torrent should be called.
     pub fn new_incoming(conn: TcpStream) -> io::Result<Peer> {
         Ok(Peer::new(Socket::from_stream(conn)?))
     }
@@ -64,6 +65,8 @@ impl Peer {
         Ok(())
     }
 
+    /// Attempts to read as many messages as possible from
+    /// the connection, returning a vector of the results.
     pub fn readable(&mut self) -> io::Result<Vec<Message>> {
         let mut msgs = Vec::with_capacity(1);
         loop {
@@ -76,6 +79,7 @@ impl Peer {
         Ok(msgs)
     }
 
+    /// Attempts to read a single message from the peer
     pub fn read(&mut self) -> io::Result<Option<Message>> {
         return self.reader.readable(&mut self.conn);
     }
@@ -87,6 +91,7 @@ impl Peer {
         Ok(!self.writer.is_writable())
     }
 
+    /// Sends a message to the peer.
     pub fn send_message(&mut self, msg: Message) -> io::Result<()> {
         return self.writer.write_message(msg, &mut self.conn);
     }

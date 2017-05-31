@@ -134,27 +134,28 @@ impl Tracker {
                 let mut url = &mut req.url;
                 // The fact that I have to do this is genuinely depressing.
                 // This will be rewritten as a proper http protocol
-                // encoder in the event loop eventually.
+                // encoder in an event loop.
                 url.push_str("?");
                 append_pair(&mut url, "info_hash", &encode_param(&req.hash));
                 append_pair(&mut url, "peer_id", &encode_param(&PEER_ID[..]));
                 append_pair(&mut url, "uploaded", &req.uploaded.to_string());
-                append_pair(&mut url, "numwant", "75");
                 append_pair(&mut url, "downloaded", &req.downloaded.to_string());
                 append_pair(&mut url, "left", &req.left.to_string());
                 append_pair(&mut url, "compact", "1");
                 append_pair(&mut url, "port", &req.port.to_string());
                 match req.event {
                     Some(Event::Started) => {
+                        append_pair(&mut url, "numwant", "75");
                         append_pair(&mut url, "event", "started");
                     }
                     Some(Event::Stopped) => {
                         append_pair(&mut url, "event", "started");
                     }
                     Some(Event::Completed) => {
-                        append_pair(&mut url, "event", "commpleted");
+                        append_pair(&mut url, "numwant", "20");
+                        append_pair(&mut url, "event", "completed");
                     }
-                    None => { }
+                    None => { append_pair(&mut url, "numwant", "20"); }
                 }
                 let response = {
                     let mut resp = reqwest::get(&*url).unwrap();
