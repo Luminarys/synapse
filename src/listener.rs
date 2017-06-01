@@ -19,7 +19,7 @@ pub struct Listener {
 pub struct Handle { }
 
 impl Handle {
-    pub fn dr(&self) { }
+    pub fn init(&self) { }
 }
 unsafe impl Sync for Handle {}
 

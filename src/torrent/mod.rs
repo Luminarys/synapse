@@ -12,7 +12,7 @@ use bencode::BEncode;
 use self::peer::Message;
 use self::picker::Picker;
 use std::{fmt, io, cmp};
-use {disk, DISK, tracker, TRACKER};
+use {rpc, disk, DISK, tracker, TRACKER};
 use pbr::ProgressBar;
 use std::collections::HashSet;
 use util::io_err;
@@ -34,8 +34,14 @@ impl fmt::Debug for Torrent {
     }
 }
 
+/// Auxiliary struct used to tell the controller that
+/// we want to do a general broadcast to multiple peers.
 pub struct Broadcast {
     pub msg: Message,
+    // Because we want to filter these peers, the controller
+    // still has to know about the message type. We should try
+    // to figure something out about this since it's rather hacky
+    // atm.
     pub peers: HashSet<usize>,
 }
 
@@ -55,6 +61,8 @@ impl Torrent {
     pub fn block_available(&mut self, peer: &mut Peer, resp: disk::Response) -> io::Result<()> {
         let ctx = resp.context;
         let p = Message::s_piece(ctx.idx, ctx.begin, ctx.length, resp.data);
+        // This may not be 100% accurate, but close enough for now.
+        self.uploaded += 1;
         peer.send_message(p)?;
         Ok(())
     }
@@ -126,6 +134,10 @@ impl Torrent {
                 } else {
                     return io_err("Peer requested while choked!");
                 }
+            }
+            Message::Cancel { .. } => {
+                // TODO create some sort of filter so that when we finish reading a cancel'd piece
+                // it never gets sent.
             }
             Message::Interested => {
                 peer.interested = true;
@@ -220,6 +232,18 @@ impl Torrent {
 
     pub fn peer_writable(&mut self, peer: &mut Peer) -> io::Result<bool> {
         peer.writable()
+    }
+
+    pub fn rpc_info(&self) -> rpc::TorrentInfo {
+        let status = rpc::Status::Seeding;
+        rpc::TorrentInfo {
+            name: self.info.name.clone(),
+            size: self.info.total_len,
+            downloaded: self.downloaded * self.info.piece_len,
+            uploaded: self.uploaded * self.info.piece_len,
+            tracker: self.info.announce.clone(),
+            status: status,
+        }
     }
 
     pub fn file_size(&self) -> usize {

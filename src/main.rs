@@ -10,6 +10,12 @@ extern crate reqwest;
 extern crate lazy_static;
 extern crate pbr;
 extern crate net2;
+extern crate httparse;
+extern crate serde;
+extern crate serde_json;
+
+#[macro_use]
+extern crate serde_derive;
 
 mod bencode;
 mod torrent;
@@ -19,6 +25,7 @@ mod disk;
 mod tracker;
 mod control;
 mod listener;
+mod rpc;
 
 use std::{env, io, thread, time};
 use std::sync::atomic;
@@ -65,11 +72,16 @@ lazy_static! {
     pub static ref LISTENER: listener::Handle = {
         listener::start()
     };
+
+    pub static ref RPC: rpc::Handle = {
+        rpc::start()
+    };
 }
 
 fn main() {
     // lol
-    LISTENER.dr();
+    LISTENER.init();
+    RPC.init();
     let torrent = env::args().nth(1).unwrap();
     download_torrent(&torrent).unwrap();
     thread::sleep(time::Duration::from_secs(99999));

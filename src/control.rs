@@ -1,5 +1,5 @@
 use std::thread;
-use {tracker, disk, TRACKER};
+use {rpc, tracker, disk, TRACKER, RPC};
 use amy::{self, Poller, Registrar};
 use torrent::{Torrent, Peer};
 use torrent::peer::Message;
@@ -43,6 +43,7 @@ unsafe impl Sync for Handle {}
 pub enum Request {
     AddTorrent(Torrent),
     AddPeer(Peer, [u8; 20]),
+    RPC(rpc::Request),
 }
 
 impl fmt::Debug for Request {
@@ -113,17 +114,14 @@ impl Control {
         loop {
             match self.ctrl_rx.try_recv() {
                 Ok(Request::AddTorrent(mut t)) => {
-                    let tid = self.tid_cnt;
-                    t.id = tid;
-                    TRACKER.tx.send(tracker::Request::started(&t)).unwrap();
-                    self.hash_idx.insert(t.info.hash, tid);
-
-                    self.tid_cnt += 1;
-                    self.torrents.insert(tid, t);
+                    self.add_torrent(t);
                 }
                 Ok(Request::AddPeer(p, hash)) => {
                     let tid = *self.hash_idx.get(&hash).unwrap();
                     self.add_peer(tid, p);
+                }
+                Ok(Request::RPC(r)) => {
+                    self.handle_rpc(r);
                 }
                 Err(_) => { break; }
             }
@@ -176,6 +174,57 @@ impl Control {
                 println!("Peer {:?} error, removing", pid);
                 self.remove_peer(pid);
                 return;
+            }
+        }
+    }
+
+    fn add_torrent(&mut self, mut t: Torrent) {
+       let tid = self.tid_cnt;
+       t.id = tid;
+       TRACKER.tx.send(tracker::Request::started(&t)).unwrap();
+       self.hash_idx.insert(t.info.hash, tid);
+       self.tid_cnt += 1;
+       self.torrents.insert(tid, t);
+    }
+
+    fn handle_rpc(&mut self, req: rpc::Request) {
+        match req {
+            rpc::Request::ListTorrents => {
+                let mut resp = Vec::new();
+                for (id, _) in self.torrents.iter() {
+                    resp.push(*id);
+                }
+                RPC.tx.send(rpc::Response::Torrents(resp)).unwrap();
+            }
+            rpc::Request::TorrentInfo(i) => {
+                if let Some(torrent) = self.torrents.get(&i) {
+                    RPC.tx.send(rpc::Response::TorrentInfo(torrent.rpc_info())).unwrap();
+                } else {
+                    RPC.tx.send(rpc::Response::Err("Torrent ID not found!")).unwrap();
+                }
+            }
+            rpc::Request::AddTorrent(data) => {
+                match Torrent::from_bencode(data) {
+                    Ok(t) => {
+                        self.add_torrent(t);
+                        RPC.tx.send(rpc::Response::Ack).unwrap();
+                    }
+                    Err(e) => {
+                        RPC.tx.send(rpc::Response::Err(e)).unwrap();
+                    }
+                }
+            }
+            rpc::Request::StopTorrent(id) => {
+            
+            }
+            rpc::Request::RemoveTorrent(id) => {
+            
+            }
+            rpc::Request::ThrottleUpload(amnt) => {
+            
+            }
+            rpc::Request::ThrottleDownload(amnt) => {
+            
             }
         }
     }
