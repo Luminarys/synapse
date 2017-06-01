@@ -14,8 +14,9 @@ use self::picker::Picker;
 use std::{fmt, io, cmp};
 use {rpc, disk, DISK, tracker, TRACKER};
 use pbr::ProgressBar;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use util::io_err;
+use std::cell::UnsafeCell;
 
 pub struct Torrent {
     pub info: Info,
@@ -23,7 +24,7 @@ pub struct Torrent {
     pub uploaded: usize,
     pub downloaded: usize,
     pub id: usize,
-    peers: HashSet<usize>,
+    peers: UnsafeCell<HashMap<usize, Peer>>,
     picker: Picker,
     pb: ProgressBar<io::Stdout>,
 }
@@ -51,14 +52,15 @@ impl Torrent {
         println!("Handling with torrent with {:?} pl, {:?} pieces, {:?} sf len", info.piece_len, info.pieces(), info.files.last().unwrap().length);
         // Create dummy files
         info.create_files().unwrap();
-        let peers = HashSet::new();
+        let peers = UnsafeCell::new(HashMap::new());
         let pieces = PieceField::new(info.pieces());
         let picker = Picker::new(&info);
         let pb = ProgressBar::new(info.pieces() as u64);
         Ok(Torrent { id: 0, info, peers, pieces, picker, pb, uploaded: 0, downloaded: 0 })
     }
 
-    pub fn block_available(&mut self, peer: &mut Peer, resp: disk::Response) -> io::Result<()> {
+    pub fn block_available(&mut self, pid: usize, resp: disk::Response) -> io::Result<()> {
+        let peer = self.peers().get_mut(&pid).unwrap();
         let ctx = resp.context;
         let p = Message::s_piece(ctx.idx, ctx.begin, ctx.length, resp.data);
         // This may not be 100% accurate, but close enough for now.
@@ -67,16 +69,37 @@ impl Torrent {
         Ok(())
     }
 
-    pub fn peer_readable(&mut self, peer: &mut Peer) -> io::Result<Vec<Broadcast>> {
+    pub fn peer_readable(&mut self, pid: usize) -> io::Result<()> {
+        let peer = self.peers().get_mut(&pid).unwrap();
         let mut resp = Vec::new();
         let res = peer.readable()?;
         for msg in res {
-            resp.extend(self.handle_msg(msg, peer)?);
+            resp.extend(self.handle_msg(msg, pid)?);
         }
-        Ok(resp)
+        // for bc in v {
+        //     match bc.msg {
+        //         Message::Cancel { .. } => {
+        //             for pid in bc.peers {
+        //                 let mut peer = self.peers().get_mut(&pid).unwrap();
+        //                 peer.send_message(bc.msg.clone());
+        //             }
+        //         }
+        //         Message::Have(idx) => {
+        //             for pid in bc.peers {
+        //                 let mut peer = self.peers().get_mut(&pid).unwrap();
+        //                 if !peer.pieces.has_piece(idx) {
+        //                     peer.send_message(bc.msg.clone());
+        //                 }
+        //             }
+        //         }
+        //         _ => { }
+        //     }
+        // }
+        Ok(())
     }
 
-    pub fn handle_msg(&mut self, msg: Message, peer: &mut Peer) -> io::Result<Vec<Broadcast>> {
+    pub fn handle_msg(&mut self, msg: Message, pid: usize) -> io::Result<Vec<Broadcast>> {
+        let peer = self.peers().get_mut(&pid).unwrap();
         let mut v = Vec::with_capacity(1);
         match msg {
             Message::Handshake { .. } => {
@@ -116,12 +139,12 @@ impl Torrent {
                         self.pb.finish_print("Downloaded!");
                     }
                     let m = Message::Have(index);
-                    v.push(Broadcast { msg: m, peers: self.peers.clone() });
+                    // v.push(Broadcast { msg: m, peers: self.peers().clone() });
                 }
                 if peers.len() > 1 {
                     peers.remove(&peer.id);
                     let m = Message::Cancel { index, begin, length };
-                    v.push(Broadcast { msg: m, peers });
+                    // v.push(Broadcast { msg: m, peers });
                 }
                 if !peer.being_choked && !self.pieces.complete() {
                     Torrent::make_requests(&mut self.picker, peer, &self.info)?;
@@ -230,7 +253,8 @@ impl Torrent {
         Ok(())
     }
 
-    pub fn peer_writable(&mut self, peer: &mut Peer) -> io::Result<bool> {
+    pub fn peer_writable(&mut self, pid: usize) -> io::Result<bool> {
+        let peer = self.peers().get_mut(&pid).unwrap();
         peer.writable()
     }
 
@@ -258,13 +282,22 @@ impl Torrent {
         size
     }
 
-    pub fn add_peer(&mut self, peer: &mut Peer) -> io::Result<()> {
+    pub fn add_peer(&mut self, mut peer: Peer) -> io::Result<()> {
         peer.set_torrent(&self)?;
-        self.peers.insert(peer.id);
+        self.peers().insert(peer.id, peer);
         Ok(())
     }
 
-    pub fn remove_peer(&mut self, peer: &mut Peer) {
-        self.peers.remove(&peer.id);
+    pub fn remove_peer(&mut self, id: usize) -> Peer {
+        self.peers().remove(&id).unwrap()
+    }
+
+    // This obviously could be dangerous, but as long as we only
+    // keep the returned references within the scope of implemented methods
+    // it's more or less guaranteed to be safe.
+    fn peers(&self) -> &'static mut HashMap<usize, Peer> {
+        unsafe {
+            self.peers.get().as_mut().unwrap()
+        }
     }
 }
