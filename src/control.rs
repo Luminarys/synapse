@@ -233,7 +233,10 @@ impl Control {
         let torrent = self.torrents.get_mut(&id).unwrap();
         let pid = self.reg.register(&peer.conn, amy::Event::Both).unwrap();
         peer.id = pid;
-        torrent.add_peer(&mut peer).unwrap();
+        match torrent.add_peer(&mut peer) {
+            Err(e) => { println!("Error {:?}", e); }
+            _ => { }
+        };
         self.peers.insert(pid, peer);
     }
 

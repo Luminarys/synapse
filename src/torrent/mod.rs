@@ -235,7 +235,11 @@ impl Torrent {
     }
 
     pub fn rpc_info(&self) -> rpc::TorrentInfo {
-        let status = rpc::Status::Seeding;
+        let status = if self.pieces.complete() {
+            rpc::Status::Seeding
+        } else {
+            rpc::Status::Downloading
+        };
         rpc::TorrentInfo {
             name: self.info.name.clone(),
             size: self.info.total_len,

@@ -31,12 +31,25 @@ impl RPC {
     }
 
     pub fn run(&mut self) {
-        let server = tiny_http::Server::http("0.0.0.0:5432").unwrap();
-
+        let server = tiny_http::Server::http("0.0.0.0:8412").unwrap();
         for request in server.incoming_requests() {
             if request.url() == "/torrent/list" {
                 self.tx.send(control::Request::RPC(Request::ListTorrents));
             } else if request.url().starts_with("/torrent/info/") {
+                let res = {
+                    let (_, id) = request.url().split_at(14);
+                    id.parse::<usize>().map(|i| {
+                        self.tx.send(control::Request::RPC(Request::TorrentInfo(i))).unwrap();
+                    })
+                };
+                match res {
+                    Err(_) => {
+                        let response = tiny_http::Response::from_string("Bad ID!");
+                        request.respond(response);
+                        continue;
+                    }
+                    _ => { }
+                };
             } else if request.url().starts_with("/torrent/stop/") {
             } else if request.url().starts_with("/torrent/remove/") {
             } else if request.url().starts_with("/torrent") && request.method() == &tiny_http::Method::Post {

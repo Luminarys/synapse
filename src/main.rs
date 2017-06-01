@@ -84,11 +84,12 @@ fn main() {
     let torrent = env::args().nth(1).unwrap();
     download_torrent(&torrent).unwrap();
     thread::sleep(time::Duration::from_secs(99999));
+    println!("Done");
 }
 
 fn download_torrent(path: &str) -> Result<(), io::Error> {
     let mut data = File::open(path)?;
     let t = Torrent::from_bencode(bencode::decode(&mut data).unwrap()).unwrap();
-    // CONTROL.ctrl_tx().send(control::Request::AddTorrent(t)).unwrap();
+    CONTROL.ctrl_tx().send(control::Request::AddTorrent(t)).unwrap();
     Ok(())
 }
