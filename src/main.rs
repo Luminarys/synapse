@@ -10,10 +10,9 @@ extern crate reqwest;
 extern crate lazy_static;
 extern crate pbr;
 extern crate net2;
-extern crate httparse;
 extern crate serde;
 extern crate serde_json;
-
+extern crate tiny_http;
 #[macro_use]
 extern crate serde_derive;
 
@@ -90,6 +89,6 @@ fn main() {
 fn download_torrent(path: &str) -> Result<(), io::Error> {
     let mut data = File::open(path)?;
     let t = Torrent::from_bencode(bencode::decode(&mut data).unwrap()).unwrap();
-    CONTROL.ctrl_tx().send(control::Request::AddTorrent(t)).unwrap();
+    // CONTROL.ctrl_tx().send(control::Request::AddTorrent(t)).unwrap();
     Ok(())
 }

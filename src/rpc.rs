@@ -1,11 +1,7 @@
 use std::sync::mpsc;
 use std::thread;
-use std::io::ErrorKind;
-use std::net::{SocketAddrV4, Ipv4Addr, TcpListener};
-use std::sync::atomic;
-use amy::{self, Poller, Registrar};
-use std::collections::HashMap;
 use bencode::BEncode;
+use {amy, tiny_http, serde_json, control, CONTROL};
 
 pub struct Handle {
     pub tx: mpsc::Sender<Response>,
@@ -23,17 +19,37 @@ unsafe impl Sync for Handle {}
 
 pub struct RPC {
     rx: mpsc::Receiver<Response>,
+    tx: amy::Sender<control::Request>,
 }
 
 impl RPC {
     pub fn new(rx: mpsc::Receiver<Response>) -> RPC {
         RPC {
-            rx
+            rx,
+            tx: CONTROL.ctrl_tx(),
         }
     }
 
     pub fn run(&mut self) {
-    
+        let server = tiny_http::Server::http("0.0.0.0:5432").unwrap();
+
+        for request in server.incoming_requests() {
+            if request.url() == "/torrent/list" {
+                self.tx.send(control::Request::RPC(Request::ListTorrents));
+            } else if request.url().starts_with("/torrent/info/") {
+            } else if request.url().starts_with("/torrent/stop/") {
+            } else if request.url().starts_with("/torrent/remove/") {
+            } else if request.url().starts_with("/torrent") && request.method() == &tiny_http::Method::Post {
+            } else {
+                let response = tiny_http::Response::from_string("Go away!");
+                request.respond(response);
+                continue;
+            }
+            let resp = self.rx.recv().unwrap();
+            let s = serde_json::to_string(&resp).unwrap();
+            let response = tiny_http::Response::from_string(s);
+            request.respond(response);
+        }
     }
 }
 
