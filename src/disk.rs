@@ -7,7 +7,6 @@ use {amy, CONTROL};
 
 pub struct Disk {
     queue: mpsc::Receiver<Request>,
-    disk_tx: amy::Sender<Response>,
 }
 
 pub struct Handle {
@@ -78,7 +77,6 @@ impl Disk {
     pub fn new(queue: mpsc::Receiver<Request>) -> Disk {
         Disk {
             queue,
-            disk_tx: CONTROL.disk_tx(),
         }
     }
 
@@ -101,7 +99,7 @@ impl Disk {
                         }).unwrap();
                     }
                     let data = Arc::new(data);
-                    self.disk_tx.send(Response { context, data }).unwrap();
+                    CONTROL.disk_tx.lock().unwrap().send(Response { context, data }).unwrap();
                 }
                 _ => break,
             }

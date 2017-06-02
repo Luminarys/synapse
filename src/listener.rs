@@ -13,13 +13,12 @@ pub struct Listener {
     incoming: HashMap<usize, Peer>,
     poll: Poller,
     reg: Registrar,
-    ctrl_tx: amy::Sender<control::Request>,
 }
 
 pub struct Handle { }
 
 impl Handle {
-    pub fn dr(&self) { }
+    pub fn init(&self) { }
 }
 unsafe impl Sync for Handle {}
 
@@ -39,7 +38,6 @@ impl Listener {
             incoming: HashMap::new(),
             poll,
             reg,
-            ctrl_tx: CONTROL.ctrl_tx(),
         }
     }
 
@@ -79,7 +77,7 @@ impl Listener {
                 println!("Got HS {:?}, transferring peer!", hs);
                 let peer = self.incoming.remove(&pid).unwrap();
                 self.reg.deregister(&peer.conn).unwrap();
-                self.ctrl_tx.send(control::Request::AddPeer(peer, hs.get_handshake_hash())).unwrap();
+                CONTROL.ctrl_tx.lock().unwrap().send(control::Request::AddPeer(peer, hs.get_handshake_hash())).unwrap();
             }
             Ok(_) => { }
             Err(_) => {

@@ -9,7 +9,6 @@ use torrent::Torrent;
 
 pub struct Tracker {
     queue: mpsc::Receiver<Request>,
-    trk_tx: amy::Sender<Response>,
 }
 
 pub struct Handle {
@@ -124,7 +123,7 @@ impl Response {
 impl Tracker {
     pub fn new(queue: mpsc::Receiver<Request>) -> Tracker {
         Tracker {
-            queue, trk_tx: CONTROL.trk_tx(),
+            queue
         }
     }
 
@@ -162,7 +161,7 @@ impl Tracker {
                     let content = bencode::decode(&mut resp).unwrap();
                     Response::from_bencode(req.id, content).unwrap()
                 };
-                self.trk_tx.send(response).unwrap();
+                CONTROL.trk_tx.lock().unwrap().send(response).unwrap();
             } else {
                 break;
             }

@@ -6,6 +6,7 @@ use sha1::Sha1;
 
 #[derive(Clone, Debug)]
 pub struct Info {
+    pub name: String,
     pub announce: String,
     pub piece_len: usize,
     pub total_len: usize,
@@ -88,8 +89,17 @@ impl Info {
                     })
                     .ok_or("Info must provide valid hashes")?;
                 let files = parse_bencode_files(i)?;
+                let name = if files.len() == 0 {
+                    files[0].path.clone().into_os_string().into_string().unwrap()
+                } else if !files[0].path.has_root() {
+                    let mut piter = files[0].path.components();
+                    piter.next().unwrap().as_os_str().to_os_string().into_string().unwrap()
+                } else {
+                    unreachable!();
+                };
                 let total_len = files.iter().map(|f| f.length).sum();
                 Ok(Info {
+                    name,
                     announce: a,
                     piece_len: pl as usize,
                     hashes,

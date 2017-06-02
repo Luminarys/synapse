@@ -1,48 +1,35 @@
-use std::thread;
-use {tracker, disk, TRACKER};
+use std::{thread, fmt};
+use {rpc, tracker, disk, TRACKER, RPC};
 use amy::{self, Poller, Registrar};
-use torrent::{Torrent, Peer};
-use torrent::peer::Message;
+use torrent::{self, Torrent, Peer};
 use std::collections::HashMap;
-use std::fmt;
+use bencode::BEncode;
+use std::sync::{Arc, Mutex};
 
 pub struct Control {
     trk_rx: amy::Receiver<tracker::Response>,
     disk_rx: amy::Receiver<disk::Response>,
     ctrl_rx: amy::Receiver<Request>,
-    reg: Registrar,
+    reg: Arc<Registrar>,
     poll: Poller,
     tid_cnt: usize,
     torrents: HashMap<usize, Torrent>,
-    peers: HashMap<usize, Peer>,
+    peers: HashMap<usize, usize>,
     hash_idx: HashMap<[u8; 20], usize>,
 }
 
 pub struct Handle {
-    trk_tx: amy::Sender<tracker::Response>,
-    disk_tx: amy::Sender<disk::Response>,
-    ctrl_tx: amy::Sender<Request>,
-}
-
-impl Handle {
-    pub fn trk_tx(&self) -> amy::Sender<tracker::Response> {
-        self.trk_tx.try_clone().unwrap()
-    }
-
-    pub fn disk_tx(&self) -> amy::Sender<disk::Response> {
-        self.disk_tx.try_clone().unwrap()
-    }
-
-    pub fn ctrl_tx(&self) -> amy::Sender<Request> {
-        self.ctrl_tx.try_clone().unwrap()
-    }
+    pub trk_tx: Mutex<amy::Sender<tracker::Response>>,
+    pub disk_tx: Mutex<amy::Sender<disk::Response>>,
+    pub ctrl_tx: Mutex<amy::Sender<Request>>,
 }
 
 unsafe impl Sync for Handle {}
 
 pub enum Request {
-    AddTorrent(Torrent),
+    AddTorrent(BEncode),
     AddPeer(Peer, [u8; 20]),
+    RPC(rpc::Request),
 }
 
 impl fmt::Debug for Request {
@@ -59,7 +46,7 @@ impl Control {
         let torrents = HashMap::new();
         let peers = HashMap::new();
         let hash_idx = HashMap::new();
-        let reg = poll.get_registrar().unwrap();
+        let reg = Arc::new(poll.get_registrar().unwrap());
         Control { trk_rx, disk_rx, ctrl_rx, poll, torrents, peers, hash_idx, reg, tid_cnt: 0 }
     }
 
@@ -100,9 +87,9 @@ impl Control {
             match self.disk_rx.try_recv() {
                 Ok(resp) => {
                     let pid = resp.context.id;
-                    let ref mut peer = self.peers.get_mut(&pid).unwrap();
-                    let ref mut torrent = self.torrents.get_mut(&peer.tid).unwrap();
-                    torrent.block_available(peer, resp).unwrap();
+                    let tid = self.peers[&pid];
+                    let ref mut torrent = self.torrents.get_mut(&tid).unwrap();
+                    torrent.block_available(pid, resp).unwrap();
                 }
                 Err(_) => { break; }
             }
@@ -112,18 +99,18 @@ impl Control {
     fn handle_ctrl_ev(&mut self) {
         loop {
             match self.ctrl_rx.try_recv() {
-                Ok(Request::AddTorrent(mut t)) => {
-                    let tid = self.tid_cnt;
-                    t.id = tid;
-                    TRACKER.tx.send(tracker::Request::started(&t)).unwrap();
-                    self.hash_idx.insert(t.info.hash, tid);
-
-                    self.tid_cnt += 1;
-                    self.torrents.insert(tid, t);
+                Ok(Request::AddTorrent(b)) => {
+                    if let Ok(i) = torrent::Info::from_bencode(b) {
+                        let r = self.reg.clone();
+                        self.add_torrent(Torrent::new(i, r));
+                    }
                 }
                 Ok(Request::AddPeer(p, hash)) => {
                     let tid = *self.hash_idx.get(&hash).unwrap();
                     self.add_peer(tid, p);
+                }
+                Ok(Request::RPC(r)) => {
+                    self.handle_rpc(r);
                 }
                 Err(_) => { break; }
             }
@@ -134,65 +121,91 @@ impl Control {
         let pid = not.id;
         if not.event.readable() {
             let res = {
-                let peer = self.peers.get_mut(&pid).unwrap();
-                let torrent = self.torrents.get_mut(&peer.tid).unwrap();
-                torrent.peer_readable(peer)
+                let torrent = self.torrents.get_mut(&self.peers[&pid]).unwrap();
+                torrent.peer_readable(pid)
             };
-            match res {
-                Ok(v) => {
-                    for bc in v {
-                        match bc.msg {
-                            Message::Cancel { .. } => {
-                                for pid in bc.peers {
-                                    let mut peer = self.peers.get_mut(&pid).unwrap();
-                                    peer.send_message(bc.msg.clone());
-                                }
-                            }
-                            Message::Have(idx) => {
-                                for pid in bc.peers {
-                                    let mut peer = self.peers.get_mut(&pid).unwrap();
-                                    if !peer.pieces.has_piece(idx) {
-                                        peer.send_message(bc.msg.clone());
-                                    }
-                                }
-                            }
-                            _ => { }
-                        }
-                    }
-                }
-                Err(_) => {
-                    println!("Peer {:?} error, removing", pid);
-                    self.remove_peer(pid);
-                    return;
-                }
-            }
-        }
-        if not.event.writable() {
-            if let Err(_) = {
-                let peer = self.peers.get_mut(&pid).unwrap();
-                let torrent = self.torrents.get_mut(&peer.tid).unwrap();
-                torrent.peer_writable(peer)
-            } {
-                println!("Peer {:?} error, removing", pid);
+            if res.is_err() {
                 self.remove_peer(pid);
                 return;
             }
         }
+        if not.event.writable() {
+            let res = {
+                let torrent = self.torrents.get_mut(&self.peers[&pid]).unwrap();
+                torrent.peer_writable(pid)
+            };
+            if res.is_err() {
+                self.remove_peer(pid);
+            }
+        }
     }
 
-    fn add_peer(&mut self, id: usize, mut peer: Peer) {
+    fn add_torrent(&mut self, mut t: Torrent) {
+        let tid = self.tid_cnt;
+        t.id = tid;
+        TRACKER.tx.send(tracker::Request::started(&t)).unwrap();
+        self.hash_idx.insert(t.info.hash, tid);
+        self.tid_cnt += 1;
+        self.torrents.insert(tid, t);
+    }
+
+    fn handle_rpc(&mut self, req: rpc::Request) {
+        match req {
+            rpc::Request::ListTorrents => {
+                let mut resp = Vec::new();
+                for (id, _) in self.torrents.iter() {
+                    resp.push(*id);
+                }
+                RPC.tx.send(rpc::Response::Torrents(resp)).unwrap();
+            }
+            rpc::Request::TorrentInfo(i) => {
+                if let Some(torrent) = self.torrents.get(&i) {
+                    RPC.tx.send(rpc::Response::TorrentInfo(torrent.rpc_info())).unwrap();
+                } else {
+                    RPC.tx.send(rpc::Response::Err("Torrent ID not found!")).unwrap();
+                }
+            }
+            rpc::Request::AddTorrent(data) => {
+                match torrent::Info::from_bencode(data) {
+                    Ok(i) => {
+                        let r = self.reg.clone();
+                        self.add_torrent(Torrent::new(i, r));
+                        RPC.tx.send(rpc::Response::Ack).unwrap();
+                    }
+                    Err(e) => {
+                        RPC.tx.send(rpc::Response::Err(e)).unwrap();
+                    }
+                }
+            }
+            rpc::Request::StopTorrent(id) => {
+
+            }
+            rpc::Request::StartTorrent(id) => {
+
+            }
+            rpc::Request::RemoveTorrent(id) => {
+
+            }
+            rpc::Request::ThrottleUpload(amnt) => {
+
+            }
+            rpc::Request::ThrottleDownload(amnt) => {
+
+            }
+        }
+    }
+
+    fn add_peer(&mut self, id: usize, peer: Peer) {
         let torrent = self.torrents.get_mut(&id).unwrap();
-        let pid = self.reg.register(&peer.conn, amy::Event::Both).unwrap();
-        peer.id = pid;
-        torrent.add_peer(&mut peer).unwrap();
-        self.peers.insert(pid, peer);
+        if let Some(pid) = torrent.add_peer(peer) {
+            self.peers.insert(pid, id);
+        }
     }
 
     fn remove_peer(&mut self, id: usize) {
-        let mut peer = self.peers.remove(&id).unwrap();
-        let torrent = self.torrents.get_mut(&peer.tid).unwrap();
-        torrent.remove_peer(&mut peer);
-        self.reg.deregister(&peer.conn).unwrap();
+        let tid = self.peers.remove(&id).expect("Removed pid should be in peer map!");
+        let torrent = self.torrents.get_mut(&tid).expect("Torrent should be present in map");
+        torrent.remove_peer(id);
     }
 }
 
@@ -205,5 +218,5 @@ pub fn start() -> Handle {
     thread::spawn(move || {
         Control::new(poll, trk_rx, disk_rx, ctrl_rx).run();
     });
-    Handle { trk_tx, disk_tx, ctrl_tx }
+    Handle { trk_tx: Mutex::new(trk_tx), disk_tx: Mutex::new(disk_tx), ctrl_tx: Mutex::new(ctrl_tx) }
 }

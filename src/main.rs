@@ -10,6 +10,11 @@ extern crate reqwest;
 extern crate lazy_static;
 extern crate pbr;
 extern crate net2;
+extern crate serde;
+extern crate serde_json;
+extern crate tiny_http;
+#[macro_use]
+extern crate serde_derive;
 
 mod bencode;
 mod torrent;
@@ -19,11 +24,11 @@ mod disk;
 mod tracker;
 mod control;
 mod listener;
+mod rpc;
 
 use std::{env, io, thread, time};
 use std::sync::atomic;
 use std::fs::File;
-use torrent::Torrent;
 
 lazy_static! {
     pub static ref PEER_ID: [u8; 20] = {
@@ -65,19 +70,25 @@ lazy_static! {
     pub static ref LISTENER: listener::Handle = {
         listener::start()
     };
+
+    pub static ref RPC: rpc::Handle = {
+        rpc::start()
+    };
 }
 
 fn main() {
     // lol
-    LISTENER.dr();
+    LISTENER.init();
+    RPC.init();
     let torrent = env::args().nth(1).unwrap();
     download_torrent(&torrent).unwrap();
     thread::sleep(time::Duration::from_secs(99999));
+    println!("Done");
 }
 
 fn download_torrent(path: &str) -> Result<(), io::Error> {
     let mut data = File::open(path)?;
-    let t = Torrent::from_bencode(bencode::decode(&mut data).unwrap()).unwrap();
-    CONTROL.ctrl_tx().send(control::Request::AddTorrent(t)).unwrap();
+    let b = bencode::decode(&mut data).unwrap();
+    CONTROL.ctrl_tx.lock().unwrap().send(control::Request::AddTorrent(b)).unwrap();
     Ok(())
 }
