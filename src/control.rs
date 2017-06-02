@@ -1,16 +1,16 @@
-use std::thread;
+use std::{thread, fmt};
 use {rpc, tracker, disk, TRACKER, RPC};
 use amy::{self, Poller, Registrar};
-use torrent::{Torrent, Peer};
-use torrent::peer::Message;
+use torrent::{self, Torrent, Peer};
 use std::collections::HashMap;
-use std::fmt;
+use bencode::BEncode;
+use std::sync::{Arc, Mutex};
 
 pub struct Control {
     trk_rx: amy::Receiver<tracker::Response>,
     disk_rx: amy::Receiver<disk::Response>,
     ctrl_rx: amy::Receiver<Request>,
-    reg: Registrar,
+    reg: Arc<Registrar>,
     poll: Poller,
     tid_cnt: usize,
     torrents: HashMap<usize, Torrent>,
@@ -19,29 +19,15 @@ pub struct Control {
 }
 
 pub struct Handle {
-    trk_tx: amy::Sender<tracker::Response>,
-    disk_tx: amy::Sender<disk::Response>,
-    ctrl_tx: amy::Sender<Request>,
-}
-
-impl Handle {
-    pub fn trk_tx(&self) -> amy::Sender<tracker::Response> {
-        self.trk_tx.try_clone().unwrap()
-    }
-
-    pub fn disk_tx(&self) -> amy::Sender<disk::Response> {
-        self.disk_tx.try_clone().unwrap()
-    }
-
-    pub fn ctrl_tx(&self) -> amy::Sender<Request> {
-        self.ctrl_tx.try_clone().unwrap()
-    }
+    pub trk_tx: Mutex<amy::Sender<tracker::Response>>,
+    pub disk_tx: Mutex<amy::Sender<disk::Response>>,
+    pub ctrl_tx: Mutex<amy::Sender<Request>>,
 }
 
 unsafe impl Sync for Handle {}
 
 pub enum Request {
-    AddTorrent(Torrent),
+    AddTorrent(BEncode),
     AddPeer(Peer, [u8; 20]),
     RPC(rpc::Request),
 }
@@ -60,7 +46,7 @@ impl Control {
         let torrents = HashMap::new();
         let peers = HashMap::new();
         let hash_idx = HashMap::new();
-        let reg = poll.get_registrar().unwrap();
+        let reg = Arc::new(poll.get_registrar().unwrap());
         Control { trk_rx, disk_rx, ctrl_rx, poll, torrents, peers, hash_idx, reg, tid_cnt: 0 }
     }
 
@@ -113,8 +99,11 @@ impl Control {
     fn handle_ctrl_ev(&mut self) {
         loop {
             match self.ctrl_rx.try_recv() {
-                Ok(Request::AddTorrent(t)) => {
-                    self.add_torrent(t);
+                Ok(Request::AddTorrent(b)) => {
+                    if let Ok(i) = torrent::Info::from_bencode(b) {
+                        let r = self.reg.clone();
+                        self.add_torrent(Torrent::new(i, r));
+                    }
                 }
                 Ok(Request::AddPeer(p, hash)) => {
                     let tid = *self.hash_idx.get(&hash).unwrap();
@@ -135,34 +124,29 @@ impl Control {
                 let torrent = self.torrents.get_mut(&self.peers[&pid]).unwrap();
                 torrent.peer_readable(pid)
             };
-            match res {
-                Ok(_) => { }
-                Err(_) => {
-                    println!("Peer {:?} error, removing", pid);
-                    self.remove_peer(pid);
-                    return;
-                }
+            if res.is_err() {
+                self.remove_peer(pid);
+                return;
             }
         }
         if not.event.writable() {
-            if let Err(_) = {
+            let res = {
                 let torrent = self.torrents.get_mut(&self.peers[&pid]).unwrap();
                 torrent.peer_writable(pid)
-            } {
-                println!("Peer {:?} error, removing", pid);
+            };
+            if res.is_err() {
                 self.remove_peer(pid);
-                return;
             }
         }
     }
 
     fn add_torrent(&mut self, mut t: Torrent) {
-       let tid = self.tid_cnt;
-       t.id = tid;
-       TRACKER.tx.send(tracker::Request::started(&t)).unwrap();
-       self.hash_idx.insert(t.info.hash, tid);
-       self.tid_cnt += 1;
-       self.torrents.insert(tid, t);
+        let tid = self.tid_cnt;
+        t.id = tid;
+        TRACKER.tx.send(tracker::Request::started(&t)).unwrap();
+        self.hash_idx.insert(t.info.hash, tid);
+        self.tid_cnt += 1;
+        self.torrents.insert(tid, t);
     }
 
     fn handle_rpc(&mut self, req: rpc::Request) {
@@ -182,9 +166,10 @@ impl Control {
                 }
             }
             rpc::Request::AddTorrent(data) => {
-                match Torrent::from_bencode(data) {
-                    Ok(t) => {
-                        self.add_torrent(t);
+                match torrent::Info::from_bencode(data) {
+                    Ok(i) => {
+                        let r = self.reg.clone();
+                        self.add_torrent(Torrent::new(i, r));
                         RPC.tx.send(rpc::Response::Ack).unwrap();
                     }
                     Err(e) => {
@@ -193,42 +178,34 @@ impl Control {
                 }
             }
             rpc::Request::StopTorrent(id) => {
-            
+
             }
             rpc::Request::StartTorrent(id) => {
-            
+
             }
             rpc::Request::RemoveTorrent(id) => {
-            
+
             }
             rpc::Request::ThrottleUpload(amnt) => {
-            
+
             }
             rpc::Request::ThrottleDownload(amnt) => {
-            
+
             }
         }
     }
 
-    fn add_peer(&mut self, id: usize, mut peer: Peer) {
+    fn add_peer(&mut self, id: usize, peer: Peer) {
         let torrent = self.torrents.get_mut(&id).unwrap();
-        let pid = self.reg.register(&peer.conn, amy::Event::Both).unwrap();
-        peer.id = pid;
-        match torrent.add_peer(peer) {
-            Err(e) => {
-                println!("Error {:?}", e);
-            }
-            _ => {
-                self.peers.insert(pid, id);
-            }
-        };
+        if let Some(pid) = torrent.add_peer(peer) {
+            self.peers.insert(pid, id);
+        }
     }
 
     fn remove_peer(&mut self, id: usize) {
-        let tid = self.peers.remove(&id).unwrap();
-        let torrent = self.torrents.get_mut(&tid).unwrap();
-        let peer = torrent.remove_peer(id);
-        self.reg.deregister(&peer.conn).unwrap();
+        let tid = self.peers.remove(&id).expect("Removed pid should be in peer map!");
+        let torrent = self.torrents.get_mut(&tid).expect("Torrent should be present in map");
+        torrent.remove_peer(id);
     }
 }
 
@@ -241,5 +218,5 @@ pub fn start() -> Handle {
     thread::spawn(move || {
         Control::new(poll, trk_rx, disk_rx, ctrl_rx).run();
     });
-    Handle { trk_tx, disk_tx, ctrl_tx }
+    Handle { trk_tx: Mutex::new(trk_tx), disk_tx: Mutex::new(disk_tx), ctrl_tx: Mutex::new(ctrl_tx) }
 }

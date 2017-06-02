@@ -29,7 +29,6 @@ mod rpc;
 use std::{env, io, thread, time};
 use std::sync::atomic;
 use std::fs::File;
-use torrent::Torrent;
 
 lazy_static! {
     pub static ref PEER_ID: [u8; 20] = {
@@ -89,7 +88,7 @@ fn main() {
 
 fn download_torrent(path: &str) -> Result<(), io::Error> {
     let mut data = File::open(path)?;
-    let t = Torrent::from_bencode(bencode::decode(&mut data).unwrap()).unwrap();
-    CONTROL.ctrl_tx().send(control::Request::AddTorrent(t)).unwrap();
+    let b = bencode::decode(&mut data).unwrap();
+    CONTROL.ctrl_tx.lock().unwrap().send(control::Request::AddTorrent(b)).unwrap();
     Ok(())
 }

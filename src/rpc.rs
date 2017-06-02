@@ -26,7 +26,7 @@ impl RPC {
     pub fn new(rx: mpsc::Receiver<Response>) -> RPC {
         RPC {
             rx,
-            tx: CONTROL.ctrl_tx(),
+            tx: CONTROL.ctrl_tx.lock().unwrap().try_clone().unwrap(),
         }
     }
 
