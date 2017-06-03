@@ -3,7 +3,7 @@ use byteorder::{BigEndian, ReadBytesExt};
 use std::net::{SocketAddr, SocketAddrV4, Ipv4Addr};
 use std::thread;
 use util::{encode_param, append_pair};
-use {PEER_ID, CONTROL, PORT, reqwest, bencode, amy};
+use {PEER_ID, CONTROL, PORT, reqwest, bencode};
 use bencode::BEncode;
 use torrent::Torrent;
 

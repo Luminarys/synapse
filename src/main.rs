@@ -25,6 +25,7 @@ mod tracker;
 mod control;
 mod listener;
 mod rpc;
+mod throttle;
 
 use std::{env, io, thread, time};
 use std::sync::atomic;

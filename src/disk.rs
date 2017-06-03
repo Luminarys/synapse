@@ -3,7 +3,7 @@ use std::fs::OpenOptions;
 use std::{fmt, thread};
 use std::io::{Seek, SeekFrom, Write, Read};
 use std::path::PathBuf;
-use {amy, CONTROL};
+use CONTROL;
 
 pub struct Disk {
     queue: mpsc::Receiver<Request>,
