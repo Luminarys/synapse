@@ -5,11 +5,13 @@ use torrent::{self, Torrent, Peer};
 use std::collections::HashMap;
 use bencode::BEncode;
 use std::sync::{Arc, Mutex};
+use throttle::Throttler;
 
 pub struct Control {
     trk_rx: amy::Receiver<tracker::Response>,
     disk_rx: amy::Receiver<disk::Response>,
     ctrl_rx: amy::Receiver<Request>,
+    throttler: Throttler,
     reg: Arc<Registrar>,
     poll: Poller,
     tid_cnt: usize,
@@ -47,7 +49,9 @@ impl Control {
         let peers = HashMap::new();
         let hash_idx = HashMap::new();
         let reg = Arc::new(poll.get_registrar().unwrap());
-        Control { trk_rx, disk_rx, ctrl_rx, poll, torrents, peers, hash_idx, reg, tid_cnt: 0 }
+        // 5 MiB max bucket
+        let throttler = Throttler::new(3000, 10 * 1024 * 1024, &reg);
+        Control { trk_rx, disk_rx, ctrl_rx, poll, torrents, peers, hash_idx, reg, tid_cnt: 0, throttler }
     }
 
     pub fn run(&mut self) {
@@ -63,6 +67,8 @@ impl Control {
             id if id == self.trk_rx.get_id() => self.handle_trk_ev(),
             id if id == self.disk_rx.get_id() => self.handle_disk_ev(),
             id if id == self.ctrl_rx.get_id() => self.handle_ctrl_ev(),
+            id if id == self.throttler.id() => self.throttler.update(),
+            id if id == self.throttler.fid() => self.flush_blocked_peers(),
             _ => self.handle_peer_ev(not),
         }
     }
@@ -102,7 +108,8 @@ impl Control {
                 Ok(Request::AddTorrent(b)) => {
                     if let Ok(i) = torrent::Info::from_bencode(b) {
                         let r = self.reg.clone();
-                        self.add_torrent(Torrent::new(i, r));
+                        let t = self.throttler.get_throttle();
+                        self.add_torrent(Torrent::new(i, t, r));
                     }
                 }
                 Ok(Request::AddPeer(p, hash)) => {
@@ -140,6 +147,19 @@ impl Control {
         }
     }
 
+    fn flush_blocked_peers(&mut self) {
+        let pids = self.throttler.flush();
+        for pid in  pids {
+            let res = {
+                let torrent = self.torrents.get_mut(&self.peers[&pid]).unwrap();
+                torrent.peer_readable(pid)
+            };
+            if res.is_err() {
+                self.remove_peer(pid);
+            }
+        }
+    }
+
     fn add_torrent(&mut self, mut t: Torrent) {
         let tid = self.tid_cnt;
         t.id = tid;
@@ -169,7 +189,8 @@ impl Control {
                 match torrent::Info::from_bencode(data) {
                     Ok(i) => {
                         let r = self.reg.clone();
-                        self.add_torrent(Torrent::new(i, r));
+                        let t = self.throttler.get_throttle();
+                        self.add_torrent(Torrent::new(i, t, r));
                         RPC.tx.send(rpc::Response::Ack).unwrap();
                     }
                     Err(e) => {
@@ -203,6 +224,7 @@ impl Control {
     }
 
     fn remove_peer(&mut self, id: usize) {
+        println!("Removing peer {:?}", id);
         let tid = self.peers.remove(&id).expect("Removed pid should be in peer map!");
         let torrent = self.torrents.get_mut(&tid).expect("Torrent should be present in map");
         torrent.remove_peer(id);

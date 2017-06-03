@@ -62,6 +62,9 @@ impl Peer {
         self.pieces = PieceField::new(t.info.hashes.len() as u32);
         self.tid = t.id;
         self.writer.write_message(Message::Bitfield(t.pieces.clone()), &mut self.conn)?;
+        let mut throt = t.throttle.clone();
+        throt.id = self.id;
+        self.conn.throttle = Some(throt);
         Ok(())
     }
 

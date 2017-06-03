@@ -12,6 +12,7 @@ use self::picker::Picker;
 use std::{fmt, io, cmp};
 use {amy, rpc, disk, DISK, tracker, TRACKER};
 use pbr::ProgressBar;
+use throttle::Throttle;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use util::io_err;
@@ -23,6 +24,7 @@ pub struct Torrent {
     pub uploaded: usize,
     pub downloaded: usize,
     pub id: usize,
+    pub throttle: Throttle,
     reg: Arc<amy::Registrar>,
     peers: UnsafeCell<HashMap<usize, Peer>>,
     leechers: HashSet<usize>,
@@ -37,7 +39,7 @@ impl fmt::Debug for Torrent {
 }
 
 impl Torrent {
-    pub fn new(info: Info, reg: Arc<amy::Registrar>) -> Torrent {
+    pub fn new(info: Info, throttle: Throttle, reg: Arc<amy::Registrar>) -> Torrent {
         println!("Handling with torrent with {:?} pl, {:?} pieces, {:?} sf len", info.piece_len, info.pieces(), info.files.last().unwrap().length);
         // Create dummy files
         info.create_files().unwrap();
@@ -46,7 +48,7 @@ impl Torrent {
         let picker = Picker::new(&info);
         let pb = ProgressBar::new(info.pieces() as u64);
         let leechers = HashSet::new();
-        Torrent { id: 0, info, peers, pieces, picker, pb, uploaded: 0, downloaded: 0, reg, leechers }
+        Torrent { id: 0, info, peers, pieces, picker, pb, uploaded: 0, downloaded: 0, reg, leechers, throttle }
     }
 
     pub fn block_available(&mut self, pid: usize, resp: disk::Response) -> io::Result<()> {
@@ -273,12 +275,15 @@ impl Torrent {
     }
 
     pub fn add_peer(&mut self, mut peer: Peer) -> Option<usize> {
+        let pid = self.reg.register(&peer.conn, amy::Event::Both).unwrap();
+        peer.id = pid;
         if let Ok(()) = peer.set_torrent(&self) {
-            let pid = self.reg.register(&peer.conn, amy::Event::Both).unwrap();
-            peer.id = pid;
             self.peers().insert(peer.id, peer);
             Some(pid)
-        } else { None }
+        } else {
+            self.reg.deregister(&peer.conn).unwrap();
+            None
+        }
     }
 
     pub fn remove_peer(&mut self, id: usize) -> Peer {
