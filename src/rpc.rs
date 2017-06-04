@@ -89,6 +89,28 @@ impl RPC {
                     resp = Some("Invalid torrent file!");
                 
                 }
+            } else if request.url().starts_with("/rate/upload/") {
+                let res = {
+                    let (_, amnt) = request.url().split_at(13);
+                    amnt.parse::<usize>().map(|i| {
+                        self.tx.send(control::Request::RPC(Request::ThrottleUpload(i))).unwrap();
+                    })
+                };
+                match res {
+                    Err(_) => { resp = Some("Bad amount!"); }
+                    _ => { }
+                };
+            } else if request.url().starts_with("/rate/download/") {
+                let res = {
+                    let (_, amnt) = request.url().split_at(15);
+                    amnt.parse::<usize>().map(|i| {
+                        self.tx.send(control::Request::RPC(Request::ThrottleDownload(i))).unwrap();
+                    })
+                };
+                match res {
+                    Err(_) => { resp = Some("Bad amount!"); }
+                    _ => { }
+                };
             } else {
                 resp = Some("Invalid URL!");
             }
