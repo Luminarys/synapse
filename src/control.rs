@@ -50,13 +50,13 @@ impl Control {
         let hash_idx = HashMap::new();
         let reg = Arc::new(poll.get_registrar().unwrap());
         // 5 MiB max bucket
-        let throttler = Throttler::new(3000, 10 * 1024 * 1024, &reg);
+        let throttler = Throttler::new(0, 0, 1 * 1024 * 1024, &reg);
         Control { trk_rx, disk_rx, ctrl_rx, poll, torrents, peers, hash_idx, reg, tid_cnt: 0, throttler }
     }
 
     pub fn run(&mut self) {
         loop {
-            for event in self.poll.wait(5).unwrap() {
+            for event in self.poll.wait(3).unwrap() {
                 self.handle_event(event);
             }
         }
@@ -148,11 +148,19 @@ impl Control {
     }
 
     fn flush_blocked_peers(&mut self) {
-        let pids = self.throttler.flush();
-        for pid in  pids {
+        for pid in self.throttler.flush_dl() {
             let res = {
                 let torrent = self.torrents.get_mut(&self.peers[&pid]).unwrap();
                 torrent.peer_readable(pid)
+            };
+            if res.is_err() {
+                self.remove_peer(pid);
+            }
+        }
+        for pid in self.throttler.flush_ul() {
+            let res = {
+                let torrent = self.torrents.get_mut(&self.peers[&pid]).unwrap();
+                torrent.peer_writable(pid)
             };
             if res.is_err() {
                 self.remove_peer(pid);
@@ -208,10 +216,12 @@ impl Control {
 
             }
             rpc::Request::ThrottleUpload(amnt) => {
-
+                self.throttler.set_ul_rate(amnt);
+                RPC.tx.send(rpc::Response::Ack).unwrap();
             }
             rpc::Request::ThrottleDownload(amnt) => {
-
+                self.throttler.set_dl_rate(amnt);
+                RPC.tx.send(rpc::Response::Ack).unwrap();
             }
         }
     }

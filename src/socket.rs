@@ -38,12 +38,19 @@ impl AsRawFd for Socket {
 
 impl io::Read for Socket {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        // Don't bother rate limiting small requests
+        if buf.len() < 20 {
+            return self.conn.read(buf);
+        }
         if let Some(ref mut t) = self.throttle {
-            match t.get_bytes(buf.len()) {
+            match t.get_bytes_dl(buf.len()) {
                 Ok(()) => {
                     match self.conn.read(buf) {
-                        Ok(amnt) => { t.restore_bytes(buf.len() - amnt); Ok(amnt) }
-                        Err(e) => Err(e)
+                        Ok(amnt) => { t.restore_bytes_dl(buf.len() - amnt); Ok(amnt) }
+                        Err(e) => {
+                            t.restore_bytes_dl(buf.len());
+                            Err(e)
+                        }
                     }
                 }
                 Err(()) => {
@@ -58,7 +65,27 @@ impl io::Read for Socket {
 
 impl io::Write for Socket {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        self.conn.write(buf)
+        if buf.len() < 20 {
+            return self.conn.write(buf);
+        }
+        if let Some(ref mut t) = self.throttle {
+            match t.get_bytes_ul(buf.len()) {
+                Ok(()) => {
+                    match self.conn.write(buf) {
+                        Ok(amnt) => { t.restore_bytes_ul(buf.len() - amnt); Ok(amnt) }
+                        Err(e) => {
+                            t.restore_bytes_ul(buf.len());
+                            Err(e)
+                        }
+                    }
+                }
+                Err(()) => {
+                    Err(io::Error::new(ErrorKind::WouldBlock, ""))
+                }
+            }
+        } else {
+            self.conn.write(buf)
+        }
     }
 
     fn flush(&mut self) -> io::Result<()> {
