@@ -47,22 +47,22 @@ impl RPC {
                     Err(_) => { resp = Some("Bad ID!"); }
                     _ => { }
                 };
-            } else if request.url().starts_with("/torrent/stop/") {
+            } else if request.url().starts_with("/torrent/pause/") {
                 let res = {
-                    let (_, id) = request.url().split_at(14);
+                    let (_, id) = request.url().split_at(15);
                     id.parse::<usize>().map(|i| {
-                        self.tx.send(control::Request::RPC(Request::StopTorrent(i))).unwrap();
+                        self.tx.send(control::Request::RPC(Request::PauseTorrent(i))).unwrap();
                     })
                 };
                 match res {
                     Err(_) => { resp = Some("Bad ID!"); }
                     _ => { }
                 };
-            } else if request.url().starts_with("/torrent/start/") {
+            } else if request.url().starts_with("/torrent/resume/") {
                 let res = {
-                    let (_, id) = request.url().split_at(15);
+                    let (_, id) = request.url().split_at(16);
                     id.parse::<usize>().map(|i| {
-                        self.tx.send(control::Request::RPC(Request::StartTorrent(i))).unwrap();
+                        self.tx.send(control::Request::RPC(Request::ResumeTorrent(i))).unwrap();
                     })
                 };
                 match res {
@@ -131,8 +131,8 @@ pub enum Request {
     ListTorrents,
     TorrentInfo(usize),
     AddTorrent(BEncode),
-    StopTorrent(usize),
-    StartTorrent(usize),
+    PauseTorrent(usize),
+    ResumeTorrent(usize),
     RemoveTorrent(usize),
     ThrottleUpload(usize),
     ThrottleDownload(usize),

@@ -30,6 +30,7 @@ pub struct Torrent {
     leechers: HashSet<usize>,
     picker: Picker,
     pb: ProgressBar<io::Stdout>,
+    paused: bool,
 }
 
 impl fmt::Debug for Torrent {
@@ -39,7 +40,7 @@ impl fmt::Debug for Torrent {
 }
 
 impl Torrent {
-    pub fn new(info: Info, throttle: Throttle, reg: Arc<amy::Registrar>) -> Torrent {
+    pub fn new(id: usize, info: Info, throttle: Throttle, reg: Arc<amy::Registrar>) -> Torrent {
         println!("Handling with torrent with {:?} pl, {:?} pieces, {:?} sf len", info.piece_len, info.pieces(), info.files.last().unwrap().length);
         // Create dummy files
         info.create_files().unwrap();
@@ -48,7 +49,9 @@ impl Torrent {
         let picker = Picker::new(&info);
         let pb = ProgressBar::new(info.pieces() as u64);
         let leechers = HashSet::new();
-        Torrent { id: 0, info, peers, pieces, picker, pb, uploaded: 0, downloaded: 0, reg, leechers, throttle }
+        let t = Torrent { id, info, peers, pieces, picker, pb, uploaded: 0, downloaded: 0, reg, leechers, throttle, paused: false };
+        TRACKER.tx.send(tracker::Request::started(&t)).unwrap();
+        t
     }
 
     pub fn block_available(&mut self, pid: usize, resp: disk::Response) -> io::Result<()> {
@@ -137,7 +140,7 @@ impl Torrent {
                         }
                     }
                 }
-                if !peer.being_choked && !self.pieces.complete() {
+                if !peer.being_choked && !self.pieces.complete() && !self.paused {
                     Torrent::make_requests(&mut self.picker, peer, &self.info)?;
                 }
             }
@@ -251,7 +254,9 @@ impl Torrent {
     }
 
     pub fn rpc_info(&self) -> rpc::TorrentInfo {
-        let status = if self.pieces.complete() {
+        let status = if self.paused {
+            rpc::Status::Paused
+        } else if self.pieces.complete() {
             rpc::Status::Seeding
         } else {
             rpc::Status::Downloading
@@ -293,12 +298,47 @@ impl Torrent {
         peer
     }
 
+    pub fn pause(&mut self) {
+        if !self.paused {
+            TRACKER.tx.send(tracker::Request::stopped(&self)).unwrap();
+        }
+        self.paused = true;
+    }
+
+    pub fn resume(&mut self) {
+        if self.paused {
+            TRACKER.tx.send(tracker::Request::started(&self)).unwrap();
+        }
+        let mut failed = Vec::new();
+        for (id, peer) in self.peers().iter_mut() {
+            if Torrent::make_requests(&mut self.picker, peer, &self.info).is_err() {
+                failed.push(id);
+            }
+        }
+        for id in failed {
+            self.remove_peer(*id);
+        }
+        self.paused = false;
+    }
+
     // This obviously could be dangerous, but as long as we only
     // keep the returned references within the scope of implemented methods
     // it's more or less guaranteed to be safe.
     fn peers(&self) -> &'static mut HashMap<usize, Peer> {
         unsafe {
             self.peers.get().as_mut().unwrap()
+        }
+    }
+}
+
+impl Drop for Torrent {
+    fn drop(&mut self) {
+        for (id, peer) in self.peers().drain() {
+            self.reg.deregister(&peer.conn).unwrap();
+            self.leechers.remove(&id);
+        }
+        if !self.paused {
+            TRACKER.tx.send(tracker::Request::stopped(&self)).unwrap();
         }
     }
 }

@@ -1,5 +1,5 @@
 use std::{thread, fmt};
-use {rpc, tracker, disk, TRACKER, RPC};
+use {rpc, tracker, disk, RPC};
 use amy::{self, Poller, Registrar};
 use torrent::{self, Torrent, Peer};
 use std::collections::HashMap;
@@ -107,9 +107,7 @@ impl Control {
             match self.ctrl_rx.try_recv() {
                 Ok(Request::AddTorrent(b)) => {
                     if let Ok(i) = torrent::Info::from_bencode(b) {
-                        let r = self.reg.clone();
-                        let t = self.throttler.get_throttle();
-                        self.add_torrent(Torrent::new(i, t, r));
+                        self.add_torrent(i);
                     }
                 }
                 Ok(Request::AddPeer(p, hash)) => {
@@ -168,10 +166,11 @@ impl Control {
         }
     }
 
-    fn add_torrent(&mut self, mut t: Torrent) {
+    fn add_torrent(&mut self, info: torrent::Info) {
         let tid = self.tid_cnt;
-        t.id = tid;
-        TRACKER.tx.send(tracker::Request::started(&t)).unwrap();
+        let r = self.reg.clone();
+        let throttle = self.throttler.get_throttle();
+        let t = Torrent::new(tid, info, throttle, r);
         self.hash_idx.insert(t.info.hash, tid);
         self.tid_cnt += 1;
         self.torrents.insert(tid, t);
@@ -196,9 +195,7 @@ impl Control {
             rpc::Request::AddTorrent(data) => {
                 match torrent::Info::from_bencode(data) {
                     Ok(i) => {
-                        let r = self.reg.clone();
-                        let t = self.throttler.get_throttle();
-                        self.add_torrent(Torrent::new(i, t, r));
+                        self.add_torrent(i);
                         RPC.tx.send(rpc::Response::Ack).unwrap();
                     }
                     Err(e) => {
@@ -206,14 +203,28 @@ impl Control {
                     }
                 }
             }
-            rpc::Request::StopTorrent(id) => {
-
+            rpc::Request::PauseTorrent(id) => {
+                if let Some(t) = self.torrents.get_mut(&id) {
+                    t.pause();
+                    RPC.tx.send(rpc::Response::Ack).unwrap();
+                } else {
+                    RPC.tx.send(rpc::Response::Err("Torrent not found!")).unwrap();
+                }
             }
-            rpc::Request::StartTorrent(id) => {
-
+            rpc::Request::ResumeTorrent(id) => {
+                if let Some(t) = self.torrents.get_mut(&id) {
+                    t.resume();
+                    RPC.tx.send(rpc::Response::Ack).unwrap();
+                } else {
+                    RPC.tx.send(rpc::Response::Err("Torrent not found!")).unwrap();
+                }
             }
             rpc::Request::RemoveTorrent(id) => {
-
+                if let Some(_) = self.torrents.remove(&id) {
+                    RPC.tx.send(rpc::Response::Ack).unwrap();
+                } else {
+                    RPC.tx.send(rpc::Response::Err("Torrent not found!")).unwrap();
+                }
             }
             rpc::Request::ThrottleUpload(amnt) => {
                 self.throttler.set_ul_rate(amnt);
