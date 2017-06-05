@@ -102,7 +102,7 @@ impl Torrent {
                 peer.being_choked = true;
             }
             Message::Piece { index, begin, data, length } => {
-                if self.pieces.complete() {
+                if self.pieces.complete() || self.pieces.has_piece(index) {
                     return Ok(());
                 }
 

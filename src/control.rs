@@ -167,6 +167,9 @@ impl Control {
     }
 
     fn add_torrent(&mut self, info: torrent::Info) {
+        if self.hash_idx.contains_key(&info.hash) {
+            return;
+        }
         let tid = self.tid_cnt;
         let r = self.reg.clone();
         let throttle = self.throttler.get_throttle();

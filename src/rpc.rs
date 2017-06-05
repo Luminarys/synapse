@@ -34,6 +34,7 @@ impl RPC {
         let server = tiny_http::Server::http("0.0.0.0:8412").unwrap();
         for mut request in server.incoming_requests() {
             let mut resp = None;
+            // TODO: CLEAN ALL THIS SHIT UP
             if request.url() == "/torrent/list" {
                 self.tx.send(control::Request::RPC(Request::ListTorrents)).unwrap();
             } else if request.url().starts_with("/torrent/info/") {
@@ -81,13 +82,16 @@ impl RPC {
                     _ => { }
                 };
             } else if request.url().starts_with("/torrent") && request.method() == &tiny_http::Method::Post {
+                println!("Uploading torrent!");
                 let mut data = Vec::new();
                 request.as_reader().read_to_end(&mut data).unwrap();
-                if let Ok(b) = bencode::decode_buf(&mut data) {
-                    self.tx.send(control::Request::RPC(Request::AddTorrent(b))).unwrap();
-                } else {
-                    resp = Some("Invalid torrent file!");
-                
+                match bencode::decode_buf(&mut data) {
+                    Ok(b) => {
+                        self.tx.send(control::Request::RPC(Request::AddTorrent(b))).unwrap();
+                    }
+                    Err(_) => {
+                        resp = Some("Bad torrent!");
+                    },
                 }
             } else if request.url().starts_with("/rate/upload/") {
                 let res = {
@@ -115,13 +119,16 @@ impl RPC {
                 resp = Some("Invalid URL!");
             }
 
-            let r = if let Some(e) = resp {
-                tiny_http::Response::from_string(e)
+            let mut r = if let Some(e) = resp {
+                let s = serde_json::to_string(&Response::Err(e)).unwrap();
+                tiny_http::Response::from_string(s)
             } else {
                 let resp = self.rx.recv().unwrap();
                 let s = serde_json::to_string(&resp).unwrap();
                 tiny_http::Response::from_string(s)
             };
+            let cors = tiny_http::Header::from_bytes(&b"Access-Control-Allow-Origin"[..], &b"*"[..]).unwrap();
+            r.add_header(cors);
             request.respond(r).unwrap();
         }
     }

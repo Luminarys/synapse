@@ -1,5 +1,6 @@
 use std::sync::{mpsc, atomic};
 use byteorder::{BigEndian, ReadBytesExt};
+use std::time::Duration;
 use std::net::{SocketAddr, SocketAddrV4, Ipv4Addr};
 use std::thread;
 use util::{encode_param, append_pair};
@@ -128,6 +129,8 @@ impl Tracker {
     }
 
     pub fn run(&mut self) {
+        let mut client = reqwest::Client::new().unwrap();
+        client.timeout(Duration::new(1, 0));
         loop {
             if let Ok(mut req) = self.queue.recv() {
                 let mut url = &mut req.url;
@@ -144,7 +147,7 @@ impl Tracker {
                 append_pair(&mut url, "port", &req.port.to_string());
                 match req.event {
                     Some(Event::Started) => {
-                        append_pair(&mut url, "numwant", "75");
+                        append_pair(&mut url, "numwant", "50");
                         append_pair(&mut url, "event", "started");
                     }
                     Some(Event::Stopped) => {
@@ -157,7 +160,7 @@ impl Tracker {
                     None => { append_pair(&mut url, "numwant", "20"); }
                 }
                 let response = {
-                    let mut resp = reqwest::get(&*url).unwrap();
+                    let mut resp = client.get(&*url).send().unwrap();
                     let content = bencode::decode(&mut resp).unwrap();
                     Response::from_bencode(req.id, content).unwrap()
                 };

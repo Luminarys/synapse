@@ -27,7 +27,7 @@ mod listener;
 mod rpc;
 mod throttle;
 
-use std::{env, io, thread, time};
+use std::{thread, time};
 use std::sync::atomic;
 use std::fs::File;
 
@@ -81,15 +81,6 @@ fn main() {
     // lol
     LISTENER.init();
     RPC.init();
-    let torrent = env::args().nth(1).unwrap();
-    download_torrent(&torrent).unwrap();
     thread::sleep(time::Duration::from_secs(99999));
     println!("Done");
-}
-
-fn download_torrent(path: &str) -> Result<(), io::Error> {
-    let mut data = File::open(path)?;
-    let b = bencode::decode(&mut data).unwrap();
-    CONTROL.ctrl_tx.lock().unwrap().send(control::Request::AddTorrent(b)).unwrap();
-    Ok(())
 }

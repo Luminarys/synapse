@@ -19,6 +19,10 @@ impl PieceField {
         }
     }
 
+    pub fn num_set(&self) -> u32 {
+        self.iter().count() as u32
+    }
+
     pub fn from(b: Box<[u8]>, len: u32) -> PieceField {
         PieceField {
             len: len,

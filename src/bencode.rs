@@ -14,7 +14,7 @@ pub enum BEncode {
 pub enum BError {
     UTF8Decode,
     InvalidDict,
-    InvalidChar,
+    InvalidChar(u8),
     ParseInt,
     EOF,
     IO,
@@ -163,7 +163,7 @@ pub fn decode<R: io::Read>(bytes: &mut R) -> Result<BEncode, BError> {
             Ok(BEncode::String(v))
         }
         Err(e) => Err(e),
-        _ => Err(BError::InvalidChar),
+        Ok(c) => Err(BError::InvalidChar(c)),
     }
 }
 
