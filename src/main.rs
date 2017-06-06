@@ -29,7 +29,6 @@ mod throttle;
 
 use std::{thread, time};
 use std::sync::atomic;
-use std::fs::File;
 
 lazy_static! {
     pub static ref PEER_ID: [u8; 20] = {

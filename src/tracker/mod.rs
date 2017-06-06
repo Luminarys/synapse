@@ -1,16 +1,47 @@
+mod http;
+mod udp;
+
 use std::sync::{mpsc, atomic};
 use byteorder::{BigEndian, ReadBytesExt};
-use std::time::Duration;
 use std::net::{SocketAddr, SocketAddrV4, Ipv4Addr};
 use std::thread;
-use util::{encode_param, append_pair};
-use {PEER_ID, CONTROL, PORT, reqwest, bencode};
-use bencode::BEncode;
+use {CONTROL, PORT};
 use torrent::Torrent;
+use bencode::BEncode;
+use url::Url;
 
 pub struct Tracker {
     queue: mpsc::Receiver<Request>,
+    http: http::Announcer,
+    udp: udp::Announcer,
 }
+
+impl Tracker {
+    pub fn new(queue: mpsc::Receiver<Request>) -> Tracker {
+        Tracker {
+            queue,
+            http: http::Announcer::new(),
+            udp: udp::Announcer::new(),
+        }
+    }
+
+    pub fn run(&mut self) {
+        loop {
+            if let Ok(req) = self.queue.recv() {
+                let url = Url::parse(&req.url).unwrap();
+                let response = match url.scheme() {
+                    "http" => self.http.announce(req),
+                    "udp" => self.udp.announce(req),
+                    _ => unreachable!(),
+                };
+                CONTROL.trk_tx.lock().unwrap().send(response).unwrap();
+            } else {
+                break;
+            }
+        }
+    }
+}
+
 
 pub struct Handle {
     pub tx: mpsc::Sender<Request>,
@@ -118,57 +149,6 @@ impl Response {
             }
         };
         Ok(resp)
-    }
-}
-
-impl Tracker {
-    pub fn new(queue: mpsc::Receiver<Request>) -> Tracker {
-        Tracker {
-            queue
-        }
-    }
-
-    pub fn run(&mut self) {
-        let mut client = reqwest::Client::new().unwrap();
-        client.timeout(Duration::new(1, 0));
-        loop {
-            if let Ok(mut req) = self.queue.recv() {
-                let mut url = &mut req.url;
-                // The fact that I have to do this is genuinely depressing.
-                // This will be rewritten as a proper http protocol
-                // encoder in an event loop.
-                url.push_str("?");
-                append_pair(&mut url, "info_hash", &encode_param(&req.hash));
-                append_pair(&mut url, "peer_id", &encode_param(&PEER_ID[..]));
-                append_pair(&mut url, "uploaded", &req.uploaded.to_string());
-                append_pair(&mut url, "downloaded", &req.downloaded.to_string());
-                append_pair(&mut url, "left", &req.left.to_string());
-                append_pair(&mut url, "compact", "1");
-                append_pair(&mut url, "port", &req.port.to_string());
-                match req.event {
-                    Some(Event::Started) => {
-                        append_pair(&mut url, "numwant", "50");
-                        append_pair(&mut url, "event", "started");
-                    }
-                    Some(Event::Stopped) => {
-                        append_pair(&mut url, "event", "started");
-                    }
-                    Some(Event::Completed) => {
-                        append_pair(&mut url, "numwant", "20");
-                        append_pair(&mut url, "event", "completed");
-                    }
-                    None => { append_pair(&mut url, "numwant", "20"); }
-                }
-                let response = {
-                    let mut resp = client.get(&*url).send().unwrap();
-                    let content = bencode::decode(&mut resp).unwrap();
-                    Response::from_bencode(req.id, content).unwrap()
-                };
-                CONTROL.trk_tx.lock().unwrap().send(response).unwrap();
-            } else {
-                break;
-            }
-        }
     }
 }
 
