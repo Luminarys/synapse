@@ -65,8 +65,8 @@ pub struct Request {
     url: String,
     hash: [u8; 20],
     port: u16,
-    uploaded: usize,
-    downloaded: usize,
+    uploaded: u64,
+    downloaded: u64,
     left: usize,
     event: Option<Event>,
 }
@@ -78,8 +78,8 @@ impl Request {
             url: torrent.info.announce.clone(),
             hash: torrent.info.hash,
             port: PORT.load(atomic::Ordering::Relaxed) as u16,
-            uploaded: torrent.uploaded,
-            downloaded: torrent.downloaded,
+            uploaded: torrent.uploaded as u64 * torrent.info.piece_len as u64,
+            downloaded: torrent.downloaded as u64 * torrent.info.piece_len as u64,
             left: torrent.info.total_len - torrent.downloaded,
             event,
         }
@@ -139,7 +139,7 @@ impl TrackerResponse {
     }
 
     pub fn from_bencode(data: BEncode) -> TrackerRes {
-        let mut d = data.to_dict().ok_or(TrackerError::InvalidResponse("File must be a dictionary type!"))?;
+        let mut d = data.to_dict().ok_or(TrackerError::InvalidResponse("Tracker response must be a dictionary type!"))?;
         match d.remove("failure_reason") {
             Some(BEncode::String(data)) => {
                 return Err(TrackerError::Error(String::from_utf8(data).map_err(|_| TrackerError::InvalidResponse("Failure reason must be UTF8!"))?));
