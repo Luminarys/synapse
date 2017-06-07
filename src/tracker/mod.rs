@@ -28,13 +28,17 @@ impl Tracker {
     pub fn run(&mut self) {
         loop {
             if let Ok(req) = self.queue.recv() {
-                let url = Url::parse(&req.url).unwrap();
-                let response = match url.scheme() {
-                    "http" => self.http.announce(req),
-                    "udp" => self.udp.announce(req),
-                    _ => unreachable!(),
+                let id = req.id;
+                let response = if let Ok(url) = Url::parse(&req.url) {
+                    match url.scheme() {
+                        "http" => self.http.announce(req),
+                        "udp" => self.udp.announce(req),
+                        _ => Err(TrackerError::InvalidURL),
+                    }
+                } else {
+                    Err(TrackerError::InvalidURL)
                 };
-                CONTROL.trk_tx.lock().unwrap().send(response).unwrap();
+                CONTROL.trk_tx.lock().unwrap().send((id, response)).unwrap();
             } else {
                 break;
             }
@@ -105,19 +109,28 @@ pub enum Event {
     Completed,
 }
 
+pub type Response = (usize, TrackerRes);
+pub type TrackerRes = Result<TrackerResponse, TrackerError>;
+
+#[derive(Clone, Debug)]
+pub enum TrackerError {
+    Error(String),
+    InvalidURL,
+    ConnectionFailure,
+    InvalidResponse(&'static str),
+}
+
 #[derive(Debug)]
-pub struct Response {
-    pub id: usize,
+pub struct TrackerResponse {
     pub peers: Vec<SocketAddr>,
     pub interval: u32,
     pub leechers: u32,
     pub seeders: u32,
 }
 
-impl Response {
-    pub fn empty(id: usize) -> Response {
-        Response {
-            id,
+impl TrackerResponse {
+    pub fn empty() -> TrackerResponse {
+        TrackerResponse {
             peers: vec![],
             interval: 900,
             leechers: 0,
@@ -125,9 +138,9 @@ impl Response {
         }
     }
 
-    pub fn from_bencode(id: usize, data: BEncode) -> Result<Response, String> {
-        let mut d = data.to_dict().ok_or("File must be a dictionary type!".to_string())?;
-        let mut resp = Response::empty(id);
+    pub fn from_bencode(data: BEncode) -> TrackerRes {
+        let mut d = data.to_dict().ok_or(TrackerError::InvalidResponse("File must be a dictionary type!"))?;
+        let mut resp = TrackerResponse::empty();
         match d.remove("peers") {
             Some(BEncode::String(ref data)) => {
                 for p in data.chunks(6) {
@@ -137,7 +150,7 @@ impl Response {
                 }
             }
             _ => {
-                return Err("Response must have peers!".to_string());
+                return Err(TrackerError::InvalidResponse("Response must have peers field!"));
             }
         };
         match d.remove("interval") {
@@ -145,7 +158,7 @@ impl Response {
                 resp.interval = *i as u32;
             }
             _ => {
-                return Err("Response must have interval!".to_string());
+                return Err(TrackerError::InvalidResponse("Response must have interval!"));
             }
         };
         Ok(resp)

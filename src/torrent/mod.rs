@@ -13,6 +13,7 @@ use std::{fmt, io, cmp};
 use {amy, rpc, disk, DISK, tracker, TRACKER};
 use pbr::ProgressBar;
 use throttle::Throttle;
+use tracker::{TrackerError, TrackerRes};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use util::io_err;
@@ -25,6 +26,7 @@ pub struct Torrent {
     pub downloaded: usize,
     pub id: usize,
     pub throttle: Throttle,
+    tracker: TrackerStatus,
     reg: Arc<amy::Registrar>,
     peers: UnsafeCell<HashMap<usize, Peer>>,
     leechers: HashSet<usize>,
@@ -49,9 +51,24 @@ impl Torrent {
         let picker = Picker::new(&info);
         let pb = ProgressBar::new(info.pieces() as u64);
         let leechers = HashSet::new();
-        let t = Torrent { id, info, peers, pieces, picker, pb, uploaded: 0, downloaded: 0, reg, leechers, throttle, paused: false };
+        let t = Torrent {
+            id, info, peers, pieces, picker, pb,
+            uploaded: 0, downloaded: 0, reg, leechers, throttle,
+            paused: false, tracker: TrackerStatus::Updating
+        };
         TRACKER.tx.send(tracker::Request::started(&t)).unwrap();
         t
+    }
+
+    pub fn set_tracker_response(&mut self, resp: &TrackerRes) {
+        match resp {
+            &Ok(ref r) => {
+                self.tracker = TrackerStatus::Ok { seeders: r.seeders, leechers: r.leechers };
+            }
+            &Err(ref e) => {
+                self.tracker = TrackerStatus::Error(e.clone());
+            }
+        }
     }
 
     pub fn block_available(&mut self, pid: usize, resp: disk::Response) -> io::Result<()> {
@@ -341,4 +358,10 @@ impl Drop for Torrent {
             TRACKER.tx.send(tracker::Request::stopped(&self)).unwrap();
         }
     }
+}
+
+pub enum TrackerStatus {
+    Updating,
+    Ok { seeders: u32, leechers: u32 },
+    Error(TrackerError),
 }

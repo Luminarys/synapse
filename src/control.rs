@@ -76,10 +76,16 @@ impl Control {
     fn handle_trk_ev(&mut self) {
         loop {
             match self.trk_rx.try_recv() {
-                Ok(resp) => {
-                    for ip in resp.peers.iter() {
-                        if let Ok(peer) = Peer::new_outgoing(ip) {
-                            self.add_peer(resp.id, peer);
+                Ok((id, resp)) => {
+                    {
+                        let torrent = self.torrents.get_mut(&id).unwrap();
+                        torrent.set_tracker_response(&resp);
+                    }
+                    if let Ok(r) = resp {
+                        for ip in r.peers.iter() {
+                            if let Ok(peer) = Peer::new_outgoing(ip) {
+                                self.add_peer(id, peer);
+                            }
                         }
                     }
                 }
