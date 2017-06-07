@@ -4,6 +4,7 @@ use tracker::{Request, Response, Event};
 use {PORT, PEER_ID};
 use std::io::{Write, Cursor};
 use byteorder::{ReadBytesExt, WriteBytesExt, BigEndian};
+use url::Url;
 
 pub struct Announcer {
     sock: UdpSocket,
@@ -27,7 +28,8 @@ impl Announcer {
             connect_req.write_u32::<BigEndian>(0).unwrap();
             connect_req.write_u32::<BigEndian>(tid).unwrap();
         }
-        self.sock.send_to(&data, &req.url).unwrap();
+        let url = Url::parse(&req.url).unwrap();
+        self.sock.send_to(&data, (url.host_str().unwrap(), url.port().unwrap())).unwrap();
 
         let mut data = [0u8; 16];
         let (read, _) = self.sock.recv_from(&mut data).unwrap();
@@ -73,12 +75,14 @@ impl Announcer {
             let port = PORT.load(atomic::Ordering::Relaxed) as u16;
             announce_req.write_u16::<BigEndian>(port).unwrap();
         };
-        self.sock.send_to(&data, &req.url).unwrap();
+        self.sock.send_to(&data, (url.host_str().unwrap(), url.port().unwrap())).unwrap();
 
         let mut data = [0u8; 200];
         let (read, _) = self.sock.recv_from(&mut data).unwrap();
-        assert_eq!(read, 200);
-        let mut announce_resp = Cursor::new(&mut data[..]);
+        println!("Read {:?} bytes", read);
+        assert!(read >= 20);
+        assert!((read - 20) % 6 == 0);
+        let mut announce_resp = Cursor::new(&mut data[..read]);
         let action_resp = announce_resp.read_u32::<BigEndian>().unwrap();
         let mut resp = Response::empty(req.id);
         assert_eq!(action_resp, 1);
@@ -86,12 +90,11 @@ impl Announcer {
         resp.interval = announce_resp.read_u32::<BigEndian>().unwrap();
         resp.leechers = announce_resp.read_u32::<BigEndian>().unwrap();
         resp.seeders = announce_resp.read_u32::<BigEndian>().unwrap();
-        for p in announce_resp.get_ref().chunks(6) {
+        for p in announce_resp.get_ref()[20..].chunks(6) {
             let ip = Ipv4Addr::new(p[0], p[1], p[2], p[3]);
             let socket = SocketAddrV4::new(ip, (&p[4..]).read_u16::<BigEndian>().unwrap());
             resp.peers.push(SocketAddr::V4(socket));
         }
-        unimplemented!();
-        // self.sock.
+        resp
     }
 }
