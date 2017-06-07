@@ -9,7 +9,7 @@ pub struct Info {
     pub name: String,
     pub announce: String,
     pub piece_len: usize,
-    pub total_len: usize,
+    pub total_len: u64,
     pub hashes: Vec<Vec<u8>>,
     pub hash: [u8; 20],
     pub files: Vec<File>,
@@ -97,7 +97,7 @@ impl Info {
                 } else {
                     unreachable!();
                 };
-                let total_len = files.iter().map(|f| f.length).sum();
+                let total_len = files.iter().map(|f| f.length as u64).sum();
                 Ok(Info {
                     name,
                     announce: a,
@@ -127,7 +127,7 @@ impl Info {
     }
 
     pub fn is_last_piece(&self, (idx, offset): (u32, u32)) -> bool {
-        let last_piece_len = (self.total_len - self.piece_len * (self.pieces() as usize - 1)) as u32;
+        let last_piece_len = (self.total_len - self.piece_len as u64 * (self.pieces() as u64 - 1)) as u32;
         if offset < last_piece_len {
             let last_offset = last_piece_len - offset;
             idx == self.pieces() - 1 && last_offset <= 16384

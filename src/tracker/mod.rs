@@ -67,7 +67,7 @@ pub struct Request {
     port: u16,
     uploaded: u64,
     downloaded: u64,
-    left: usize,
+    left: u64,
     event: Option<Event>,
 }
 
@@ -80,7 +80,7 @@ impl Request {
             port: PORT.load(atomic::Ordering::Relaxed) as u16,
             uploaded: torrent.uploaded as u64 * torrent.info.piece_len as u64,
             downloaded: torrent.downloaded as u64 * torrent.info.piece_len as u64,
-            left: torrent.info.total_len - torrent.downloaded,
+            left: torrent.info.total_len - torrent.downloaded as u64 * torrent.info.piece_len as u64,
             event,
         }
     }

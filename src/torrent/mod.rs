@@ -281,8 +281,8 @@ impl Torrent {
         rpc::TorrentInfo {
             name: self.info.name.clone(),
             size: self.info.total_len,
-            downloaded: self.downloaded * self.info.piece_len,
-            uploaded: self.uploaded * self.info.piece_len,
+            downloaded: self.downloaded as u64 * self.info.piece_len as u64,
+            uploaded: self.uploaded as u64 * self.info.piece_len as u64,
             tracker: self.info.announce.clone(),
             status: status,
         }

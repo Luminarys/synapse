@@ -158,9 +158,9 @@ pub enum Response {
 pub struct TorrentInfo {
     pub name: String,
     pub status: Status,
-    pub size: usize,
-    pub downloaded: usize,
-    pub uploaded: usize,
+    pub size: u64,
+    pub downloaded: u64,
+    pub uploaded: u64,
     pub tracker: String,
 }
 

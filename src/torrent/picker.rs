@@ -16,14 +16,14 @@ impl Picker {
         // The n - 1 piece length, since the last one is (usually) shorter.
         let compl_piece_len = scale * (info.pieces() as usize - 1);
         // the nth piece length
-        let mut last_piece_len = info.total_len - info.piece_len * (info.pieces() as usize - 1);
+        let mut last_piece_len = info.total_len - info.piece_len as u64 * (info.pieces() as u64 - 1) as u64;
         if last_piece_len % 16384 == 0 {
             last_piece_len /= 16384;
         } else {
             last_piece_len /= 16384;
             last_piece_len += 1;
         }
-        let len = compl_piece_len + last_piece_len;
+        let len = compl_piece_len + last_piece_len as usize;
         let pieces = PieceField::new(len as u32);
         Picker {
             pieces,
