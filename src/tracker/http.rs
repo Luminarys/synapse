@@ -1,4 +1,4 @@
-use tracker::{Request, TrackerRes, TrackerResponse, Event};
+use tracker::{Request, TrackerRes, TrackerResponse, TrackerError, Event};
 use std::time::Duration;
 use util::{encode_param, append_pair};
 use {PEER_ID, reqwest, bencode};
@@ -43,8 +43,12 @@ impl Announcer {
                 append_pair(&mut url, "numwant", "20");
             }
         }
-        let mut resp = self.client.get(&*url).send().unwrap();
-        let content = bencode::decode(&mut resp).unwrap();
+        let mut resp = self.client.get(&*url).send().map_err(
+            |_| TrackerError::ConnectionFailure
+        )?;
+        let content = bencode::decode(&mut resp).map_err(
+            |_| TrackerError::InvalidResponse("HTTP Response must be valid BENcode")
+        )?;
         TrackerResponse::from_bencode(content)
     }
 }
