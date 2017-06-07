@@ -16,6 +16,7 @@ use throttle::Throttle;
 use tracker::{TrackerError, TrackerRes};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 use util::io_err;
 use std::cell::UnsafeCell;
 
@@ -27,6 +28,7 @@ pub struct Torrent {
     pub id: usize,
     pub throttle: Throttle,
     tracker: TrackerStatus,
+    tracker_update: Option<Instant>,
     reg: Arc<amy::Registrar>,
     peers: UnsafeCell<HashMap<usize, Peer>>,
     leechers: HashSet<usize>,
@@ -54,7 +56,8 @@ impl Torrent {
         let t = Torrent {
             id, info, peers, pieces, picker, pb,
             uploaded: 0, downloaded: 0, reg, leechers, throttle,
-            paused: false, tracker: TrackerStatus::Updating
+            paused: false, tracker: TrackerStatus::Updating,
+            tracker_update: None,
         };
         TRACKER.tx.send(tracker::Request::started(&t)).unwrap();
         t
@@ -63,10 +66,22 @@ impl Torrent {
     pub fn set_tracker_response(&mut self, resp: &TrackerRes) {
         match resp {
             &Ok(ref r) => {
-                self.tracker = TrackerStatus::Ok { seeders: r.seeders, leechers: r.leechers };
+                let mut time = Instant::now();
+                time += Duration::from_secs(r.interval as u64);
+                self.tracker = TrackerStatus::Ok { seeders: r.seeders, leechers: r.leechers, interval: r.interval };
+                self.tracker_update = Some(time);
             }
             &Err(ref e) => {
                 self.tracker = TrackerStatus::Error(e.clone());
+            }
+        }
+    }
+
+    pub fn update_tracker(&mut self) {
+        if let Some(end) = self.tracker_update {
+            let cur = Instant::now();
+            if cur >= end {
+                TRACKER.tx.send(tracker::Request::interval(&self)).unwrap();
             }
         }
     }
@@ -362,6 +377,6 @@ impl Drop for Torrent {
 
 pub enum TrackerStatus {
     Updating,
-    Ok { seeders: u32, leechers: u32 },
+    Ok { seeders: u32, leechers: u32, interval: u32 },
     Error(TrackerError),
 }
