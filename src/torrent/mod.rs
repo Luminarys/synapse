@@ -1,9 +1,9 @@
 pub mod info;
 pub mod peer;
-pub mod piece_field;
+pub mod bitfield;
 mod picker;
 
-pub use self::piece_field::PieceField;
+pub use self::bitfield::Bitfield;
 pub use self::info::Info;
 pub use self::peer::Peer;
 
@@ -22,7 +22,7 @@ use std::cell::UnsafeCell;
 
 pub struct Torrent {
     pub info: Info,
-    pub pieces: PieceField,
+    pub pieces: Bitfield,
     pub uploaded: usize,
     pub downloaded: usize,
     pub id: usize,
@@ -37,20 +37,14 @@ pub struct Torrent {
     paused: bool,
 }
 
-impl fmt::Debug for Torrent {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "Torrent {{ info: {:?} }}", self.info)
-    }
-}
-
 impl Torrent {
     pub fn new(id: usize, info: Info, throttle: Throttle, reg: Arc<amy::Registrar>) -> Torrent {
         println!("Handling with torrent with {:?} pl, {:?} pieces, {:?} sf len", info.piece_len, info.pieces(), info.files.last().unwrap().length);
         // Create dummy files
         info.create_files().unwrap();
         let peers = UnsafeCell::new(HashMap::new());
-        let pieces = PieceField::new(info.pieces());
-        let picker = Picker::new(&info);
+        let pieces = Bitfield::new(info.pieces() as u64);
+        let picker = Picker::new_sequential(&info);
         let pb = ProgressBar::new(info.pieces() as u64);
         let leechers = HashSet::new();
         let t = Torrent {
@@ -121,7 +115,7 @@ impl Torrent {
                 }
             }
             Message::Have(idx) => {
-                peer.pieces.set_piece(idx);
+                peer.pieces.set_piece(idx as u64);
                 if peer.pieces.complete() && self.leechers.contains(&peer.id) {
                     self.leechers.remove(&peer.id);
                 }
@@ -134,7 +128,7 @@ impl Torrent {
                 peer.being_choked = true;
             }
             Message::Piece { index, begin, data, length } => {
-                if self.pieces.complete() || self.pieces.has_piece(index) {
+                if self.pieces.complete() || self.pieces.has_piece(index as u64) {
                     return Ok(());
                 }
 
@@ -144,7 +138,7 @@ impl Torrent {
                 if piece_done {
                     self.downloaded += 1;
                     self.pb.inc();
-                    self.pieces.set_piece(index);
+                    self.pieces.set_piece(index as u64);
                     if self.pieces.complete() {
                         TRACKER.tx.send(tracker::Request::completed(&self)).unwrap();
                         self.pb.finish_print("Downloaded!");
@@ -152,7 +146,7 @@ impl Torrent {
                     let m = Message::Have(index);
                     for pid in self.leechers.iter() {
                         let peer = self.peers().get_mut(pid).expect("Seeder IDs should be in peers");
-                        if !peer.pieces.has_piece(index) {
+                        if !peer.pieces.has_piece(index as u64) {
                             if peer.send_message(m.clone()).is_err() {
                                 // TODO resolve the locality issue here,
                                 // if we remove the torrent we can't remove it
@@ -244,7 +238,7 @@ impl Torrent {
         locs
     }
 
-    #[inline(always)]
+    #[inline]
     /// Writes a piece of torrent info, with piece index idx,
     /// piece offset begin, piece length of len, and data bytes.
     /// The disk send handle is also provided.
@@ -253,7 +247,7 @@ impl Torrent {
         DISK.tx.send(disk::Request::write(data, locs)).unwrap();
     }
 
-    #[inline(always)]
+    #[inline]
     /// Issues a read request of the given torrent
     fn request_read(id: usize, info: &Info, index: u32, begin: u32, len: u32, data: Box<[u8; 16384]>) {
         let locs = Torrent::calc_block_locs(info, index, begin, len);
@@ -261,7 +255,7 @@ impl Torrent {
         DISK.tx.send(disk::Request::read(ctx, data, locs)).unwrap();
     }
 
-    #[inline(always)]
+    #[inline]
     fn make_requests(picker: &mut Picker, peer: &mut Peer, info: &Info) -> io::Result<()> {
         // keep 5 outstanding requests?
         while peer.queued < 5 {
@@ -299,6 +293,7 @@ impl Torrent {
             downloaded: self.downloaded as u64 * self.info.piece_len as u64,
             uploaded: self.uploaded as u64 * self.info.piece_len as u64,
             tracker: self.info.announce.clone(),
+            tracker_status: self.tracker.clone(),
             status: status,
         }
     }
@@ -363,6 +358,13 @@ impl Torrent {
     }
 }
 
+impl fmt::Debug for Torrent {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "Torrent {{ info: {:?} }}", self.info)
+    }
+}
+
+
 impl Drop for Torrent {
     fn drop(&mut self) {
         for (id, peer) in self.peers().drain() {
@@ -375,6 +377,7 @@ impl Drop for Torrent {
     }
 }
 
+#[derive(Clone, Debug, Serialize)]
 pub enum TrackerStatus {
     Updating,
     Ok { seeders: u32, leechers: u32, interval: u32 },

@@ -1,7 +1,7 @@
 use std::sync::mpsc;
 use std::thread;
 use bencode::{self, BEncode};
-use {amy, tiny_http, serde_json, control, CONTROL};
+use {amy, tiny_http, serde_json, control, CONTROL, torrent};
 
 pub struct Handle {
     pub tx: mpsc::Sender<Response>,
@@ -162,6 +162,7 @@ pub struct TorrentInfo {
     pub downloaded: u64,
     pub uploaded: u64,
     pub tracker: String,
+    pub tracker_status: torrent::TrackerStatus,
 }
 
 #[derive(Serialize, Debug)]

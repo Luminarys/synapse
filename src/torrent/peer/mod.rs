@@ -9,12 +9,12 @@ use std::net::TcpStream;
 use socket::Socket;
 use std::net::SocketAddr;
 use std::io;
-use torrent::{Torrent, PieceField};
+use torrent::{Torrent, Bitfield};
 
 /// Peer connection and associated metadata.
 pub struct Peer {
     pub conn: Socket,
-    pub pieces: PieceField,
+    pub pieces: Bitfield,
     pub being_choked: bool,
     pub choked: bool,
     pub interested: bool,
@@ -37,7 +37,7 @@ impl Peer {
             reader: reader,
             writer: writer,
             queued: 0,
-            pieces: PieceField::new(0),
+            pieces: Bitfield::new(0),
             tid: 0,
             id: 0,
         }
@@ -59,7 +59,7 @@ impl Peer {
     /// handshake and bitfield.
     pub fn set_torrent(&mut self, t: &Torrent) -> io::Result<()> {
         self.writer.write_message(Message::handshake(&t.info), &mut self.conn)?;
-        self.pieces = PieceField::new(t.info.hashes.len() as u32);
+        self.pieces = Bitfield::new(t.info.hashes.len() as u64);
         self.tid = t.id;
         self.writer.write_message(Message::Bitfield(t.pieces.clone()), &mut self.conn)?;
         let mut throt = t.throttle.clone();

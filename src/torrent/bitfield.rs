@@ -1,44 +1,44 @@
-// Use u32 rather than usize because it conforms with bittorents network protocol
+// Use u64 than usize because it conforms with bittorents network protocol
 // (4 byte big endian integers)
 #[derive(Clone)]
-pub struct PieceField {
-    len: u32,
+pub struct Bitfield {
+    len: u64,
     data: Box<[u8]>
 }
 
-impl PieceField {
-    pub fn new(len: u32) -> PieceField {
+impl Bitfield {
+    pub fn new(len: u64) -> Bitfield {
         let mut size = len/8;
         if len % 8 != 0 {
             size += 1;
         }
 
-        PieceField {
+        Bitfield {
             len: len,
             data: vec![0; size as usize].into_boxed_slice(),
         }
     }
 
-    pub fn num_set(&self) -> u32 {
-        self.iter().count() as u32
+    pub fn num_set(&self) -> u64 {
+        self.iter().count() as u64
     }
 
-    pub fn from(b: Box<[u8]>, len: u32) -> PieceField {
-        PieceField {
+    pub fn from(b: Box<[u8]>, len: u64) -> Bitfield {
+        Bitfield {
             len: len,
             data: b,
         }
     }
 
-    pub fn extract(self) -> (Box<[u8]>, u32) {
+    pub fn extract(self) -> (Box<[u8]>, u64) {
         (self.data, self.len)
     }
 
-    pub fn len(&self) -> u32 {
+    pub fn len(&self) -> u64 {
         self.len
     }
 
-    pub fn cap(&mut self, len: u32) {
+    pub fn cap(&mut self, len: u64) {
         self.len = len;
     }
 
@@ -46,7 +46,7 @@ impl PieceField {
         self.data.len()
     }
 
-    pub fn byte_at(&self, pos: u32) -> u8 {
+    pub fn byte_at(&self, pos: u64) -> u8 {
         self.data[pos as usize]
     }
 
@@ -67,7 +67,7 @@ impl PieceField {
         true
     }
 
-    pub fn has_piece(&self, pos: u32) -> bool {
+    pub fn has_piece(&self, pos: u64) -> bool {
         debug_assert!(pos < self.len);
         if pos >= self.len {
             false
@@ -79,7 +79,7 @@ impl PieceField {
         }
     }
 
-    pub fn set_piece(&mut self, pos: u32) {
+    pub fn set_piece(&mut self, pos: u64) {
         debug_assert!(pos < self.len);
         if pos < self.len {
             let block_pos = pos/8;
@@ -89,7 +89,7 @@ impl PieceField {
         }
     }
 
-    pub fn usable(&self, other: &PieceField) -> bool {
+    pub fn usable(&self, other: &Bitfield) -> bool {
         debug_assert!(self.len <= other.len);
         if self.len <= other.len {
             for i in 0..self.data.len() {
@@ -104,20 +104,20 @@ impl PieceField {
         return false
     }
 
-    pub fn iter<'a>(&'a self) -> PieceFieldIter<'a> {
-        PieceFieldIter::new(&self)
+    pub fn iter<'a>(&'a self) -> BitfieldIter<'a> {
+        BitfieldIter::new(&self)
     }
 
-    pub fn iter_from<'a>(&'a self, idx: u32) -> PieceFieldIter<'a> {
-        PieceFieldIter::from_pos(&self, idx)
+    pub fn iter_from<'a>(&'a self, idx: u64) -> BitfieldIter<'a> {
+        BitfieldIter::from_pos(&self, idx)
     }
 }
 
 use std::fmt;
 
-impl fmt::Debug for PieceField {
+impl fmt::Debug for Bitfield {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
-        write!(f, "PieceField {{ len: {}, pieces: ", self.len)?;
+        write!(f, "Bitfield {{ len: {}, pieces: ", self.len)?;
         for i in 0..self.len {
             if self.has_piece(i) {
                 write!(f, "1")?;
@@ -130,31 +130,31 @@ impl fmt::Debug for PieceField {
     }
 }
 
-pub struct PieceFieldIter<'a> {
-    pf: &'a PieceField,
-    idx: u32,
+pub struct BitfieldIter<'a> {
+    pf: &'a Bitfield,
+    idx: u64,
 }
 
-impl<'a> PieceFieldIter<'a> {
-    fn new(pf: &'a PieceField) -> PieceFieldIter<'a> {
-        PieceFieldIter {
+impl<'a> BitfieldIter<'a> {
+    fn new(pf: &'a Bitfield) -> BitfieldIter<'a> {
+        BitfieldIter {
             pf: pf,
             idx: 0,
         }
     }
 
-    fn from_pos(pf: &'a PieceField, idx: u32) -> PieceFieldIter<'a> {
-        PieceFieldIter {
+    fn from_pos(pf: &'a Bitfield, idx: u64) -> BitfieldIter<'a> {
+        BitfieldIter {
             pf: pf,
             idx: idx,
         }
     }
 }
 
-impl<'a> Iterator for PieceFieldIter<'a> {
-    type Item = u32;
+impl<'a> Iterator for BitfieldIter<'a> {
+    type Item = u64;
 
-    fn next(&mut self) -> Option<u32> {
+    fn next(&mut self) -> Option<u64> {
         while self.idx < self.pf.len() {
             self.idx += 1;
             if self.pf.has_piece(self.idx - 1) {
@@ -169,21 +169,21 @@ impl<'a> Iterator for PieceFieldIter<'a> {
 
 #[test]
 fn test_create() {
-    let pf = PieceField::new(10);
+    let pf = Bitfield::new(10);
     assert!(pf.len == 10);
     assert!(pf.data.len() == 2)
 }
 
 #[test]
 fn test_has() {
-    let pf = PieceField::new(10);
+    let pf = Bitfield::new(10);
     let res = pf.has_piece(9);
     assert!(res == false);
 }
 
 #[test]
 fn test_set() {
-    let mut pf = PieceField::new(10);
+    let mut pf = Bitfield::new(10);
 
     let res = pf.has_piece(9);
     assert!(res == false);
@@ -196,8 +196,8 @@ fn test_set() {
 
 #[test]
 fn test_usable() {
-    let mut pf1 = PieceField::new(10);
-    let mut pf2 = PieceField::new(10);
+    let mut pf1 = Bitfield::new(10);
+    let mut pf2 = Bitfield::new(10);
     assert!(pf1.usable(&pf2) == false);
     pf2.set_piece(9);
     assert!(pf1.usable(&pf2) == true);
@@ -209,9 +209,9 @@ fn test_usable() {
 
 #[test]
 fn test_iter() {
-    let mut pf = PieceField::new(10);
+    let mut pf = Bitfield::new(10);
     for i in 4..7 {
-        pf.set_piece(i as u32);
+        pf.set_piece(i as u64);
     }
     pf.iter().map(|r| {
         assert!(r > 3 && r < 7);

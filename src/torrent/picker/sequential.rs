@@ -1,13 +1,13 @@
 use std::collections::{HashSet, HashMap};
-use torrent::{PieceField, Info, Peer};
+use torrent::{Bitfield, Info, Peer};
 
 pub struct Picker {
-    endgame_cnt: u32,
-    piece_idx: u32,
-    pieces: PieceField,
-    scale: u32,
-    waiting: HashSet<u32>,
-    waiting_peers: HashMap<u32, HashSet<usize>>,
+    endgame_cnt: u64,
+    piece_idx: u64,
+    pieces: Bitfield,
+    scale: u64,
+    waiting: HashSet<u64>,
+    waiting_peers: HashMap<u64, HashSet<usize>>,
 }
 
 impl Picker {
@@ -24,13 +24,13 @@ impl Picker {
             last_piece_len += 1;
         }
         let len = compl_piece_len + last_piece_len as usize;
-        let pieces = PieceField::new(len as u32);
+        let pieces = Bitfield::new(len as u64);
         Picker {
             pieces,
             piece_idx: 0,
-            scale: scale as u32,
+            scale: scale as u64,
             waiting: HashSet::new(),
-            endgame_cnt: len as u32,
+            endgame_cnt: len as u64,
             waiting_peers: HashMap::new(),
         }
     }
@@ -50,7 +50,7 @@ impl Picker {
                         println!("Entering endgame!");
                     }
                     self.endgame_cnt = self.endgame_cnt.saturating_sub(1);
-                    return Some((idx, i * 16384));
+                    return Some((idx as u32, (i * 16384) as u32));
                 }
             }
         }
@@ -64,14 +64,16 @@ impl Picker {
             }
             if let Some(i) = idx {
                 self.waiting_peers.get_mut(&i).unwrap().insert(peer.id);
-                return Some((i/self.scale, (i % self.scale) * 16384));
+                return Some(((i/self.scale) as u32, ((i % self.scale) * 16384) as u32));
             }
         }
         None
     }
 
     /// Returns whether or not the whole piece is complete.
-    pub fn completed(&mut self, mut idx: u32, mut offset: u32) -> (bool, HashSet<usize>) {
+    pub fn completed(&mut self, idx: u32, offset: u32) -> (bool, HashSet<usize>) {
+        let mut idx = idx as u64;
+        let mut offset = offset as u64;
         offset /= 16384;
         idx *= self.scale;
         self.waiting.remove(&(idx + offset));

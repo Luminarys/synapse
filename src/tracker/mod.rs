@@ -112,7 +112,7 @@ pub enum Event {
 pub type Response = (usize, TrackerRes);
 pub type TrackerRes = Result<TrackerResponse, TrackerError>;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize)]
 pub enum TrackerError {
     Error(String),
     InvalidURL,

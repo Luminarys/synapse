@@ -1,4 +1,4 @@
-use torrent::piece_field::PieceField;
+use torrent::Bitfield;
 use torrent::info::Info as TorrentInfo;
 use byteorder::{BigEndian, WriteBytesExt};
 use std::io::{self, Write};
@@ -14,7 +14,7 @@ pub enum Message {
     Interested,
     Uninterested,
     Have(u32),
-    Bitfield(PieceField),
+    Bitfield(Bitfield),
     Request { index: u32, begin: u32, length: u32 },
     Piece { index: u32, begin: u32, length: u32, data: Box<[u8; 16384]> },
     SharedPiece { index: u32, begin: u32, length: u32, data: Arc<Box<[u8; 16384]>> },
@@ -206,7 +206,7 @@ impl Message {
                 buf.write_u32::<BigEndian>(1 + pf.bytes() as u32)?;
                 buf.write_u8(5)?;
                 for i in 0..pf.bytes() {
-                    buf.write_u8(pf.byte_at(i as u32))?;
+                    buf.write_u8(pf.byte_at(i as u64))?;
                 }
             }
             Message::Request{ index, begin, length } => {

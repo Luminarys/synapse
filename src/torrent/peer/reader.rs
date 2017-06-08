@@ -1,7 +1,7 @@
 use std::io::{self, Read, ErrorKind};
 use std::mem;
 use torrent::peer::Message;
-use torrent::piece_field::PieceField;
+use torrent::Bitfield;
 use byteorder::{BigEndian, ReadBytesExt};
 use util::{io_err, io_err_val};
 
@@ -109,7 +109,7 @@ impl ReadState {
                     Ok(0) => ReadRes::EOF,
                     Ok(4) => ReadState::process_len(data, conn),
                     Ok(amnt) => {
-                        idx += amnt as u8; 
+                        idx += amnt as u8;
                         ReadState::ReadingLen { data, idx }.next_state(conn)
                     },
                     Err(ref e) if e.kind() == ErrorKind::WouldBlock => {
@@ -150,7 +150,7 @@ impl ReadState {
                     match conn.read(&mut prefix[idx as usize..13]) {
                         Ok(0) => ReadRes::EOF,
                         Ok(13) => ReadState::ReadingPiece { prefix, data, len, idx }.next_state(conn),
-                        Ok(amnt) => { 
+                        Ok(amnt) => {
                             idx += amnt;
                             ReadState::ReadingPiece { prefix, data, len, idx }.next_state(conn)
                         }
@@ -183,7 +183,7 @@ impl ReadState {
                 match conn.read(&mut data[idx as usize..]) {
                     Ok(0) => ReadRes::EOF,
                     Ok(amnt) if idx + amnt == len => {
-                        ReadRes::Message(Message::Bitfield(PieceField::from(data.into_boxed_slice(), len as u32 * 8)))
+                        ReadRes::Message(Message::Bitfield(Bitfield::from(data.into_boxed_slice(), len as u64 * 8)))
                     }
                     Ok(amnt) => {
                         idx += amnt;
