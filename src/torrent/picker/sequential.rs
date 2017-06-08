@@ -121,3 +121,28 @@ fn test_piece_size() {
     assert_eq!(picker.scale as usize, info.piece_len/16384);
     assert_eq!(picker.pieces.len(), 123);
 }
+
+#[test]
+fn test_piece_pick_order() {
+    use socket::Socket;
+    let info = Info {
+        name: String::from(""),
+        announce: String::from(""),
+        piece_len: 16384,
+        total_len: 16384 * 3,
+        hashes: vec![vec![0u8]; 3],
+        hash: [0u8; 20],
+        files: vec![],
+    };
+
+    let mut picker = Picker::new(&info);
+    let mut peer = Peer::new(Socket::empty());
+    peer.pieces = Bitfield::new(4);
+    assert_eq!(picker.pick(&peer),None);
+    peer.pieces.set_piece(1);
+    assert_eq!(picker.pick(&peer), Some((1, 0)));
+    peer.pieces.set_piece(0);
+    assert_eq!(picker.pick(&peer), Some((0, 0)));
+    peer.pieces.set_piece(2);
+    assert_eq!(picker.pick(&peer), Some((2, 0)));
+}

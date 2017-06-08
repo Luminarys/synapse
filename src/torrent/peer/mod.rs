@@ -26,7 +26,7 @@ pub struct Peer {
 }
 
 impl Peer {
-    fn new (conn: Socket) -> Peer {
+    pub fn new (conn: Socket) -> Peer {
         let writer = Writer::new();
         let reader = Reader::new();
         Peer {
