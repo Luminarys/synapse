@@ -215,10 +215,10 @@ fn test_write_have() {
 
 #[test]
 fn test_write_bitfield() {
-    use torrent::piece_field::PieceField;
+    use torrent::Bitfield;
     let mut w = Writer::new();
     let mut buf = [0u8; 9];
-    let mut pf = PieceField::new(32);
+    let mut pf = Bitfield::new(32);
     for i in 0..32 {
         pf.set_piece(i);
     }
@@ -242,10 +242,10 @@ fn test_write_request() {
 fn test_write_piece() {
     use std::io::Cursor;
     let mut w = Writer::new();
-    let piece = Arc::new([1u8; 16384]);
+    let piece = Arc::new(Box::new([1u8; 16384]));
     let mut sbuf = [0u8; 16384 + 13];
     let mut buf = Cursor::new(&mut sbuf[..]);
-    let m = Message::SharedPiece { index: 1, begin: 1, data: piece };
+    let m = Message::SharedPiece { index: 1, begin: 1, length: 16384, data: piece };
     w.write_message(m, &mut buf);
     let buf = buf.into_inner();
     assert_eq!(buf[0..13], [0, 0, 0x40, 0x09, 7, 0, 0, 0, 1, 0, 0, 0, 1]);

@@ -108,6 +108,7 @@ impl Picker {
 #[test]
 fn test_piece_size() {
     let info = Info {
+        name: String::from(""),
         announce: String::from(""),
         piece_len: 262144,
         total_len: 2000000,

@@ -365,10 +365,10 @@ fn test_read_bitfield() {
     r.state = ReadState::Idle;
     let mut data = Cursor::new(vec![0u8, 0, 0, 5, 5, 0xff, 0xff, 0xff, 0xff]);
     // Test one shot
-    match r.readable(&mut data).unwrap()[0] {
+    match r.readable(&mut data).unwrap().unwrap() {
         Message::Bitfield(ref pf) => {
             for i in 0..32 {
-                assert!(pf.has_piece(i as u32));
+                assert!(pf.has_piece(i as u64));
             }
         }
         _ => {
@@ -383,7 +383,7 @@ fn test_read_request() {
     r.state = ReadState::Idle;
     let mut data = Cursor::new(vec![0u8, 0, 0, 13, 6, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1]);
     // Test one shot
-    match r.readable(&mut data).unwrap()[0] {
+    match r.readable(&mut data).unwrap().unwrap() {
         Message::Request { index, begin, length } => {
             assert_eq!(index, 1);
             assert_eq!(begin, 1);
@@ -402,8 +402,8 @@ fn test_read_piece() {
     let mut info = Cursor::new(vec![0u8, 0, 0x40, 0x09, 7, 0, 0, 0, 1, 0, 0, 0, 1]);
     let mut data = Cursor::new(vec![1u8; 16384]);
     // Test partial read
-    assert!(r.readable(&mut info).unwrap().is_empty());
-    match r.readable(&mut data).unwrap()[0] {
+    assert!(r.readable(&mut info).unwrap().is_none());
+    match r.readable(&mut data).unwrap().unwrap() {
         Message::Piece { index, begin, length, ref data } => {
             assert_eq!(index, 1);
             assert_eq!(begin, 1);
@@ -424,7 +424,7 @@ fn test_read_cancel() {
     r.state = ReadState::Idle;
     let mut data = Cursor::new(vec![0u8, 0, 0, 13, 8, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1]);
     // Test one shot
-    match r.readable(&mut data).unwrap()[0] {
+    match r.readable(&mut data).unwrap().unwrap() {
         Message::Cancel { index, begin, length } => {
             assert_eq!(index, 1);
             assert_eq!(begin, 1);
@@ -444,5 +444,5 @@ fn test_read_handshake() {
     let mut data = vec![0; 68];
     m.encode(&mut data[..]);
     let mut c = Cursor::new(data);
-    assert_eq!(r.readable(&mut c).unwrap()[0], m);
+    assert_eq!(r.readable(&mut c).unwrap().unwrap(), m);
 }
