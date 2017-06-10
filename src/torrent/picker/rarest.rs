@@ -2,11 +2,22 @@ use std::collections::{HashSet, HashMap};
 use torrent::{Bitfield, Info, Peer};
 
 pub struct Picker {
-    pieces: Bitfield,
+    /// Bitfield of which blocks have been picked
+    blocks: Bitfield,
+    /// Number of blocks per piece
     scale: u64,
-    waiting: HashSet<u64>,
+    /// Set of pieces which have blocks waiting. These should be prioritized.
+    picked: HashSet<u32>,
+    /// Map of block indeces to peers waiting on them. Used for
+    /// cancelling in endgame.
     waiting_peers: HashMap<u64, HashSet<usize>>,
+    /// Number of blocks left to request. Once this becomes 0
+    /// endgame mode is entered.
     endgame_cnt: u64,
+    /// Current order of pieces
+    pieces: Vec<u32>,
+    /// Indices into pieces which indicate priority bounds
+    priorities: Vec<usize>,
 }
 
 impl Picker {
@@ -23,18 +34,22 @@ impl Picker {
             last_piece_len += 1;
         }
         let len = compl_piece_len + last_piece_len as usize;
-        let pieces = Bitfield::new(len as u64);
+        let blocks = Bitfield::new(len as u64);
         Picker {
-            pieces,
+            blocks,
             scale: scale as u64,
-            waiting: HashSet::new(),
             endgame_cnt: len as u64,
             waiting_peers: HashMap::new(),
+            picked: HashSet::new(),
+            pieces: (0..info.pieces() - 1).collect(),
+            priorities: vec![0],
         }
     }
 
     pub fn add_peer(&mut self, peer: &Peer) {
-
+        for idx in peer.pieces.iter() {
+            self.piece_available(idx as u32);
+        }
     }
 
     pub fn remove_peer(&mut self, peer: &Peer) {

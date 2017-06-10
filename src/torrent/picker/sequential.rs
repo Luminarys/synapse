@@ -2,11 +2,17 @@ use std::collections::{HashSet, HashMap};
 use torrent::{Bitfield, Info, Peer};
 
 pub struct Picker {
+    /// Number of blocks to pick until endgame
     endgame_cnt: u64,
+    /// The max block index that we've picked up to so far
     piece_idx: u64,
-    pieces: Bitfield,
+    /// Which blocks we've picked
+    blocks: Bitfield,
+    /// Number of blocks per piece
     scale: u64,
+    /// Current blocks we've picked and are waiting for
     waiting: HashSet<u64>,
+    /// Peers who we've sent out a block request to
     waiting_peers: HashMap<u64, HashSet<usize>>,
 }
 
@@ -24,9 +30,9 @@ impl Picker {
             last_piece_len += 1;
         }
         let len = compl_piece_len + last_piece_len as usize;
-        let pieces = Bitfield::new(len as u64);
+        let blocks = Bitfield::new(len as u64);
         Picker {
-            pieces,
+            blocks,
             piece_idx: 0,
             scale: scale as u64,
             waiting: HashSet::new(),
@@ -40,8 +46,8 @@ impl Picker {
             let start = idx * self.scale;
             for i in 0..self.scale {
                 // On the last piece check, we won't check the whole range.
-                if start + i < self.pieces.len() && !self.pieces.has_bit(start + i) {
-                    self.pieces.set_bit(start + i);
+                if start + i < self.blocks.len() && !self.blocks.has_bit(start + i) {
+                    self.blocks.set_bit(start + i);
                     self.waiting.insert(start + i);
                     let mut hs = HashSet::with_capacity(1);
                     hs.insert(peer.id);
@@ -80,7 +86,7 @@ impl Picker {
         // TODO: make this less hacky
         let peers = self.waiting_peers.remove(&(idx + offset)).unwrap_or(HashSet::with_capacity(0));
         for i in 0..self.scale {
-            if (idx + i < self.pieces.len() && !self.pieces.has_bit(idx + i)) || self.waiting.contains(&(idx + i)) {
+            if (idx + i < self.blocks.len() && !self.blocks.has_bit(idx + i)) || self.waiting.contains(&(idx + i)) {
                 return (false, peers);
             }
         }
@@ -92,13 +98,13 @@ impl Picker {
         let mut idx = self.piece_idx * self.scale;
         loop {
             for i in 0..self.scale {
-                if idx + i < self.pieces.len() && !self.pieces.has_bit(idx + i) {
+                if idx + i < self.blocks.len() && !self.blocks.has_bit(idx + i) {
                     return;
                 }
             }
             self.piece_idx += 1;
             idx += self.scale;
-            if idx > self.pieces.len() {
+            if idx > self.blocks.len() {
                 return;
             }
         }
