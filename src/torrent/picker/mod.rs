@@ -34,4 +34,25 @@ impl Picker {
             Picker::Rarest(ref mut p) => p.completed(idx, offset),
         }
     }
+
+    pub fn piece_available(&mut self, idx: u32) {
+        match *self {
+            Picker::Rarest(ref mut p) => p.piece_available(idx),
+            _ => { }
+        }
+    }
+
+    pub fn add_peer(&mut self, peer: &Peer) {
+        match *self {
+            Picker::Rarest(ref mut p) => p.add_peer(peer),
+            _ => { }
+        }
+    }
+
+    pub fn remove_peer(&mut self, peer: &Peer) {
+        match *self {
+            Picker::Rarest(ref mut p) => p.remove_peer(peer),
+            _ => { }
+        }
+    }
 }

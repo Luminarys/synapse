@@ -40,8 +40,8 @@ impl Picker {
             let start = idx * self.scale;
             for i in 0..self.scale {
                 // On the last piece check, we won't check the whole range.
-                if start + i < self.pieces.len() && !self.pieces.has_piece(start + i) {
-                    self.pieces.set_piece(start + i);
+                if start + i < self.pieces.len() && !self.pieces.has_bit(start + i) {
+                    self.pieces.set_bit(start + i);
                     self.waiting.insert(start + i);
                     let mut hs = HashSet::with_capacity(1);
                     hs.insert(peer.id);
@@ -57,7 +57,7 @@ impl Picker {
         if self.endgame_cnt == 0 {
             let mut idx = None;
             for piece in self.waiting.iter() {
-                if peer.pieces.has_piece(*piece/self.scale) {
+                if peer.pieces.has_bit(*piece/self.scale) {
                     idx = Some(*piece);
                     break;
                 }
@@ -80,7 +80,7 @@ impl Picker {
         // TODO: make this less hacky
         let peers = self.waiting_peers.remove(&(idx + offset)).unwrap_or(HashSet::with_capacity(0));
         for i in 0..self.scale {
-            if (idx + i < self.pieces.len() && !self.pieces.has_piece(idx + i)) || self.waiting.contains(&(idx + i)) {
+            if (idx + i < self.pieces.len() && !self.pieces.has_bit(idx + i)) || self.waiting.contains(&(idx + i)) {
                 return (false, peers);
             }
         }
@@ -92,7 +92,7 @@ impl Picker {
         let mut idx = self.piece_idx * self.scale;
         loop {
             for i in 0..self.scale {
-                if idx + i < self.pieces.len() && !self.pieces.has_piece(idx + i) {
+                if idx + i < self.pieces.len() && !self.pieces.has_bit(idx + i) {
                     return;
                 }
             }
@@ -139,10 +139,10 @@ fn test_piece_pick_order() {
     let mut peer = Peer::new(Socket::empty());
     peer.pieces = Bitfield::new(4);
     assert_eq!(picker.pick(&peer),None);
-    peer.pieces.set_piece(1);
+    peer.pieces.set_bit(1);
     assert_eq!(picker.pick(&peer), Some((1, 0)));
-    peer.pieces.set_piece(0);
+    peer.pieces.set_bit(0);
     assert_eq!(picker.pick(&peer), Some((0, 0)));
-    peer.pieces.set_piece(2);
+    peer.pieces.set_bit(2);
     assert_eq!(picker.pick(&peer), Some((2, 0)));
 }

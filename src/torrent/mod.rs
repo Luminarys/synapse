@@ -115,10 +115,11 @@ impl Torrent {
                 }
             }
             Message::Have(idx) => {
-                peer.pieces.set_piece(idx as u64);
+                peer.pieces.set_bit(idx as u64);
                 if peer.pieces.complete() && self.leechers.contains(&peer.id) {
                     self.leechers.remove(&peer.id);
                 }
+                self.picker.piece_available(idx);
             }
             Message::Unchoke => {
                 peer.being_choked = false;
@@ -128,7 +129,7 @@ impl Torrent {
                 peer.being_choked = true;
             }
             Message::Piece { index, begin, data, length } => {
-                if self.pieces.complete() || self.pieces.has_piece(index as u64) {
+                if self.pieces.complete() || self.pieces.has_bit(index as u64) {
                     return Ok(());
                 }
 
@@ -138,7 +139,7 @@ impl Torrent {
                 if piece_done {
                     self.downloaded += 1;
                     self.pb.inc();
-                    self.pieces.set_piece(index as u64);
+                    self.pieces.set_bit(index as u64);
                     if self.pieces.complete() {
                         TRACKER.tx.send(tracker::Request::completed(&self)).unwrap();
                         self.pb.finish_print("Downloaded!");
@@ -146,7 +147,7 @@ impl Torrent {
                     let m = Message::Have(index);
                     for pid in self.leechers.iter() {
                         let peer = self.peers().get_mut(pid).expect("Seeder IDs should be in peers");
-                        if !peer.pieces.has_piece(index as u64) {
+                        if !peer.pieces.has_bit(index as u64) {
                             if peer.send_message(m.clone()).is_err() {
                                 // TODO resolve the locality issue here,
                                 // if we remove the torrent we can't remove it
@@ -310,6 +311,7 @@ impl Torrent {
         let pid = self.reg.register(&peer.conn, amy::Event::Both).unwrap();
         peer.id = pid;
         if let Ok(()) = peer.set_torrent(&self) {
+            self.picker.add_peer(&peer);
             self.peers().insert(peer.id, peer);
             Some(pid)
         } else {
@@ -322,6 +324,7 @@ impl Torrent {
         let peer = self.peers().remove(&id).unwrap();
         self.reg.deregister(&peer.conn).unwrap();
         self.leechers.remove(&id);
+        self.picker.remove_peer(&peer);
         peer
     }
 

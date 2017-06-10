@@ -60,14 +60,14 @@ impl Bitfield {
             return !self.data.last().unwrap() != 0;
         }
         for i in 0..(self.len % 8) {
-            if !self.has_piece(self.len - i - 1) {
+            if !self.has_bit(self.len - i - 1) {
                 return false
             }
         }
         true
     }
 
-    pub fn has_piece(&self, pos: u64) -> bool {
+    pub fn has_bit(&self, pos: u64) -> bool {
         debug_assert!(pos < self.len);
         if pos >= self.len {
             false
@@ -79,7 +79,7 @@ impl Bitfield {
         }
     }
 
-    pub fn set_piece(&mut self, pos: u64) {
+    pub fn set_bit(&mut self, pos: u64) {
         debug_assert!(pos < self.len);
         if pos < self.len {
             let block_pos = pos/8;
@@ -119,7 +119,7 @@ impl fmt::Debug for Bitfield {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
         write!(f, "Bitfield {{ len: {}, pieces: ", self.len)?;
         for i in 0..self.len {
-            if self.has_piece(i) {
+            if self.has_bit(i) {
                 write!(f, "1")?;
             } else {
                 write!(f, "0")?;
@@ -157,7 +157,7 @@ impl<'a> Iterator for BitfieldIter<'a> {
     fn next(&mut self) -> Option<u64> {
         while self.idx < self.pf.len() {
             self.idx += 1;
-            if self.pf.has_piece(self.idx - 1) {
+            if self.pf.has_bit(self.idx - 1) {
                 return Some(self.idx - 1);
             } else {
                 continue;
@@ -177,7 +177,7 @@ fn test_create() {
 #[test]
 fn test_has() {
     let pf = Bitfield::new(10);
-    let res = pf.has_piece(9);
+    let res = pf.has_bit(9);
     assert!(res == false);
 }
 
@@ -185,12 +185,12 @@ fn test_has() {
 fn test_set() {
     let mut pf = Bitfield::new(10);
 
-    let res = pf.has_piece(9);
+    let res = pf.has_bit(9);
     assert!(res == false);
 
-    pf.set_piece(9);
+    pf.set_bit(9);
 
-    let res = pf.has_piece(9);
+    let res = pf.has_bit(9);
     assert!(res == true);
 }
 
@@ -199,11 +199,11 @@ fn test_usable() {
     let mut pf1 = Bitfield::new(10);
     let mut pf2 = Bitfield::new(10);
     assert!(pf1.usable(&pf2) == false);
-    pf2.set_piece(9);
+    pf2.set_bit(9);
     assert!(pf1.usable(&pf2) == true);
-    pf1.set_piece(9);
+    pf1.set_bit(9);
     assert!(pf1.usable(&pf2) == false);
-    pf2.set_piece(5);
+    pf2.set_bit(5);
     assert!(pf1.usable(&pf2) == true);
 }
 
@@ -211,7 +211,7 @@ fn test_usable() {
 fn test_iter() {
     let mut pf = Bitfield::new(10);
     for i in 4..7 {
-        pf.set_piece(i as u64);
+        pf.set_bit(i as u64);
     }
     pf.iter().map(|r| {
         assert!(r > 3 && r < 7);
