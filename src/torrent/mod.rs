@@ -108,6 +108,8 @@ impl Torrent {
                 pf.cap(self.pieces.len());
                 peer.pieces = pf;
                 if self.pieces.usable(&peer.pieces) {
+                    self.picker.add_peer(&peer);
+                    peer.interesting = true;
                     peer.send_message(Message::Interested)?;
                 }
                 if !peer.pieces.complete() {
@@ -115,9 +117,16 @@ impl Torrent {
                 }
             }
             Message::Have(idx) => {
+                if idx >= self.pieces.len() as u32 {
+                    return io_err("Invalid piece provided in HAVE");
+                }
                 peer.pieces.set_bit(idx as u64);
                 if peer.pieces.complete() && self.leechers.contains(&peer.id) {
                     self.leechers.remove(&peer.id);
+                }
+                if !peer.interesting && self.pieces.usable(&peer.pieces) {
+                    peer.interesting = true;
+                    peer.send_message(Message::Interested)?;
                 }
                 self.picker.piece_available(idx);
             }
@@ -349,6 +358,13 @@ impl Torrent {
             self.remove_peer(*id);
         }
         self.paused = false;
+    }
+
+    pub fn change_picker(&mut self, mut picker: Picker) {
+        for (_, peer) in self.peers().iter() {
+            picker.add_peer(peer);
+        }
+        self.picker = picker;
     }
 
     // This obviously could be dangerous, but as long as we only

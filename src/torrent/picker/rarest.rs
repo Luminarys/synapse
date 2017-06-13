@@ -1,3 +1,5 @@
+// Implementation based off of http://blog.libtorrent.org/2011/11/writing-a-fast-piece-picker/
+
 use std::collections::{HashSet, HashMap};
 use torrent::{Bitfield, Info, Peer};
 
@@ -18,6 +20,15 @@ pub struct Picker {
     pieces: Vec<u32>,
     /// Indices into pieces which indicate priority bounds
     priorities: Vec<usize>,
+    /// Index mapping a piece to a position in the pieces field
+    piece_idx: HashMap<u32, PieceInfo>,
+    /// Set of peers which are seeders, and are not included in availability calcs
+    seeders: HashSet<usize>,
+}
+
+struct PieceInfo {
+    idx: usize,
+    availability: usize,
 }
 
 impl Picker {
@@ -35,28 +46,86 @@ impl Picker {
         }
         let len = compl_piece_len + last_piece_len as usize;
         let blocks = Bitfield::new(len as u64);
+        let mut piece_idx = HashMap::new();
+        for i in 0..(info.pieces() - 1) {
+            piece_idx.insert(i, PieceInfo { idx: i as usize, availability: 0 });
+        }
         Picker {
             blocks,
             scale: scale as u64,
             endgame_cnt: len as u64,
             waiting_peers: HashMap::new(),
             waiting: HashSet::new(),
+            seeders: HashSet::new(),
             pieces: (0..info.pieces() - 1).collect(),
+            piece_idx,
             priorities: vec![0],
         }
     }
 
     pub fn add_peer(&mut self, peer: &Peer) {
+        // Ignore seeders for availability calc
+        if peer.pieces.complete() {
+            self.seeders.insert(peer.id);
+            return;
+        }
         for idx in peer.pieces.iter() {
             self.piece_available(idx as u32);
         }
     }
 
     pub fn remove_peer(&mut self, peer: &Peer) {
-
+        if self.seeders.contains(&peer.id) {
+            self.seeders.remove(&peer.id);
+            return;
+        }
+        for idx in peer.pieces.iter() {
+            self.piece_unavailable(idx as u32);
+        }
     }
 
-    pub fn piece_available(&mut self, idx: u32) {
+    pub fn piece_available(&mut self, piece: u32) {
+        let (idx, avail) = {
+            let piece = self.piece_idx.get_mut(&piece).expect("Invalid piece requested");
+            self.priorities[piece.availability] -= 1;
+            piece.availability += 1;
+            (piece.idx, piece.availability - 1)
+        };
+
+        let swap_idx = self.priorities[avail];
+
+        // :thinking:
+        {
+            let piece = self.piece_idx.get_mut(&(idx as u32)).unwrap();
+            piece.idx = swap_idx;
+        }
+        {
+            let piece = self.piece_idx.get_mut(&(swap_idx as u32)).unwrap();
+            piece.idx = idx;
+        }
+        self.pieces.swap(idx, swap_idx);
+    }
+
+    pub fn piece_unavailable(&mut self, piece: u32) {
+        let (idx, avail) = {
+            let piece = self.piece_idx.get_mut(&piece).expect("Invalid piece requested");
+            piece.availability -= 1;
+            self.priorities[piece.availability] += 1;
+            (piece.idx, piece.availability)
+        };
+
+        let swap_idx = self.priorities[avail];
+
+        // :thinking:
+        {
+            let piece = self.piece_idx.get_mut(&(idx as u32)).unwrap();
+            piece.idx = swap_idx;
+        }
+        {
+            let piece = self.piece_idx.get_mut(&(swap_idx as u32)).unwrap();
+            piece.idx = idx;
+        }
+        self.pieces.swap(idx, swap_idx);
     }
 
     pub fn pick(&mut self, peer: &Peer) -> Option<(u32, u32)> {
