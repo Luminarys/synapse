@@ -125,7 +125,7 @@ fn test_piece_size() {
 
     let mut picker = Picker::new(&info);
     assert_eq!(picker.scale as usize, info.piece_len/16384);
-    assert_eq!(picker.pieces.len(), 123);
+    assert_eq!(picker.blocks.len(), 123);
 }
 
 #[test]

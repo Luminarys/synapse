@@ -220,7 +220,7 @@ fn test_write_bitfield() {
     let mut buf = [0u8; 9];
     let mut pf = Bitfield::new(32);
     for i in 0..32 {
-        pf.set_piece(i);
+        pf.set_bit(i);
     }
     let m = Message::Bitfield(pf);
     w.write_message(m, &mut &mut buf[..]);

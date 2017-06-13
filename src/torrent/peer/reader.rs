@@ -368,7 +368,7 @@ fn test_read_bitfield() {
     match r.readable(&mut data).unwrap().unwrap() {
         Message::Bitfield(ref pf) => {
             for i in 0..32 {
-                assert!(pf.has_piece(i as u64));
+                assert!(pf.has_bit(i as u64));
             }
         }
         _ => {

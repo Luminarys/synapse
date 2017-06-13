@@ -47,7 +47,7 @@ impl Picker {
         let len = compl_piece_len + last_piece_len as usize;
         let blocks = Bitfield::new(len as u64);
         let mut piece_idx = HashMap::new();
-        for i in 0..(info.pieces() - 1) {
+        for i in 0..info.pieces() {
             piece_idx.insert(i, PieceInfo { idx: i as usize, availability: 0 });
         }
         Picker {
@@ -57,9 +57,9 @@ impl Picker {
             waiting_peers: HashMap::new(),
             waiting: HashSet::new(),
             seeders: HashSet::new(),
-            pieces: (0..info.pieces() - 1).collect(),
+            pieces: (0..info.pieces()).collect(),
             piece_idx,
-            priorities: vec![0],
+            priorities: vec![info.pieces() as usize],
         }
     }
 
@@ -89,18 +89,22 @@ impl Picker {
             let piece = self.piece_idx.get_mut(&piece).expect("Invalid piece requested");
             self.priorities[piece.availability] -= 1;
             piece.availability += 1;
+            if self.priorities.len() == piece.availability {
+                self.priorities.push(self.pieces.len());
+            }
             (piece.idx, piece.availability - 1)
         };
 
         let swap_idx = self.priorities[avail];
+        let swap_piece = self.pieces[swap_idx];
 
         // :thinking:
         {
-            let piece = self.piece_idx.get_mut(&(idx as u32)).unwrap();
+            let piece = self.piece_idx.get_mut(&piece).unwrap();
             piece.idx = swap_idx;
         }
         {
-            let piece = self.piece_idx.get_mut(&(swap_idx as u32)).unwrap();
+            let piece = self.piece_idx.get_mut(&swap_piece).unwrap();
             piece.idx = idx;
         }
         self.pieces.swap(idx, swap_idx);
@@ -114,15 +118,15 @@ impl Picker {
             (piece.idx, piece.availability)
         };
 
-        let swap_idx = self.priorities[avail];
+        let swap_idx = self.priorities[avail - 1];
+        let swap_piece = self.pieces[swap_idx];
 
-        // :thinking:
         {
-            let piece = self.piece_idx.get_mut(&(idx as u32)).unwrap();
+            let piece = self.piece_idx.get_mut(&piece).unwrap();
             piece.idx = swap_idx;
         }
         {
-            let piece = self.piece_idx.get_mut(&(swap_idx as u32)).unwrap();
+            let piece = self.piece_idx.get_mut(&swap_piece).unwrap();
             piece.idx = idx;
         }
         self.pieces.swap(idx, swap_idx);
@@ -161,4 +165,77 @@ impl Picker {
         }
         (true, peers)
     }
+}
+
+#[test]
+fn test_available() {
+    use socket::Socket;
+    let info = Info {
+        name: String::from(""),
+        announce: String::from(""),
+        piece_len: 16384,
+        total_len: 16384 * 3,
+        hashes: vec![vec![0u8]; 3],
+        hash: [0u8; 20],
+        files: vec![],
+    };
+
+    let mut picker = Picker::new(&info);
+    let mut peers = vec![Peer::new(Socket::empty()), Peer::new(Socket::empty()), Peer::new(Socket::empty())];
+    for peer in peers.iter_mut() {
+        peer.pieces = Bitfield::new(3);
+    }
+    assert_eq!(picker.pick(&peers[0]), None);
+
+    peers[0].pieces.set_bit(0);
+    peers[1].pieces.set_bit(0);
+    peers[1].pieces.set_bit(2);
+    peers[2].pieces.set_bit(1);
+
+    for peer in peers.iter() {
+        picker.add_peer(peer);
+    }
+    assert_eq!(picker.pick(&peers[1]), Some((2, 0)));
+    assert_eq!(picker.pick(&peers[1]), Some((0, 0)));
+    assert_eq!(picker.pick(&peers[1]), None);
+    assert_eq!(picker.pick(&peers[0]), None);
+    assert_eq!(picker.pick(&peers[2]), Some((1, 0)));
+}
+
+#[test]
+fn test_unavailable() {
+    use socket::Socket;
+    let info = Info {
+        name: String::from(""),
+        announce: String::from(""),
+        piece_len: 16384,
+        total_len: 16384 * 3,
+        hashes: vec![vec![0u8]; 3],
+        hash: [0u8; 20],
+        files: vec![],
+    };
+
+    let mut picker = Picker::new(&info);
+    let mut peers = vec![Peer::new(Socket::empty()), Peer::new(Socket::empty()), Peer::new(Socket::empty())];
+    for peer in peers.iter_mut() {
+        peer.pieces = Bitfield::new(3);
+    }
+    assert_eq!(picker.pick(&peers[0]), None);
+
+    peers[0].pieces.set_bit(0);
+    peers[0].pieces.set_bit(1);
+    peers[1].pieces.set_bit(1);
+    peers[1].pieces.set_bit(2);
+    peers[2].pieces.set_bit(0);
+    peers[2].pieces.set_bit(1);
+
+    for peer in peers.iter() {
+        picker.add_peer(peer);
+    }
+    picker.remove_peer(&peers[0]);
+
+    assert_eq!(picker.pick(&peers[1]), Some((2, 0)));
+    assert_eq!(picker.pick(&peers[2]), Some((0, 0)));
+    assert_eq!(picker.pick(&peers[2]), Some((1, 0)));
+    assert_eq!(picker.pick(&peers[1]), None);
 }
