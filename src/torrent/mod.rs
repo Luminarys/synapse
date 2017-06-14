@@ -44,7 +44,7 @@ impl Torrent {
         info.create_files().unwrap();
         let peers = UnsafeCell::new(HashMap::new());
         let pieces = Bitfield::new(info.pieces() as u64);
-        let picker = Picker::new_sequential(&info);
+        let picker = Picker::new_rarest(&info);
         let pb = ProgressBar::new(info.pieces() as u64);
         let leechers = HashSet::new();
         let t = Torrent {
