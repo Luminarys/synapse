@@ -22,6 +22,8 @@ pub struct Peer {
     pub queued: u16,
     pub tid: usize,
     pub id: usize,
+    pub downloaded: usize,
+    pub uploaded: usize,
     reader: Reader,
     writer: Writer,
 }
@@ -35,6 +37,8 @@ impl Peer {
             choked: true,
             interested: false,
             interesting: false,
+            uploaded: 0,
+            downloaded: 0,
             conn,
             reader: reader,
             writer: writer,
@@ -86,18 +90,26 @@ impl Peer {
 
     /// Attempts to read a single message from the peer
     pub fn read(&mut self) -> io::Result<Option<Message>> {
-        return self.reader.readable(&mut self.conn);
+        let res = self.reader.readable(&mut self.conn)?;
+        if res.as_ref().map(|m| m.is_piece()).unwrap_or(false) {
+            self.downloaded += 1;
+        }
+        Ok(res)
     }
 
     /// Returns a boolean indicating whether or not the
     /// socket should be re-registered
-    pub fn writable(&mut self) -> io::Result<bool> {
+    pub fn writable(&mut self) -> io::Result<()> {
         self.writer.writable(&mut self.conn)?;
-        Ok(!self.writer.is_writable())
+        Ok(())
     }
 
     /// Sends a message to the peer.
     pub fn send_message(&mut self, msg: Message) -> io::Result<()> {
+        // NOTE: This is preemptive but shouldn't be substantially wrong
+        if msg.is_piece() {
+            self.uploaded += 1;
+        }
         return self.writer.write_message(msg, &mut self.conn);
     }
 }

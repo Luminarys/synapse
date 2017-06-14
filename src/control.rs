@@ -16,6 +16,7 @@ pub struct Control {
     poll: Poller,
     tid_cnt: usize,
     tracker_update: usize,
+    unchoke_update: usize,
     torrents: HashMap<usize, Torrent>,
     peers: HashMap<usize, usize>,
     hash_idx: HashMap<[u8; 20], usize>,
@@ -52,9 +53,12 @@ impl Control {
         let reg = Arc::new(poll.get_registrar().unwrap());
         // Every minute check to update trackers;
         let tracker_update = reg.set_interval(60_000).unwrap();
+        let unchoke_update = reg.set_interval(1000).unwrap();
         // 5 MiB max bucket
         let throttler = Throttler::new(0, 0, 1 * 1024 * 1024, &reg);
-        Control { trk_rx, disk_rx, ctrl_rx, poll, torrents, peers, hash_idx, reg, tid_cnt: 0, throttler, tracker_update }
+        Control { trk_rx, disk_rx, ctrl_rx, poll, torrents, peers,
+                    hash_idx, reg, tid_cnt: 0, throttler, tracker_update,
+                    unchoke_update }
     }
 
     pub fn run(&mut self) {
@@ -73,6 +77,7 @@ impl Control {
             id if id == self.throttler.id() => self.throttler.update(),
             id if id == self.throttler.fid() => self.flush_blocked_peers(),
             id if id == self.tracker_update => self.update_trackers(),
+            id if id == self.unchoke_update => self.unchoke_peers(),
             _ => self.handle_peer_ev(not),
         }
     }
@@ -101,6 +106,12 @@ impl Control {
     fn update_trackers(&mut self) {
         for (_, torrent) in self.torrents.iter_mut() {
             torrent.update_tracker();
+        }
+    }
+
+    fn unchoke_peers(&mut self) {
+        for (_, torrent) in self.torrents.iter_mut() {
+            torrent.update_unchoked();
         }
     }
 

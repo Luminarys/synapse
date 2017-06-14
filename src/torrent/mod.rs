@@ -7,6 +7,7 @@ pub use self::bitfield::Bitfield;
 pub use self::info::Info;
 pub use self::peer::Peer;
 
+use std;
 use self::peer::Message;
 use self::picker::Picker;
 use std::{fmt, io, cmp};
@@ -17,7 +18,7 @@ use tracker::{TrackerError, TrackerRes};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use util::io_err;
+use util::{io_err, random_sample};
 use std::cell::UnsafeCell;
 
 pub struct Torrent {
@@ -35,6 +36,9 @@ pub struct Torrent {
     picker: Picker,
     pb: ProgressBar<io::Stdout>,
     paused: bool,
+    unchoked: Vec<usize>,
+    interested: HashSet<usize>,
+    unchoke_timer: Instant,
 }
 
 impl Torrent {
@@ -51,7 +55,8 @@ impl Torrent {
             id, info, peers, pieces, picker, pb,
             uploaded: 0, downloaded: 0, reg, leechers, throttle,
             paused: false, tracker: TrackerStatus::Updating,
-            tracker_update: None,
+            tracker_update: None, unchoked: Vec::new(),
+            interested: HashSet::new(), unchoke_timer: Instant::now(),
         };
         TRACKER.tx.send(tracker::Request::started(&t)).unwrap();
         t
@@ -194,16 +199,21 @@ impl Torrent {
             }
             Message::Interested => {
                 peer.interested = true;
-                // If we're in seed mode, upload, otherwise
-                // use the general tit for tat heuristic for unchoking.
-                // TODO: implement said heuristic
-                if self.pieces.complete() {
+                if self.unchoked.len() < 4 {
+                    // Add to unchoked, and reset the uploaded/downloaded counter
+                    // so that it may be fairly compared to
+                    self.unchoked.push(peer.id);
+                    peer.downloaded = 0;
+                    peer.uploaded = 0;
                     peer.choked = false;
                     peer.send_message(Message::Unchoke)?;
+                } else {
+                    self.interested.insert(peer.id);
                 }
             }
             Message::Uninterested => {
                 peer.interested = false;
+                self.interested.remove(&peer.id);
                 if !peer.choked {
                     peer.choked = true;
                     peer.send_message(Message::Choke)?;
@@ -212,6 +222,55 @@ impl Torrent {
             _ => { }
         }
         Ok(())
+    }
+
+    /// Periodically called to update peers, choking the slowest one and
+    /// optimistically unchoking a new peer
+    pub fn update_unchoked(&mut self) {
+        if self.unchoke_timer.elapsed() < Duration::from_secs(10) || self.unchoked.len() < 5 {
+            return;
+        }
+        let (slowest, _) = if self.pieces.complete() {
+            // Seed mode unchoking, seed to 4 fastest downloaders and 1 rotated random
+            self.unchoked.iter().enumerate().fold((0, std::usize::MAX), |(slowest, min), (idx, id)| {
+                let dl = self.peers()[id].uploaded;
+                self.peers().get_mut(id).unwrap().uploaded = 0;
+                if dl < min {
+                    (idx, dl)
+                } else {
+                    (slowest, min)
+                }
+            })
+        } else {
+            // Leech mode unchoking, seed to 4 fastest uploaders and 1 rotated random
+            self.unchoked.iter().enumerate().fold((0, std::usize::MAX), |(slowest, min), (idx, id)| {
+                let dl = self.peers()[id].downloaded;
+                self.peers().get_mut(id).unwrap().downloaded = 0;
+                if dl < min {
+                    (idx, dl)
+                } else {
+                    (slowest, min)
+                }
+            })
+        };
+        let slowest_id = self.unchoked.remove(slowest);
+        let peer = self.peers().get_mut(&slowest_id).unwrap();
+        peer.choked = true;
+        // TODO: Handle locality here properly
+        if peer.send_message(Message::Choke).is_err() {
+        
+        }
+        self.interested.insert(slowest_id);
+
+        // Unchoke one random interested peer
+        let random_id = *random_sample(self.interested.iter()).unwrap();
+        let peer = self.peers().get_mut(&random_id).unwrap();
+        peer.choked = false;
+        if peer.send_message(Message::Unchoke).is_err() {
+        
+        }
+        self.interested.remove(&random_id);
+        self.unchoked.push(random_id);
     }
 
     /// Calculates the file offsets for a given index, begin, and block length.
@@ -367,10 +426,11 @@ impl Torrent {
         self.picker = picker;
     }
 
-    // This obviously could be dangerous, but as long as we only
-    // keep the returned references within the scope of implemented methods
+    // This obviously could be dangerous, but as long as we:
+    // 1. keep the returned references within the scope of implemented methods
+    // 2. don't invalidate iterators
     // it's more or less guaranteed to be safe.
-    fn peers(&self) -> &'static mut HashMap<usize, Peer> {
+    fn peers<'f>(&self) -> &'f mut HashMap<usize, Peer> {
         unsafe {
             self.peers.get().as_mut().unwrap()
         }

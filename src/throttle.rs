@@ -64,13 +64,13 @@ impl Throttler {
         self.dl_data().throttled.drain().collect()
     }
 
-    fn ul_data(&self) -> &'static mut ThrottleData {
+    fn ul_data<'f>(&self) -> &'f mut ThrottleData {
         unsafe {
             self.ul_data.get().as_mut().unwrap()
         }
     }
 
-    fn dl_data(&self) -> &'static mut ThrottleData {
+    fn dl_data<'f>(&self) -> &'f mut ThrottleData {
         unsafe {
             self.dl_data.get().as_mut().unwrap()
         }

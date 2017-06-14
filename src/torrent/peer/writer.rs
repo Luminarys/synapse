@@ -33,10 +33,6 @@ impl Writer {
         self.write(conn)
     }
 
-    pub fn is_writable(&self) -> bool {
-        return self.writable;
-    }
-
     pub fn write_message<W: Write>(&mut self, msg: Message, conn: &mut W) -> io::Result<()> {
         if let WriteState::Idle = self.state {
             self.setup_write(msg);
