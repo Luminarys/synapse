@@ -22,6 +22,24 @@ pub struct RPC {
     tx: amy::Sender<control::Request>,
 }
 
+macro_rules! id_match {
+    ($req:expr, $resp:expr, $s:expr, $body:expr) => (
+        let mut s = $s.to_owned();
+        let idx = s.find("{}").unwrap();
+        let mut remaining = s.split_off(idx);
+        let end = remaining.split_off(2);
+        if $req.url().starts_with(&s) && $req.url().ends_with(&end) {
+            let len = $req.url().len();
+            let val = &$req.url()[idx..(len - end.len())];
+            if let Ok(i) = val.parse::<usize>() {
+                $resp = Ok($body(i));
+            } else {
+                $resp = Err(format!("{} is not a valid integer!", val));
+            }
+        }
+    );
+}
+
 impl RPC {
     pub fn new(rx: mpsc::Receiver<Response>) -> RPC {
         RPC {
@@ -33,103 +51,37 @@ impl RPC {
     pub fn run(&mut self) {
         let server = tiny_http::Server::http("0.0.0.0:8412").unwrap();
         for mut request in server.incoming_requests() {
-            let mut resp = None;
-            // TODO: CLEAN ALL THIS SHIT UP
+            let mut resp = Err("Invalid URL".to_owned());
+            id_match!(request, resp, "/torrent/{}/info", |i| Request::TorrentInfo(i));
+            id_match!(request, resp, "/torrent/{}/pause", |i| Request::PauseTorrent(i));
+            id_match!(request, resp, "/torrent/{}/resume", |i| Request::ResumeTorrent(i));
+            id_match!(request, resp, "/torrent/{}/remove", |i| Request::RemoveTorrent(i));
+            id_match!(request, resp, "/throttle/upload/{}", |i| Request::ThrottleUpload(i));
+            id_match!(request, resp, "/throttle/download/{}", |i| Request::ThrottleDownload(i));
             if request.url() == "/torrent/list" {
-                self.tx.send(control::Request::RPC(Request::ListTorrents)).unwrap();
-            } else if request.url().starts_with("/torrent/info/") {
-                let res = {
-                    let (_, id) = request.url().split_at(14);
-                    id.parse::<usize>().map(|i| {
-                        self.tx.send(control::Request::RPC(Request::TorrentInfo(i))).unwrap();
-                    })
-                };
-                match res {
-                    Err(_) => { resp = Some("Bad ID!"); }
-                    _ => { }
-                };
-            } else if request.url().starts_with("/torrent/pause/") {
-                let res = {
-                    let (_, id) = request.url().split_at(15);
-                    id.parse::<usize>().map(|i| {
-                        self.tx.send(control::Request::RPC(Request::PauseTorrent(i))).unwrap();
-                    })
-                };
-                match res {
-                    Err(_) => { resp = Some("Bad ID!"); }
-                    _ => { }
-                };
-            } else if request.url().starts_with("/torrent/resume/") {
-                let res = {
-                    let (_, id) = request.url().split_at(16);
-                    id.parse::<usize>().map(|i| {
-                        self.tx.send(control::Request::RPC(Request::ResumeTorrent(i))).unwrap();
-                    })
-                };
-                match res {
-                    Err(_) => { resp = Some("Bad ID!"); }
-                    _ => { }
-                };
-            } else if request.url().starts_with("/torrent/remove/") {
-                let res = {
-                    let (_, id) = request.url().split_at(16);
-                    id.parse::<usize>().map(|i| {
-                        self.tx.send(control::Request::RPC(Request::RemoveTorrent(i))).unwrap();
-                    })
-                };
-                match res {
-                    Err(_) => { resp = Some("Bad ID!"); }
-                    _ => { }
-                };
-            } else if request.url().starts_with("/torrent") && request.method() == &tiny_http::Method::Post {
-                println!("Uploading torrent!");
+                resp = Ok(Request::ListTorrents);
+            };
+            if request.url() == "/torrent" && request.method() == &tiny_http::Method::Post {
                 let mut data = Vec::new();
                 request.as_reader().read_to_end(&mut data).unwrap();
-                match bencode::decode_buf(&mut data) {
-                    Ok(b) => {
-                        self.tx.send(control::Request::RPC(Request::AddTorrent(b))).unwrap();
-                    }
-                    Err(_) => {
-                        resp = Some("Bad torrent!");
-                    },
-                }
-            } else if request.url().starts_with("/rate/upload/") {
-                let res = {
-                    let (_, amnt) = request.url().split_at(13);
-                    amnt.parse::<usize>().map(|i| {
-                        self.tx.send(control::Request::RPC(Request::ThrottleUpload(i))).unwrap();
-                    })
+                resp = match bencode::decode_buf(&mut data) {
+                    Ok(b) => Ok(Request::AddTorrent(b)),
+                    Err(_) => Err("Bad torrent!".to_owned()),
                 };
-                match res {
-                    Err(_) => { resp = Some("Bad amount!"); }
-                    _ => { }
-                };
-            } else if request.url().starts_with("/rate/download/") {
-                let res = {
-                    let (_, amnt) = request.url().split_at(15);
-                    amnt.parse::<usize>().map(|i| {
-                        self.tx.send(control::Request::RPC(Request::ThrottleDownload(i))).unwrap();
-                    })
-                };
-                match res {
-                    Err(_) => { resp = Some("Bad amount!"); }
-                    _ => { }
-                };
-            } else {
-                resp = Some("Invalid URL!");
             }
 
-            let mut r = if let Some(e) = resp {
-                let s = serde_json::to_string(&Response::Err(e)).unwrap();
-                tiny_http::Response::from_string(s)
-            } else {
-                let resp = self.rx.recv().unwrap();
-                let s = serde_json::to_string(&resp).unwrap();
-                tiny_http::Response::from_string(s)
+            let resp = match resp {
+                Ok(rpc) => {
+                    self.tx.send(control::Request::RPC(rpc)).unwrap();
+                    let resp = self.rx.recv().unwrap();
+                    serde_json::to_string(&resp).unwrap()
+                }
+                Err(e) => serde_json::to_string(&Response::Err(e)).unwrap(),
             };
+            let mut resp = tiny_http::Response::from_string(resp);
             let cors = tiny_http::Header::from_bytes(&b"Access-Control-Allow-Origin"[..], &b"*"[..]).unwrap();
-            r.add_header(cors);
-            request.respond(r).unwrap();
+            resp.add_header(cors);
+            request.respond(resp).unwrap();
         }
     }
 }
@@ -151,7 +103,7 @@ pub enum Response {
     TorrentInfo(TorrentInfo),
     AddResult(Result<usize, &'static str>),
     Ack,
-    Err(&'static str),
+    Err(String),
 }
 
 #[derive(Serialize, Debug)]

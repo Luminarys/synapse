@@ -219,7 +219,7 @@ impl Control {
                 if let Some(torrent) = self.torrents.get(&i) {
                     RPC.tx.send(rpc::Response::TorrentInfo(torrent.rpc_info())).unwrap();
                 } else {
-                    RPC.tx.send(rpc::Response::Err("Torrent ID not found!")).unwrap();
+                    RPC.tx.send(rpc::Response::Err("Torrent ID not found!".to_owned())).unwrap();
                 }
             }
             rpc::Request::AddTorrent(data) => {
@@ -229,7 +229,7 @@ impl Control {
                         RPC.tx.send(rpc::Response::Ack).unwrap();
                     }
                     Err(e) => {
-                        RPC.tx.send(rpc::Response::Err(e)).unwrap();
+                        RPC.tx.send(rpc::Response::Err(e.to_owned())).unwrap();
                     }
                 }
             }
@@ -238,7 +238,7 @@ impl Control {
                     t.pause();
                     RPC.tx.send(rpc::Response::Ack).unwrap();
                 } else {
-                    RPC.tx.send(rpc::Response::Err("Torrent not found!")).unwrap();
+                    RPC.tx.send(rpc::Response::Err("Torrent not found!".to_owned())).unwrap();
                 }
             }
             rpc::Request::ResumeTorrent(id) => {
@@ -246,14 +246,14 @@ impl Control {
                     t.resume();
                     RPC.tx.send(rpc::Response::Ack).unwrap();
                 } else {
-                    RPC.tx.send(rpc::Response::Err("Torrent not found!")).unwrap();
+                    RPC.tx.send(rpc::Response::Err("Torrent not found!".to_owned())).unwrap();
                 }
             }
             rpc::Request::RemoveTorrent(id) => {
                 if let Some(_) = self.torrents.remove(&id) {
                     RPC.tx.send(rpc::Response::Ack).unwrap();
                 } else {
-                    RPC.tx.send(rpc::Response::Err("Torrent not found!")).unwrap();
+                    RPC.tx.send(rpc::Response::Err("Torrent not found!".to_owned())).unwrap();
                 }
             }
             rpc::Request::ThrottleUpload(amnt) => {

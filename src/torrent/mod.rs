@@ -233,10 +233,10 @@ impl Torrent {
         let (slowest, _) = if self.pieces.complete() {
             // Seed mode unchoking, seed to 4 fastest downloaders and 1 rotated random
             self.unchoked.iter().enumerate().fold((0, std::usize::MAX), |(slowest, min), (idx, id)| {
-                let dl = self.peers()[id].uploaded;
+                let ul = self.peers()[id].uploaded;
                 self.peers().get_mut(id).unwrap().uploaded = 0;
-                if dl < min {
-                    (idx, dl)
+                if ul < min {
+                    (idx, ul)
                 } else {
                     (slowest, min)
                 }
@@ -258,7 +258,7 @@ impl Torrent {
         peer.choked = true;
         // TODO: Handle locality here properly
         if peer.send_message(Message::Choke).is_err() {
-        
+
         }
         self.interested.insert(slowest_id);
 
@@ -267,7 +267,7 @@ impl Torrent {
         let peer = self.peers().get_mut(&random_id).unwrap();
         peer.choked = false;
         if peer.send_message(Message::Unchoke).is_err() {
-        
+
         }
         self.interested.remove(&random_id);
         self.unchoked.push(random_id);
