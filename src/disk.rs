@@ -1,9 +1,9 @@
 use std::sync::{mpsc, Arc};
-use std::fs::OpenOptions;
-use std::{fmt, thread};
+use std::{fs, fmt, thread, path};
 use std::io::{Seek, SeekFrom, Write, Read};
+use std::fmt::Write as FWrite;
 use std::path::PathBuf;
-use CONTROL;
+use {CONTROL, CONFIG};
 
 pub struct Disk {
     queue: mpsc::Receiver<Request>,
@@ -23,7 +23,8 @@ unsafe impl Sync for Handle {}
 
 pub enum Request {
     Write { data: Box<[u8; 16384]>, locations: Vec<Location> },
-    Read { data: Box<[u8; 16384]>, locations: Vec<Location>, context: Ctx }
+    Read { data: Box<[u8; 16384]>, locations: Vec<Location>, context: Ctx },
+    Serialize { data: Vec<u8>, hash: [u8; 20] }
 }
 
 pub struct Ctx {
@@ -46,6 +47,10 @@ impl Request {
 
     pub fn read(context: Ctx, data: Box<[u8; 16384]>, locations: Vec<Location>) -> Request {
         Request::Read { context, data, locations }
+    }
+
+    pub fn serialize(data: Vec<u8>, hash: [u8; 20]) -> Request {
+        Request::Serialize { data, hash }
     }
 }
 
@@ -81,25 +86,42 @@ impl Disk {
     }
 
     pub fn run(&mut self) {
+        let ref sd = CONFIG.get().session;
+        fs::create_dir_all(sd).unwrap();
+
         loop {
             match self.queue.recv() {
-                Ok(Request::Write { data, locations } ) => {
+                Ok(Request::Write { data, locations }) => {
                     for loc in locations {
-                        OpenOptions::new().write(true).open(&loc.file).and_then(|mut f| {
+                        fs::OpenOptions::new().write(true).open(&loc.file).and_then(|mut f| {
                             f.seek(SeekFrom::Start(loc.offset)).unwrap();
                             f.write(&data[loc.start..loc.end])
                         }).unwrap();
                     }
                 }
-                Ok(Request::Read { context, mut data, locations } ) =>  {
+                Ok(Request::Read { context, mut data, locations }) =>  {
                     for loc in locations {
-                        OpenOptions::new().read(true).open(&loc.file).and_then(|mut f| {
+                        fs::OpenOptions::new().read(true).open(&loc.file).and_then(|mut f| {
                             f.seek(SeekFrom::Start(loc.offset)).unwrap();
                             f.read(&mut data[loc.start..loc.end])
                         }).unwrap();
                     }
                     let data = Arc::new(data);
                     CONTROL.disk_tx.lock().unwrap().send(Response { context, data }).unwrap();
+                }
+                Ok(Request::Serialize { data, hash }) => {
+                    let mut pb = path::PathBuf::from(sd);
+                    let mut hash_str = String::new();
+                    for i in 0..20 {
+                        write!(&mut hash_str, "{:X} ", hash[i]).unwrap();
+                    }
+                    pb.push(hash_str);
+                    let res = fs::OpenOptions::new().write(true).open(&pb).and_then(|mut f| {
+                        f.write(&data)
+                    });
+                    if res.is_err() {
+                        println!("Failed to serialize torrent!");
+                    }
                 }
                 _ => break,
             }

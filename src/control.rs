@@ -1,5 +1,6 @@
-use std::{thread, fmt};
-use {rpc, tracker, disk, RPC};
+use std::{thread, fmt, fs, io, time};
+use std::io::{Read};
+use {rpc, tracker, disk, RPC, CONFIG};
 use amy::{self, Poller, Registrar};
 use torrent::{self, Torrent, Peer};
 use std::collections::HashMap;
@@ -15,8 +16,10 @@ pub struct Control {
     reg: Arc<Registrar>,
     poll: Poller,
     tid_cnt: usize,
-    tracker_update: usize,
-    unchoke_update: usize,
+    tracker_update: time::Instant,
+    unchoke_update: time::Instant,
+    session_update: time::Instant,
+    job_timer: usize,
     torrents: HashMap<usize, Torrent>,
     peers: HashMap<usize, usize>,
     hash_idx: HashMap<[u8; 20], usize>,
@@ -52,21 +55,61 @@ impl Control {
         let hash_idx = HashMap::new();
         let reg = Arc::new(poll.get_registrar().unwrap());
         // Every minute check to update trackers;
-        let tracker_update = reg.set_interval(60_000).unwrap();
-        let unchoke_update = reg.set_interval(1000).unwrap();
+        let tracker_update = time::Instant::now();
+        let unchoke_update = time::Instant::now();
+        let session_update = time::Instant::now();
+        let job_timer = reg.set_interval(1000).unwrap();
         // 5 MiB max bucket
         let throttler = Throttler::new(0, 0, 1 * 1024 * 1024, &reg);
         Control { trk_rx, disk_rx, ctrl_rx, poll, torrents, peers,
-                    hash_idx, reg, tid_cnt: 0, throttler, tracker_update,
-                    unchoke_update }
+        hash_idx, reg, tid_cnt: 0, throttler, tracker_update,
+        unchoke_update, session_update, job_timer }
     }
 
     pub fn run(&mut self) {
+        if self.deserialize().is_err() {
+            println!("Session deserialization failed!");
+        }
         loop {
             for event in self.poll.wait(3).unwrap() {
                 self.handle_event(event);
             }
         }
+    }
+
+    fn serialize(&mut self) {
+        for (_, torrent) in self.torrents.iter() {
+            torrent.serialize();
+        }
+    }
+
+    fn deserialize(&mut self) -> io::Result<()> {
+        let ref sd = CONFIG.get().session;
+        for entry in fs::read_dir(sd)? {
+            if self.deserialize_torrent(entry).is_err() {
+                println!("Failed to deserialize torrent!");
+            }
+        }
+        Ok(())
+    }
+
+    fn deserialize_torrent(&mut self, entry: io::Result<fs::DirEntry>) -> io::Result<()> {
+        let dir = entry?;
+        let mut f = fs::File::open(dir.path())?;
+        let mut data = Vec::new();
+        f.read_to_end(&mut data)?;
+
+        let tid = self.tid_cnt;
+        let r = self.reg.clone();
+        let throttle = self.throttler.get_throttle();
+        if let Ok(t) = Torrent::deserialize(tid, &data, throttle, r) {
+            self.hash_idx.insert(t.info.hash, tid);
+            self.tid_cnt += 1;
+            self.torrents.insert(tid, t);
+        } else {
+            println!("Failed to deserialize torrent!");
+        }
+        Ok(())
     }
 
     fn handle_event(&mut self, not: amy::Notification) {
@@ -76,8 +119,7 @@ impl Control {
             id if id == self.ctrl_rx.get_id() => self.handle_ctrl_ev(),
             id if id == self.throttler.id() => self.throttler.update(),
             id if id == self.throttler.fid() => self.flush_blocked_peers(),
-            id if id == self.tracker_update => self.update_trackers(),
-            id if id == self.unchoke_update => self.unchoke_peers(),
+            id if id == self.job_timer => self.update_jobs(),
             _ => self.handle_peer_ev(not),
         }
     }
@@ -100,6 +142,23 @@ impl Control {
                 }
                 Err(_) => { break; }
             }
+        }
+    }
+
+    fn update_jobs(&mut self) {
+        if self.tracker_update.elapsed() > time::Duration::from_secs(60) {
+            self.update_trackers();
+            self.tracker_update = time::Instant::now();
+        }
+
+        if self.unchoke_update.elapsed() > time::Duration::from_secs(1) {
+            self.unchoke_peers();
+            self.unchoke_update = time::Instant::now();
+        }
+
+        if self.session_update.elapsed() > time::Duration::from_secs(1) {
+            self.serialize();
+            self.session_update = time::Instant::now();
         }
     }
 

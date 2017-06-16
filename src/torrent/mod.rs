@@ -61,7 +61,7 @@ impl Torrent {
         t
     }
 
-    pub fn deserialize(data: &[u8], throttle: Throttle, reg: Arc<amy::Registrar>)
+    pub fn deserialize(id: usize, data: &[u8], throttle: Throttle, reg: Arc<amy::Registrar>)
         -> Result<Torrent, bincode::Error> {
         let mut d: TorrentData = bincode::deserialize(data)?;
         d.picker.unset_waiting();
@@ -70,7 +70,7 @@ impl Torrent {
         pb.add(d.pieces.num_set());
         let leechers = HashSet::new();
         let t = Torrent {
-            id: d.id, info: d.info, peers, pieces: d.pieces, picker: d.picker,
+            id, info: d.info, peers, pieces: d.pieces, picker: d.picker,
             pb, uploaded: d.uploaded, downloaded: d.downloaded, reg, leechers, throttle,
             paused: d.paused, tracker: TrackerStatus::Updating,
             tracker_update: None, unchoked: Vec::new(),
@@ -80,17 +80,17 @@ impl Torrent {
         Ok(t)
     }
 
-    pub fn serialize(&self) -> Vec<u8> {
+    pub fn serialize(&self) {
         let d = TorrentData {
             info: self.info.clone(),
             pieces: self.pieces.clone(),
             uploaded: self.uploaded,
             downloaded: self.downloaded,
-            id: self.id,
             picker: self.picker.clone(),
             paused: self.paused,
         };
-        bincode::serialize(&d, bincode::Infinite).unwrap()
+        let data = bincode::serialize(&d, bincode::Infinite).unwrap();
+        DISK.tx.send(disk::Request::serialize(data, self.info.hash.clone())).unwrap();
     }
 
     pub fn set_tracker_response(&mut self, resp: &TrackerRes) {
@@ -499,7 +499,6 @@ struct TorrentData {
     pieces: Bitfield,
     uploaded: usize,
     downloaded: usize,
-    id: usize,
     picker: Picker,
     paused: bool,
 }
