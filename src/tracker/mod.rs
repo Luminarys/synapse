@@ -1,11 +1,11 @@
 mod http;
 mod udp;
 
-use std::sync::{mpsc, atomic};
+use std::sync::mpsc;
 use byteorder::{BigEndian, ReadBytesExt};
 use std::net::{SocketAddr, SocketAddrV4, Ipv4Addr};
 use std::thread;
-use {CONTROL, PORT};
+use {CONTROL, CONFIG};
 use torrent::Torrent;
 use bencode::BEncode;
 use url::Url;
@@ -77,7 +77,7 @@ impl Request {
             id: torrent.id,
             url: torrent.info.announce.clone(),
             hash: torrent.info.hash,
-            port: PORT.load(atomic::Ordering::Relaxed) as u16,
+            port: CONFIG.get().port,
             uploaded: torrent.uploaded as u64 * torrent.info.piece_len as u64,
             downloaded: torrent.downloaded as u64 * torrent.info.piece_len as u64,
             left: torrent.info.total_len - torrent.downloaded as u64 * torrent.info.piece_len as u64,

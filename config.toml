@@ -1,0 +1,4 @@
+port = 16384
+rpc_port = 8412
+session = "~/.syn_session"
+directory = "./"

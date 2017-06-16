@@ -1,7 +1,6 @@
 use std::net::{UdpSocket, SocketAddr, SocketAddrV4, Ipv4Addr};
-use std::sync::atomic;
 use tracker::{Request, TrackerRes, TrackerResponse, TrackerError, Event};
-use {PORT, PEER_ID};
+use {CONFIG, PEER_ID};
 use std::io::{Write, Read, Cursor};
 use byteorder::{ReadBytesExt, WriteBytesExt, BigEndian};
 use url::Url;
@@ -12,7 +11,7 @@ pub struct Announcer {
 
 impl Announcer {
     pub fn new() -> Announcer {
-        let port = PORT.load(atomic::Ordering::Relaxed) as u16;
+        let port = CONFIG.get().port;
         let sock = UdpSocket::bind(("0.0.0.0", port)).unwrap();
         Announcer {
             sock
@@ -87,7 +86,7 @@ impl Announcer {
             // Num Want
             announce_req.write_u32::<BigEndian>(30).unwrap();
             // Port
-            let port = PORT.load(atomic::Ordering::Relaxed) as u16;
+            let port = CONFIG.get().port;
             announce_req.write_u16::<BigEndian>(port).unwrap();
         };
         self.sock.send_to(&data, (url.host_str().unwrap(), url.port().unwrap())).map_err(

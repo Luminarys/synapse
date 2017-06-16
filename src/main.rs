@@ -1,5 +1,3 @@
-#![allow(deprecated)]
-
 extern crate amy;
 extern crate byteorder;
 extern crate rand;
@@ -15,6 +13,8 @@ extern crate serde_json;
 extern crate tiny_http;
 #[macro_use]
 extern crate serde_derive;
+extern crate bincode;
+extern crate toml;
 
 mod bencode;
 mod torrent;
@@ -26,11 +26,16 @@ mod control;
 mod listener;
 mod rpc;
 mod throttle;
+mod config;
 
-use std::{thread, time};
-use std::sync::atomic;
+use std::{thread, time, env};
+use std::io::Read;
 
 lazy_static! {
+    pub static ref CONFIG: util::Init<config::Config> = {
+        util::Init::new()
+    };
+
     pub static ref PEER_ID: [u8; 20] = {
         use rand::{self, Rng};
 
@@ -45,14 +50,6 @@ lazy_static! {
             pid[i] = rng.gen::<u8>();
         }
         pid
-    };
-
-    pub static ref PORT: atomic::AtomicUsize = {
-        use rand::Rng;
-        let mut rng = rand::thread_rng();
-        let num = rng.gen_range(5000, 30000);
-        println!("Listening on port {:?}", num);
-        atomic::AtomicUsize::new(num)
     };
 
     pub static ref DISK: disk::Handle = {
@@ -77,6 +74,17 @@ lazy_static! {
 }
 
 fn main() {
+    let args: Vec<_> = env::args().collect();
+    let config = if args.len() >= 2 {
+        let mut s = String::new();
+        let mut f = std::fs::File::open(&args[1]).expect("Config file could not be opened!");
+        f.read_to_string(&mut s).expect("Config file could not be read!");
+        let cf = toml::from_str(&s).expect("Config file could not be parsed!");
+        config::Config::from_file(cf)
+    } else {
+        Default::default()
+    };
+    CONFIG.set(config);
     // lol
     LISTENER.init();
     RPC.init();
