@@ -1,3 +1,5 @@
+use std::env;
+
 #[derive(Debug, Clone)]
 pub struct Config {
     pub port: u16,
@@ -16,10 +18,10 @@ impl Config {
             base.rpc_port = p
         }
         if let Some(s) = file.session {
-            base.session = s
+            base.session = expand_tilde(&s);
         }
         if let Some(d) = file.directory {
-            base.directory = d
+            base.directory = expand_tilde(&d)
         }
         base
     }
@@ -35,11 +37,17 @@ pub struct ConfigFile {
 
 impl Default for Config {
     fn default() -> Config {
+        let s = "~/.syn_session".to_owned();
+        ;
         Config {
             port: 16493,
             rpc_port: 8412,
-            session: "~/.syn_session".to_owned(),
+            session: expand_tilde(&s),
             directory: "./".to_owned(),
         }
     }
+}
+
+fn expand_tilde(s: &String) -> String {
+    s.replace('~', &env::home_dir().unwrap().into_os_string().into_string().unwrap())
 }

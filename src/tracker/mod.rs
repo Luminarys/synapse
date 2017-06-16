@@ -38,7 +38,9 @@ impl Tracker {
                 } else {
                     Err(TrackerError::InvalidURL)
                 };
-                CONTROL.trk_tx.lock().unwrap().send((id, response)).unwrap();
+                {
+                    CONTROL.trk_tx.lock().unwrap().send((id, response)).unwrap();
+                }
             } else {
                 break;
             }

@@ -24,7 +24,8 @@ unsafe impl Sync for Handle {}
 pub enum Request {
     Write { data: Box<[u8; 16384]>, locations: Vec<Location> },
     Read { data: Box<[u8; 16384]>, locations: Vec<Location>, context: Ctx },
-    Serialize { data: Vec<u8>, hash: [u8; 20] }
+    Serialize { data: Vec<u8>, hash: [u8; 20] },
+    Shutdown,
 }
 
 pub struct Ctx {
@@ -51,6 +52,10 @@ impl Request {
 
     pub fn serialize(data: Vec<u8>, hash: [u8; 20]) -> Request {
         Request::Serialize { data, hash }
+    }
+
+    pub fn shutdown() -> Request {
+        Request::Shutdown
     }
 }
 
@@ -88,7 +93,8 @@ impl Disk {
     pub fn run(&mut self) {
         let ref sd = CONFIG.get().session;
         fs::create_dir_all(sd).unwrap();
-
+        println!("Created {:?}", sd);
+        println!("Disk running!");
         loop {
             match self.queue.recv() {
                 Ok(Request::Write { data, locations }) => {
@@ -113,15 +119,19 @@ impl Disk {
                     let mut pb = path::PathBuf::from(sd);
                     let mut hash_str = String::new();
                     for i in 0..20 {
-                        write!(&mut hash_str, "{:X} ", hash[i]).unwrap();
+                        write!(&mut hash_str, "{:X}", hash[i]).unwrap();
                     }
                     pb.push(hash_str);
-                    let res = fs::OpenOptions::new().write(true).open(&pb).and_then(|mut f| {
+                    let res = fs::OpenOptions::new().write(true).create(true).open(&pb).and_then(|mut f| {
                         f.write(&data)
                     });
-                    if res.is_err() {
-                        println!("Failed to serialize torrent!");
+                    if let Err(e) = res {
+                        println!("Failed to serialize torrent {:?}!", e);
                     }
+                }
+                Ok(Request::Shutdown) => {
+                    println!("Disk thread shutting down!");
+                    break
                 }
                 _ => break,
             }

@@ -1,6 +1,6 @@
 use std::{thread, fmt, fs, io, time};
 use std::io::{Read};
-use {rpc, tracker, disk, RPC, CONFIG};
+use {rpc, tracker, disk, DISK, RPC, CONFIG};
 use amy::{self, Poller, Registrar};
 use torrent::{self, Torrent, Peer};
 use std::collections::HashMap;
@@ -37,6 +37,7 @@ pub enum Request {
     AddTorrent(BEncode),
     AddPeer(Peer, [u8; 20]),
     RPC(rpc::Request),
+    Shutdown,
 }
 
 impl fmt::Debug for Request {
@@ -72,7 +73,12 @@ impl Control {
         }
         loop {
             for event in self.poll.wait(3).unwrap() {
-                self.handle_event(event);
+                if self.handle_event(event) {
+                    self.serialize();
+                    DISK.tx.send(disk::Request::shutdown()).unwrap();
+                    println!("Control shutting down!");
+                    return;
+                }
             }
         }
     }
@@ -112,16 +118,17 @@ impl Control {
         Ok(())
     }
 
-    fn handle_event(&mut self, not: amy::Notification) {
+    fn handle_event(&mut self, not: amy::Notification) -> bool{
         match not.id {
             id if id == self.trk_rx.get_id() => self.handle_trk_ev(),
             id if id == self.disk_rx.get_id() => self.handle_disk_ev(),
-            id if id == self.ctrl_rx.get_id() => self.handle_ctrl_ev(),
+            id if id == self.ctrl_rx.get_id() => return self.handle_ctrl_ev(),
             id if id == self.throttler.id() => self.throttler.update(),
             id if id == self.throttler.fid() => self.flush_blocked_peers(),
             id if id == self.job_timer => self.update_jobs(),
             _ => self.handle_peer_ev(not),
         }
+        return false;
     }
 
     fn handle_trk_ev(&mut self) {
@@ -188,7 +195,7 @@ impl Control {
         }
     }
 
-    fn handle_ctrl_ev(&mut self) {
+    fn handle_ctrl_ev(&mut self) -> bool {
         loop {
             match self.ctrl_rx.try_recv() {
                 Ok(Request::AddTorrent(b)) => {
@@ -203,9 +210,13 @@ impl Control {
                 Ok(Request::RPC(r)) => {
                     self.handle_rpc(r);
                 }
+                Ok(Request::Shutdown) => {
+                    return true;
+                }
                 Err(_) => { break; }
             }
         }
+        return false;
     }
 
     fn handle_peer_ev(&mut self, not: amy::Notification) {

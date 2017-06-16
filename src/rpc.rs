@@ -61,6 +61,7 @@ impl RPC {
     pub fn run(&mut self) {
         let server = tiny_http::Server::http(("0.0.0.0", CONFIG.get().rpc_port)).unwrap();
         for mut request in server.incoming_requests() {
+            println!("New Req {:?}, {:?}!", request.url(), request.method());
             let mut resp = Err("Invalid URL".to_owned());
             id_match!(request, resp, "/torrent/{}/info", |i| Request::TorrentInfo(i));
             id_match!(request, resp, "/torrent/{}/pause", |i| Request::PauseTorrent(i));
@@ -71,7 +72,7 @@ impl RPC {
             if request.url() == "/torrent/list" {
                 resp = Ok(Request::ListTorrents);
             };
-            if request.url() == "/torrent" && request.method() == &tiny_http::Method::Post {
+            if request.url() == "/torrent" {
                 let mut data = Vec::new();
                 request.as_reader().read_to_end(&mut data).unwrap();
                 resp = match bencode::decode_buf(&mut data) {
@@ -89,13 +90,18 @@ impl RPC {
                 Err(e) => serde_json::to_string(&Response::Err(e)).unwrap(),
             };
             let mut resp = tiny_http::Response::from_string(resp);
-            let cors = tiny_http::Header::from_bytes(&b"Access-Control-Allow-Origin"[..], &b"*"[..]).unwrap();
-            resp.add_header(cors);
+            let cors_o = tiny_http::Header::from_bytes(&b"Access-Control-Allow-Origin"[..], &b"*"[..]).unwrap();
+            let cors_m = tiny_http::Header::from_bytes(&b"Access-Control-Allow-Methods"[..], &b"POST, GET"[..]).unwrap();
+            let cors_h = tiny_http::Header::from_bytes(&b"Access-Control-Allow-Headers"[..], &b"Content-Type"[..]).unwrap();
+            resp.add_header(cors_o);
+            resp.add_header(cors_m);
+            resp.add_header(cors_h);
             request.respond(resp).unwrap();
         }
     }
 }
 
+#[derive(Debug)]
 pub enum Request {
     ListTorrents,
     TorrentInfo(usize),

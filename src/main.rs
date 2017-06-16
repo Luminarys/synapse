@@ -29,7 +29,7 @@ mod rpc;
 mod throttle;
 mod config;
 
-use std::{time, env};
+use std::{time, env, thread};
 use std::io::Read;
 
 lazy_static! {
@@ -88,6 +88,7 @@ fn main() {
     CONFIG.set(config);
     LISTENER.init();
     RPC.init();
+    &DISK.tx;
 
     // Catch SIGINT, then shutdown
     let t = signal::trap::Trap::trap(&[2]);
@@ -97,6 +98,8 @@ fn main() {
         match t.wait(i) {
             Some(_) => {
                 println!("Shutting down!");
+                CONTROL.ctrl_tx.lock().unwrap().send(control::Request::Shutdown).unwrap();
+                thread::sleep(time::Duration::from_secs(1));
                 break;
             }
             _ => { }
