@@ -1,7 +1,7 @@
 use std::sync::mpsc;
 use std::thread;
 use bencode::{self, BEncode};
-use {amy, tiny_http, serde_json, control, CONTROL, torrent};
+use {amy, tiny_http, serde_json, control, CONTROL, torrent, CONFIG};
 
 pub struct Handle {
     pub tx: mpsc::Sender<Response>,
@@ -59,7 +59,7 @@ impl RPC {
     }
 
     pub fn run(&mut self) {
-        let server = tiny_http::Server::http("0.0.0.0:8412").unwrap();
+        let server = tiny_http::Server::http(("0.0.0.0", CONFIG.get().rpc_port)).unwrap();
         for mut request in server.incoming_requests() {
             let mut resp = Err("Invalid URL".to_owned());
             id_match!(request, resp, "/torrent/{}/info", |i| Request::TorrentInfo(i));
