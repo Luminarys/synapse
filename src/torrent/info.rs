@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 use std::{io, fs};
 use sha1::Sha1;
 
-#[derive(Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Info {
     pub name: String,
     pub announce: String,
@@ -15,7 +15,7 @@ pub struct Info {
     pub files: Vec<File>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct File {
     pub path: PathBuf,
     pub length: usize,

@@ -7,11 +7,10 @@ pub use self::bitfield::Bitfield;
 pub use self::info::Info;
 pub use self::peer::Peer;
 
-use std;
 use self::peer::Message;
 use self::picker::Picker;
 use std::{fmt, io, cmp};
-use {amy, rpc, disk, DISK, tracker, TRACKER};
+use {amy, std, bincode, rpc, disk, DISK, tracker, TRACKER};
 use pbr::ProgressBar;
 use throttle::Throttle;
 use tracker::{TrackerError, TrackerRes};
@@ -60,6 +59,38 @@ impl Torrent {
         };
         TRACKER.tx.send(tracker::Request::started(&t)).unwrap();
         t
+    }
+
+    pub fn deserialize(data: &[u8], throttle: Throttle, reg: Arc<amy::Registrar>)
+        -> Result<Torrent, bincode::Error> {
+        let mut d: TorrentData = bincode::deserialize(data)?;
+        d.picker.unset_waiting();
+        let peers = UnsafeCell::new(HashMap::new());
+        let mut pb = ProgressBar::new(d.info.pieces() as u64);
+        pb.add(d.pieces.num_set());
+        let leechers = HashSet::new();
+        let t = Torrent {
+            id: d.id, info: d.info, peers, pieces: d.pieces, picker: d.picker,
+            pb, uploaded: d.uploaded, downloaded: d.downloaded, reg, leechers, throttle,
+            paused: d.paused, tracker: TrackerStatus::Updating,
+            tracker_update: None, unchoked: Vec::new(),
+            interested: HashSet::new(), unchoke_timer: Instant::now(),
+        };
+        TRACKER.tx.send(tracker::Request::started(&t)).unwrap();
+        Ok(t)
+    }
+
+    pub fn serialize(&self) -> Vec<u8> {
+        let d = TorrentData {
+            info: self.info.clone(),
+            pieces: self.pieces.clone(),
+            uploaded: self.uploaded,
+            downloaded: self.downloaded,
+            id: self.id,
+            picker: self.picker.clone(),
+            paused: self.paused,
+        };
+        bincode::serialize(&d, bincode::Infinite).unwrap()
     }
 
     pub fn set_tracker_response(&mut self, resp: &TrackerRes) {
@@ -423,7 +454,7 @@ impl Torrent {
         for (_, peer) in self.peers().iter() {
             picker.add_peer(peer);
         }
-        self.picker = picker;
+        self.picker.change_picker(picker);
     }
 
     // This obviously could be dangerous, but as long as we:
@@ -443,7 +474,6 @@ impl fmt::Debug for Torrent {
     }
 }
 
-
 impl Drop for Torrent {
     fn drop(&mut self) {
         for (id, peer) in self.peers().drain() {
@@ -461,4 +491,15 @@ pub enum TrackerStatus {
     Updating,
     Ok { seeders: u32, leechers: u32, interval: u32 },
     Error(TrackerError),
+}
+
+#[derive(Serialize, Deserialize)]
+struct TorrentData {
+    info: Info,
+    pieces: Bitfield,
+    uploaded: usize,
+    downloaded: usize,
+    id: usize,
+    picker: Picker,
+    paused: bool,
 }

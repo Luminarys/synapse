@@ -1,6 +1,6 @@
 // Use u64 than usize because it conforms with bittorents network protocol
 // (4 byte big endian integers)
-#[derive(Clone)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct Bitfield {
     len: u64,
     data: Box<[u8]>
@@ -86,6 +86,16 @@ impl Bitfield {
             let index = 7 - (pos % 8);
             let block = self.data[block_pos as usize];
             self.data[block_pos as usize] = block | (1 << index);
+        }
+    }
+
+    pub fn unset_bit(&mut self, pos: u64) {
+        debug_assert!(pos < self.len);
+        if pos < self.len {
+            let block_pos = pos/8;
+            let index = 7 - (pos % 8);
+            let block = self.data[block_pos as usize];
+            self.data[block_pos as usize] = block & !(1 << index);
         }
     }
 
