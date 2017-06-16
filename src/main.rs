@@ -15,6 +15,7 @@ extern crate tiny_http;
 extern crate serde_derive;
 extern crate bincode;
 extern crate toml;
+extern crate signal;
 
 mod bencode;
 mod torrent;
@@ -28,7 +29,7 @@ mod rpc;
 mod throttle;
 mod config;
 
-use std::{thread, time, env};
+use std::{time, env};
 use std::io::Read;
 
 lazy_static! {
@@ -85,9 +86,20 @@ fn main() {
         Default::default()
     };
     CONFIG.set(config);
-    // lol
     LISTENER.init();
     RPC.init();
-    thread::sleep(time::Duration::from_secs(99999));
-    println!("Done");
+
+    // Catch SIGINT, then shutdown
+    let t = signal::trap::Trap::trap(&[2]);
+    let mut i = time::Instant::now();
+    loop {
+        i += time::Duration::from_secs(1);
+        match t.wait(i) {
+            Some(_) => {
+                println!("Shutting down!");
+                break;
+            }
+            _ => { }
+        }
+    }
 }
