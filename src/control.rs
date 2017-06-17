@@ -1,6 +1,6 @@
 use std::{thread, fmt, fs, io, time};
 use std::io::{Read};
-use {rpc, tracker, disk, DISK, RPC, CONFIG};
+use {rpc, tracker, disk, DISK, RPC, CONFIG, TC, TRACKER};
 use amy::{self, Poller, Registrar};
 use torrent::{self, Torrent, Peer};
 use std::collections::HashMap;
@@ -75,7 +75,6 @@ impl Control {
             for event in self.poll.wait(3).unwrap() {
                 if self.handle_event(event) {
                     self.serialize();
-                    DISK.tx.send(disk::Request::shutdown()).unwrap();
                     println!("Control shutting down!");
                     return;
                 }
@@ -334,6 +333,7 @@ impl Control {
                 self.throttler.set_dl_rate(amnt);
                 RPC.tx.send(rpc::Response::Ack).unwrap();
             }
+            rpc::Request::Shutdown => { unimplemented!(); }
         }
     }
 
@@ -359,7 +359,14 @@ pub fn start() -> Handle {
     let (disk_tx, disk_rx) = reg.channel().unwrap();
     let (ctrl_tx, ctrl_rx) = reg.channel().unwrap();
     thread::spawn(move || {
-        Control::new(poll, trk_rx, disk_rx, ctrl_rx).run();
+        {
+            Control::new(poll, trk_rx, disk_rx, ctrl_rx).run();
+            use std::sync::atomic;
+            TC.fetch_sub(1, atomic::Ordering::SeqCst);
+        }
+        DISK.tx.send(disk::Request::shutdown()).unwrap();
+        RPC.rtx.send(rpc::Request::Shutdown).unwrap();
+        TRACKER.tx.send(tracker::Request::Shutdown).unwrap();
     });
     Handle { trk_tx: Mutex::new(trk_tx), disk_tx: Mutex::new(disk_tx), ctrl_tx: Mutex::new(ctrl_tx) }
 }

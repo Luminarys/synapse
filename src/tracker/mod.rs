@@ -5,7 +5,7 @@ use std::sync::mpsc;
 use byteorder::{BigEndian, ReadBytesExt};
 use std::net::{SocketAddr, SocketAddrV4, Ipv4Addr};
 use std::thread;
-use {CONTROL, CONFIG};
+use {CONTROL, CONFIG, TC};
 use torrent::Torrent;
 use bencode::BEncode;
 use url::Url;
@@ -27,22 +27,28 @@ impl Tracker {
 
     pub fn run(&mut self) {
         loop {
-            if let Ok(req) = self.queue.recv() {
-                let id = req.id;
-                let response = if let Ok(url) = Url::parse(&req.url) {
-                    match url.scheme() {
-                        "http" => self.http.announce(req),
-                        "udp" => self.udp.announce(req),
-                        _ => Err(TrackerError::InvalidURL),
+            match self.queue.recv() {
+                Ok(Request::Announce(req)) => {
+                    let id = req.id;
+                    let response = if let Ok(url) = Url::parse(&req.url) {
+                        match url.scheme() {
+                            "http" => self.http.announce(req),
+                            "udp" => self.udp.announce(req),
+                            _ => Err(TrackerError::InvalidURL),
+                        }
+                    } else {
+                        Err(TrackerError::InvalidURL)
+                    };
+                    {
+                        if CONTROL.trk_tx.lock().unwrap().send((id, response)).is_err() {
+                        }
                     }
-                } else {
-                    Err(TrackerError::InvalidURL)
-                };
-                {
-                    CONTROL.trk_tx.lock().unwrap().send((id, response)).unwrap();
                 }
-            } else {
-                break;
+                Ok(Request::Shutdown) => {
+                    println!("Tracker thread shutting down!");
+                    break;
+                }
+                _ => { unreachable!() }
             }
         }
     }
@@ -61,8 +67,15 @@ impl Handle {
 
 unsafe impl Sync for Handle {}
 
+
 #[derive(Debug)]
-pub struct Request {
+pub enum Request {
+    Announce(Announce),
+    Shutdown,
+}
+
+#[derive(Debug)]
+pub struct Announce {
     id: usize,
     url: String,
     hash: [u8; 20],
@@ -74,8 +87,8 @@ pub struct Request {
 }
 
 impl Request {
-    pub fn new(torrent: &Torrent, event: Option<Event>) -> Request {
-        Request {
+    pub fn new_announce(torrent: &Torrent, event: Option<Event>) -> Request {
+        Request::Announce(Announce {
             id: torrent.id,
             url: torrent.info.announce.clone(),
             hash: torrent.info.hash,
@@ -84,23 +97,23 @@ impl Request {
             downloaded: torrent.downloaded as u64 * torrent.info.piece_len as u64,
             left: torrent.info.total_len - torrent.downloaded as u64 * torrent.info.piece_len as u64,
             event,
-        }
+        })
     }
 
     pub fn started(torrent: &Torrent) -> Request {
-        Request::new(torrent, Some(Event::Started))
+        Request::new_announce(torrent, Some(Event::Started))
     }
 
     pub fn stopped(torrent: &Torrent) -> Request {
-        Request::new(torrent, Some(Event::Started))
+        Request::new_announce(torrent, Some(Event::Started))
     }
 
     pub fn completed(torrent: &Torrent) -> Request {
-        Request::new(torrent, Some(Event::Completed))
+        Request::new_announce(torrent, Some(Event::Completed))
     }
 
     pub fn interval(torrent: &Torrent) -> Request {
-        Request::new(torrent, None)
+        Request::new_announce(torrent, None)
     }
 }
 
@@ -178,6 +191,8 @@ pub fn start() -> Handle {
     thread::spawn(move || {
         let mut d = Tracker::new(rx);
         d.run();
+        use std::sync::atomic;
+        TC.fetch_sub(1, atomic::Ordering::SeqCst);
     });
     Handle { tx }
 }

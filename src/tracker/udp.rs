@@ -1,5 +1,5 @@
 use std::net::{UdpSocket, SocketAddr, SocketAddrV4, Ipv4Addr};
-use tracker::{Request, TrackerRes, TrackerResponse, TrackerError, Event};
+use tracker::{Announce, TrackerRes, TrackerResponse, TrackerError, Event};
 use {CONFIG, PEER_ID};
 use std::io::{Write, Read, Cursor};
 use byteorder::{ReadBytesExt, WriteBytesExt, BigEndian};
@@ -12,13 +12,14 @@ pub struct Announcer {
 impl Announcer {
     pub fn new() -> Announcer {
         let port = CONFIG.get().port;
+        println!("Binding on port {:?}", port);
         let sock = UdpSocket::bind(("0.0.0.0", port)).unwrap();
         Announcer {
             sock
         }
     }
 
-    pub fn announce(&mut self, req: Request) -> TrackerRes {
+    pub fn announce(&mut self, req: Announce) -> TrackerRes {
         let mut data = [0u8; 16];
         let tid = 420;
         {

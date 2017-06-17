@@ -4,7 +4,7 @@ use std::net::{SocketAddrV4, Ipv4Addr, TcpListener};
 use amy::{self, Poller, Registrar};
 use std::collections::HashMap;
 use torrent::Peer;
-use {control, CONTROL, CONFIG};
+use {control, CONTROL, CONFIG, TC};
 
 pub struct Listener {
     listener: TcpListener,
@@ -19,6 +19,7 @@ pub struct Handle { }
 impl Handle {
     pub fn init(&self) { }
 }
+
 unsafe impl Sync for Handle {}
 
 impl Listener {
@@ -42,13 +43,15 @@ impl Listener {
 
     pub fn run(&mut self) {
         loop {
-            for not in self.poll.wait(15).unwrap() {
+            let res = if let Ok(r) = self.poll.wait(15) { r } else { break; };
+            for not in res {
                 match not.id {
                     id if id == self.lid => self.handle_conn(),
                     _ => self.handle_peer(not),
                 }
             }
         }
+        println!("Listener shutdown");
     }
 
     fn handle_conn(&mut self) {
@@ -90,6 +93,8 @@ impl Listener {
 pub fn start() -> Handle {
     thread::spawn(move || {
         Listener::new().run();
+        use std::sync::atomic;
+        TC.fetch_sub(1, atomic::Ordering::SeqCst);
     });
     Handle { }
 }

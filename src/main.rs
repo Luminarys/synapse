@@ -30,9 +30,14 @@ mod throttle;
 mod config;
 
 use std::{time, env, thread};
+use std::sync::atomic;
 use std::io::Read;
 
 lazy_static! {
+    pub static ref TC: atomic::AtomicUsize = {
+        atomic::AtomicUsize::new(0)
+    };
+
     pub static ref CONFIG: util::Init<config::Config> = {
         util::Init::new()
     };
@@ -54,22 +59,27 @@ lazy_static! {
     };
 
     pub static ref DISK: disk::Handle = {
+        TC.fetch_add(1, atomic::Ordering::SeqCst);
         disk::start()
     };
 
     pub static ref CONTROL: control::Handle = {
+        TC.fetch_add(1, atomic::Ordering::SeqCst);
         control::start()
     };
 
     pub static ref TRACKER: tracker::Handle = {
+        TC.fetch_add(1, atomic::Ordering::SeqCst);
         tracker::start()
     };
 
     pub static ref LISTENER: listener::Handle = {
+        TC.fetch_add(1, atomic::Ordering::SeqCst);
         listener::start()
     };
 
     pub static ref RPC: rpc::Handle = {
+        TC.fetch_add(1, atomic::Ordering::SeqCst);
         rpc::start()
     };
 }
@@ -99,7 +109,10 @@ fn main() {
             Some(_) => {
                 println!("Shutting down!");
                 CONTROL.ctrl_tx.lock().unwrap().send(control::Request::Shutdown).unwrap();
-                thread::sleep(time::Duration::from_secs(1));
+                while TC.load(atomic::Ordering::SeqCst) != 0 {
+                    thread::sleep(time::Duration::from_secs(1));
+                }
+                println!("Shut down!");
                 break;
             }
             _ => { }

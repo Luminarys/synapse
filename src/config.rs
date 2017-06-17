@@ -38,7 +38,6 @@ pub struct ConfigFile {
 impl Default for Config {
     fn default() -> Config {
         let s = "~/.syn_session".to_owned();
-        ;
         Config {
             port: 16493,
             rpc_port: 8412,

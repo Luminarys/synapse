@@ -1,10 +1,11 @@
 use std::sync::mpsc;
-use std::thread;
+use std::{thread, time};
 use bencode::{self, BEncode};
-use {amy, tiny_http, serde_json, control, CONTROL, torrent, CONFIG};
+use {amy, tiny_http, serde_json, control, CONTROL, torrent, CONFIG, TC};
 
 pub struct Handle {
     pub tx: mpsc::Sender<Response>,
+    pub rtx: mpsc::Sender<Request>,
 }
 
 impl Handle {
@@ -19,6 +20,7 @@ unsafe impl Sync for Handle {}
 
 pub struct RPC {
     rx: mpsc::Receiver<Response>,
+    rrx: mpsc::Receiver<Request>,
     tx: amy::Sender<control::Request>,
 }
 
@@ -51,53 +53,68 @@ macro_rules! id_match {
 }
 
 impl RPC {
-    pub fn new(rx: mpsc::Receiver<Response>) -> RPC {
+    pub fn new(rx: mpsc::Receiver<Response>, rrx: mpsc::Receiver<Request>) -> RPC {
         RPC {
             rx,
+            rrx,
             tx: CONTROL.ctrl_tx.lock().unwrap().try_clone().unwrap(),
         }
     }
 
     pub fn run(&mut self) {
         let server = tiny_http::Server::http(("0.0.0.0", CONFIG.get().rpc_port)).unwrap();
-        for mut request in server.incoming_requests() {
-            println!("New Req {:?}, {:?}!", request.url(), request.method());
-            let mut resp = Err("Invalid URL".to_owned());
-            id_match!(request, resp, "/torrent/{}/info", |i| Request::TorrentInfo(i));
-            id_match!(request, resp, "/torrent/{}/pause", |i| Request::PauseTorrent(i));
-            id_match!(request, resp, "/torrent/{}/resume", |i| Request::ResumeTorrent(i));
-            id_match!(request, resp, "/torrent/{}/remove", |i| Request::RemoveTorrent(i));
-            id_match!(request, resp, "/throttle/upload/{}", |i| Request::ThrottleUpload(i));
-            id_match!(request, resp, "/throttle/download/{}", |i| Request::ThrottleDownload(i));
-            if request.url() == "/torrent/list" {
-                resp = Ok(Request::ListTorrents);
-            };
-            if request.url() == "/torrent" {
-                let mut data = Vec::new();
-                request.as_reader().read_to_end(&mut data).unwrap();
-                resp = match bencode::decode_buf(&mut data) {
-                    Ok(b) => Ok(Request::AddTorrent(b)),
-                    Err(_) => Err("Bad torrent!".to_owned()),
-                };
-            }
-
-            let resp = match resp {
-                Ok(rpc) => {
-                    self.tx.send(control::Request::RPC(rpc)).unwrap();
-                    let resp = self.rx.recv().unwrap();
-                    serde_json::to_string(&resp).unwrap()
+        while let Ok(pr) = server.recv_timeout(time::Duration::from_secs(1)) {
+            if let Some(r) = pr {
+                self.handle_request(r);
+            } else {
+                match self.rrx.try_recv() {
+                    Ok(Request::Shutdown) => {
+                        println!("RPC thread shutting down!");
+                        return;
+                    }
+                    _ => { }
                 }
-                Err(e) => serde_json::to_string(&Response::Err(e)).unwrap(),
-            };
-            let mut resp = tiny_http::Response::from_string(resp);
-            let cors_o = tiny_http::Header::from_bytes(&b"Access-Control-Allow-Origin"[..], &b"*"[..]).unwrap();
-            let cors_m = tiny_http::Header::from_bytes(&b"Access-Control-Allow-Methods"[..], &b"POST, GET"[..]).unwrap();
-            let cors_h = tiny_http::Header::from_bytes(&b"Access-Control-Allow-Headers"[..], &b"Content-Type"[..]).unwrap();
-            resp.add_header(cors_o);
-            resp.add_header(cors_m);
-            resp.add_header(cors_h);
-            request.respond(resp).unwrap();
+            }
         }
+    }
+
+    fn handle_request(&mut self, mut request: tiny_http::Request) {
+        println!("New Req {:?}, {:?}!", request.url(), request.method());
+        let mut resp = Err("Invalid URL".to_owned());
+        id_match!(request, resp, "/torrent/{}/info", |i| Request::TorrentInfo(i));
+        id_match!(request, resp, "/torrent/{}/pause", |i| Request::PauseTorrent(i));
+        id_match!(request, resp, "/torrent/{}/resume", |i| Request::ResumeTorrent(i));
+        id_match!(request, resp, "/torrent/{}/remove", |i| Request::RemoveTorrent(i));
+        id_match!(request, resp, "/throttle/upload/{}", |i| Request::ThrottleUpload(i));
+        id_match!(request, resp, "/throttle/download/{}", |i| Request::ThrottleDownload(i));
+        if request.url() == "/torrent/list" {
+            resp = Ok(Request::ListTorrents);
+        };
+        if request.url() == "/torrent" {
+            let mut data = Vec::new();
+            request.as_reader().read_to_end(&mut data).unwrap();
+            resp = match bencode::decode_buf(&mut data) {
+                Ok(b) => Ok(Request::AddTorrent(b)),
+                Err(_) => Err("Bad torrent!".to_owned()),
+            };
+        }
+
+        let resp = match resp {
+            Ok(rpc) => {
+                self.tx.send(control::Request::RPC(rpc)).unwrap();
+                let resp = self.rx.recv().unwrap();
+                serde_json::to_string(&resp).unwrap()
+            }
+            Err(e) => serde_json::to_string(&Response::Err(e)).unwrap(),
+        };
+        let mut resp = tiny_http::Response::from_string(resp);
+        let cors_o = tiny_http::Header::from_bytes(&b"Access-Control-Allow-Origin"[..], &b"*"[..]).unwrap();
+        let cors_m = tiny_http::Header::from_bytes(&b"Access-Control-Allow-Methods"[..], &b"POST, GET"[..]).unwrap();
+        let cors_h = tiny_http::Header::from_bytes(&b"Access-Control-Allow-Headers"[..], &b"Content-Type"[..]).unwrap();
+        resp.add_header(cors_o);
+        resp.add_header(cors_m);
+        resp.add_header(cors_h);
+        request.respond(resp).unwrap();
     }
 }
 
@@ -111,6 +128,7 @@ pub enum Request {
     RemoveTorrent(usize),
     ThrottleUpload(usize),
     ThrottleDownload(usize),
+    Shutdown,
 }
 
 #[derive(Serialize, Debug)]
@@ -142,9 +160,12 @@ pub enum Status {
 
 pub fn start() -> Handle {
     let (tx, rx) = mpsc::channel();
+    let (rtx, rrx) = mpsc::channel();
     thread::spawn(move || {
-        let mut d = RPC::new(rx);
+        let mut d = RPC::new(rx, rrx);
         d.run();
+        use std::sync::atomic;
+        TC.fetch_sub(1, atomic::Ordering::SeqCst);
     });
-    Handle { tx }
+    Handle { tx, rtx }
 }

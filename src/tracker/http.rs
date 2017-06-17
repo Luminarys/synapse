@@ -1,4 +1,4 @@
-use tracker::{Request, TrackerRes, TrackerResponse, TrackerError, Event};
+use tracker::{Announce, TrackerRes, TrackerResponse, TrackerError, Event};
 use std::time::Duration;
 use util::{encode_param, append_pair};
 use {PEER_ID, reqwest, bencode};
@@ -14,7 +14,7 @@ impl Announcer {
         Announcer { client: reqwest::Client::new().unwrap() }
     }
 
-    pub fn announce(&mut self, mut req: Request) -> TrackerRes {
+    pub fn announce(&mut self, mut req: Announce) -> TrackerRes {
         let mut url = &mut req.url;
         // The fact that I have to do this is genuinely depressing.
         // This will be rewritten as a proper http protocol

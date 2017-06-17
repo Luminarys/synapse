@@ -1,9 +1,9 @@
-use std::sync::{mpsc, Arc};
+use std::sync::{mpsc, Arc, atomic};
 use std::{fs, fmt, thread, path};
 use std::io::{Seek, SeekFrom, Write, Read};
 use std::fmt::Write as FWrite;
 use std::path::PathBuf;
-use {CONTROL, CONFIG};
+use {CONTROL, CONFIG, TC};
 
 pub struct Disk {
     queue: mpsc::Receiver<Request>,
@@ -93,8 +93,6 @@ impl Disk {
     pub fn run(&mut self) {
         let ref sd = CONFIG.get().session;
         fs::create_dir_all(sd).unwrap();
-        println!("Created {:?}", sd);
-        println!("Disk running!");
         loop {
             match self.queue.recv() {
                 Ok(Request::Write { data, locations }) => {
@@ -143,6 +141,7 @@ pub fn start() -> Handle {
     let (tx, rx) = mpsc::channel();
     thread::spawn(move || {
         Disk::new(rx).run();
+        TC.fetch_sub(1, atomic::Ordering::SeqCst);
     });
     Handle { tx }
 }
