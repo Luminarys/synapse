@@ -61,6 +61,8 @@ pub struct Handle {
 }
 
 impl Handle {
+    pub fn init(&self) { }
+
     pub fn get(&self) -> mpsc::Sender<Request> {
         self.tx.clone()
     }

@@ -20,6 +20,9 @@ tiny_http = "0.5"
 toml = "0.4"
 bincode = "0.8"
 signal = "0.3"
+slog = "2"
+slog-term = "2"
+slog-async = "2"
 
 [profile.bench]
 opt-level = 3

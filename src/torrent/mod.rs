@@ -11,7 +11,6 @@ use self::peer::Message;
 use self::picker::Picker;
 use std::{fmt, io, cmp};
 use {amy, std, bincode, rpc, disk, DISK, tracker, TRACKER};
-use pbr::ProgressBar;
 use throttle::Throttle;
 use tracker::{TrackerError, TrackerRes};
 use std::collections::{HashMap, HashSet};
@@ -33,7 +32,6 @@ pub struct Torrent {
     peers: UnsafeCell<HashMap<usize, Peer>>,
     leechers: HashSet<usize>,
     picker: Picker,
-    pb: ProgressBar<io::Stdout>,
     paused: bool,
     unchoked: Vec<usize>,
     interested: HashSet<usize>,
@@ -48,10 +46,9 @@ impl Torrent {
         let peers = UnsafeCell::new(HashMap::new());
         let pieces = Bitfield::new(info.pieces() as u64);
         let picker = Picker::new_rarest(&info);
-        let pb = ProgressBar::new(info.pieces() as u64);
         let leechers = HashSet::new();
         let t = Torrent {
-            id, info, peers, pieces, picker, pb,
+            id, info, peers, pieces, picker,
             uploaded: 0, downloaded: 0, reg, leechers, throttle,
             paused: false, tracker: TrackerStatus::Updating,
             tracker_update: None, unchoked: Vec::new(),
@@ -66,12 +63,10 @@ impl Torrent {
         let mut d: TorrentData = bincode::deserialize(data)?;
         d.picker.unset_waiting();
         let peers = UnsafeCell::new(HashMap::new());
-        let mut pb = ProgressBar::new(d.info.pieces() as u64);
-        pb.add(d.pieces.num_set());
         let leechers = HashSet::new();
         let t = Torrent {
             id, info: d.info, peers, pieces: d.pieces, picker: d.picker,
-            pb, uploaded: d.uploaded, downloaded: d.downloaded, reg, leechers, throttle,
+            uploaded: d.uploaded, downloaded: d.downloaded, reg, leechers, throttle,
             paused: d.paused, tracker: TrackerStatus::Updating,
             tracker_update: None, unchoked: Vec::new(),
             interested: HashSet::new(), unchoke_timer: Instant::now(),
@@ -187,11 +182,9 @@ impl Torrent {
                 let (piece_done, mut peers) = self.picker.completed(index, begin);
                 if piece_done {
                     self.downloaded += 1;
-                    self.pb.inc();
                     self.pieces.set_bit(index as u64);
                     if self.pieces.complete() {
                         TRACKER.tx.send(tracker::Request::completed(&self)).unwrap();
-                        self.pb.finish_print("Downloaded!");
                     }
                     let m = Message::Have(index);
                     for pid in self.leechers.iter() {

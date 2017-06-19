@@ -1,6 +1,6 @@
 use std::{thread, fmt, fs, io, time};
 use std::io::{Read};
-use {rpc, tracker, disk, DISK, RPC, CONFIG, TC, TRACKER};
+use {rpc, tracker, disk, listener, DISK, RPC, CONFIG, TC, TRACKER, LISTENER};
 use amy::{self, Poller, Registrar};
 use torrent::{self, Torrent, Peer};
 use std::collections::HashMap;
@@ -368,6 +368,7 @@ pub fn start() -> Handle {
         DISK.tx.send(disk::Request::shutdown()).unwrap();
         RPC.rtx.send(rpc::Request::Shutdown).unwrap();
         TRACKER.tx.send(tracker::Request::Shutdown).unwrap();
+        LISTENER.tx.send(listener::Request::Shutdown).unwrap();
     });
     Handle { trk_tx: Mutex::new(trk_tx), disk_tx: Mutex::new(disk_tx), ctrl_tx: Mutex::new(ctrl_tx) }
 }

@@ -6,7 +6,6 @@ extern crate url;
 extern crate reqwest;
 #[macro_use]
 extern crate lazy_static;
-extern crate pbr;
 extern crate net2;
 extern crate serde;
 extern crate serde_json;
@@ -16,6 +15,10 @@ extern crate serde_derive;
 extern crate bincode;
 extern crate toml;
 extern crate signal;
+#[macro_use]
+extern crate slog;
+extern crate slog_term;
+extern crate slog_async;
 
 mod bencode;
 mod torrent;
@@ -32,6 +35,7 @@ mod config;
 use std::{time, env, thread};
 use std::sync::atomic;
 use std::io::Read;
+use slog::Drain;
 
 lazy_static! {
     pub static ref TC: atomic::AtomicUsize = {
@@ -82,24 +86,37 @@ lazy_static! {
         TC.fetch_add(1, atomic::Ordering::SeqCst);
         rpc::start()
     };
+
+    pub static ref LOG: slog::Logger = {
+        let decorator = slog_term::TermDecorator::new().build();
+        let drain = slog_term::FullFormat::new(decorator).build().fuse();
+        let drain = slog_async::Async::new(drain).build().fuse();
+        slog::Logger::root(drain, o!())
+    };
 }
 
 fn main() {
+    info!(LOG, "Initializing!");
     let args: Vec<_> = env::args().collect();
     let config = if args.len() >= 2 {
+        info!(LOG, "Using config file!");
         let mut s = String::new();
         let mut f = std::fs::File::open(&args[1]).expect("Config file could not be opened!");
         f.read_to_string(&mut s).expect("Config file could not be read!");
         let cf = toml::from_str(&s).expect("Config file could not be parsed!");
         config::Config::from_file(cf)
     } else {
+        info!(LOG, "Using default config");
         Default::default()
     };
+    CONFIG.set(config);
+
     LISTENER.init();
     RPC.init();
-    CONFIG.set(config);
-    &DISK.tx;
+    DISK.init();
+    TRACKER.init();
 
+    info!(LOG, "Initialized!");
     // Catch SIGINT, then shutdown
     let t = signal::trap::Trap::trap(&[2]);
     let mut i = time::Instant::now();
@@ -107,12 +124,12 @@ fn main() {
         i += time::Duration::from_secs(1);
         match t.wait(i) {
             Some(_) => {
-                println!("Shutting down!");
+                info!(LOG, "Shutting down!");
                 CONTROL.ctrl_tx.lock().unwrap().send(control::Request::Shutdown).unwrap();
                 while TC.load(atomic::Ordering::SeqCst) != 0 {
                     thread::sleep(time::Duration::from_secs(1));
                 }
-                println!("Shut down!");
+                info!(LOG, "Shutting down!");
                 break;
             }
             _ => { }

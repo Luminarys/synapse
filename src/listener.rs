@@ -3,6 +3,7 @@ use std::io::ErrorKind;
 use std::net::{SocketAddrV4, Ipv4Addr, TcpListener};
 use amy::{self, Poller, Registrar};
 use std::collections::HashMap;
+use std::sync::mpsc;
 use torrent::Peer;
 use {control, CONTROL, CONFIG, TC};
 
@@ -12,9 +13,12 @@ pub struct Listener {
     incoming: HashMap<usize, Peer>,
     poll: Poller,
     reg: Registrar,
+    rx: mpsc::Receiver<Request>,
 }
 
-pub struct Handle { }
+pub struct Handle {
+    pub tx: mpsc::Sender<Request>,
+}
 
 impl Handle {
     pub fn init(&self) { }
@@ -22,8 +26,12 @@ impl Handle {
 
 unsafe impl Sync for Handle {}
 
+pub enum Request {
+    Shutdown,
+}
+
 impl Listener {
-    pub fn new() -> Listener {
+    pub fn new(rx: mpsc::Receiver<Request>) -> Listener {
         let ip = Ipv4Addr::new(0, 0, 0, 0);
         let port = CONFIG.get().port;
         let listener = TcpListener::bind(SocketAddrV4::new(ip, port)).unwrap();
@@ -38,6 +46,7 @@ impl Listener {
             incoming: HashMap::new(),
             poll,
             reg,
+            rx
         }
     }
 
@@ -49,6 +58,9 @@ impl Listener {
                     id if id == self.lid => self.handle_conn(),
                     _ => self.handle_peer(not),
                 }
+            }
+            if let Ok(Request::Shutdown) = self.rx.try_recv() {
+                break;
             }
         }
         println!("Listener shutdown");
@@ -91,10 +103,11 @@ impl Listener {
 }
 
 pub fn start() -> Handle {
+    let (tx, rx) = mpsc::channel();
     thread::spawn(move || {
-        Listener::new().run();
+        Listener::new(rx).run();
         use std::sync::atomic;
         TC.fetch_sub(1, atomic::Ordering::SeqCst);
     });
-    Handle { }
+    Handle { tx }
 }
