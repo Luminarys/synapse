@@ -25,6 +25,7 @@ pub enum Request {
     Write { data: Box<[u8; 16384]>, locations: Vec<Location> },
     Read { data: Box<[u8; 16384]>, locations: Vec<Location>, context: Ctx },
     Serialize { data: Vec<u8>, hash: [u8; 20] },
+    Delete { hash: [u8; 20] },
     Shutdown,
 }
 
@@ -52,6 +53,10 @@ impl Request {
 
     pub fn serialize(data: Vec<u8>, hash: [u8; 20]) -> Request {
         Request::Serialize { data, hash }
+    }
+
+    pub fn delete(hash: [u8; 20]) -> Request {
+        Request::Delete { hash }
     }
 
     pub fn shutdown() -> Request {
@@ -115,17 +120,18 @@ impl Disk {
                 }
                 Ok(Request::Serialize { data, hash }) => {
                     let mut pb = path::PathBuf::from(sd);
-                    let mut hash_str = String::new();
-                    for i in 0..20 {
-                        write!(&mut hash_str, "{:X}", hash[i]).unwrap();
-                    }
-                    pb.push(hash_str);
+                    pb.push(torrent_name(&hash));
                     let res = fs::OpenOptions::new().write(true).create(true).open(&pb).and_then(|mut f| {
                         f.write(&data)
                     });
                     if let Err(e) = res {
                         println!("Failed to serialize torrent {:?}!", e);
                     }
+                }
+                Ok(Request::Delete { hash } ) => {
+                    let mut pb = path::PathBuf::from(sd);
+                    pb.push(torrent_name(&hash));
+                    fs::remove_file(pb).unwrap();
                 }
                 Ok(Request::Shutdown) => {
                     println!("Disk thread shutting down!");
@@ -135,6 +141,14 @@ impl Disk {
             }
         }
     }
+}
+
+fn torrent_name(hash: &[u8; 20]) -> String {
+    let mut hash_str = String::new();
+    for i in 0..20 {
+        write!(&mut hash_str, "{:X}", hash[i]).unwrap();
+    }
+    hash_str
 }
 
 pub fn start() -> Handle {

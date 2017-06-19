@@ -29,6 +29,7 @@ impl Tracker {
         loop {
             match self.queue.recv() {
                 Ok(Request::Announce(req)) => {
+                    let stopping = req.stopping();
                     let id = req.id;
                     let response = if let Ok(url) = Url::parse(&req.url) {
                         match url.scheme() {
@@ -39,7 +40,7 @@ impl Tracker {
                     } else {
                         Err(TrackerError::InvalidURL)
                     };
-                    {
+                    if !stopping {
                         if CONTROL.trk_tx.lock().unwrap().send((id, response)).is_err() {
                         }
                     }
@@ -86,6 +87,15 @@ pub struct Announce {
     event: Option<Event>,
 }
 
+impl Announce {
+    pub fn stopping(&self) -> bool {
+        match self.event {
+            Some(Event::Stopped) => true,
+            _ => false,
+        }
+    }
+}
+
 impl Request {
     pub fn new_announce(torrent: &Torrent, event: Option<Event>) -> Request {
         Request::Announce(Announce {
@@ -105,7 +115,7 @@ impl Request {
     }
 
     pub fn stopped(torrent: &Torrent) -> Request {
-        Request::new_announce(torrent, Some(Event::Started))
+        Request::new_announce(torrent, Some(Event::Stopped))
     }
 
     pub fn completed(torrent: &Torrent) -> Request {

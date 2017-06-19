@@ -93,6 +93,10 @@ impl Torrent {
         DISK.tx.send(disk::Request::serialize(data, self.info.hash.clone())).unwrap();
     }
 
+    pub fn delete(&self) {
+        DISK.tx.send(disk::Request::delete(self.info.hash.clone())).unwrap();
+    }
+
     pub fn set_tracker_response(&mut self, resp: &TrackerRes) {
         match resp {
             &Ok(ref r) => {

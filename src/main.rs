@@ -96,8 +96,8 @@ fn main() {
         Default::default()
     };
     LISTENER.init();
-    CONFIG.set(config);
     RPC.init();
+    CONFIG.set(config);
     &DISK.tx;
 
     // Catch SIGINT, then shutdown

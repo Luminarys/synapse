@@ -319,7 +319,8 @@ impl Control {
                 }
             }
             rpc::Request::RemoveTorrent(id) => {
-                if let Some(_) = self.torrents.remove(&id) {
+                if let Some(t) = self.torrents.remove(&id) {
+                    t.delete();
                     RPC.tx.send(rpc::Response::Ack).unwrap();
                 } else {
                     RPC.tx.send(rpc::Response::Err("Torrent not found!".to_owned())).unwrap();
