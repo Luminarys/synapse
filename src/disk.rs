@@ -3,10 +3,12 @@ use std::{fs, fmt, thread, path};
 use std::io::{Seek, SeekFrom, Write, Read};
 use std::fmt::Write as FWrite;
 use std::path::PathBuf;
+use slog::Logger;
 use {CONTROL, CONFIG, TC};
 
 pub struct Disk {
     queue: mpsc::Receiver<Request>,
+    l: Logger
 }
 
 pub struct Handle {
@@ -91,18 +93,20 @@ impl fmt::Debug for Response {
 }
 
 impl Disk {
-    pub fn new(queue: mpsc::Receiver<Request>) -> Disk {
+    pub fn new(queue: mpsc::Receiver<Request>, l: Logger) -> Disk {
         Disk {
-            queue,
+            queue, l
         }
     }
 
     pub fn run(&mut self) {
         let ref sd = CONFIG.get().session;
         fs::create_dir_all(sd).unwrap();
+        debug!(self.l, "Initialized!");
         loop {
             match self.queue.recv() {
                 Ok(Request::Write { data, locations }) => {
+                    debug!(self.l, "Writing data!");
                     for loc in locations {
                         fs::OpenOptions::new().write(true).open(&loc.file).and_then(|mut f| {
                             f.seek(SeekFrom::Start(loc.offset)).unwrap();
@@ -111,6 +115,7 @@ impl Disk {
                     }
                 }
                 Ok(Request::Read { context, mut data, locations }) =>  {
+                    debug!(self.l, "Reading data!");
                     for loc in locations {
                         fs::OpenOptions::new().read(true).open(&loc.file).and_then(|mut f| {
                             f.seek(SeekFrom::Start(loc.offset)).unwrap();
@@ -121,6 +126,7 @@ impl Disk {
                     CONTROL.disk_tx.lock().unwrap().send(Response { context, data }).unwrap();
                 }
                 Ok(Request::Serialize { data, hash }) => {
+                    debug!(self.l, "Serializing torrent!");
                     let mut pb = path::PathBuf::from(sd);
                     pb.push(torrent_name(&hash));
                     let res = fs::OpenOptions::new().write(true).create(true).open(&pb).and_then(|mut f| {
@@ -131,12 +137,13 @@ impl Disk {
                     }
                 }
                 Ok(Request::Delete { hash } ) => {
+                    debug!(self.l, "Deleting torrent!");
                     let mut pb = path::PathBuf::from(sd);
                     pb.push(torrent_name(&hash));
                     fs::remove_file(pb).unwrap();
                 }
                 Ok(Request::Shutdown) => {
-                    println!("Disk thread shutting down!");
+                    debug!(self.l, "Shutting down!");
                     break
                 }
                 _ => break,
@@ -153,10 +160,11 @@ fn torrent_name(hash: &[u8; 20]) -> String {
     hash_str
 }
 
-pub fn start() -> Handle {
+pub fn start(l: Logger) -> Handle {
+    debug!(l, "Initializing!");
     let (tx, rx) = mpsc::channel();
     thread::spawn(move || {
-        Disk::new(rx).run();
+        Disk::new(rx, l).run();
         TC.fetch_sub(1, atomic::Ordering::SeqCst);
     });
     Handle { tx }

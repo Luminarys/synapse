@@ -5,30 +5,35 @@ use std::sync::mpsc;
 use byteorder::{BigEndian, ReadBytesExt};
 use std::net::{SocketAddr, SocketAddrV4, Ipv4Addr};
 use std::thread;
-use {CONTROL, CONFIG, TC};
+use slog::Logger;
 use torrent::Torrent;
 use bencode::BEncode;
 use url::Url;
+use {CONTROL, CONFIG, TC};
 
 pub struct Tracker {
     queue: mpsc::Receiver<Request>,
     http: http::Announcer,
     udp: udp::Announcer,
+    l: Logger,
 }
 
 impl Tracker {
-    pub fn new(queue: mpsc::Receiver<Request>) -> Tracker {
+    pub fn new(queue: mpsc::Receiver<Request>, l: Logger) -> Tracker {
         Tracker {
             queue,
             http: http::Announcer::new(),
             udp: udp::Announcer::new(),
+            l,
         }
     }
 
     pub fn run(&mut self) {
+        debug!(self.l, "Initialized!");
         loop {
             match self.queue.recv() {
                 Ok(Request::Announce(req)) => {
+                    debug!(self.l, "Handling announce request!");
                     let stopping = req.stopping();
                     let id = req.id;
                     let response = if let Ok(url) = Url::parse(&req.url) {
@@ -41,12 +46,13 @@ impl Tracker {
                         Err(TrackerError::InvalidURL)
                     };
                     if !stopping {
+                        debug!(self.l, "Sending announce response to control!");
                         if CONTROL.trk_tx.lock().unwrap().send((id, response)).is_err() {
                         }
                     }
                 }
                 Ok(Request::Shutdown) => {
-                    println!("Tracker thread shutting down!");
+                    debug!(self.l, "Shutting down!");
                     break;
                 }
                 _ => { unreachable!() }
@@ -198,10 +204,11 @@ impl TrackerResponse {
     }
 }
 
-pub fn start() -> Handle {
+pub fn start(l: Logger) -> Handle {
+    debug!(l, "Initializing!");
     let (tx, rx) = mpsc::channel();
     thread::spawn(move || {
-        let mut d = Tracker::new(rx);
+        let mut d = Tracker::new(rx, l);
         d.run();
         use std::sync::atomic;
         TC.fetch_sub(1, atomic::Ordering::SeqCst);

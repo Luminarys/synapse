@@ -62,29 +62,35 @@ lazy_static! {
         pid
     };
 
-    pub static ref DISK: disk::Handle = {
-        TC.fetch_add(1, atomic::Ordering::SeqCst);
-        disk::start()
-    };
-
     pub static ref CONTROL: control::Handle = {
         TC.fetch_add(1, atomic::Ordering::SeqCst);
+        let log = LOG.new(o!("thread" => "control"));
         control::start()
     };
 
+    pub static ref DISK: disk::Handle = {
+        TC.fetch_add(1, atomic::Ordering::SeqCst);
+        let log = LOG.new(o!("thread" => "disk"));
+        disk::start(log)
+    };
+
+
     pub static ref TRACKER: tracker::Handle = {
         TC.fetch_add(1, atomic::Ordering::SeqCst);
-        tracker::start()
+        let log = LOG.new(o!("thread" => "tracker"));
+        tracker::start(log)
     };
 
     pub static ref LISTENER: listener::Handle = {
         TC.fetch_add(1, atomic::Ordering::SeqCst);
-        listener::start()
+        let log = LOG.new(o!("thread" => "listener"));
+        listener::start(log)
     };
 
     pub static ref RPC: rpc::Handle = {
         TC.fetch_add(1, atomic::Ordering::SeqCst);
-        rpc::start()
+        let log = LOG.new(o!("thread" => "RPC"));
+        rpc::start(log)
     };
 
     pub static ref LOG: slog::Logger = {
