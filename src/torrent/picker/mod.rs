@@ -120,7 +120,7 @@ impl Common {
         for piece in self.waiting.iter() {
             self.blocks.unset_bit(*piece);
         }
-        self.endgame_cnt -= 1;
+        self.endgame_cnt = 0;
         self.waiting.clear();
         self.waiting_peers.clear();
     }

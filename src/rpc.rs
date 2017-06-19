@@ -101,9 +101,12 @@ impl RPC {
 
         let resp = match resp {
             Ok(rpc) => {
-                self.tx.send(control::Request::RPC(rpc)).unwrap();
-                let resp = self.rx.recv().unwrap();
-                serde_json::to_string(&resp).unwrap()
+                if let Ok(()) = self.tx.send(control::Request::RPC(rpc)) {
+                    let resp = self.rx.recv().unwrap();
+                    serde_json::to_string(&resp).unwrap()
+                } else {
+                    serde_json::to_string(&Response::Err("Shutting down!".to_owned())).unwrap()
+                }
             }
             Err(e) => serde_json::to_string(&Response::Err(e)).unwrap(),
         };

@@ -95,8 +95,8 @@ fn main() {
     } else {
         Default::default()
     };
-    CONFIG.set(config);
     LISTENER.init();
+    CONFIG.set(config);
     RPC.init();
     &DISK.tx;
 
