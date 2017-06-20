@@ -52,7 +52,7 @@ impl Tracker {
                     }
                 }
                 Ok(Request::Shutdown) => {
-                    debug!(self.l, "Shutting down!");
+                    debug!(self.l, "Shutdown!");
                     break;
                 }
                 _ => { unreachable!() }

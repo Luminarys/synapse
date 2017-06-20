@@ -65,7 +65,7 @@ lazy_static! {
     pub static ref CONTROL: control::Handle = {
         TC.fetch_add(1, atomic::Ordering::SeqCst);
         let log = LOG.new(o!("thread" => "control"));
-        control::start()
+        control::start(log)
     };
 
     pub static ref DISK: disk::Handle = {
@@ -135,7 +135,7 @@ fn main() {
                 while TC.load(atomic::Ordering::SeqCst) != 0 {
                     thread::sleep(time::Duration::from_secs(1));
                 }
-                info!(LOG, "Shutting down!");
+                info!(LOG, "Shutdown Complete!");
                 break;
             }
             _ => { }

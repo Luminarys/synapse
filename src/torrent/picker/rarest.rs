@@ -179,6 +179,7 @@ impl Picker {
 #[test]
 fn test_available() {
     use socket::Socket;
+    use torrent::Bitfield;
     let info = Info {
         name: String::from(""),
         announce: String::from(""),
@@ -219,8 +220,8 @@ fn test_unavailable() {
         name: String::from(""),
         announce: String::from(""),
         piece_len: 16384,
-        total_len: 16384 * 3,
-        hashes: vec![vec![0u8]; 3],
+        total_len: 16384 * 4,
+        hashes: vec![vec![0u8]; 4],
         hash: [0u8; 20],
         files: vec![],
     };
@@ -228,7 +229,7 @@ fn test_unavailable() {
     let mut picker = Picker::new(&info);
     let mut peers = vec![Peer::new(Socket::empty()), Peer::new(Socket::empty()), Peer::new(Socket::empty())];
     for peer in peers.iter_mut() {
-        peer.pieces = Bitfield::new(3);
+        peer.pieces = Bitfield::new(4);
     }
     assert_eq!(picker.pick(&peers[0]), None);
 

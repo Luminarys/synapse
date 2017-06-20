@@ -2,6 +2,7 @@ use std::{io, mem};
 use std::cell::UnsafeCell;
 use rand::{self, Rng};
 use url::percent_encoding::{percent_encode_byte};
+use std::fmt::Write as FWrite;
 
 pub fn io_err<T>(reason: &'static str) -> io::Result<T> {
     Err(io::Error::new(io::ErrorKind::Other, reason))
@@ -38,6 +39,14 @@ pub fn random_sample<A, T>(iter: A) -> Option<T>
         i += 1.0;
     }
     elem
+}
+
+pub fn torrent_name(hash: &[u8; 20]) -> String {
+    let mut hash_str = String::new();
+    for i in 0..20 {
+        write!(&mut hash_str, "{:X}", hash[i]).unwrap();
+    }
+    hash_str
 }
 
 pub struct Init<T>(UnsafeCell<Option<T>>);

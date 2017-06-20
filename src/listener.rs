@@ -68,7 +68,7 @@ impl Listener {
                 break;
             }
         }
-        debug!(self.l, "Shut down!");
+        debug!(self.l, "Shutdown!");
     }
 
     fn handle_conn(&mut self) {

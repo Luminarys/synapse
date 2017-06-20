@@ -73,7 +73,6 @@ impl RPC {
             } else {
                 match self.rrx.try_recv() {
                     Ok(Request::Shutdown) => {
-                        debug!(self.l, "Shutting down!");
                         return;
                     }
                     _ => { }
@@ -105,6 +104,7 @@ impl RPC {
 
         let resp = match resp {
             Ok(rpc) => {
+                debug!(self.l, "Request validated, sending to ctrl!");
                 if let Ok(()) = self.tx.send(control::Request::RPC(rpc)) {
                     let resp = self.rx.recv().unwrap();
                     serde_json::to_string(&resp).unwrap()
@@ -171,10 +171,11 @@ pub fn start(l: Logger) -> Handle {
     let (tx, rx) = mpsc::channel();
     let (rtx, rrx) = mpsc::channel();
     thread::spawn(move || {
-        let mut d = RPC::new(rx, rrx, l);
+        let mut d = RPC::new(rx, rrx, l.clone());
         d.run();
         use std::sync::atomic;
         TC.fetch_sub(1, atomic::Ordering::SeqCst);
+        debug!(l, "Shutdown!");
     });
     Handle { tx, rtx }
 }

@@ -16,8 +16,9 @@ use tracker::{TrackerError, TrackerRes};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use util::{io_err, random_sample};
+use util::{io_err, random_sample, torrent_name};
 use std::cell::UnsafeCell;
+use slog::Logger;
 
 pub struct Torrent {
     pub info: Info,
@@ -36,11 +37,12 @@ pub struct Torrent {
     unchoked: Vec<usize>,
     interested: HashSet<usize>,
     unchoke_timer: Instant,
+    l: Logger,
 }
 
 impl Torrent {
-    pub fn new(id: usize, info: Info, throttle: Throttle, reg: Arc<amy::Registrar>) -> Torrent {
-        println!("Handling with torrent with {:?} pl, {:?} pieces, {:?} sf len", info.piece_len, info.pieces(), info.files.last().unwrap().length);
+    pub fn new(id: usize, info: Info, throttle: Throttle, reg: Arc<amy::Registrar>, l: Logger) -> Torrent {
+        debug!(l, "Creating {:?}", info);
         // Create dummy files
         info.create_files().unwrap();
         let peers = UnsafeCell::new(HashMap::new());
@@ -53,14 +55,17 @@ impl Torrent {
             paused: false, tracker: TrackerStatus::Updating,
             tracker_update: None, unchoked: Vec::new(),
             interested: HashSet::new(), unchoke_timer: Instant::now(),
+            l: l.clone(),
         };
+        debug!(l, "Sending start request");
         TRACKER.tx.send(tracker::Request::started(&t)).unwrap();
         t
     }
 
-    pub fn deserialize(id: usize, data: &[u8], throttle: Throttle, reg: Arc<amy::Registrar>)
+    pub fn deserialize(id: usize, data: &[u8], throttle: Throttle, reg: Arc<amy::Registrar>, l: Logger)
         -> Result<Torrent, bincode::Error> {
         let mut d: TorrentData = bincode::deserialize(data)?;
+        debug!(l, "Torrent data deserialized!");
         d.picker.unset_waiting();
         let peers = UnsafeCell::new(HashMap::new());
         let leechers = HashSet::new();
@@ -70,7 +75,9 @@ impl Torrent {
             paused: d.paused, tracker: TrackerStatus::Updating,
             tracker_update: None, unchoked: Vec::new(),
             interested: HashSet::new(), unchoke_timer: Instant::now(),
+            l: l.clone(),
         };
+        debug!(l, "Sending start request");
         TRACKER.tx.send(tracker::Request::started(&t)).unwrap();
         Ok(t)
     }
@@ -85,14 +92,17 @@ impl Torrent {
             paused: self.paused,
         };
         let data = bincode::serialize(&d, bincode::Infinite).unwrap();
+        debug!(self.l, "Sending serialization request!");
         DISK.tx.send(disk::Request::serialize(data, self.info.hash.clone())).unwrap();
     }
 
     pub fn delete(&self) {
+        debug!(self.l, "Sending file deletion request!");
         DISK.tx.send(disk::Request::delete(self.info.hash.clone())).unwrap();
     }
 
     pub fn set_tracker_response(&mut self, resp: &TrackerRes) {
+        debug!(self.l, "Processing tracker response {:?}!", resp);
         match resp {
             &Ok(ref r) => {
                 let mut time = Instant::now();
@@ -108,6 +118,7 @@ impl Torrent {
 
     pub fn update_tracker(&mut self) {
         if let Some(end) = self.tracker_update {
+            debug!(self.l, "Updating tracker at inteval!");
             let cur = Instant::now();
             if cur >= end {
                 TRACKER.tx.send(tracker::Request::interval(&self)).unwrap();
@@ -116,6 +127,7 @@ impl Torrent {
     }
 
     pub fn block_available(&mut self, pid: usize, resp: disk::Response) -> io::Result<()> {
+        trace!(self.l, "Received piece from disk, uploading!");
         let peer = self.peers().get_mut(&pid).unwrap();
         let ctx = resp.context;
         let p = Message::s_piece(ctx.idx, ctx.begin, ctx.length, resp.data);
@@ -135,9 +147,10 @@ impl Torrent {
 
     pub fn handle_msg(&mut self, msg: Message, pid: usize) -> io::Result<()> {
         let peer = self.peers().get_mut(&pid).unwrap();
+        trace!(self.l, "Received {:?} from peer", msg);
         match msg {
             Message::Handshake { .. } => {
-                println!("Connection established with peer {:?}", peer.id);
+                debug!(self.l, "Connection established with peer {:?}", peer.id);
             }
             Message::Bitfield(mut pf) => {
                 pf.cap(self.pieces.len());
@@ -404,6 +417,7 @@ impl Torrent {
     }
 
     pub fn add_peer(&mut self, mut peer: Peer) -> Option<usize> {
+        debug!(self.l, "Adding peer!");
         let pid = self.reg.register(&peer.conn, amy::Event::Both).unwrap();
         peer.id = pid;
         if let Ok(()) = peer.set_torrent(&self) {
@@ -417,6 +431,7 @@ impl Torrent {
     }
 
     pub fn remove_peer(&mut self, id: usize) -> Peer {
+        debug!(self.l, "Removing peer {:?}!", id);
         let peer = self.peers().remove(&id).unwrap();
         self.reg.deregister(&peer.conn).unwrap();
         self.leechers.remove(&id);
@@ -425,14 +440,18 @@ impl Torrent {
     }
 
     pub fn pause(&mut self) {
+        debug!(self.l, "Pausing torrent!");
         if !self.paused {
+            debug!(self.l, "Sending stopped request to trk");
             TRACKER.tx.send(tracker::Request::stopped(&self)).unwrap();
         }
         self.paused = true;
     }
 
     pub fn resume(&mut self) {
+        debug!(self.l, "Resuming torrent!");
         if self.paused {
+            debug!(self.l, "Sending started request to trk");
             TRACKER.tx.send(tracker::Request::started(&self)).unwrap();
         }
         let mut failed = Vec::new();
@@ -448,6 +467,7 @@ impl Torrent {
     }
 
     pub fn change_picker(&mut self, mut picker: Picker) {
+        debug!(self.l, "Swapping pickers!");
         for (_, peer) in self.peers().iter() {
             picker.add_peer(peer);
         }
@@ -471,13 +491,22 @@ impl fmt::Debug for Torrent {
     }
 }
 
+impl fmt::Display for Torrent {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "Torrent {}", torrent_name(&self.info.hash))
+    }
+}
+
 impl Drop for Torrent {
     fn drop(&mut self) {
+        debug!(self.l, "Deregistering peers");
         for (id, peer) in self.peers().drain() {
+            trace!(self.l, "Deregistering peer {:?}", peer);
             self.reg.deregister(&peer.conn).unwrap();
             self.leechers.remove(&id);
         }
         if !self.paused {
+            debug!(self.l, "Sending stop request to trk");
             TRACKER.tx.send(tracker::Request::stopped(&self)).unwrap();
         }
     }

@@ -1,6 +1,8 @@
 use std::{thread, fmt, fs, io, time};
+use slog::Logger;
 use std::io::{Read};
 use {rpc, tracker, disk, listener, DISK, RPC, CONFIG, TC, TRACKER, LISTENER};
+use util::io_err;
 use amy::{self, Poller, Registrar};
 use torrent::{self, Torrent, Peer};
 use std::collections::HashMap;
@@ -23,6 +25,7 @@ pub struct Control {
     torrents: HashMap<usize, Torrent>,
     peers: HashMap<usize, usize>,
     hash_idx: HashMap<[u8; 20], usize>,
+    l: Logger,
 }
 
 pub struct Handle {
@@ -50,7 +53,8 @@ impl Control {
     pub fn new(poll: Poller,
                trk_rx: amy::Receiver<tracker::Response>,
                disk_rx: amy::Receiver<disk::Response>,
-               ctrl_rx: amy::Receiver<Request>) -> Control {
+               ctrl_rx: amy::Receiver<Request>,
+               l: Logger) -> Control {
         let torrents = HashMap::new();
         let peers = HashMap::new();
         let hash_idx = HashMap::new();
@@ -64,18 +68,18 @@ impl Control {
         let throttler = Throttler::new(0, 0, 1 * 1024 * 1024, &reg);
         Control { trk_rx, disk_rx, ctrl_rx, poll, torrents, peers,
         hash_idx, reg, tid_cnt: 0, throttler, tracker_update,
-        unchoke_update, session_update, job_timer }
+        unchoke_update, session_update, job_timer, l }
     }
 
     pub fn run(&mut self) {
         if self.deserialize().is_err() {
             println!("Session deserialization failed!");
         }
+        debug!(self.l, "Initialized!");
         loop {
             for event in self.poll.wait(3).unwrap() {
                 if self.handle_event(event) {
                     self.serialize();
-                    println!("Control shutting down!");
                     return;
                 }
             }
@@ -83,36 +87,43 @@ impl Control {
     }
 
     fn serialize(&mut self) {
+        debug!(self.l, "Serializing torrents!");
         for (_, torrent) in self.torrents.iter() {
+            trace!(self.l, "Serializing {}", torrent);
             torrent.serialize();
         }
     }
 
     fn deserialize(&mut self) -> io::Result<()> {
+        debug!(self.l, "Deserializing torrents!");
         let ref sd = CONFIG.get().session;
         for entry in fs::read_dir(sd)? {
-            if self.deserialize_torrent(entry).is_err() {
-                println!("Failed to deserialize torrent!");
+            if let Err(e) = self.deserialize_torrent(entry) {
+                warn!(self.l, "Failed to deserialize torrent file: {:?}!", e);
             }
         }
         Ok(())
     }
 
     fn deserialize_torrent(&mut self, entry: io::Result<fs::DirEntry>) -> io::Result<()> {
+        trace!(self.l, "Attempting to deserialize file {:?}", entry);
         let dir = entry?;
         let mut f = fs::File::open(dir.path())?;
         let mut data = Vec::new();
         f.read_to_end(&mut data)?;
+        trace!(self.l, "Succesfully read file");
 
         let tid = self.tid_cnt;
         let r = self.reg.clone();
         let throttle = self.throttler.get_throttle();
-        if let Ok(t) = Torrent::deserialize(tid, &data, throttle, r) {
+        let log = self.l.new(o!("torrent" => tid));
+        if let Ok(t) = Torrent::deserialize(tid, &data, throttle, r, log) {
+            trace!(self.l, "Succesfully parsed torrent file {:?}", dir.path());
             self.hash_idx.insert(t.info.hash, tid);
             self.tid_cnt += 1;
             self.torrents.insert(tid, t);
         } else {
-            println!("Failed to deserialize torrent!");
+            return io_err("Torrent data invalid!");
         }
         Ok(())
     }
@@ -131,6 +142,7 @@ impl Control {
     }
 
     fn handle_trk_ev(&mut self) {
+        debug!(self.l, "Handling tracker response");
         loop {
             match self.trk_rx.try_recv() {
                 Ok((id, resp)) => {
@@ -138,9 +150,12 @@ impl Control {
                         let torrent = self.torrents.get_mut(&id).unwrap();
                         torrent.set_tracker_response(&resp);
                     }
+                    trace!(self.l, "Adding peers!");
                     if let Ok(r) = resp {
                         for ip in r.peers.iter() {
+                            trace!(self.l, "Adding peer({:?})!", ip);
                             if let Ok(peer) = Peer::new_outgoing(ip) {
+                                trace!(self.l, "Added peer({:?})!", ip);
                                 self.add_peer(id, peer);
                             }
                         }
@@ -152,6 +167,7 @@ impl Control {
     }
 
     fn update_jobs(&mut self) {
+        debug!(self.l, "Handling job timer");
         if self.tracker_update.elapsed() > time::Duration::from_secs(60) {
             self.update_trackers();
             self.tracker_update = time::Instant::now();
@@ -169,13 +185,17 @@ impl Control {
     }
 
     fn update_trackers(&mut self) {
+        debug!(self.l, "Updating trackers!");
         for (_, torrent) in self.torrents.iter_mut() {
+            trace!(self.l, "Updating trackers for {}!", torrent);
             torrent.update_tracker();
         }
     }
 
     fn unchoke_peers(&mut self) {
+        debug!(self.l, "Unchoking peers!");
         for (_, torrent) in self.torrents.iter_mut() {
+            debug!(self.l, "Unchoking peers for {}!", torrent);
             torrent.update_unchoked();
         }
     }
@@ -184,6 +204,7 @@ impl Control {
         loop {
             match self.disk_rx.try_recv() {
                 Ok(resp) => {
+                    trace!(self.l, "Got disk response {:?}!", resp);
                     let pid = resp.context.id;
                     let tid = self.peers[&pid];
                     let ref mut torrent = self.torrents.get_mut(&tid).unwrap();
@@ -203,8 +224,12 @@ impl Control {
                     }
                 }
                 Ok(Request::AddPeer(p, hash)) => {
-                    let tid = *self.hash_idx.get(&hash).unwrap();
-                    self.add_peer(tid, p);
+                    trace!(self.l, "Adding peer {:?} for hash {:?}!", p, hash);
+                    if let Some(tid) = self.hash_idx.get(&hash).map(|tid| *tid) {
+                        self.add_peer(tid, p);
+                    } else {
+                        warn!(self.l, "Couldn't add peer, torrent with hash {:?} doesn't exist", hash);
+                    }
                 }
                 Ok(Request::RPC(r)) => {
                     self.handle_rpc(r);
@@ -221,55 +246,65 @@ impl Control {
     fn handle_peer_ev(&mut self, not: amy::Notification) {
         let pid = not.id;
         if not.event.readable() {
-            let res = {
-                let torrent = self.torrents.get_mut(&self.peers[&pid]).unwrap();
-                torrent.peer_readable(pid)
-            };
-            if res.is_err() {
-                self.remove_peer(pid);
-                return;
-            }
+            if self.peer_readable(pid).is_err() { return; }
         }
         if not.event.writable() {
-            let res = {
-                let torrent = self.torrents.get_mut(&self.peers[&pid]).unwrap();
-                torrent.peer_writable(pid)
-            };
-            if res.is_err() {
-                self.remove_peer(pid);
-            }
+            if self.peer_writable(pid).is_err() { return; }
         }
     }
 
     fn flush_blocked_peers(&mut self) {
+        trace!(self.l, "Flushing blocked peer!");
         for pid in self.throttler.flush_dl() {
-            let res = {
-                let torrent = self.torrents.get_mut(&self.peers[&pid]).unwrap();
-                torrent.peer_readable(pid)
-            };
-            if res.is_err() {
-                self.remove_peer(pid);
-            }
+            trace!(self.l, "Flushing blocked peer!");
+            self.peer_readable(pid).is_ok();
         }
         for pid in self.throttler.flush_ul() {
-            let res = {
-                let torrent = self.torrents.get_mut(&self.peers[&pid]).unwrap();
-                torrent.peer_writable(pid)
-            };
-            if res.is_err() {
-                self.remove_peer(pid);
-            }
+            self.peer_writable(pid).is_ok();
+        }
+    }
+
+    fn peer_readable(&mut self, pid: usize) -> Result<(), ()> {
+        let res = {
+            let torrent = self.torrents.get_mut(&self.peers[&pid]).unwrap();
+            trace!(self.l, "Peer {:?} readable", pid);
+            torrent.peer_readable(pid)
+        };
+        if res.is_err() {
+            trace!(self.l, "Peer error'd, removing");
+            self.remove_peer(pid);
+            Err(())
+        } else {
+            Ok(())
+        }
+    }
+
+    fn peer_writable(&mut self, pid: usize) -> Result<(), ()> {
+        let res = {
+            let torrent = self.torrents.get_mut(&self.peers[&pid]).unwrap();
+            trace!(self.l, "Peer {:?} writable", pid);
+            torrent.peer_writable(pid)
+        };
+        if res.is_err() {
+            trace!(self.l, "Peer error'd, removing");
+            self.remove_peer(pid);
+            Err(())
+        } else {
+            Ok(())
         }
     }
 
     fn add_torrent(&mut self, info: torrent::Info) {
+        debug!(self.l, "Adding {:?}!", info);
         if self.hash_idx.contains_key(&info.hash) {
+            trace!(self.l, "Torrent already exists!");
             return;
         }
         let tid = self.tid_cnt;
         let r = self.reg.clone();
         let throttle = self.throttler.get_throttle();
-        let t = Torrent::new(tid, info, throttle, r);
+        let log = self.l.new(o!("torrent" => tid));
+        let t = Torrent::new(tid, info, throttle, r, log);
         self.hash_idx.insert(t.info.hash, tid);
         self.tid_cnt += 1;
         self.torrents.insert(tid, t);
@@ -339,6 +374,7 @@ impl Control {
     }
 
     fn add_peer(&mut self, id: usize, peer: Peer) {
+        trace!(self.l, "Adding peer {:?} to torrent {:?}!", peer, id);
         let torrent = self.torrents.get_mut(&id).unwrap();
         if let Some(pid) = torrent.add_peer(peer) {
             self.peers.insert(pid, id);
@@ -346,14 +382,15 @@ impl Control {
     }
 
     fn remove_peer(&mut self, id: usize) {
-        println!("Removing peer {:?}", id);
+        trace!(self.l, "Removing peer {:?}", id);
         let tid = self.peers.remove(&id).expect("Removed pid should be in peer map!");
         let torrent = self.torrents.get_mut(&tid).expect("Torrent should be present in map");
         torrent.remove_peer(id);
     }
 }
 
-pub fn start() -> Handle {
+pub fn start(l: Logger) -> Handle {
+    debug!(l, "Initializing!");
     let poll = amy::Poller::new().unwrap();
     let mut reg = poll.get_registrar().unwrap();
     let (trk_tx, trk_rx) = reg.channel().unwrap();
@@ -361,14 +398,16 @@ pub fn start() -> Handle {
     let (ctrl_tx, ctrl_rx) = reg.channel().unwrap();
     thread::spawn(move || {
         {
-            Control::new(poll, trk_rx, disk_rx, ctrl_rx).run();
+            Control::new(poll, trk_rx, disk_rx, ctrl_rx, l.clone()).run();
             use std::sync::atomic;
             TC.fetch_sub(1, atomic::Ordering::SeqCst);
         }
+        debug!(l, "Triggering thread shutdown sequence!");
         DISK.tx.send(disk::Request::shutdown()).unwrap();
         RPC.rtx.send(rpc::Request::Shutdown).unwrap();
         TRACKER.tx.send(tracker::Request::Shutdown).unwrap();
         LISTENER.tx.send(listener::Request::Shutdown).unwrap();
+        debug!(l, "Shutdown!");
     });
     Handle { trk_tx: Mutex::new(trk_tx), disk_tx: Mutex::new(disk_tx), ctrl_tx: Mutex::new(ctrl_tx) }
 }

@@ -8,7 +8,7 @@ use self::writer::Writer;
 use std::net::TcpStream;
 use socket::Socket;
 use std::net::SocketAddr;
-use std::io;
+use std::{io, fmt};
 use torrent::{Torrent, Bitfield};
 
 /// Peer connection and associated metadata.
@@ -111,5 +111,11 @@ impl Peer {
             self.uploaded += 1;
         }
         return self.writer.write_message(msg, &mut self.conn);
+    }
+}
+
+impl fmt::Debug for Peer {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "Peer {{ id: {}, tid: {}, choking: {}, being_choked: {}, interested: {}, interesting: {}}}", self.id, self.tid, self.choked, self.being_choked, self.interested, self.interesting)
     }
 }
