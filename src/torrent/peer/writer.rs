@@ -160,7 +160,7 @@ fn test_write_keepalive() {
     let mut w = Writer::new();
     let mut buf = [1u8; 4];
     let m = Message::KeepAlive;
-    w.write_message(m, &mut &mut buf[..]);
+    w.write_message(m, &mut &mut buf[..]).unwrap();
     w.writable(&mut &mut buf[..]).unwrap();
     assert_eq!(buf, [0u8; 4])
 }
@@ -170,7 +170,7 @@ fn test_write_choke() {
     let mut w = Writer::new();
     let mut buf = [0u8; 5];
     let m = Message::Choke;
-    w.write_message(m, &mut &mut buf[..]);
+    w.write_message(m, &mut &mut buf[..]).unwrap();
     w.writable(&mut &mut buf[..]).unwrap();
     assert_eq!(buf, [0, 0, 0, 1, 0])
 }
@@ -180,7 +180,7 @@ fn test_write_unchoke() {
     let mut w = Writer::new();
     let mut buf = [0u8; 5];
     let m = Message::Unchoke;
-    w.write_message(m, &mut &mut buf[..]);
+    w.write_message(m, &mut &mut buf[..]).unwrap();
     w.writable(&mut &mut buf[..]).unwrap();
     assert_eq!(buf, [0, 0, 0, 1, 1])
 }
@@ -190,7 +190,7 @@ fn test_write_interested() {
     let mut w = Writer::new();
     let mut buf = [0u8; 5];
     let m = Message::Interested;
-    w.write_message(m, &mut &mut buf[..]);
+    w.write_message(m, &mut &mut buf[..]).unwrap();
     assert_eq!(buf, [0, 0, 0, 1, 2]);
     // test split write
     w.writable(&mut &mut buf[0..1]).unwrap();
@@ -204,7 +204,7 @@ fn test_write_have() {
     let mut w = Writer::new();
     let mut buf = [0u8; 9];
     let m = Message::Have(1);
-    w.write_message(m, &mut &mut buf[..]);
+    w.write_message(m, &mut &mut buf[..]).unwrap();
     w.writable(&mut &mut buf[..]).unwrap();
     assert_eq!(buf, [0, 0, 0, 5, 4, 0, 0, 0, 1])
 }
@@ -219,7 +219,7 @@ fn test_write_bitfield() {
         pf.set_bit(i);
     }
     let m = Message::Bitfield(pf);
-    w.write_message(m, &mut &mut buf[..]);
+    w.write_message(m, &mut &mut buf[..]).unwrap();
     w.writable(&mut &mut buf[..]).unwrap();
     assert_eq!(buf, [0, 0, 0, 5, 5, 0xff, 0xff, 0xff, 0xff])
 }
@@ -229,7 +229,7 @@ fn test_write_request() {
     let mut w = Writer::new();
     let mut buf = [0u8; 17];
     let m = Message::Request { index: 1, begin: 1, length: 1 };
-    w.write_message(m, &mut &mut buf[..]);
+    w.write_message(m, &mut &mut buf[..]).unwrap();
     w.writable(&mut &mut buf[..]).unwrap();
     assert_eq!(buf, [0, 0, 0, 13, 6, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1])
 }
@@ -242,7 +242,7 @@ fn test_write_piece() {
     let mut sbuf = [0u8; 16384 + 13];
     let mut buf = Cursor::new(&mut sbuf[..]);
     let m = Message::SharedPiece { index: 1, begin: 1, length: 16384, data: piece };
-    w.write_message(m, &mut buf);
+    w.write_message(m, &mut buf).unwrap();
     let buf = buf.into_inner();
     assert_eq!(buf[0..13], [0, 0, 0x40, 0x09, 7, 0, 0, 0, 1, 0, 0, 0, 1]);
     for i in 0..16384 {
@@ -255,7 +255,7 @@ fn test_write_cancel() {
     let mut w = Writer::new();
     let mut buf = [0u8; 17];
     let m = Message::Cancel { index: 1, begin: 1, length: 1 };
-    w.write_message(m, &mut &mut buf[..]);
+    w.write_message(m, &mut &mut buf[..]).unwrap();
     assert_eq!(buf, [0, 0, 0, 13, 8, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1])
 }
 
@@ -266,8 +266,8 @@ fn test_write_handshake() {
     let m = Message::Handshake { rsv: [0; 8], hash: [0; 20], id: *PEER_ID };
     let mut buf = [0u8; 68];
     let mut abuf = [0u8; 68];
-    m.encode(&mut abuf);
-    w.write_message(m, &mut &mut buf[..]);
+    m.encode(&mut abuf).unwrap();
+    w.write_message(m, &mut &mut buf[..]).unwrap();
     w.writable(&mut &mut buf[..]).unwrap();
     assert_eq!(buf[..], abuf[..])
 }

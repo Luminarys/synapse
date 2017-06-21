@@ -442,7 +442,7 @@ fn test_read_handshake() {
     let mut r = Reader::new();
     let m = Message::Handshake { rsv: [0; 8], hash: [0; 20], id: *PEER_ID };
     let mut data = vec![0; 68];
-    m.encode(&mut data[..]);
+    m.encode(&mut data[..]).unwrap();
     let mut c = Cursor::new(data);
     assert_eq!(r.readable(&mut c).unwrap().unwrap(), m);
 }

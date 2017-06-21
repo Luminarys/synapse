@@ -99,7 +99,7 @@ fn test_piece_size() {
         files: vec![],
     };
 
-    let mut picker = Picker::new(&info);
+    let picker = Picker::new(&info);
     assert_eq!(picker.c.scale as usize, info.piece_len/16384);
     assert_eq!(picker.c.blocks.len(), 123);
 }
