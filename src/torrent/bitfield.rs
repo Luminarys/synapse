@@ -3,12 +3,12 @@
 #[derive(Serialize, Deserialize, Clone)]
 pub struct Bitfield {
     len: u64,
-    data: Box<[u8]>
+    data: Box<[u8]>,
 }
 
 impl Bitfield {
     pub fn new(len: u64) -> Bitfield {
-        let mut size = len/8;
+        let mut size = len / 8;
         if len % 8 != 0 {
             size += 1;
         }
@@ -61,7 +61,7 @@ impl Bitfield {
         }
         for i in 0..(self.len % 8) {
             if !self.has_bit(self.len - i - 1) {
-                return false
+                return false;
             }
         }
         true
@@ -72,7 +72,7 @@ impl Bitfield {
         if pos >= self.len {
             false
         } else {
-            let block_pos = pos/8;
+            let block_pos = pos / 8;
             let index = 7 - (pos % 8);
             let block = self.data[block_pos as usize];
             ((block >> index) & 1) == 1
@@ -82,7 +82,7 @@ impl Bitfield {
     pub fn set_bit(&mut self, pos: u64) {
         debug_assert!(pos < self.len);
         if pos < self.len {
-            let block_pos = pos/8;
+            let block_pos = pos / 8;
             let index = 7 - (pos % 8);
             let block = self.data[block_pos as usize];
             self.data[block_pos as usize] = block | (1 << index);
@@ -92,7 +92,7 @@ impl Bitfield {
     pub fn unset_bit(&mut self, pos: u64) {
         debug_assert!(pos < self.len);
         if pos < self.len {
-            let block_pos = pos/8;
+            let block_pos = pos / 8;
             let index = 7 - (pos % 8);
             let block = self.data[block_pos as usize];
             self.data[block_pos as usize] = block & !(1 << index);
@@ -111,7 +111,7 @@ impl Bitfield {
                 }
             }
         }
-        return false
+        return false;
     }
 
     pub fn iter<'a>(&'a self) -> BitfieldIter<'a> {
@@ -147,17 +147,11 @@ pub struct BitfieldIter<'a> {
 
 impl<'a> BitfieldIter<'a> {
     fn new(pf: &'a Bitfield) -> BitfieldIter<'a> {
-        BitfieldIter {
-            pf: pf,
-            idx: 0,
-        }
+        BitfieldIter { pf: pf, idx: 0 }
     }
 
     fn from_pos(pf: &'a Bitfield, idx: u64) -> BitfieldIter<'a> {
-        BitfieldIter {
-            pf: pf,
-            idx: idx,
-        }
+        BitfieldIter { pf: pf, idx: idx }
     }
 }
 
@@ -177,53 +171,60 @@ impl<'a> Iterator for BitfieldIter<'a> {
     }
 }
 
-#[test]
-fn test_create() {
-    let pf = Bitfield::new(10);
-    assert!(pf.len == 10);
-    assert!(pf.data.len() == 2)
-}
+#[cfg(test)]
+mod tests {
+    use super::Bitfield;
 
-#[test]
-fn test_has() {
-    let pf = Bitfield::new(10);
-    let res = pf.has_bit(9);
-    assert!(res == false);
-}
-
-#[test]
-fn test_set() {
-    let mut pf = Bitfield::new(10);
-
-    let res = pf.has_bit(9);
-    assert!(res == false);
-
-    pf.set_bit(9);
-
-    let res = pf.has_bit(9);
-    assert!(res == true);
-}
-
-#[test]
-fn test_usable() {
-    let mut pf1 = Bitfield::new(10);
-    let mut pf2 = Bitfield::new(10);
-    assert!(pf1.usable(&pf2) == false);
-    pf2.set_bit(9);
-    assert!(pf1.usable(&pf2) == true);
-    pf1.set_bit(9);
-    assert!(pf1.usable(&pf2) == false);
-    pf2.set_bit(5);
-    assert!(pf1.usable(&pf2) == true);
-}
-
-#[test]
-fn test_iter() {
-    let mut pf = Bitfield::new(10);
-    for i in 4..7 {
-        pf.set_bit(i as u64);
+    #[test]
+    fn test_create() {
+        let pf = Bitfield::new(10);
+        assert!(pf.len == 10);
+        assert!(pf.data.len() == 2)
     }
-    pf.iter().map(|r| {
-        assert!(r > 3 && r < 7);
-    }).collect::<Vec<_>>();
+
+    #[test]
+    fn test_has() {
+        let pf = Bitfield::new(10);
+        let res = pf.has_bit(9);
+        assert!(res == false);
+    }
+
+    #[test]
+    fn test_set() {
+        let mut pf = Bitfield::new(10);
+
+        let res = pf.has_bit(9);
+        assert!(res == false);
+
+        pf.set_bit(9);
+
+        let res = pf.has_bit(9);
+        assert!(res == true);
+    }
+
+    #[test]
+    fn test_usable() {
+        let mut pf1 = Bitfield::new(10);
+        let mut pf2 = Bitfield::new(10);
+        assert!(pf1.usable(&pf2) == false);
+        pf2.set_bit(9);
+        assert!(pf1.usable(&pf2) == true);
+        pf1.set_bit(9);
+        assert!(pf1.usable(&pf2) == false);
+        pf2.set_bit(5);
+        assert!(pf1.usable(&pf2) == true);
+    }
+
+    #[test]
+    fn test_iter() {
+        let mut pf = Bitfield::new(10);
+        for i in 4..7 {
+            pf.set_bit(i as u64);
+        }
+        pf.iter()
+            .map(|r| {
+                assert!(r > 3 && r < 7);
+            })
+            .collect::<Vec<_>>();
+    }
 }

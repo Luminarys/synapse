@@ -1,5 +1,5 @@
 use std::collections::BTreeMap;
-use std::io;
+use std::io::{self, Cursor};
 use std::str;
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -194,59 +194,62 @@ fn decode_int(v: Vec<u8>) -> Result<i64, BError> {
     })
 }
 
-use std::io::Cursor;
+#[cfg(test)]
+mod tests {
+    use super::{BEncode, decode_buf};
+    use std::collections::BTreeMap;
 
-#[test]
-fn test_encode_decode() {
-    let i = BEncode::Int(-10);
-    let mut v = Vec::new();
-    i.encode(&mut v).unwrap();
-    assert_eq!(v, b"i-10e");
+    #[test]
+    fn test_encode_decode() {
+        let i = BEncode::Int(-10);
+        let mut v = Vec::new();
+        i.encode(&mut v).unwrap();
+        assert_eq!(v, b"i-10e");
 
-    let s = BEncode::String(Vec::from(&b"asdf"[..]));
-    v = Vec::new();
-    s.encode(&mut v).unwrap();
-    assert_eq!(v, b"4:asdf");
+        let s = BEncode::String(Vec::from(&b"asdf"[..]));
+        v = Vec::new();
+        s.encode(&mut v).unwrap();
+        assert_eq!(v, b"4:asdf");
 
-    let s2r = [1u8,2,3,4];
-    let s2e = [52u8, 58, 1, 2, 3, 4];
-    let s2 = BEncode::String(Vec::from(&s2r[..]));
-    v = Vec::new();
-    s2.encode(&mut v).unwrap();
-    assert_eq!(v, &s2e);
+        let s2r = [1u8,2,3,4];
+        let s2e = [52u8, 58, 1, 2, 3, 4];
+        let s2 = BEncode::String(Vec::from(&s2r[..]));
+        v = Vec::new();
+        s2.encode(&mut v).unwrap();
+        assert_eq!(v, &s2e);
 
-    let l = BEncode::List(vec![i.clone(), s.clone()]);
-    v = Vec::new();
-    l.encode(&mut v).unwrap();
-    assert_eq!(v, b"li-10e4:asdfe");
+        let l = BEncode::List(vec![i.clone(), s.clone()]);
+        v = Vec::new();
+        l.encode(&mut v).unwrap();
+        assert_eq!(v, b"li-10e4:asdfe");
 
-    let mut map = BTreeMap::new();
-    map.insert(String::from("asdf"), i.clone());
-    map.insert(String::from("qwerty"), i.clone());
-    let d = BEncode::Dict(map);
-    v = Vec::new();
-    d.encode(&mut v).unwrap();
-    assert_eq!(v, b"d4:asdfi-10e6:qwertyi-10ee");
+        let mut map = BTreeMap::new();
+        map.insert(String::from("asdf"), i.clone());
+        map.insert(String::from("qwerty"), i.clone());
+        let d = BEncode::Dict(map);
+        v = Vec::new();
+        d.encode(&mut v).unwrap();
+        assert_eq!(v, b"d4:asdfi-10e6:qwertyi-10ee");
 
-    decode_encode(b"d4:asdfi-10e6:qwertyi-10ee");
+        decode_encode(b"d4:asdfi-10e6:qwertyi-10ee");
 
-    encode_decode(&i);
-    encode_decode(&s);
-    encode_decode(&s2);
-    encode_decode(&l);
-    encode_decode(&d);
+        encode_decode(&i);
+        encode_decode(&s);
+        encode_decode(&s2);
+        encode_decode(&l);
+        encode_decode(&d);
+    }
+
+    fn encode_decode(b: &BEncode) {
+        let mut v = Vec::new();
+        b.encode(&mut v).unwrap();
+        assert_eq!(b, &decode_buf(&v).unwrap());
+    }
+
+    fn decode_encode(d: &[u8]) {
+        let mut v = Vec::new();
+        decode_buf(d).unwrap().encode(&mut v).unwrap();
+        assert_eq!(d, &v[..]);
+    }
 }
 
-#[allow(dead_code)]
-fn encode_decode(b: &BEncode) {
-    let mut v = Vec::new();
-    b.encode(&mut v).unwrap();
-    assert_eq!(b, &decode_buf(&v).unwrap());
-}
-
-#[allow(dead_code)]
-fn decode_encode(d: &[u8]) {
-    let mut v = Vec::new();
-    decode_buf(d).unwrap().encode(&mut v).unwrap();
-    assert_eq!(d, &v[..]);
-}

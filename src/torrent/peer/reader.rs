@@ -20,18 +20,18 @@ impl Reader {
 
     /// Attempts to read a message from the connection
     pub fn readable<R: Read>(&mut self, conn: &mut R) -> io::Result<Option<Message>> {
-       // Keep on trying to read until we get an EWOULDBLOCK error.
-       let state = mem::replace(&mut self.state, ReadState::Idle);
-       match state.next_state(conn) {
-           ReadRes::Message(msg) => {
-               self.state = ReadState::Idle;
-               if msg.is_piece() { self.blocks_read += 1 }
-               Ok(Some(msg))
-           }
-           ReadRes::Incomplete(state) => { self.state = state; Ok(None) },
-           ReadRes::EOF => return io_err("EOF"),
-           ReadRes::Err(e) => return Err(e),
-       }
+        // Keep on trying to read until we get an EWOULDBLOCK error.
+        let state = mem::replace(&mut self.state, ReadState::Idle);
+        match state.next_state(conn) {
+            ReadRes::Message(msg) => {
+                self.state = ReadState::Idle;
+                if msg.is_piece() { self.blocks_read += 1 }
+                Ok(Some(msg))
+            }
+            ReadRes::Incomplete(state) => { self.state = state; Ok(None) },
+            ReadRes::EOF => return io_err("EOF"),
+            ReadRes::Err(e) => return Err(e),
+        }
     }
 }
 
@@ -274,175 +274,183 @@ impl ReadState {
     }
 }
 
-/// Cursor to emulate a mio socket using readv.
-struct Cursor {
-    data: Vec<u8>,
-    idx: usize,
-}
+#[cfg(test)]
+mod tests {
+    use super::{Reader, ReadState};
+    use torrent::peer::Message;
+    use std::io::{self, Read};
 
-impl Cursor {
-    fn new(data: Vec<u8>) -> Cursor {
-        Cursor { data, idx: 0 }
+    /// Cursor to emulate a mio socket using readv.
+    struct Cursor {
+        data: Vec<u8>,
+        idx: usize,
     }
-}
 
-impl Read for Cursor {
-    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        if self.idx >= self.data.len() {
-            return Err(io::Error::new(ErrorKind::WouldBlock, ""));
+    impl Cursor {
+        fn new(data: Vec<u8>) -> Cursor {
+            Cursor { data, idx: 0 }
         }
-        let start = self.idx;
-        for i in 0..buf.len() {
+    }
+
+    impl Read for Cursor {
+        fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
             if self.idx >= self.data.len() {
-                break;
+                return Err(io::Error::new(io::ErrorKind::WouldBlock, ""));
             }
-            buf[i] = self.data[self.idx];
-            self.idx += 1;
-        }
-        Ok(self.idx - start)
-    }
-}
-
-#[allow(dead_code)]
-fn test_message(data: Vec<u8>, msg: Message) {
-    let mut r = Reader::new();
-    r.state = ReadState::Idle;
-    let mut data = Cursor::new(data);
-    assert_eq!(msg, r.readable(&mut data).unwrap().unwrap())
-}
-
-#[test]
-fn test_read_keepalive() {
-    let mut r = Reader::new();
-    r.state = ReadState::Idle;
-    let data = vec![0u8, 0, 0, 0];
-    test_message(data, Message::KeepAlive);
-}
-
-#[test]
-fn test_read_choke() {
-    let mut r = Reader::new();
-    r.state = ReadState::Idle;
-    let data = vec![0u8, 0, 0, 1, 0];
-    test_message(data, Message::Choke);
-}
-
-#[test]
-fn test_read_unchoke() {
-    let mut r = Reader::new();
-    r.state = ReadState::Idle;
-    let data = vec![0u8, 0, 0, 1, 1];
-    test_message(data, Message::Unchoke);
-}
-
-#[test]
-fn test_read_interested() {
-    let mut r = Reader::new();
-    r.state = ReadState::Idle;
-    let data = vec![0u8, 0, 0, 1, 2];
-    test_message(data, Message::Interested);
-}
-
-#[test]
-fn test_read_uninterested() {
-    let mut r = Reader::new();
-    r.state = ReadState::Idle;
-    let data = vec![0u8, 0, 0, 1, 3];
-    test_message(data, Message::Uninterested);
-}
-
-#[test]
-fn test_read_have() {
-    let mut r = Reader::new();
-    r.state = ReadState::Idle;
-    let data = vec![0u8, 0, 0, 5, 4, 0, 0, 0, 1];
-    test_message(data, Message::Have(1));
-}
-
-#[test]
-fn test_read_bitfield() {
-    let mut r = Reader::new();
-    r.state = ReadState::Idle;
-    let mut data = Cursor::new(vec![0u8, 0, 0, 5, 5, 0xff, 0xff, 0xff, 0xff]);
-    // Test one shot
-    match r.readable(&mut data).unwrap().unwrap() {
-        Message::Bitfield(ref pf) => {
-            for i in 0..32 {
-                assert!(pf.has_bit(i as u64));
+            let start = self.idx;
+            for i in 0..buf.len() {
+                if self.idx >= self.data.len() {
+                    break;
+                }
+                buf[i] = self.data[self.idx];
+                self.idx += 1;
             }
-        }
-        _ => {
-            unreachable!();
+            Ok(self.idx - start)
         }
     }
-}
 
-#[test]
-fn test_read_request() {
-    let mut r = Reader::new();
-    r.state = ReadState::Idle;
-    let mut data = Cursor::new(vec![0u8, 0, 0, 13, 6, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1]);
-    // Test one shot
-    match r.readable(&mut data).unwrap().unwrap() {
-        Message::Request { index, begin, length } => {
-            assert_eq!(index, 1);
-            assert_eq!(begin, 1);
-            assert_eq!(length, 1);
-        }
-        _ => {
-            unreachable!();
-        }
+
+    fn test_message(data: Vec<u8>, msg: Message) {
+        let mut r = Reader::new();
+        r.state = ReadState::Idle;
+        let mut data = Cursor::new(data);
+        assert_eq!(msg, r.readable(&mut data).unwrap().unwrap())
     }
-}
 
-#[test]
-fn test_read_piece() {
-    let mut r = Reader::new();
-    r.state = ReadState::Idle;
-    let mut info = Cursor::new(vec![0u8, 0, 0x40, 0x09, 7, 0, 0, 0, 1, 0, 0, 0, 1]);
-    let mut data = Cursor::new(vec![1u8; 16384]);
-    // Test partial read
-    assert!(r.readable(&mut info).unwrap().is_none());
-    match r.readable(&mut data).unwrap().unwrap() {
-        Message::Piece { index, begin, length, ref data } => {
-            assert_eq!(index, 1);
-            assert_eq!(begin, 1);
-            assert_eq!(length, 16384);
-            for i in 0..16384 {
-                assert_eq!(1, data[i]);
+    #[test]
+    fn test_read_keepalive() {
+        let mut r = Reader::new();
+        r.state = ReadState::Idle;
+        let data = vec![0u8, 0, 0, 0];
+        test_message(data, Message::KeepAlive);
+    }
+
+    #[test]
+    fn test_read_choke() {
+        let mut r = Reader::new();
+        r.state = ReadState::Idle;
+        let data = vec![0u8, 0, 0, 1, 0];
+        test_message(data, Message::Choke);
+    }
+
+    #[test]
+    fn test_read_unchoke() {
+        let mut r = Reader::new();
+        r.state = ReadState::Idle;
+        let data = vec![0u8, 0, 0, 1, 1];
+        test_message(data, Message::Unchoke);
+    }
+
+    #[test]
+    fn test_read_interested() {
+        let mut r = Reader::new();
+        r.state = ReadState::Idle;
+        let data = vec![0u8, 0, 0, 1, 2];
+        test_message(data, Message::Interested);
+    }
+
+    #[test]
+    fn test_read_uninterested() {
+        let mut r = Reader::new();
+        r.state = ReadState::Idle;
+        let data = vec![0u8, 0, 0, 1, 3];
+        test_message(data, Message::Uninterested);
+    }
+
+    #[test]
+    fn test_read_have() {
+        let mut r = Reader::new();
+        r.state = ReadState::Idle;
+        let data = vec![0u8, 0, 0, 5, 4, 0, 0, 0, 1];
+        test_message(data, Message::Have(1));
+    }
+
+    #[test]
+    fn test_read_bitfield() {
+        let mut r = Reader::new();
+        r.state = ReadState::Idle;
+        let mut data = Cursor::new(vec![0u8, 0, 0, 5, 5, 0xff, 0xff, 0xff, 0xff]);
+        // Test one shot
+        match r.readable(&mut data).unwrap().unwrap() {
+            Message::Bitfield(ref pf) => {
+                for i in 0..32 {
+                    assert!(pf.has_bit(i as u64));
+                }
+            }
+            _ => {
+                unreachable!();
             }
         }
-        _ => {
-            unreachable!();
+    }
+
+    #[test]
+    fn test_read_request() {
+        let mut r = Reader::new();
+        r.state = ReadState::Idle;
+        let mut data = Cursor::new(vec![0u8, 0, 0, 13, 6, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1]);
+        // Test one shot
+        match r.readable(&mut data).unwrap().unwrap() {
+            Message::Request { index, begin, length } => {
+                assert_eq!(index, 1);
+                assert_eq!(begin, 1);
+                assert_eq!(length, 1);
+            }
+            _ => {
+                unreachable!();
+            }
         }
+    }
+
+    #[test]
+    fn test_read_piece() {
+        let mut r = Reader::new();
+        r.state = ReadState::Idle;
+        let mut info = Cursor::new(vec![0u8, 0, 0x40, 0x09, 7, 0, 0, 0, 1, 0, 0, 0, 1]);
+        let mut data = Cursor::new(vec![1u8; 16384]);
+        // Test partial read
+        assert!(r.readable(&mut info).unwrap().is_none());
+        match r.readable(&mut data).unwrap().unwrap() {
+            Message::Piece { index, begin, length, ref data } => {
+                assert_eq!(index, 1);
+                assert_eq!(begin, 1);
+                assert_eq!(length, 16384);
+                for i in 0..16384 {
+                    assert_eq!(1, data[i]);
+                }
+            }
+            _ => {
+                unreachable!();
+            }
+        }
+    }
+
+    #[test]
+    fn test_read_cancel() {
+        let mut r = Reader::new();
+        r.state = ReadState::Idle;
+        let mut data = Cursor::new(vec![0u8, 0, 0, 13, 8, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1]);
+        // Test one shot
+        match r.readable(&mut data).unwrap().unwrap() {
+            Message::Cancel { index, begin, length } => {
+                assert_eq!(index, 1);
+                assert_eq!(begin, 1);
+                assert_eq!(length, 1);
+            }
+            _ => {
+                unreachable!();
+            }
+        }
+    }
+
+    #[test]
+    fn test_read_handshake() {
+        use ::PEER_ID;
+        let mut r = Reader::new();
+        let m = Message::Handshake { rsv: [0; 8], hash: [0; 20], id: *PEER_ID };
+        let mut data = vec![0; 68];
+        m.encode(&mut data[..]).unwrap();
+        let mut c = Cursor::new(data);
+        assert_eq!(r.readable(&mut c).unwrap().unwrap(), m);
     }
 }
 
-#[test]
-fn test_read_cancel() {
-    let mut r = Reader::new();
-    r.state = ReadState::Idle;
-    let mut data = Cursor::new(vec![0u8, 0, 0, 13, 8, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1]);
-    // Test one shot
-    match r.readable(&mut data).unwrap().unwrap() {
-        Message::Cancel { index, begin, length } => {
-            assert_eq!(index, 1);
-            assert_eq!(begin, 1);
-            assert_eq!(length, 1);
-        }
-        _ => {
-            unreachable!();
-        }
-    }
-}
-
-#[test]
-fn test_read_handshake() {
-    use ::PEER_ID;
-    let mut r = Reader::new();
-    let m = Message::Handshake { rsv: [0; 8], hash: [0; 20], id: *PEER_ID };
-    let mut data = vec![0; 68];
-    m.encode(&mut data[..]).unwrap();
-    let mut c = Cursor::new(data);
-    assert_eq!(r.readable(&mut c).unwrap().unwrap(), m);
-}
