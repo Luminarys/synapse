@@ -19,6 +19,46 @@ impl Handle {
 
 unsafe impl Sync for Handle {}
 
+#[derive(Debug)]
+pub enum Request {
+    ListTorrents,
+    TorrentInfo(usize),
+    AddTorrent(BEncode),
+    PauseTorrent(usize),
+    ResumeTorrent(usize),
+    RemoveTorrent(usize),
+    ThrottleUpload(usize),
+    ThrottleDownload(usize),
+    Shutdown,
+}
+
+#[derive(Serialize, Debug)]
+pub enum Response {
+    Torrents(Vec<usize>),
+    TorrentInfo(TorrentInfo),
+    AddResult(Result<usize, &'static str>),
+    Ack,
+    Err(String),
+}
+
+#[derive(Serialize, Debug)]
+pub struct TorrentInfo {
+    pub name: String,
+    pub status: Status,
+    pub size: u64,
+    pub downloaded: u64,
+    pub uploaded: u64,
+    pub tracker: String,
+    pub tracker_status: torrent::TrackerStatus,
+}
+
+#[derive(Serialize, Debug)]
+pub enum Status {
+    Downloading,
+    Seeding,
+    Paused,
+}
+
 pub struct RPC {
     rx: mpsc::Receiver<Response>,
     rrx: mpsc::Receiver<Request>,
@@ -69,7 +109,9 @@ impl RPC {
         let server = tiny_http::Server::http(("0.0.0.0", CONFIG.get().rpc_port)).unwrap();
         while let Ok(pr) = server.recv_timeout(time::Duration::from_secs(1)) {
             if let Some(r) = pr {
-                self.handle_request(r);
+                if self.handle_request(r).is_err() {
+                    CONTROL.ctrl_tx.lock().unwrap().send(control::Request::Shutdown).unwrap();
+                }
             } else {
                 match self.rrx.try_recv() {
                     Ok(Request::Shutdown) => {
@@ -81,7 +123,7 @@ impl RPC {
         }
     }
 
-    fn handle_request(&mut self, mut request: tiny_http::Request) {
+    fn handle_request(&mut self, mut request: tiny_http::Request) -> Result<(), ()> {
         debug!(self.l, "New Req {:?}, {:?}!", request.url(), request.method());
         let mut resp = Err("Invalid URL".to_owned());
         id_match!(request, resp, "/torrent/{}/info", |i| Request::TorrentInfo(i));
@@ -90,6 +132,12 @@ impl RPC {
         id_match!(request, resp, "/torrent/{}/remove", |i| Request::RemoveTorrent(i));
         id_match!(request, resp, "/throttle/upload/{}", |i| Request::ThrottleUpload(i));
         id_match!(request, resp, "/throttle/download/{}", |i| Request::ThrottleDownload(i));
+        if request.url() == "/shutdown" {
+            let r = serde_json::to_string(&Response::Ack).unwrap();
+            let resp = tiny_http::Response::from_string(r);
+            request.respond(resp).unwrap();
+            return Err(());
+        };
         if request.url() == "/torrent/list" {
             resp = Ok(Request::ListTorrents);
         };
@@ -123,47 +171,8 @@ impl RPC {
         resp.add_header(cors_m);
         resp.add_header(cors_h);
         request.respond(resp).unwrap();
+        Ok(())
     }
-}
-
-#[derive(Debug)]
-pub enum Request {
-    ListTorrents,
-    TorrentInfo(usize),
-    AddTorrent(BEncode),
-    PauseTorrent(usize),
-    ResumeTorrent(usize),
-    RemoveTorrent(usize),
-    ThrottleUpload(usize),
-    ThrottleDownload(usize),
-    Shutdown,
-}
-
-#[derive(Serialize, Debug)]
-pub enum Response {
-    Torrents(Vec<usize>),
-    TorrentInfo(TorrentInfo),
-    AddResult(Result<usize, &'static str>),
-    Ack,
-    Err(String),
-}
-
-#[derive(Serialize, Debug)]
-pub struct TorrentInfo {
-    pub name: String,
-    pub status: Status,
-    pub size: u64,
-    pub downloaded: u64,
-    pub uploaded: u64,
-    pub tracker: String,
-    pub tracker_status: torrent::TrackerStatus,
-}
-
-#[derive(Serialize, Debug)]
-pub enum Status {
-    Downloading,
-    Seeding,
-    Paused,
 }
 
 pub fn start(l: Logger) -> Handle {

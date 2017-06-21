@@ -135,10 +135,14 @@ fn main() {
                 while TC.load(atomic::Ordering::SeqCst) != 0 {
                     thread::sleep(time::Duration::from_secs(1));
                 }
-                info!(LOG, "Shutdown Complete!");
+                info!(LOG, "Shutdown complete!");
                 break;
             }
             _ => { }
+        }
+        if TC.load(atomic::Ordering::SeqCst) == 0 {
+            info!(LOG, "Shutdown complete!");
+            break;
         }
     }
 }

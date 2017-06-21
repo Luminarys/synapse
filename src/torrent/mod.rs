@@ -43,7 +43,7 @@ pub struct Torrent {
 impl Torrent {
     pub fn new(id: usize, info: Info, throttle: Throttle, reg: Arc<amy::Registrar>, l: Logger) -> Torrent {
         debug!(l, "Creating {:?}", info);
-        // Create dummy files
+        // Create empty initial files
         info.create_files().unwrap();
         let peers = UnsafeCell::new(HashMap::new());
         let pieces = Bitfield::new(info.pieces() as u64);
