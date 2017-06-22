@@ -25,7 +25,7 @@ impl Choker {
     }
 
     pub fn add_peer(&mut self, peer: &mut Peer) -> io::Result<()> {
-        if self.unchoked.len() < 4 {
+        if self.unchoked.len() < 5 {
             self.unchoked.push(peer.id);
             peer.downloaded = 0;
             peer.uploaded = 0;
@@ -37,7 +37,10 @@ impl Choker {
     }
 
     pub fn remove_peer(&mut self, peer: &mut Peer) {
-        self.interested.remove(&peer.id);
+        if self.unchoked.contains(&peer.id) {
+        } else {
+            self.interested.remove(&peer.id);
+        }
     }
 
     fn update_timer(&mut self) -> Result<(), ()> {
@@ -97,5 +100,23 @@ impl Choker {
         self.unchoked.push(random_id);
         let ures = peer.unchoke();
         return SwapRes { choked: (id, cres), unchoked: (random_id, ures) };
+    }
+}
+
+mod tests {
+    use super::Choker;
+    use torrent::Peer;
+    use socket::Socket;
+
+    #[test]
+    fn test_add_peers() {
+        let mut c = Choker::new();
+        for i in 0..6 {
+            let mut p = Peer::new(Socket::empty());
+            p.id = i;
+            c.add_peer(&mut p).is_err();
+        }
+        assert_eq!(c.unchoked.len(), 5);
+        assert_eq!(c.interested.len(), 1);
     }
 }
