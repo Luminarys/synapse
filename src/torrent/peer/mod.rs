@@ -112,6 +112,24 @@ impl Peer {
         }
         return self.writer.write_message(msg, &mut self.conn);
     }
+
+    pub fn choke(&mut self) -> io::Result<()> {
+        if !self.choked {
+            self.choked = true;
+            self.send_message(Message::Choke)
+        } else {
+            Ok(())
+        }
+    }
+
+    pub fn unchoke(&mut self) -> io::Result<()> {
+        if self.choked {
+            self.choked = false;
+            self.send_message(Message::Unchoke)
+        } else {
+            Ok(())
+        }
+    }
 }
 
 impl fmt::Debug for Peer {
