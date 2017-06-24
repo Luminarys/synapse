@@ -123,6 +123,11 @@ impl Torrent {
         }
     }
 
+    pub fn reap_peers(&mut self) {
+        debug!(self.l, "Reaping peers");
+        self.peers().retain(|_, p| p.error().is_none());
+    }
+
     pub fn block_available(&mut self, pid: usize, resp: disk::Response) {
         trace!(self.l, "Received piece from disk, uploading!");
         let peer = self.peers().get_mut(&pid).unwrap();

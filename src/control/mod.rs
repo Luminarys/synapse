@@ -10,6 +10,8 @@ use bencode::BEncode;
 use std::sync::{Arc, Mutex};
 use throttle::Throttler;
 
+mod job;
+
 pub struct Control {
     trk_rx: amy::Receiver<tracker::Response>,
     disk_rx: amy::Receiver<disk::Response>,
@@ -18,10 +20,8 @@ pub struct Control {
     reg: Arc<Registrar>,
     poll: Poller,
     tid_cnt: usize,
-    tracker_update: time::Instant,
-    unchoke_update: time::Instant,
-    session_update: time::Instant,
     job_timer: usize,
+    jobs: job::JobManager,
     torrents: HashMap<usize, Torrent>,
     peers: HashMap<usize, usize>,
     hash_idx: HashMap<[u8; 20], usize>,
@@ -60,15 +60,16 @@ impl Control {
         let hash_idx = HashMap::new();
         let reg = Arc::new(poll.get_registrar().unwrap());
         // Every minute check to update trackers;
-        let tracker_update = time::Instant::now();
-        let unchoke_update = time::Instant::now();
-        let session_update = time::Instant::now();
+        let mut jobs = job::JobManager::new();
+        jobs.add_job(job::TrackerUpdate, time::Duration::from_secs(60));
+        jobs.add_job(job::UnchokeUpdate, time::Duration::from_secs(30));
+        jobs.add_job(job::SessionUpdate, time::Duration::from_secs(10));
+        jobs.add_job(job::ReapPeers, time::Duration::from_secs(2));
         let job_timer = reg.set_interval(1000).unwrap();
         // 5 MiB max bucket
         let throttler = Throttler::new(0, 0, 1 * 1024 * 1024, &reg);
         Control { trk_rx, disk_rx, ctrl_rx, poll, torrents, peers,
-        hash_idx, reg, tid_cnt: 0, throttler, tracker_update,
-        unchoke_update, session_update, job_timer, l }
+        hash_idx, reg, tid_cnt: 0, throttler, jobs, job_timer, l }
     }
 
     pub fn run(&mut self) {
@@ -88,8 +89,7 @@ impl Control {
 
     fn serialize(&mut self) {
         debug!(self.l, "Serializing torrents!");
-        for (_, torrent) in self.torrents.iter() {
-            trace!(self.l, "Serializing {}", torrent);
+        for (_, torrent) in self.torrents.iter_mut() {
             torrent.serialize();
         }
     }
@@ -128,7 +128,7 @@ impl Control {
         Ok(())
     }
 
-    fn handle_event(&mut self, not: amy::Notification) -> bool{
+    fn handle_event(&mut self, not: amy::Notification) -> bool {
         match not.id {
             id if id == self.trk_rx.get_id() => self.handle_trk_ev(),
             id if id == self.disk_rx.get_id() => self.handle_disk_ev(),
@@ -138,7 +138,7 @@ impl Control {
             id if id == self.job_timer => self.update_jobs(),
             _ => self.handle_peer_ev(not),
         }
-        return false;
+        false
     }
 
     fn handle_trk_ev(&mut self) {
@@ -168,36 +168,7 @@ impl Control {
 
     fn update_jobs(&mut self) {
         debug!(self.l, "Handling job timer");
-        if self.tracker_update.elapsed() > time::Duration::from_secs(60) {
-            self.update_trackers();
-            self.tracker_update = time::Instant::now();
-        }
-
-        if self.unchoke_update.elapsed() > time::Duration::from_secs(1) {
-            self.unchoke_peers();
-            self.unchoke_update = time::Instant::now();
-        }
-
-        if self.session_update.elapsed() > time::Duration::from_secs(1) {
-            self.serialize();
-            self.session_update = time::Instant::now();
-        }
-    }
-
-    fn update_trackers(&mut self) {
-        debug!(self.l, "Updating trackers!");
-        for (_, torrent) in self.torrents.iter_mut() {
-            trace!(self.l, "Updating trackers for {}!", torrent);
-            torrent.update_tracker();
-        }
-    }
-
-    fn unchoke_peers(&mut self) {
-        debug!(self.l, "Unchoking peers!");
-        for (_, torrent) in self.torrents.iter_mut() {
-            debug!(self.l, "Unchoking peers for {}!", torrent);
-            torrent.update_unchoked();
-        }
+        self.jobs.update(&mut self.torrents);
     }
 
     fn handle_disk_ev(&mut self) {
@@ -279,7 +250,7 @@ impl Control {
     fn add_torrent(&mut self, info: torrent::Info) {
         debug!(self.l, "Adding {:?}!", info);
         if self.hash_idx.contains_key(&info.hash) {
-            trace!(self.l, "Torrent already exists!");
+            warn!(self.l, "Torrent already exists!");
             return;
         }
         let tid = self.tid_cnt;
@@ -337,6 +308,7 @@ impl Control {
             }
             rpc::Request::RemoveTorrent(id) => {
                 if let Some(t) = self.torrents.remove(&id) {
+                    self.hash_idx.remove(&t.info.hash);
                     t.delete();
                     RPC.tx.send(rpc::Response::Ack).unwrap();
                 } else {
@@ -361,13 +333,6 @@ impl Control {
         if let Some(pid) = torrent.add_peer(peer) {
             self.peers.insert(pid, id);
         }
-    }
-
-    fn remove_peer(&mut self, id: usize) {
-        trace!(self.l, "Removing peer {:?}", id);
-        let tid = self.peers.remove(&id).expect("Removed pid should be in peer map!");
-        let torrent = self.torrents.get_mut(&tid).expect("Torrent should be present in map");
-        torrent.remove_peer(id);
     }
 }
 
