@@ -15,10 +15,8 @@ use torrent::{Torrent, Bitfield};
 pub struct Peer {
     pub conn: Socket,
     pub pieces: Bitfield,
-    pub being_choked: bool,
-    pub choked: bool,
-    pub interested: bool,
-    pub interesting: bool,
+    pub remote_status: Status,
+    pub local_status: Status,
     pub queued: u16,
     pub tid: usize,
     pub id: usize,
@@ -29,15 +27,25 @@ pub struct Peer {
     writer: Writer,
 }
 
+#[derive(Debug)]
+pub struct Status {
+    pub choked: bool,
+    pub interested: bool,
+}
+
+impl Status {
+    fn new() -> Status {
+        Status { choked: true, interested: false }
+    }
+}
+
 impl Peer {
     pub fn new (conn: Socket) -> Peer {
         let writer = Writer::new();
         let reader = Reader::new();
         Peer {
-            being_choked: true,
-            choked: true,
-            interested: false,
-            interesting: false,
+            remote_status: Status::new(),
+            local_status: Status::new(),
             uploaded: 0,
             downloaded: 0,
             conn,
@@ -167,8 +175,8 @@ impl Peer {
     }
 
     fn _choke(&mut self) -> io::Result<()> {
-        if !self.choked {
-            self.choked = true;
+        if !self.local_status.choked {
+            self.local_status.choked = true;
             self._send_message(Message::Choke)
         } else {
             Ok(())
@@ -182,9 +190,39 @@ impl Peer {
     }
 
     fn _unchoke(&mut self) -> io::Result<()> {
-        if self.choked {
-            self.choked = false;
+        if self.local_status.choked {
+            self.local_status.choked = false;
             self._send_message(Message::Unchoke)
+        } else {
+            Ok(())
+        }
+    }
+
+    pub fn interested(&mut self) {
+        if let Err(e) = self._interested() {
+            self.error = Some(e);
+        }
+    }
+
+    fn _interested(&mut self) -> io::Result<()> {
+        if !self.local_status.interested {
+            self.local_status.interested = true;
+            self._send_message(Message::Interested)
+        } else {
+            Ok(())
+        }
+    }
+
+    pub fn uninterested(&mut self) {
+        if let Err(e) = self._uninterested() {
+            self.error = Some(e);
+        }
+    }
+
+    fn _uninterested(&mut self) -> io::Result<()> {
+        if self.local_status.interested {
+            self.local_status.interested = false;
+            self._send_message(Message::Uninterested)
         } else {
             Ok(())
         }
@@ -193,6 +231,7 @@ impl Peer {
 
 impl fmt::Debug for Peer {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "Peer {{ id: {}, tid: {}, choking: {}, being_choked: {}, interested: {}, interesting: {}}}", self.id, self.tid, self.choked, self.being_choked, self.interested, self.interesting)
+        write!(f, "Peer {{ id: {}, tid: {}, local_status: {:?}, remote_status: {:?} }}",
+               self.id, self.tid, self.local_status, self.remote_status)
     }
 }
