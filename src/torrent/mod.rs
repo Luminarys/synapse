@@ -10,14 +10,14 @@ pub use self::peer::Peer;
 
 use self::peer::Message;
 use self::picker::Picker;
-use std::{fmt, io, cmp};
+use std::{fmt, cmp};
 use {amy, bincode, rpc, disk, DISK, tracker, TRACKER};
 use throttle::Throttle;
 use tracker::{TrackerError, TrackerRes};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use util::{io_err, torrent_name};
+use util::{io_err_val, torrent_name};
 use std::cell::UnsafeCell;
 use slog::Logger;
 
@@ -62,22 +62,22 @@ impl Torrent {
 
     pub fn deserialize(id: usize, data: &[u8], throttle: Throttle, reg: Arc<amy::Registrar>, l: Logger)
         -> Result<Torrent, bincode::Error> {
-        let mut d: TorrentData = bincode::deserialize(data)?;
-        debug!(l, "Torrent data deserialized!");
-        d.picker.unset_waiting();
-        let peers = UnsafeCell::new(HashMap::new());
-        let leechers = HashSet::new();
-        let t = Torrent {
-            id, info: d.info, peers, pieces: d.pieces, picker: d.picker,
-            uploaded: d.uploaded, downloaded: d.downloaded, reg, leechers, throttle,
-            paused: d.paused, tracker: TrackerStatus::Updating,
-            tracker_update: None, choker: choker::Choker::new(),
-            l: l.clone(),
-        };
-        debug!(l, "Sending start request");
-        TRACKER.tx.send(tracker::Request::started(&t)).unwrap();
-        Ok(t)
-    }
+            let mut d: TorrentData = bincode::deserialize(data)?;
+            debug!(l, "Torrent data deserialized!");
+            d.picker.unset_waiting();
+            let peers = UnsafeCell::new(HashMap::new());
+            let leechers = HashSet::new();
+            let t = Torrent {
+                id, info: d.info, peers, pieces: d.pieces, picker: d.picker,
+                uploaded: d.uploaded, downloaded: d.downloaded, reg, leechers, throttle,
+                paused: d.paused, tracker: TrackerStatus::Updating,
+                tracker_update: None, choker: choker::Choker::new(),
+                l: l.clone(),
+            };
+            debug!(l, "Sending start request");
+            TRACKER.tx.send(tracker::Request::started(&t)).unwrap();
+            Ok(t)
+        }
 
     pub fn serialize(&self) {
         let d = TorrentData {
@@ -123,26 +123,24 @@ impl Torrent {
         }
     }
 
-    pub fn block_available(&mut self, pid: usize, resp: disk::Response) -> io::Result<()> {
+    pub fn block_available(&mut self, pid: usize, resp: disk::Response) {
         trace!(self.l, "Received piece from disk, uploading!");
         let peer = self.peers().get_mut(&pid).unwrap();
         let ctx = resp.context;
         let p = Message::s_piece(ctx.idx, ctx.begin, ctx.length, resp.data);
         // This may not be 100% accurate, but close enough for now.
         self.uploaded += 1;
-        peer.send_message(p)?;
-        Ok(())
+        peer.send_message(p);
     }
 
-    pub fn peer_readable(&mut self, pid: usize) -> io::Result<()> {
+    pub fn peer_readable(&mut self, pid: usize) {
         let peer = self.peers().get_mut(&pid).unwrap();
-        for msg in peer.readable()? {
-            self.handle_msg(msg, pid)?;
+        for msg in peer.readable() {
+            self.handle_msg(msg, pid);
         }
-        Ok(())
     }
 
-    pub fn handle_msg(&mut self, msg: Message, pid: usize) -> io::Result<()> {
+    pub fn handle_msg(&mut self, msg: Message, pid: usize) {
         let mut peer = self.peers().get_mut(&pid).unwrap();
         trace!(self.l, "Received {:?} from peer", msg);
         match msg {
@@ -155,7 +153,7 @@ impl Torrent {
                 if self.pieces.usable(&peer.pieces) {
                     self.picker.add_peer(&peer);
                     peer.interesting = true;
-                    peer.send_message(Message::Interested)?;
+                    peer.send_message(Message::Interested);
                 }
                 if !peer.pieces.complete() {
                     self.leechers.insert(peer.id);
@@ -163,7 +161,7 @@ impl Torrent {
             }
             Message::Have(idx) => {
                 if idx >= self.pieces.len() as u32 {
-                    return io_err("Invalid piece provided in HAVE");
+                    peer.set_error(io_err_val("Invalid piece provided in HAVE"));
                 }
                 peer.pieces.set_bit(idx as u64);
                 if peer.pieces.complete() && self.leechers.contains(&peer.id) {
@@ -171,20 +169,20 @@ impl Torrent {
                 }
                 if !peer.interesting && self.pieces.usable(&peer.pieces) {
                     peer.interesting = true;
-                    peer.send_message(Message::Interested)?;
+                    peer.send_message(Message::Interested);
                 }
                 self.picker.piece_available(idx);
             }
             Message::Unchoke => {
                 peer.being_choked = false;
-                Torrent::make_requests(&mut self.picker, peer, &self.info)?;
+                Torrent::make_requests(&mut self.picker, peer, &self.info);
             }
             Message::Choke => {
                 peer.being_choked = true;
             }
             Message::Piece { index, begin, data, length } => {
                 if self.pieces.complete() || self.pieces.has_bit(index as u64) {
-                    return Ok(());
+                    return;
                 }
 
                 peer.queued -= 1;
@@ -200,11 +198,7 @@ impl Torrent {
                     for pid in self.leechers.iter() {
                         let peer = self.peers().get_mut(pid).expect("Seeder IDs should be in peers");
                         if !peer.pieces.has_bit(index as u64) {
-                            if peer.send_message(m.clone()).is_err() {
-                                // TODO resolve the locality issue here,
-                                // if we remove the torrent we can't remove it
-                                // later.
-                            }
+                            peer.send_message(m.clone());
                         }
                     }
                 }
@@ -213,14 +207,12 @@ impl Torrent {
                     let m = Message::Cancel { index, begin, length };
                     for pid in peers {
                         if let Some(peer) = self.peers().get_mut(&pid) {
-                            if let Err(_) = peer.send_message(m.clone()) {
-                                self.remove_peer(pid);
-                            }
+                            peer.send_message(m.clone());
                         }
                     }
                 }
                 if !peer.being_choked && !self.pieces.complete() && !self.paused {
-                    Torrent::make_requests(&mut self.picker, peer, &self.info)?;
+                    Torrent::make_requests(&mut self.picker, peer, &self.info);
                 }
             }
             Message::Request { index, begin, length } => {
@@ -228,7 +220,7 @@ impl Torrent {
                 if !peer.choked {
                     Torrent::request_read(peer.id, &self.info, index, begin, length, Box::new([0u8; 16384]));
                 } else {
-                    return io_err("Peer requested while choked!");
+                    peer.set_error(io_err_val("Peer requested while choked!"));
                 }
             }
             Message::Cancel { .. } => {
@@ -237,15 +229,15 @@ impl Torrent {
             }
             Message::Interested => {
                 peer.interested = true;
-                self.choker.add_peer(&mut peer)?;
+                self.choker.add_peer(&mut peer);
             }
             Message::Uninterested => {
                 peer.interested = false;
-                self.choker.remove_peer(&mut peer);
+                let peers = self.peers();
+                self.choker.remove_peer(&mut peer, peers);
             }
             _ => { }
         }
-        Ok(())
     }
 
     /// Periodically called to update peers, choking the slowest one and
@@ -253,10 +245,10 @@ impl Torrent {
     pub fn update_unchoked(&mut self) {
         let peers = self.peers();
         if self.complete() {
-            self.choker.update_download(peers);
+            self.choker.update_download(peers)
         } else {
-            self.choker.update_upload(peers);
-        }
+            self.choker.update_upload(peers)
+        };
     }
 
     fn complete(&self) -> bool {
@@ -315,27 +307,24 @@ impl Torrent {
     }
 
     #[inline]
-    fn make_requests(picker: &mut Picker, peer: &mut Peer, info: &Info) -> io::Result<()> {
+    fn make_requests(picker: &mut Picker, peer: &mut Peer, info: &Info) {
         // keep 5 outstanding requests?
         while peer.queued < 5 {
             if let Some((idx, offset)) = picker.pick(&peer) {
                 if info.is_last_piece((idx, offset)) {
-                    peer.send_message(Message::request(idx, offset, info.last_piece_len()))?;
+                    peer.send_message(Message::request(idx, offset, info.last_piece_len()));
                 } else {
-                    peer.send_message(Message::request(idx, offset, 16384))?;
+                    peer.send_message(Message::request(idx, offset, 16384));
                 }
                 peer.queued += 1;
             } else {
                 break;
             }
         }
-        Ok(())
     }
 
-    pub fn peer_writable(&mut self, pid: usize) -> io::Result<()> {
-        let peer = self.peers().get_mut(&pid).unwrap();
-        peer.writable()?;
-        Ok(())
+    pub fn peer_writable(&mut self, pid: usize) {
+        self.peers().get_mut(&pid).unwrap().writable();
     }
 
     pub fn rpc_info(&self) -> rpc::TorrentInfo {
@@ -369,19 +358,21 @@ impl Torrent {
         debug!(self.l, "Adding peer!");
         let pid = self.reg.register(&peer.conn, amy::Event::Both).unwrap();
         peer.id = pid;
-        if let Ok(()) = peer.set_torrent(&self) {
-            self.picker.add_peer(&peer);
-            self.peers().insert(peer.id, peer);
-            Some(pid)
-        } else {
+        peer.set_torrent(&self);
+        if peer.error().is_some() {
             self.reg.deregister(&peer.conn).unwrap();
-            None
+            return None;
         }
+        self.picker.add_peer(&peer);
+        self.peers().insert(peer.id, peer);
+        Some(pid)
     }
 
     pub fn remove_peer(&mut self, id: usize) -> Peer {
         debug!(self.l, "Removing peer {:?}!", id);
-        let peer = self.peers().remove(&id).unwrap();
+        let mut peer = self.peers().remove(&id).unwrap();
+        let peers = self.peers();
+        self.choker.remove_peer(&mut peer, peers);
         self.reg.deregister(&peer.conn).unwrap();
         self.leechers.remove(&id);
         self.picker.remove_peer(&peer);
@@ -403,14 +394,8 @@ impl Torrent {
             debug!(self.l, "Sending started request to trk");
             TRACKER.tx.send(tracker::Request::started(&self)).unwrap();
         }
-        let mut failed = Vec::new();
-        for (id, peer) in self.peers().iter_mut() {
-            if Torrent::make_requests(&mut self.picker, peer, &self.info).is_err() {
-                failed.push(id);
-            }
-        }
-        for id in failed {
-            self.remove_peer(*id);
+        for (_, peer) in self.peers().iter_mut() {
+            Torrent::make_requests(&mut self.picker, peer, &self.info);
         }
         self.paused = false;
     }

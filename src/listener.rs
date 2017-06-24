@@ -92,17 +92,17 @@ impl Listener {
         let pid = not.id;
         let res = self.incoming.get_mut(&pid).unwrap().read();
         match res {
-            Ok(Some(hs)) => {
+            Some(hs) => {
                 debug!(self.l, "Completed handshake({:?}) with peer, transferring!", hs);
                 let peer = self.incoming.remove(&pid).unwrap();
                 self.reg.deregister(&peer.conn).unwrap();
                 CONTROL.ctrl_tx.lock().unwrap().send(control::Request::AddPeer(peer, hs.get_handshake_hash())).unwrap();
             }
-            Ok(_) => { }
-            Err(e) => {
-                debug!(self.l, "Peer connection failed: {:?}!", e);
-                self.incoming.remove(&pid);
-            }
+            None => { }
+        }
+        if self.incoming[&pid].error().is_some() {
+            debug!(self.l, "Peer connection failed!");
+            self.incoming.remove(&pid);
         }
     }
 }

@@ -208,7 +208,7 @@ impl Control {
                     let pid = resp.context.id;
                     let tid = self.peers[&pid];
                     let ref mut torrent = self.torrents.get_mut(&tid).unwrap();
-                    torrent.block_available(pid, resp).unwrap();
+                    torrent.block_available(pid, resp);
                 }
                 Err(_) => { break; }
             }
@@ -246,10 +246,10 @@ impl Control {
     fn handle_peer_ev(&mut self, not: amy::Notification) {
         let pid = not.id;
         if not.event.readable() {
-            if self.peer_readable(pid).is_err() { return; }
+            self.peer_readable(pid);
         }
         if not.event.writable() {
-            if self.peer_writable(pid).is_err() { return; }
+            self.peer_writable(pid);
         }
     }
 
@@ -257,41 +257,23 @@ impl Control {
         trace!(self.l, "Flushing blocked peer!");
         for pid in self.throttler.flush_dl() {
             trace!(self.l, "Flushing blocked peer!");
-            self.peer_readable(pid).is_ok();
+            self.peer_readable(pid);
         }
         for pid in self.throttler.flush_ul() {
-            self.peer_writable(pid).is_ok();
+            self.peer_writable(pid);
         }
     }
 
-    fn peer_readable(&mut self, pid: usize) -> Result<(), ()> {
-        let res = {
-            let torrent = self.torrents.get_mut(&self.peers[&pid]).unwrap();
-            trace!(self.l, "Peer {:?} readable", pid);
-            torrent.peer_readable(pid)
-        };
-        if res.is_err() {
-            trace!(self.l, "Peer error'd, removing");
-            self.remove_peer(pid);
-            Err(())
-        } else {
-            Ok(())
-        }
+    fn peer_readable(&mut self, pid: usize) {
+        let torrent = self.torrents.get_mut(&self.peers[&pid]).unwrap();
+        trace!(self.l, "Peer {:?} readable", pid);
+        torrent.peer_readable(pid);
     }
 
-    fn peer_writable(&mut self, pid: usize) -> Result<(), ()> {
-        let res = {
-            let torrent = self.torrents.get_mut(&self.peers[&pid]).unwrap();
-            trace!(self.l, "Peer {:?} writable", pid);
-            torrent.peer_writable(pid)
-        };
-        if res.is_err() {
-            trace!(self.l, "Peer error'd, removing");
-            self.remove_peer(pid);
-            Err(())
-        } else {
-            Ok(())
-        }
+    fn peer_writable(&mut self, pid: usize) {
+        let torrent = self.torrents.get_mut(&self.peers[&pid]).unwrap();
+        trace!(self.l, "Peer {:?} writable", pid);
+        torrent.peer_writable(pid);
     }
 
     fn add_torrent(&mut self, info: torrent::Info) {
