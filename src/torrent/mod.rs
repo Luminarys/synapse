@@ -21,6 +21,23 @@ use util::{io_err_val, torrent_name};
 use std::cell::UnsafeCell;
 use slog::Logger;
 
+#[derive(Clone, Debug, Serialize)]
+pub enum TrackerStatus {
+    Updating,
+    Ok { seeders: u32, leechers: u32, interval: u32 },
+    Error(TrackerError),
+}
+
+#[derive(Serialize, Deserialize)]
+struct TorrentData {
+    info: Info,
+    pieces: Bitfield,
+    uploaded: usize,
+    downloaded: usize,
+    picker: Picker,
+    paused: bool,
+}
+
 pub struct Torrent {
     pub info: Info,
     pub pieces: Bitfield,
@@ -60,24 +77,23 @@ impl Torrent {
         t
     }
 
-    pub fn deserialize(id: usize, data: &[u8], throttle: Throttle, reg: Arc<amy::Registrar>, l: Logger)
-        -> Result<Torrent, bincode::Error> {
-            let mut d: TorrentData = bincode::deserialize(data)?;
-            debug!(l, "Torrent data deserialized!");
-            d.picker.unset_waiting();
-            let peers = UnsafeCell::new(HashMap::new());
-            let leechers = HashSet::new();
-            let t = Torrent {
-                id, info: d.info, peers, pieces: d.pieces, picker: d.picker,
-                uploaded: d.uploaded, downloaded: d.downloaded, reg, leechers, throttle,
-                paused: d.paused, tracker: TrackerStatus::Updating,
-                tracker_update: None, choker: choker::Choker::new(),
-                l: l.clone(),
-            };
-            debug!(l, "Sending start request");
-            TRACKER.tx.send(tracker::Request::started(&t)).unwrap();
-            Ok(t)
-        }
+    pub fn deserialize(id: usize, data: &[u8], throttle: Throttle, reg: Arc<amy::Registrar>, l: Logger) -> Result<Torrent, bincode::Error> {
+        let mut d: TorrentData = bincode::deserialize(data)?;
+        debug!(l, "Torrent data deserialized!");
+        d.picker.unset_waiting();
+        let peers = UnsafeCell::new(HashMap::new());
+        let leechers = HashSet::new();
+        let t = Torrent {
+            id, info: d.info, peers, pieces: d.pieces, picker: d.picker,
+            uploaded: d.uploaded, downloaded: d.downloaded, reg, leechers, throttle,
+            paused: d.paused, tracker: TrackerStatus::Updating,
+            tracker_update: None, choker: choker::Choker::new(),
+            l: l.clone(),
+        };
+        debug!(l, "Sending start request");
+        TRACKER.tx.send(tracker::Request::started(&t)).unwrap();
+        Ok(t)
+    }
 
     pub fn serialize(&self) {
         let d = TorrentData {
@@ -444,21 +460,4 @@ impl Drop for Torrent {
             TRACKER.tx.send(tracker::Request::stopped(&self)).unwrap();
         }
     }
-}
-
-#[derive(Clone, Debug, Serialize)]
-pub enum TrackerStatus {
-    Updating,
-    Ok { seeders: u32, leechers: u32, interval: u32 },
-    Error(TrackerError),
-}
-
-#[derive(Serialize, Deserialize)]
-struct TorrentData {
-    info: Info,
-    pieces: Bitfield,
-    uploaded: usize,
-    downloaded: usize,
-    picker: Picker,
-    paused: bool,
 }

@@ -4,7 +4,7 @@ use std::collections::{HashSet};
 use torrent::{Info, Peer, picker};
 use std::ops::IndexMut;
 
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Picker {
     /// Common data
     pub c: picker::Common,
@@ -18,7 +18,7 @@ pub struct Picker {
     seeders: HashSet<usize>,
 }
 
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 struct PieceInfo {
     idx: usize,
     availability: usize,
