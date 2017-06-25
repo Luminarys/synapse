@@ -176,77 +176,81 @@ impl Picker {
     }
 }
 
-#[test]
-fn test_available() {
+#[cfg(test)]
+mod tests {
+    use super::Picker;
     use socket::Socket;
-    use torrent::Bitfield;
-    let info = Info {
-        name: String::from(""),
-        announce: String::from(""),
-        piece_len: 16384,
-        total_len: 16384 * 3,
-        hashes: vec![vec![0u8]; 3],
-        hash: [0u8; 20],
-        files: vec![],
-    };
+    use torrent::{Info, Peer, Bitfield};
 
-    let mut picker = Picker::new(&info);
-    let mut peers = vec![Peer::new(Socket::empty()), Peer::new(Socket::empty()), Peer::new(Socket::empty())];
-    for peer in peers.iter_mut() {
-        peer.pieces = Bitfield::new(3);
+    #[test]
+    fn test_available() {
+        let info = Info {
+            name: String::from(""),
+            announce: String::from(""),
+            piece_len: 16384,
+            total_len: 16384 * 3,
+            hashes: vec![vec![0u8]; 3],
+            hash: [0u8; 20],
+            files: vec![],
+        };
+
+        let mut picker = Picker::new(&info);
+        let mut peers = vec![Peer::new(Socket::empty()), Peer::new(Socket::empty()), Peer::new(Socket::empty())];
+        for peer in peers.iter_mut() {
+            peer.pieces = Bitfield::new(3);
+        }
+        assert_eq!(picker.pick(&peers[0]), None);
+
+        peers[0].pieces.set_bit(0);
+        peers[1].pieces.set_bit(0);
+        peers[1].pieces.set_bit(2);
+        peers[2].pieces.set_bit(1);
+
+        for peer in peers.iter() {
+            picker.add_peer(peer);
+        }
+        assert_eq!(picker.pick(&peers[1]), Some((2, 0)));
+        assert_eq!(picker.pick(&peers[1]), Some((0, 0)));
+        assert_eq!(picker.pick(&peers[1]), None);
+        assert_eq!(picker.pick(&peers[0]), None);
+        assert_eq!(picker.pick(&peers[2]), Some((1, 0)));
     }
-    assert_eq!(picker.pick(&peers[0]), None);
 
-    peers[0].pieces.set_bit(0);
-    peers[1].pieces.set_bit(0);
-    peers[1].pieces.set_bit(2);
-    peers[2].pieces.set_bit(1);
+    #[test]
+    fn test_unavailable() {
+        let info = Info {
+            name: String::from(""),
+            announce: String::from(""),
+            piece_len: 16384,
+            total_len: 16384 * 4,
+            hashes: vec![vec![0u8]; 4],
+            hash: [0u8; 20],
+            files: vec![],
+        };
 
-    for peer in peers.iter() {
-        picker.add_peer(peer);
+        let mut picker = Picker::new(&info);
+        let mut peers = vec![Peer::new(Socket::empty()), Peer::new(Socket::empty()), Peer::new(Socket::empty())];
+        for peer in peers.iter_mut() {
+            peer.pieces = Bitfield::new(4);
+        }
+        assert_eq!(picker.pick(&peers[0]), None);
+
+        peers[0].pieces.set_bit(0);
+        peers[0].pieces.set_bit(1);
+        peers[1].pieces.set_bit(1);
+        peers[1].pieces.set_bit(2);
+        peers[2].pieces.set_bit(0);
+        peers[2].pieces.set_bit(1);
+
+        for peer in peers.iter() {
+            picker.add_peer(peer);
+        }
+        picker.remove_peer(&peers[0]);
+
+        assert_eq!(picker.pick(&peers[1]), Some((2, 0)));
+        assert_eq!(picker.pick(&peers[2]), Some((0, 0)));
+        assert_eq!(picker.pick(&peers[2]), Some((1, 0)));
+        assert_eq!(picker.pick(&peers[1]), None);
     }
-    assert_eq!(picker.pick(&peers[1]), Some((2, 0)));
-    assert_eq!(picker.pick(&peers[1]), Some((0, 0)));
-    assert_eq!(picker.pick(&peers[1]), None);
-    assert_eq!(picker.pick(&peers[0]), None);
-    assert_eq!(picker.pick(&peers[2]), Some((1, 0)));
 }
 
-#[test]
-fn test_unavailable() {
-    use socket::Socket;
-    use torrent::Bitfield;
-    let info = Info {
-        name: String::from(""),
-        announce: String::from(""),
-        piece_len: 16384,
-        total_len: 16384 * 4,
-        hashes: vec![vec![0u8]; 4],
-        hash: [0u8; 20],
-        files: vec![],
-    };
-
-    let mut picker = Picker::new(&info);
-    let mut peers = vec![Peer::new(Socket::empty()), Peer::new(Socket::empty()), Peer::new(Socket::empty())];
-    for peer in peers.iter_mut() {
-        peer.pieces = Bitfield::new(4);
-    }
-    assert_eq!(picker.pick(&peers[0]), None);
-
-    peers[0].pieces.set_bit(0);
-    peers[0].pieces.set_bit(1);
-    peers[1].pieces.set_bit(1);
-    peers[1].pieces.set_bit(2);
-    peers[2].pieces.set_bit(0);
-    peers[2].pieces.set_bit(1);
-
-    for peer in peers.iter() {
-        picker.add_peer(peer);
-    }
-    picker.remove_peer(&peers[0]);
-
-    assert_eq!(picker.pick(&peers[1]), Some((2, 0)));
-    assert_eq!(picker.pick(&peers[2]), Some((0, 0)));
-    assert_eq!(picker.pick(&peers[2]), Some((1, 0)));
-    assert_eq!(picker.pick(&peers[1]), None);
-}

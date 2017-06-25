@@ -15,17 +15,28 @@ use torrent::{Torrent, Bitfield};
 pub struct Peer {
     pub conn: Socket,
     pub pieces: Bitfield,
-    pub being_choked: bool,
-    pub choked: bool,
-    pub interested: bool,
-    pub interesting: bool,
+    pub remote_status: Status,
+    pub local_status: Status,
     pub queued: u16,
     pub tid: usize,
     pub id: usize,
     pub downloaded: usize,
     pub uploaded: usize,
+    error: Option<io::Error>,
     reader: Reader,
     writer: Writer,
+}
+
+#[derive(Debug)]
+pub struct Status {
+    pub choked: bool,
+    pub interested: bool,
+}
+
+impl Status {
+    fn new() -> Status {
+        Status { choked: true, interested: false }
+    }
 }
 
 impl Peer {
@@ -33,10 +44,8 @@ impl Peer {
         let writer = Writer::new();
         let reader = Reader::new();
         Peer {
-            being_choked: true,
-            choked: true,
-            interested: false,
-            interesting: false,
+            remote_status: Status::new(),
+            local_status: Status::new(),
             uploaded: 0,
             downloaded: 0,
             conn,
@@ -44,6 +53,7 @@ impl Peer {
             writer: writer,
             queued: 0,
             pieces: Bitfield::new(0),
+            error: None,
             tid: 0,
             id: 0,
         }
@@ -61,9 +71,23 @@ impl Peer {
         Ok(Peer::new(Socket::from_stream(conn)?))
     }
 
+    pub fn error(&self) -> Option<&io::Error> {
+        self.error.as_ref()
+    }
+
+    pub fn set_error(&mut self, err: io::Error) {
+        self.error = Some(err);
+    }
+
     /// Sets the peer's metadata to the given torrent info and sends a
     /// handshake and bitfield.
-    pub fn set_torrent(&mut self, t: &Torrent) -> io::Result<()> {
+    pub fn set_torrent(&mut self, t: &Torrent) {
+        if let Err(e) = self._set_torrent(t) {
+            self.error = Some(e);
+        }
+    }
+
+    fn _set_torrent(&mut self, t: &Torrent) -> io::Result<()> {
         self.writer.write_message(Message::handshake(&t.info), &mut self.conn)?;
         self.pieces = Bitfield::new(t.info.hashes.len() as u64);
         self.tid = t.id;
@@ -76,7 +100,17 @@ impl Peer {
 
     /// Attempts to read as many messages as possible from
     /// the connection, returning a vector of the results.
-    pub fn readable(&mut self) -> io::Result<Vec<Message>> {
+    pub fn readable(&mut self) -> Vec<Message> {
+        match self._readable() {
+            Ok(r) => r,
+            Err(e) => {
+                self.error = Some(e);
+                Vec::new()
+            }
+        }
+    }
+
+    fn _readable(&mut self) -> io::Result<Vec<Message>> {
         let mut msgs = Vec::with_capacity(1);
         loop {
             if let Some(msg) = self.reader.readable(&mut self.conn)? {
@@ -89,7 +123,17 @@ impl Peer {
     }
 
     /// Attempts to read a single message from the peer
-    pub fn read(&mut self) -> io::Result<Option<Message>> {
+    pub fn read(&mut self) -> Option<Message> {
+        match self._read() {
+            Ok(m) => m,
+            Err(e) => {
+                self.error = Some(e);
+                None
+            }
+        }
+    }
+
+    fn _read(&mut self) -> io::Result<Option<Message>> {
         let res = self.reader.readable(&mut self.conn)?;
         if res.as_ref().map(|m| m.is_piece()).unwrap_or(false) {
             self.downloaded += 1;
@@ -99,23 +143,95 @@ impl Peer {
 
     /// Returns a boolean indicating whether or not the
     /// socket should be re-registered
-    pub fn writable(&mut self) -> io::Result<()> {
-        self.writer.writable(&mut self.conn)?;
-        Ok(())
+    pub fn writable(&mut self) {
+        if let Err(e) = self._writable() {
+            self.error = Some(e);
+        }
+    }
+
+    fn _writable(&mut self) -> io::Result<()> {
+        self.writer.writable(&mut self.conn)
     }
 
     /// Sends a message to the peer.
-    pub fn send_message(&mut self, msg: Message) -> io::Result<()> {
+    pub fn send_message(&mut self, msg: Message) {
+        if let Err(e) = self._send_message(msg) {
+            self.error = Some(e);
+        }
+    }
+
+    fn _send_message(&mut self, msg: Message) -> io::Result<()> {
         // NOTE: This is preemptive but shouldn't be substantially wrong
         if msg.is_piece() {
             self.uploaded += 1;
         }
         return self.writer.write_message(msg, &mut self.conn);
     }
+
+    pub fn choke(&mut self) {
+        if let Err(e) = self._choke() {
+            self.error = Some(e);
+        }
+    }
+
+    fn _choke(&mut self) -> io::Result<()> {
+        if !self.local_status.choked {
+            self.local_status.choked = true;
+            self._send_message(Message::Choke)
+        } else {
+            Ok(())
+        }
+    }
+
+    pub fn unchoke(&mut self) {
+        if let Err(e) = self._unchoke() {
+            self.error = Some(e);
+        }
+    }
+
+    fn _unchoke(&mut self) -> io::Result<()> {
+        if self.local_status.choked {
+            self.local_status.choked = false;
+            self._send_message(Message::Unchoke)
+        } else {
+            Ok(())
+        }
+    }
+
+    pub fn interested(&mut self) {
+        if let Err(e) = self._interested() {
+            self.error = Some(e);
+        }
+    }
+
+    fn _interested(&mut self) -> io::Result<()> {
+        if !self.local_status.interested {
+            self.local_status.interested = true;
+            self._send_message(Message::Interested)
+        } else {
+            Ok(())
+        }
+    }
+
+    pub fn uninterested(&mut self) {
+        if let Err(e) = self._uninterested() {
+            self.error = Some(e);
+        }
+    }
+
+    fn _uninterested(&mut self) -> io::Result<()> {
+        if self.local_status.interested {
+            self.local_status.interested = false;
+            self._send_message(Message::Uninterested)
+        } else {
+            Ok(())
+        }
+    }
 }
 
 impl fmt::Debug for Peer {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "Peer {{ id: {}, tid: {}, choking: {}, being_choked: {}, interested: {}, interesting: {}}}", self.id, self.tid, self.choked, self.being_choked, self.interested, self.interesting)
+        write!(f, "Peer {{ id: {}, tid: {}, local_status: {:?}, remote_status: {:?} }}",
+               self.id, self.tid, self.local_status, self.remote_status)
     }
 }
