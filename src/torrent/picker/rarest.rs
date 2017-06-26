@@ -4,7 +4,7 @@ use std::collections::{HashSet};
 use torrent::{Info, Peer, picker};
 use std::ops::IndexMut;
 
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Picker {
     /// Common data
     pub c: picker::Common,
@@ -18,7 +18,7 @@ pub struct Picker {
     seeders: HashSet<usize>,
 }
 
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 struct PieceInfo {
     idx: usize,
     availability: usize,
@@ -119,7 +119,7 @@ impl Picker {
                         self.c.waiting_peers.insert(block, hs);
                         self.c.waiting.insert(block);
                         if self.c.endgame_cnt == 1 {
-                            println!("Entering endgame!");
+                            // println!("Entering endgame!");
                         }
                         self.c.endgame_cnt = self.c.endgame_cnt.saturating_sub(1);
                         return Some((*pidx as u32, bidx as u32 * 16384));

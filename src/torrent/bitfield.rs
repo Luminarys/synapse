@@ -57,7 +57,7 @@ impl Bitfield {
             }
         }
         if self.len % 8 == 0 {
-            return !self.data.last().unwrap() != 0;
+            return !self.data.last().unwrap() == 0;
         }
         for i in 0..(self.len % 8) {
             if !self.has_bit(self.len - i - 1) {

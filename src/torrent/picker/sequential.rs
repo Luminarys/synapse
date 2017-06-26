@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 use torrent::{Info, Peer, picker};
 
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Picker {
     /// Common picker data
     pub c: picker::Common,

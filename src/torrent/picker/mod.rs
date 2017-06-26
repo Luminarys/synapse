@@ -5,7 +5,10 @@ use torrent::{Info, Peer, Bitfield};
 mod rarest;
 mod sequential;
 
-#[derive(Clone, Serialize, Deserialize)]
+#[cfg(test)]
+mod tests;
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum Picker {
     Rarest(rarest::Picker),
     Sequential(sequential::Picker),
@@ -76,7 +79,7 @@ impl Picker {
 }
 
 /// Common data that all pickers will need
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Common {
     /// Bitfield of which blocks have been waiting
     pub blocks: Bitfield,

@@ -59,6 +59,11 @@ impl Peer {
         }
     }
 
+    #[cfg(test)]
+    pub fn test() -> Peer {
+        Peer::new(Socket::empty())
+    }
+
     /// Creates a new "outgoing" peer, which acts as a client.
     /// Once created, set_torrent should be called.
     pub fn new_outgoing(ip: &SocketAddr) -> io::Result<Peer> {
