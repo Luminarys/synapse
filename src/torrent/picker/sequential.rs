@@ -18,7 +18,7 @@ impl Picker {
     }
 
     pub fn pick(&mut self, peer: &Peer) -> Option<(u32, u32)> {
-        for idx in peer.pieces.iter_from(self.piece_idx) {
+        for idx in peer.pieces().iter_from(self.piece_idx) {
             let start = idx * self.c.scale;
             for i in 0..self.c.scale {
                 // On the last piece check, we won't check the whole range.
@@ -26,7 +26,7 @@ impl Picker {
                     self.c.blocks.set_bit(start + i);
                     self.c.waiting.insert(start + i);
                     let mut hs = HashSet::with_capacity(1);
-                    hs.insert(peer.id);
+                    hs.insert(peer.id());
                     self.c.waiting_peers.insert(start + i, hs);
                     if self.c.endgame_cnt == 1 {
                         println!("Entering endgame!");
@@ -39,13 +39,13 @@ impl Picker {
         if self.c.endgame_cnt == 0 {
             let mut idx = None;
             for piece in self.c.waiting.iter() {
-                if peer.pieces.has_bit(*piece / self.c.scale) {
+                if peer.pieces().has_bit(*piece / self.c.scale) {
                     idx = Some(*piece);
                     break;
                 }
             }
             if let Some(i) = idx {
-                self.c.waiting_peers.get_mut(&i).unwrap().insert(peer.id);
+                self.c.waiting_peers.get_mut(&i).unwrap().insert(peer.id());
                 return Some(((i / self.c.scale) as u32, ((i % self.c.scale) * 16384) as u32));
             }
         }
@@ -128,11 +128,11 @@ mod tests {
         let b = Bitfield::new(4);
         let mut peer = Peer::test_from_pieces(0, b);
         assert_eq!(picker.pick(&peer), None);
-        peer.pieces().set_bit(1);
+        peer.pieces_mut().set_bit(1);
         assert_eq!(picker.pick(&peer), Some((1, 0)));
-        peer.pieces().set_bit(0);
+        peer.pieces_mut().set_bit(0);
         assert_eq!(picker.pick(&peer), Some((0, 0)));
-        peer.pieces().set_bit(2);
+        peer.pieces_mut().set_bit(2);
         assert_eq!(picker.pick(&peer), Some((2, 0)));
     }
 }

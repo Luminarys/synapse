@@ -41,21 +41,21 @@ impl Picker {
 
     pub fn add_peer(&mut self, peer: &Peer) {
         // Ignore seeders for availability calc
-        if peer.pieces.complete() {
-            self.seeders.insert(peer.id);
+        if peer.pieces().complete() {
+            self.seeders.insert(peer.id());
             return;
         }
-        for idx in peer.pieces.iter() {
+        for idx in peer.pieces().iter() {
             self.piece_available(idx as u32);
         }
     }
 
     pub fn remove_peer(&mut self, peer: &Peer) {
-        if self.seeders.contains(&peer.id) {
-            self.seeders.remove(&peer.id);
+        if self.seeders.contains(&peer.id()) {
+            self.seeders.remove(&peer.id());
             return;
         }
-        for idx in peer.pieces.iter() {
+        for idx in peer.pieces().iter() {
             self.piece_unavailable(idx as u32);
         }
     }
@@ -109,13 +109,13 @@ impl Picker {
 
     pub fn pick(&mut self, peer: &Peer) -> Option<(u32, u32)> {
         for pidx in self.pieces.iter() {
-            if peer.pieces.has_bit(*pidx as u64) {
+            if peer.pieces().has_bit(*pidx as u64) {
                 for bidx in 0..self.c.scale {
                     let block = *pidx as u64 * self.c.scale + bidx;
                     if !self.c.blocks.has_bit(block) {
                         self.c.blocks.set_bit(block);
                         let mut hs = HashSet::with_capacity(1);
-                        hs.insert(peer.id);
+                        hs.insert(peer.id());
                         self.c.waiting_peers.insert(block, hs);
                         self.c.waiting.insert(block);
                         if self.c.endgame_cnt == 1 {
@@ -130,7 +130,7 @@ impl Picker {
         if self.c.endgame_cnt == 0 {
             let mut idx = None;
             for piece in self.c.waiting.iter() {
-                if peer.pieces.has_bit(*piece/self.c.scale) {
+                if peer.pieces().has_bit(*piece/self.c.scale) {
                     idx = Some(*piece);
                     break;
                 }
@@ -198,10 +198,10 @@ mod tests {
         let mut peers = vec![Peer::test_from_pieces(0, b.clone()), Peer::test_from_pieces(0, b.clone()), Peer::test_from_pieces(0, b.clone())];
         assert_eq!(picker.pick(&peers[0]), None);
 
-        peers[0].pieces().set_bit(0);
-        peers[1].pieces().set_bit(0);
-        peers[1].pieces().set_bit(2);
-        peers[2].pieces().set_bit(1);
+        peers[0].pieces_mut().set_bit(0);
+        peers[1].pieces_mut().set_bit(0);
+        peers[1].pieces_mut().set_bit(2);
+        peers[2].pieces_mut().set_bit(1);
 
         for peer in peers.iter() {
             picker.add_peer(peer);
@@ -230,12 +230,12 @@ mod tests {
         let mut peers = vec![Peer::test_from_pieces(0, b.clone()), Peer::test_from_pieces(0, b.clone()), Peer::test_from_pieces(0, b.clone())];
         assert_eq!(picker.pick(&peers[0]), None);
 
-        peers[0].pieces().set_bit(0);
-        peers[0].pieces().set_bit(1);
-        peers[1].pieces().set_bit(1);
-        peers[1].pieces().set_bit(2);
-        peers[2].pieces().set_bit(0);
-        peers[2].pieces().set_bit(1);
+        peers[0].pieces_mut().set_bit(0);
+        peers[0].pieces_mut().set_bit(1);
+        peers[1].pieces_mut().set_bit(1);
+        peers[1].pieces_mut().set_bit(2);
+        peers[2].pieces_mut().set_bit(0);
+        peers[2].pieces_mut().set_bit(1);
 
         for peer in peers.iter() {
             picker.add_peer(peer);

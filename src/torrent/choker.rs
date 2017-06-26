@@ -28,12 +28,12 @@ impl Choker {
 
     pub fn add_peer(&mut self, peer: &mut Peer) {
         if self.unchoked.len() < 5 {
-            self.unchoked.push(peer.id);
+            self.unchoked.push(peer.id());
             peer.flush_dl();
             peer.flush_ul();
             peer.unchoke();
         } else {
-            self.interested.insert(peer.id);
+            self.interested.insert(peer.id());
         }
     }
 
@@ -46,12 +46,12 @@ impl Choker {
     }
 
     pub fn remove_peer(&mut self, peer: &mut Peer, peers: &mut HashMap<usize, Peer>) -> Option<SwapRes> {
-        if let Some(idx) = self.unchoked.iter().position(|&id| id == peer.id) {
+        if let Some(idx) = self.unchoked.iter().position(|&id| id == peer.id()) {
             self.unchoked.remove(idx);
             peer.choke();
-            Some(SwapRes { choked: peer.id, unchoked: self.unchoke_random(peers)})
+            Some(SwapRes { choked: peer.id(), unchoked: self.unchoke_random(peers)})
         } else {
-            self.interested.remove(&peer.id);
+            self.interested.remove(&peer.id());
             None
         }
     }
@@ -145,9 +145,9 @@ mod tests {
             let pc = Peer::test_from_stats(i, 0, 0);
             h.insert(i, pc);
         }
-        assert_eq!(c.unchoked.contains(&v[0].id), true);
-        assert_eq!(c.remove_peer(&mut v[0], &mut h), Some(SwapRes { choked: v[0].id, unchoked: 5}));
-        assert_eq!(c.unchoked.contains(&v[0].id), false);
+        assert_eq!(c.unchoked.contains(&v[0].id()), true);
+        assert_eq!(c.remove_peer(&mut v[0], &mut h), Some(SwapRes { choked: v[0].id(), unchoked: 5}));
+        assert_eq!(c.unchoked.contains(&v[0].id()), false);
     }
 
     #[test]

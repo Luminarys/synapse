@@ -14,13 +14,13 @@ use throttle::Throttle;
 
 /// Peer connection and associated metadata.
 pub struct Peer {
-    pub conn: PeerConn,
-    pub pieces: Bitfield,
-    pub remote_status: Status,
-    pub local_status: Status,
-    pub queued: u16,
-    pub tid: usize,
-    pub id: usize,
+    pieces: Bitfield,
+    remote_status: Status,
+    queued: u16,
+    conn: PeerConn,
+    id: usize,
+    tid: usize,
+    local_status: Status,
     downloaded: usize,
     uploaded: usize,
     error: Option<io::Error>,
@@ -151,8 +151,33 @@ impl Peer {
         &self.conn
     }
 
-    pub fn pieces(&mut self) -> &mut Bitfield {
+    pub fn pieces(&self) -> &Bitfield {
+        &self.pieces
+    }
+
+    pub fn set_pieces(&mut self, bf: Bitfield) {
+        self.pieces = bf;
+    }
+
+    #[cfg(test)]
+    pub fn pieces_mut(&mut self) -> &mut Bitfield {
         &mut self.pieces
+    }
+
+    pub fn id(&self) -> usize {
+        self.id
+    }
+
+    pub fn torrent(&self) -> usize {
+        self.tid
+    }
+
+    pub fn local_status(&self) -> &Status {
+        &self.local_status
+    }
+
+    pub fn remote_status(&self) -> &Status {
+        &self.remote_status
     }
 
     pub fn flush_ul(&mut self) -> usize {
@@ -161,6 +186,10 @@ impl Peer {
 
     pub fn flush_dl(&mut self) -> usize {
         mem::replace(&mut self.downloaded, 0)
+    }
+
+    pub fn can_queue_req(&mut self) -> bool {
+        self.queued < 5
     }
 
     /// Attempts to read as many messages as possible from
@@ -183,12 +212,33 @@ impl Peer {
         Ok(msgs)
     }
 
-    /// Attempts to read a single message from the peer
+    /// Attempts to read a single message from the peer,
+    /// processing it interally first before passing it to
+    /// the torrent
     pub fn read(&mut self) -> Option<Message> {
         match self.conn.readable() {
             Ok(res) => {
-                if res.as_ref().map(|m| m.is_piece()).unwrap_or(false) {
-                    self.downloaded += 1;
+                match res.as_ref() {
+                    Some(&Message::Piece { .. }) => {
+                        self.downloaded += 1;
+                        self.queued -= 1;
+                    }
+                    Some(&Message::Choke { .. }) => {
+                        self.remote_status.choked = true;
+                    }
+                    Some(&Message::Unchoke { .. }) => {
+                        self.remote_status.choked = false;
+                    }
+                    Some(&Message::Interested { .. }) => {
+                        self.remote_status.interested = true;
+                    }
+                    Some(&Message::Uninterested { .. }) => {
+                        self.remote_status.interested = false;
+                    }
+                    Some(&Message::Have(idx)) => {
+                        self.pieces.set_bit(idx as u64);
+                    }
+                    _ => { }
                 }
                 res
             },
@@ -215,6 +265,12 @@ impl Peer {
         if let Err(e) = self.conn.write_message(msg) {
             self.error = Some(e);
         }
+    }
+
+    pub fn request_piece(&mut self, idx: u32, offset: u32, len: u32) {
+        let m = Message::request(idx, offset, len);
+        self.queued += 1;
+        self.send_message(m);
     }
 
     pub fn choke(&mut self) {

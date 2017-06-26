@@ -170,45 +170,40 @@ impl Torrent {
         trace!(self.l, "Received {:?} from peer", msg);
         match msg {
             Message::Handshake { .. } => {
-                debug!(self.l, "Connection established with peer {:?}", peer.id);
+                debug!(self.l, "Connection established with peer {:?}", peer.id());
             }
             Message::Bitfield(mut pf) => {
                 pf.cap(self.pieces.len());
-                peer.pieces = pf;
-                if self.pieces.usable(&peer.pieces) {
+                peer.set_pieces(pf);
+                if self.pieces.usable(peer.pieces()) {
                     self.picker.add_peer(peer);
                     peer.interested();
                 }
-                if !peer.pieces.complete() {
-                    self.leechers.insert(peer.id);
+                if !peer.pieces().complete() {
+                    self.leechers.insert(peer.id());
                 }
             }
             Message::Have(idx) => {
                 if idx >= self.pieces.len() as u32 {
                     peer.set_error(io_err_val("Invalid piece provided in HAVE"));
                 }
-                peer.pieces.set_bit(idx as u64);
-                if peer.pieces.complete() && self.leechers.contains(&peer.id) {
-                    self.leechers.remove(&peer.id);
+                if peer.pieces().complete() && self.leechers.contains(&peer.id()) {
+                    self.leechers.remove(&peer.id());
                 }
-                if self.pieces.usable(&peer.pieces) {
+                if self.pieces.usable(peer.pieces()) {
                     peer.interested();
                 }
                 self.picker.piece_available(idx);
             }
             Message::Unchoke => {
-                peer.remote_status.choked = false;
                 self.make_requests(peer);
             }
-            Message::Choke => {
-                peer.remote_status.choked = true;
-            }
+            Message::Choke => { }
             Message::Piece { index, begin, data, length } => {
                 if self.pieces.complete() || self.pieces.has_bit(index as u64) {
                     return;
                 }
 
-                peer.queued -= 1;
                 self.write_piece(index, begin, length, data);
                 let (piece_done, mut peers) = self.picker.completed(index, begin);
                 if piece_done {
@@ -220,13 +215,13 @@ impl Torrent {
                     let m = Message::Have(index);
                     for pid in self.leechers.iter() {
                         let peer = self.peers().get_mut(pid).expect("Seeder IDs should be in peers");
-                        if !peer.pieces.has_bit(index as u64) {
+                        if !peer.pieces().has_bit(index as u64) {
                             peer.send_message(m.clone());
                         }
                     }
                 }
                 if peers.len() > 1 {
-                    peers.remove(&peer.id);
+                    peers.remove(&peer.id());
                     let m = Message::Cancel { index, begin, length };
                     for pid in peers {
                         if let Some(peer) = self.peers().get_mut(&pid) {
@@ -234,14 +229,14 @@ impl Torrent {
                         }
                     }
                 }
-                if !peer.remote_status.choked && !self.pieces.complete() && !self.paused {
+                if !peer.remote_status().choked && !self.pieces.complete() && !self.paused {
                     self.make_requests(peer);
                 }
             }
             Message::Request { index, begin, length } => {
                 // TODO get this from some sort of allocator.
-                if !peer.local_status.choked {
-                    self.request_read(peer.id, index, begin, length, Box::new([0u8; 16384]));
+                if !peer.local_status().choked {
+                    self.request_read(peer.id(), index, begin, length, Box::new([0u8; 16384]));
                 } else {
                     peer.set_error(io_err_val("Peer requested while choked!"));
                 }
@@ -252,11 +247,9 @@ impl Torrent {
                 trace!(self.l, "Received cancel!");
             }
             Message::Interested => {
-                peer.remote_status.interested = true;
                 self.choker.add_peer(&mut peer);
             }
             Message::Uninterested => {
-                peer.remote_status.interested = false;
                 let peers = self.peers();
                 self.choker.remove_peer(&mut peer, peers);
             }
@@ -329,17 +322,13 @@ impl Torrent {
     }
 
     fn make_requests(&mut self, peer: &mut Peer) {
-        // keep 5 outstanding requests?
-        while peer.queued < 5 {
+        while peer.can_queue_req() {
             if let Some((idx, offset)) = self.picker.pick(peer) {
                 if self.info.is_last_piece((idx, offset)) {
-                    peer.send_message(Message::request(idx, offset, self.info.last_piece_len()));
+                    peer.request_piece(idx, offset, self.info.last_piece_len());
                 } else {
-                    peer.send_message(Message::request(idx, offset, 16384));
+                    peer.request_piece(idx, offset, 16384);
                 }
-                peer.queued += 1;
-            } else {
-                break;
             }
         }
     }

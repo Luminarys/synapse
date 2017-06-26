@@ -41,12 +41,12 @@ impl Simulation {
 
     fn init(&mut self) {
         for i in 0..self.cfg.pieces {
-            self.peers()[0].data.pieces.set_bit(i as u64);
+            self.peers()[0].data.pieces_mut().set_bit(i as u64);
         }
-        assert!(self.peers()[0].data.pieces.complete());
+        assert!(self.peers()[0].data.pieces().complete());
         for peer in self.peers().iter() {
             for pid in peer.unchoked.iter() {
-                self.peers()[*pid].unchoked_by.push(peer.data.id);
+                self.peers()[*pid].unchoked_by.push(peer.data.id());
             }
         }
         for peer in self.peers().iter_mut() {
@@ -83,16 +83,16 @@ impl Simulation {
                     };
                     let ref mut received = self.peers()[req.peer];
                     received.picker.completed(req.piece, 0);
-                    received.data.pieces.set_bit(req.piece as u64);
-                    if received.data.pieces.complete() {
+                    received.data.pieces_mut().set_bit(req.piece as u64);
+                    if received.data.pieces().complete() {
                         received.compl = Some(self.ticks);
                         for p in self.peers().iter_mut() {
-                            if !p.data.pieces.complete() && !p.unchoked_by.contains(&peer.data.id) {
-                                p.unchoked_by.push(peer.data.id);
+                            if !p.data.pieces().complete() && !p.unchoked_by.contains(&peer.data.id()) {
+                                p.unchoked_by.push(peer.data.id());
                             }
                         }
                     }
-                    *received.requested_pieces.get_mut(&peer.data.id).unwrap() -= 1;
+                    *received.requested_pieces.get_mut(&peer.data.id()).unwrap() -= 1;
                     for pid in received.connected.iter() {
                         self.peers()[*pid].picker.piece_available(req.piece);
                     }
@@ -101,11 +101,11 @@ impl Simulation {
 
             for pid in peer.unchoked_by.iter() {
                 let ref mut ucp = self.peers()[*pid];
-                let cnt = peer.requested_pieces.get_mut(&ucp.data.id).unwrap();
-                if peer.data.pieces.usable(&ucp.data.pieces) {
+                let cnt = peer.requested_pieces.get_mut(&ucp.data.id()).unwrap();
+                if peer.data.pieces().usable(ucp.data.pieces()) {
                     while *cnt < self.cfg.req_queue_len {
                         if let Some((piece, _)) = peer.picker.pick(&ucp.data) {
-                            ucp.requests.push(Request { peer: peer.data.id, piece });
+                            ucp.requests.push(Request { peer: peer.data.id(), piece });
                             *cnt += 1;
                         } else {
                             break;
@@ -114,7 +114,7 @@ impl Simulation {
                 }
             }
         }
-        let inc = self.peers().iter().filter(|p| !p.data.pieces.complete()).map(|p| p.data.id).collect::<Vec<_>>();
+        let inc = self.peers().iter().filter(|p| !p.data.pieces().complete()).map(|p| p.data.id()).collect::<Vec<_>>();
         if inc.is_empty() {
             Ok(())
         } else {
