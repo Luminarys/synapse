@@ -29,8 +29,8 @@ impl Choker {
     pub fn add_peer(&mut self, peer: &mut Peer) {
         if self.unchoked.len() < 5 {
             self.unchoked.push(peer.id);
-            peer.downloaded = 0;
-            peer.uploaded = 0;
+            peer.flush_dl();
+            peer.flush_ul();
             peer.unchoke();
         } else {
             self.interested.insert(peer.id);
@@ -73,8 +73,7 @@ impl Choker {
             return None;
         }
         let (slowest, _) = self.unchoked.iter().enumerate().fold((0, std::usize::MAX), |(slowest, min), (idx, id)| {
-            let ul = peers[id].uploaded;
-            peers.get_mut(id).unwrap().uploaded = 0;
+            let ul = peers.get_mut(id).unwrap().flush_ul();
             if ul < min {
                 (idx, ul)
             } else {
@@ -90,8 +89,7 @@ impl Choker {
         }
 
         let (slowest, _) = self.unchoked.iter().enumerate().fold((0, std::usize::MAX), |(slowest, min), (idx, id)| {
-            let dl = peers[id].downloaded;
-            peers.get_mut(id).unwrap().downloaded = 0;
+            let dl = peers.get_mut(id).unwrap().flush_dl();
             if dl < min {
                 (idx, dl)
             } else {
@@ -118,8 +116,7 @@ impl Choker {
 #[cfg(test)]
 mod tests {
     use super::{Choker, SwapRes};
-    use torrent::Peer;
-    use socket::Socket;
+    use torrent::{Peer, Bitfield};
     use time::{Instant, Duration};
     use std::collections::HashMap;
 
@@ -127,8 +124,7 @@ mod tests {
     fn test_add_peers() {
         let mut c = Choker::new();
         for i in 0..6 {
-            let mut p = Peer::new(Socket::empty());
-            p.id = i;
+            let mut p = Peer::test(i, 0, 0, 0, Bitfield::new(1));
             // Since the socket is a dummy
             c.add_peer(&mut p);
         }
@@ -142,13 +138,11 @@ mod tests {
         let mut v = Vec::new();
         let mut h = HashMap::new();
         for i in 0..6 {
-            let mut p = Peer::new(Socket::empty());
-            p.id = i;
+            let mut p = Peer::test_from_stats(i, 0, 0);
             c.add_peer(&mut p);
             v.push(p);
             // Semi copy
-            let mut pc = Peer::new(Socket::empty());
-            pc. id = i;
+            let pc = Peer::test_from_stats(i, 0, 0);
             h.insert(i, pc);
         }
         assert_eq!(c.unchoked.contains(&v[0].id), true);
@@ -162,11 +156,8 @@ mod tests {
         let mut h = HashMap::new();
         assert_eq!(c.update_upload(&mut h).is_none(), true);
         for i in 0..6 {
-            let mut p = Peer::new(Socket::empty());
-            p.id = i;
+            let mut p = Peer::test_from_stats(i, i, 6 - i);
             c.add_peer(&mut p);
-            p.uploaded = i;
-            p.downloaded = 6 - i;
             h.insert(i, p);
         }
         assert_eq!(c.update_upload(&mut h).is_none(), true);
@@ -182,11 +173,8 @@ mod tests {
         let mut h = HashMap::new();
         assert_eq!(c.update_download(&mut h).is_none(), true);
         for i in 0..6 {
-            let mut p = Peer::new(Socket::empty());
-            p.id = i;
+            let mut p = Peer::test_from_stats(i, 6 - i, i);
             c.add_peer(&mut p);
-            p.downloaded = i;
-            p.uploaded = 6 - i;
             h.insert(i, p);
         }
         assert_eq!(c.update_download(&mut h).is_none(), true);

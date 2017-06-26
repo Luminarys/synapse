@@ -8,23 +8,77 @@ use self::writer::Writer;
 use std::net::TcpStream;
 use socket::Socket;
 use std::net::SocketAddr;
-use std::{io, fmt};
+use std::{io, fmt, mem};
 use torrent::{Torrent, Bitfield};
+use throttle::Throttle;
 
 /// Peer connection and associated metadata.
 pub struct Peer {
-    pub conn: Socket,
+    pub conn: PeerConn,
     pub pieces: Bitfield,
     pub remote_status: Status,
     pub local_status: Status,
     pub queued: u16,
     pub tid: usize,
     pub id: usize,
-    pub downloaded: usize,
-    pub uploaded: usize,
+    downloaded: usize,
+    uploaded: usize,
     error: Option<io::Error>,
+}
+
+pub struct PeerConn {
+    sock: Socket,
     reader: Reader,
     writer: Writer,
+}
+
+impl PeerConn {
+    pub fn new (sock: Socket) -> PeerConn {
+        let writer = Writer::new();
+        let reader = Reader::new();
+        PeerConn {
+            sock,
+            writer,
+            reader,
+        }
+    }
+
+    #[cfg(test)]
+    pub fn test() -> PeerConn {
+        PeerConn::new(Socket::empty())
+    }
+
+    pub fn sock(&self) -> &Socket {
+        &self.sock
+    }
+
+    /// Creates a new "outgoing" peer, which acts as a client.
+    /// Once created, set_torrent should be called.
+    pub fn new_outgoing(ip: &SocketAddr) -> io::Result<PeerConn> {
+        Ok(PeerConn::new(Socket::new(ip)?))
+    }
+
+    /// Creates a peer where we are acting as the server.
+    /// Once the handshake is received, set_torrent should be called.
+    pub fn new_incoming(sock: TcpStream) -> io::Result<PeerConn> {
+        Ok(PeerConn::new(Socket::from_stream(sock)?))
+    }
+
+    pub fn writable(&mut self) -> io::Result<()> {
+        self.writer.writable(&mut self.sock)
+    }
+
+    pub fn readable(&mut self) -> io::Result<Option<Message>> {
+        self.reader.readable(&mut self.sock)
+    }
+
+    pub fn write_message(&mut self, msg: Message) -> io::Result<()> {
+        self.writer.write_message(msg, &mut self.sock)
+    }
+
+    pub fn set_throttle(&mut self, throt: Throttle) {
+        self.sock.throttle = Some(throt);
+    }
 }
 
 #[derive(Debug)]
@@ -40,40 +94,49 @@ impl Status {
 }
 
 impl Peer {
-    pub fn new (conn: Socket) -> Peer {
-        let writer = Writer::new();
-        let reader = Reader::new();
-        Peer {
+    pub fn new(id: usize, mut conn: PeerConn, t: &Torrent) -> Peer {
+        conn.set_throttle(t.get_throttle(id));
+        let mut p = Peer {
             remote_status: Status::new(),
             local_status: Status::new(),
             uploaded: 0,
             downloaded: 0,
             conn,
-            reader: reader,
-            writer: writer,
             queued: 0,
-            pieces: Bitfield::new(0),
+            pieces: Bitfield::new(t.info.hashes.len() as u64),
+            error: None,
+            tid: t.id,
+            id,
+        };
+        p.send_message(Message::handshake(&t.info));
+        p.send_message(Message::Bitfield(t.pieces.clone()));
+        p
+    }
+
+    #[cfg(test)]
+    pub fn test(id: usize, uploaded: usize, downloaded: usize, queued: u16, pieces: Bitfield) -> Peer {
+        Peer {
+            id,
+            remote_status: Status::new(),
+            local_status: Status::new(),
+            uploaded,
+            downloaded,
+            conn: PeerConn::test(),
+            queued,
+            pieces,
             error: None,
             tid: 0,
-            id: 0,
         }
     }
 
     #[cfg(test)]
-    pub fn test() -> Peer {
-        Peer::new(Socket::empty())
+    pub fn test_from_pieces(id: usize, pieces: Bitfield) -> Peer {
+        Peer::test(id, 0, 0, 0, pieces)
     }
 
-    /// Creates a new "outgoing" peer, which acts as a client.
-    /// Once created, set_torrent should be called.
-    pub fn new_outgoing(ip: &SocketAddr) -> io::Result<Peer> {
-        Ok(Peer::new(Socket::new(ip)?))
-    }
-
-    /// Creates a peer where we are acting as the server.
-    /// Once the handshake is received, set_torrent should be called.
-    pub fn new_incoming(conn: TcpStream) -> io::Result<Peer> {
-        Ok(Peer::new(Socket::from_stream(conn)?))
+    #[cfg(test)]
+    pub fn test_from_stats(id: usize, ul: usize, dl: usize) -> Peer {
+        Peer::test(id, ul, dl, 0, Bitfield::new(4))
     }
 
     pub fn error(&self) -> Option<&io::Error> {
@@ -84,23 +147,20 @@ impl Peer {
         self.error = Some(err);
     }
 
-    /// Sets the peer's metadata to the given torrent info and sends a
-    /// handshake and bitfield.
-    pub fn set_torrent(&mut self, t: &Torrent) {
-        if let Err(e) = self._set_torrent(t) {
-            self.error = Some(e);
-        }
+    pub fn conn(&self) -> &PeerConn {
+        &self.conn
     }
 
-    fn _set_torrent(&mut self, t: &Torrent) -> io::Result<()> {
-        self.writer.write_message(Message::handshake(&t.info), &mut self.conn)?;
-        self.pieces = Bitfield::new(t.info.hashes.len() as u64);
-        self.tid = t.id;
-        self.writer.write_message(Message::Bitfield(t.pieces.clone()), &mut self.conn)?;
-        let mut throt = t.throttle.clone();
-        throt.id = self.id;
-        self.conn.throttle = Some(throt);
-        Ok(())
+    pub fn pieces(&mut self) -> &mut Bitfield {
+        &mut self.pieces
+    }
+
+    pub fn flush_ul(&mut self) -> usize {
+        mem::replace(&mut self.uploaded, 0)
+    }
+
+    pub fn flush_dl(&mut self) -> usize {
+        mem::replace(&mut self.downloaded, 0)
     }
 
     /// Attempts to read as many messages as possible from
@@ -117,7 +177,7 @@ impl Peer {
 
     fn _readable(&mut self) -> io::Result<Vec<Message>> {
         let mut msgs = Vec::with_capacity(1);
-        while let Some(msg) = self.reader.readable(&mut self.conn)? {
+        while let Some(msg) = self.conn.readable()? {
             msgs.push(msg);
         }
         Ok(msgs)
@@ -125,8 +185,13 @@ impl Peer {
 
     /// Attempts to read a single message from the peer
     pub fn read(&mut self) -> Option<Message> {
-        match self._read() {
-            Ok(m) => m,
+        match self.conn.readable() {
+            Ok(res) => {
+                if res.as_ref().map(|m| m.is_piece()).unwrap_or(false) {
+                    self.downloaded += 1;
+                }
+                res
+            },
             Err(e) => {
                 self.error = Some(e);
                 None
@@ -134,98 +199,57 @@ impl Peer {
         }
     }
 
-    fn _read(&mut self) -> io::Result<Option<Message>> {
-        let res = self.reader.readable(&mut self.conn)?;
-        if res.as_ref().map(|m| m.is_piece()).unwrap_or(false) {
-            self.downloaded += 1;
-        }
-        Ok(res)
-    }
-
     /// Returns a boolean indicating whether or not the
     /// socket should be re-registered
     pub fn writable(&mut self) {
-        if let Err(e) = self._writable() {
+        if let Err(e) = self.conn.writable() {
             self.error = Some(e);
         }
-    }
-
-    fn _writable(&mut self) -> io::Result<()> {
-        self.writer.writable(&mut self.conn)
     }
 
     /// Sends a message to the peer.
     pub fn send_message(&mut self, msg: Message) {
-        if let Err(e) = self._send_message(msg) {
-            self.error = Some(e);
-        }
-    }
-
-    fn _send_message(&mut self, msg: Message) -> io::Result<()> {
-        // NOTE: This is preemptive but shouldn't be substantially wrong
         if msg.is_piece() {
             self.uploaded += 1;
         }
-        self.writer.write_message(msg, &mut self.conn)
-    }
-
-    pub fn choke(&mut self) {
-        if let Err(e) = self._choke() {
+        if let Err(e) = self.conn.write_message(msg) {
             self.error = Some(e);
         }
     }
 
-    fn _choke(&mut self) -> io::Result<()> {
+    pub fn choke(&mut self) {
         if !self.local_status.choked {
             self.local_status.choked = true;
-            self._send_message(Message::Choke)
-        } else {
-            Ok(())
+            if let Err(e) = self.conn.write_message(Message::Choke) {
+                self.error = Some(e);
+            }
         }
     }
 
     pub fn unchoke(&mut self) {
-        if let Err(e) = self._unchoke() {
-            self.error = Some(e);
-        }
-    }
-
-    fn _unchoke(&mut self) -> io::Result<()> {
         if self.local_status.choked {
             self.local_status.choked = false;
-            self._send_message(Message::Unchoke)
-        } else {
-            Ok(())
+            if let Err(e) = self.conn.write_message(Message::Unchoke) {
+                self.error = Some(e);
+            }
         }
     }
 
     pub fn interested(&mut self) {
-        if let Err(e) = self._interested() {
-            self.error = Some(e);
-        }
-    }
-
-    fn _interested(&mut self) -> io::Result<()> {
         if !self.local_status.interested {
             self.local_status.interested = true;
-            self._send_message(Message::Interested)
-        } else {
-            Ok(())
+            if let Err(e) = self.conn.write_message(Message::Interested) {
+                self.error = Some(e);
+            }
         }
     }
 
     pub fn uninterested(&mut self) {
-        if let Err(e) = self._uninterested() {
-            self.error = Some(e);
-        }
-    }
-
-    fn _uninterested(&mut self) -> io::Result<()> {
         if self.local_status.interested {
             self.local_status.interested = false;
-            self._send_message(Message::Uninterested)
-        } else {
-            Ok(())
+            if let Err(e) = self.conn.write_message(Message::Uninterested) {
+                self.error = Some(e);
+            }
         }
     }
 }

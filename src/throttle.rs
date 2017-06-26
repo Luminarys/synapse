@@ -36,8 +36,8 @@ impl Throttler {
         self.dl_data().add_tokens();
     }
 
-    pub fn get_throttle(&self) -> Throttle {
-        Throttle { ul_data: self.ul_data.clone(), dl_data: self.dl_data.clone(), id: 0 }
+    pub fn get_throttle(&self, id: usize) -> Throttle {
+        Throttle { ul_data: self.ul_data.clone(), dl_data: self.dl_data.clone(), id }
     }
 
     pub fn set_ul_rate(&mut self, rate: usize) {
@@ -98,6 +98,10 @@ pub struct Throttle {
 unsafe impl Send for Throttle { }
 
 impl Throttle {
+    pub fn new_sibling(&self, id: usize) -> Throttle {
+        Throttle { ul_data: self.ul_data.clone(), dl_data: self.dl_data.clone(), id }
+    }
+
     pub fn get_bytes_dl(&mut self, amnt: usize) -> Result<(), ()> {
         let res = self.dl_data().get_tokens(amnt);
         if res.is_err() {

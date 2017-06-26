@@ -179,7 +179,6 @@ impl Picker {
 #[cfg(test)]
 mod tests {
     use super::Picker;
-    use socket::Socket;
     use torrent::{Info, Peer, Bitfield};
 
     #[test]
@@ -195,16 +194,14 @@ mod tests {
         };
 
         let mut picker = Picker::new(&info);
-        let mut peers = vec![Peer::new(Socket::empty()), Peer::new(Socket::empty()), Peer::new(Socket::empty())];
-        for peer in peers.iter_mut() {
-            peer.pieces = Bitfield::new(3);
-        }
+        let b = Bitfield::new(3);
+        let mut peers = vec![Peer::test_from_pieces(0, b.clone()), Peer::test_from_pieces(0, b.clone()), Peer::test_from_pieces(0, b.clone())];
         assert_eq!(picker.pick(&peers[0]), None);
 
-        peers[0].pieces.set_bit(0);
-        peers[1].pieces.set_bit(0);
-        peers[1].pieces.set_bit(2);
-        peers[2].pieces.set_bit(1);
+        peers[0].pieces().set_bit(0);
+        peers[1].pieces().set_bit(0);
+        peers[1].pieces().set_bit(2);
+        peers[2].pieces().set_bit(1);
 
         for peer in peers.iter() {
             picker.add_peer(peer);
@@ -229,18 +226,16 @@ mod tests {
         };
 
         let mut picker = Picker::new(&info);
-        let mut peers = vec![Peer::new(Socket::empty()), Peer::new(Socket::empty()), Peer::new(Socket::empty())];
-        for peer in peers.iter_mut() {
-            peer.pieces = Bitfield::new(4);
-        }
+        let b = Bitfield::new(4);
+        let mut peers = vec![Peer::test_from_pieces(0, b.clone()), Peer::test_from_pieces(0, b.clone()), Peer::test_from_pieces(0, b.clone())];
         assert_eq!(picker.pick(&peers[0]), None);
 
-        peers[0].pieces.set_bit(0);
-        peers[0].pieces.set_bit(1);
-        peers[1].pieces.set_bit(1);
-        peers[1].pieces.set_bit(2);
-        peers[2].pieces.set_bit(0);
-        peers[2].pieces.set_bit(1);
+        peers[0].pieces().set_bit(0);
+        peers[0].pieces().set_bit(1);
+        peers[1].pieces().set_bit(1);
+        peers[1].pieces().set_bit(2);
+        peers[2].pieces().set_bit(0);
+        peers[2].pieces().set_bit(1);
 
         for peer in peers.iter() {
             picker.add_peer(peer);

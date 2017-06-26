@@ -92,7 +92,6 @@ impl Picker {
 #[cfg(test)]
 mod tests {
     use torrent::{Info, Peer, Bitfield};
-    use socket::Socket;
     use super::Picker;
 
     #[test]
@@ -126,14 +125,14 @@ mod tests {
         };
 
         let mut picker = Picker::new(&info);
-        let mut peer = Peer::new(Socket::empty());
-        peer.pieces = Bitfield::new(4);
+        let b = Bitfield::new(4);
+        let mut peer = Peer::test_from_pieces(0, b);
         assert_eq!(picker.pick(&peer), None);
-        peer.pieces.set_bit(1);
+        peer.pieces().set_bit(1);
         assert_eq!(picker.pick(&peer), Some((1, 0)));
-        peer.pieces.set_bit(0);
+        peer.pieces().set_bit(0);
         assert_eq!(picker.pick(&peer), Some((0, 0)));
-        peer.pieces.set_bit(2);
+        peer.pieces().set_bit(2);
         assert_eq!(picker.pick(&peer), Some((2, 0)));
     }
 }

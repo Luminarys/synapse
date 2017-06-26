@@ -27,10 +27,7 @@ impl Simulation {
                 requested_pieces: HashMap::new(),
                 compl: None,
                 data: {
-                    let mut p = TPeer::test();
-                    p.id = i as usize;
-                    p.pieces = Bitfield::new(cfg.pieces as u64);
-                    p
+                    TPeer::test(i as usize, 0, 0, 0, Bitfield::new(cfg.pieces as u64))
                 }
             };
             peers.push(peer);
@@ -192,6 +189,7 @@ fn test_efficiency(cfg: TestCfg, picker: Picker) {
     assert!((ta as u32) < (((cfg.pieces + cfg.peers as u32) as f32 * 1.5) as u32));
 }
 
+#[ignore]
 #[test]
 fn test_seq_efficiency() {
     let cfg = TestCfg {
@@ -215,6 +213,7 @@ fn test_seq_efficiency() {
     test_efficiency(cfg, p);
 }
 
+#[ignore]
 #[test]
 fn test_rarest_efficiency() {
     let cfg = TestCfg {

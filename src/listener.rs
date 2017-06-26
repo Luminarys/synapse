@@ -5,13 +5,13 @@ use amy::{self, Poller, Registrar};
 use std::collections::HashMap;
 use std::sync::mpsc;
 use slog::Logger;
-use torrent::Peer;
+use torrent::peer::PeerConn;
 use {control, CONTROL, CONFIG, TC};
 
 pub struct Listener {
     listener: TcpListener,
     lid: usize,
-    incoming: HashMap<usize, Peer>,
+    incoming: HashMap<usize, PeerConn>,
     poll: Poller,
     reg: Registrar,
     rx: mpsc::Receiver<Request>,
@@ -75,8 +75,8 @@ impl Listener {
             match self.listener.accept() {
                 Ok((conn, _ip)) => {
                     debug!(self.l, "Accepted new connection from {:?}!", _ip);
-                    let peer = Peer::new_incoming(conn).unwrap();
-                    let pid = self.reg.register(&peer.conn, amy::Event::Read).unwrap();
+                    let peer = PeerConn::new_incoming(conn).unwrap();
+                    let pid = self.reg.register(peer.sock(), amy::Event::Read).unwrap();
                     self.incoming.insert(pid, peer);
                 }
                 Err(ref e) if e.kind() == ErrorKind::WouldBlock => {
@@ -89,16 +89,18 @@ impl Listener {
 
     fn handle_peer(&mut self, not: amy::Notification) {
         let pid = not.id;
-        let res = self.incoming.get_mut(&pid).unwrap().read();
-        if let Some(hs) = res {
-            debug!(self.l, "Completed handshake({:?}) with peer, transferring!", hs);
-            let peer = self.incoming.remove(&pid).unwrap();
-            self.reg.deregister(&peer.conn).unwrap();
-            CONTROL.ctrl_tx.lock().unwrap().send(control::Request::AddPeer(peer, hs.get_handshake_hash())).unwrap();
-        }
-        if self.incoming[&pid].error().is_some() {
-            debug!(self.l, "Peer connection failed!");
-            self.incoming.remove(&pid);
+        match self.incoming.get_mut(&pid).unwrap().readable() {
+            Ok(Some(hs)) => {
+                debug!(self.l, "Completed handshake({:?}) with peer, transferring!", hs);
+                let peer = self.incoming.remove(&pid).unwrap();
+                self.reg.deregister(peer.sock()).unwrap();
+                CONTROL.ctrl_tx.lock().unwrap().send(control::Request::AddPeer(peer, hs.get_handshake_hash())).unwrap();
+            }
+            Ok(None) => { }
+            Err(_) => {
+                debug!(self.l, "Peer connection failed!");
+                self.incoming.remove(&pid);
+            }
         }
     }
 }

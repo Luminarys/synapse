@@ -4,7 +4,7 @@ use std::io::{Read};
 use {rpc, tracker, disk, listener, DISK, RPC, CONFIG, TC, TRACKER, LISTENER};
 use util::io_err;
 use amy::{self, Poller, Registrar};
-use torrent::{self, Torrent, Peer};
+use torrent::{self, peer, Torrent};
 use std::collections::HashMap;
 use bencode::BEncode;
 use std::sync::{Arc, Mutex};
@@ -38,7 +38,7 @@ unsafe impl Sync for Handle {}
 
 pub enum Request {
     AddTorrent(BEncode),
-    AddPeer(Peer, [u8; 20]),
+    AddPeer(peer::PeerConn, [u8; 20]),
     RPC(rpc::Request),
     Shutdown,
 }
@@ -115,7 +115,7 @@ impl Control {
 
         let tid = self.tid_cnt;
         let r = self.reg.clone();
-        let throttle = self.throttler.get_throttle();
+        let throttle = self.throttler.get_throttle(tid);
         let log = self.l.new(o!("torrent" => tid));
         if let Ok(t) = Torrent::deserialize(tid, &data, throttle, r, log) {
             trace!(self.l, "Succesfully parsed torrent file {:?}", dir.path());
@@ -152,7 +152,7 @@ impl Control {
             if let Ok(r) = resp {
                 for ip in r.peers.iter() {
                     trace!(self.l, "Adding peer({:?})!", ip);
-                    if let Ok(peer) = Peer::new_outgoing(ip) {
+                    if let Ok(peer) = peer::PeerConn::new_outgoing(ip) {
                         trace!(self.l, "Added peer({:?})!", ip);
                         self.add_peer(id, peer);
                     }
@@ -185,7 +185,7 @@ impl Control {
                     }
                 }
                 Ok(Request::AddPeer(p, hash)) => {
-                    trace!(self.l, "Adding peer {:?} for hash {:?}!", p, hash);
+                    trace!(self.l, "Adding peer for torrent with hash {:?}!", hash);
                     if let Some(tid) = self.hash_idx.get(&hash).cloned() {
                         self.add_peer(tid, p);
                     } else {
@@ -245,7 +245,7 @@ impl Control {
         }
         let tid = self.tid_cnt;
         let r = self.reg.clone();
-        let throttle = self.throttler.get_throttle();
+        let throttle = self.throttler.get_throttle(tid);
         let log = self.l.new(o!("torrent" => tid));
         let t = Torrent::new(tid, info, throttle, r, log);
         self.hash_idx.insert(t.info.hash, tid);
@@ -317,8 +317,8 @@ impl Control {
         }
     }
 
-    fn add_peer(&mut self, id: usize, peer: Peer) {
-        trace!(self.l, "Adding peer {:?} to torrent {:?}!", peer, id);
+    fn add_peer(&mut self, id: usize, peer: peer::PeerConn) {
+        trace!(self.l, "Adding peer to torrent {:?}!", id);
         let torrent = self.torrents.get_mut(&id).unwrap();
         if let Some(pid) = torrent.add_peer(peer) {
             self.peers.insert(pid, id);

@@ -6,7 +6,7 @@ mod choker;
 
 pub use self::bitfield::Bitfield;
 pub use self::info::Info;
-pub use self::peer::Peer;
+pub use self::peer::{Peer, PeerConn};
 
 use self::peer::Message;
 use self::picker::Picker;
@@ -142,6 +142,10 @@ impl Torrent {
     pub fn reap_peers(&mut self) {
         debug!(self.l, "Reaping peers");
         self.peers().retain(|_, p| p.error().is_none());
+    }
+
+    pub fn get_throttle(&self, id: usize) -> Throttle {
+        self.throttle.new_sibling(id)
     }
 
     pub fn block_available(&mut self, pid: usize, resp: disk::Response) {
@@ -371,18 +375,18 @@ impl Torrent {
         size
     }
 
-    pub fn add_peer(&mut self, mut peer: Peer) -> Option<usize> {
+    pub fn add_peer(&mut self, conn: PeerConn) -> Option<usize> {
         debug!(self.l, "Adding peer!");
-        let pid = self.reg.register(&peer.conn, amy::Event::Both).unwrap();
-        peer.id = pid;
-        peer.set_torrent(self);
-        if peer.error().is_some() {
-            self.reg.deregister(&peer.conn).unwrap();
+        let pid = self.reg.register(conn.sock(), amy::Event::Both).unwrap();
+        let p = Peer::new(pid, conn, self);
+        if p.error().is_none() {
+            self.picker.add_peer(&p);
+            self.peers().insert(pid, p);
+            Some(pid)
+        } else {
+            self.reg.deregister(p.conn().sock()).unwrap();
             return None;
         }
-        self.picker.add_peer(&peer);
-        self.peers().insert(peer.id, peer);
-        Some(pid)
     }
 
     pub fn remove_peer(&mut self, id: usize) -> Peer {
@@ -390,7 +394,7 @@ impl Torrent {
         let mut peer = self.peers().remove(&id).unwrap();
         let peers = self.peers();
         self.choker.remove_peer(&mut peer, peers);
-        self.reg.deregister(&peer.conn).unwrap();
+        self.reg.deregister(peer.conn().sock()).unwrap();
         self.leechers.remove(&id);
         self.picker.remove_peer(&peer);
         peer
@@ -453,7 +457,7 @@ impl Drop for Torrent {
         debug!(self.l, "Deregistering peers");
         for (id, peer) in self.peers().drain() {
             trace!(self.l, "Deregistering peer {:?}", peer);
-            self.reg.deregister(&peer.conn).unwrap();
+            self.reg.deregister(peer.conn().sock()).unwrap();
             self.leechers.remove(&id);
         }
         if !self.paused {
