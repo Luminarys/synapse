@@ -119,7 +119,7 @@ impl Picker {
                         self.c.waiting_peers.insert(block, hs);
                         self.c.waiting.insert(block);
                         if self.c.endgame_cnt == 1 {
-                            println!("Entering endgame!");
+                            // println!("Entering endgame!");
                         }
                         self.c.endgame_cnt = self.c.endgame_cnt.saturating_sub(1);
                         return Some((*pidx as u32, bidx as u32 * 16384));

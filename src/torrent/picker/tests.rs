@@ -1,5 +1,5 @@
 use super::Picker;
-use std::collections::HashSet;
+use std::collections::HashMap;
 use std::cell::UnsafeCell;
 use torrent::{Bitfield, Peer as TPeer, Info};
 use rand::distributions::{IndependentSample, Range};
@@ -24,7 +24,8 @@ impl Simulation {
                 unchoked,
                 unchoked_by: Vec::new(),
                 requests: Vec::new(),
-                requested_peers: HashSet::new(),
+                requested_pieces: HashMap::new(),
+                compl: None,
                 data: {
                     let mut p = TPeer::test();
                     p.id = i as usize;
@@ -45,72 +46,81 @@ impl Simulation {
         for i in 0..self.cfg.pieces {
             self.peers()[0].data.pieces.set_bit(i as u64);
         }
-        for piece in self.peers()[0].data.pieces.iter() {
-            println!("Set {:?}", piece);
-        }
         assert!(self.peers()[0].data.pieces.complete());
         for peer in self.peers().iter() {
             for pid in peer.unchoked.iter() {
                 self.peers()[*pid].unchoked_by.push(peer.data.id);
             }
         }
+        for peer in self.peers().iter_mut() {
+            for pid in 0..self.cfg.peers {
+                peer.requested_pieces.insert(pid as usize, 0);
+            }
+        }
     }
 
-    fn run(&mut self) -> usize {
+    fn run(&mut self) -> (usize, f64) {
         while let Err(()) = self.tick() {
             self.ticks += 1;
             if self.ticks as u32 >= 3 * (self.cfg.pieces + self.cfg.peers as u32) {
                 panic!();
             }
         }
-        return self.ticks;
+        let mut total = 0.;
+        for peer in self.peers().iter().skip(1) {
+            total += peer.compl.unwrap() as f64;
+        }
+        return (self.ticks, total/(self.cfg.peers as f64 - 1.));
     }
 
     fn tick(&mut self) -> Result<(), ()> {
-        println!("\nTick: {:?}\n", self.ticks);
         let mut rng = rand::thread_rng();
         for peer in self.peers().iter_mut() {
-            println!("Handling peer: {:?}", peer.data.id);
-            if !peer.requests.is_empty() {
-                let req = if true {
-                    peer.requests.pop().unwrap()
-                } else {
-                    let b = Range::new(0, peer.requests.len());
-                    peer.requests.remove(b.ind_sample(&mut rng))
-                };
-                println!("Handling request from: {:?}", req.peer);
-                let ref mut received = self.peers()[req.peer];
-                received.picker.completed(req.piece, 0);
-                received.data.pieces.set_bit(req.piece as u64);
-                if received.data.pieces.complete() {
-                    for p in self.peers().iter_mut() {
-                        if !p.data.pieces.complete() && !p.unchoked_by.contains(&peer.data.id) {
-                            p.unchoked_by.push(peer.data.id);
+            for _ in 0..self.cfg.req_per_tick {
+                if !peer.requests.is_empty() {
+                    let req = if true {
+                        peer.requests.pop().unwrap()
+                    } else {
+                        let b = Range::new(0, peer.requests.len());
+                        peer.requests.remove(b.ind_sample(&mut rng))
+                    };
+                    let ref mut received = self.peers()[req.peer];
+                    received.picker.completed(req.piece, 0);
+                    received.data.pieces.set_bit(req.piece as u64);
+                    if received.data.pieces.complete() {
+                        received.compl = Some(self.ticks);
+                        for p in self.peers().iter_mut() {
+                            if !p.data.pieces.complete() && !p.unchoked_by.contains(&peer.data.id) {
+                                p.unchoked_by.push(peer.data.id);
+                            }
                         }
                     }
-                }
-                received.requested_peers.remove(&peer.data.id);
-                for pid in received.connected.iter() {
-                    self.peers()[*pid].picker.piece_available(req.piece);
+                    *received.requested_pieces.get_mut(&peer.data.id).unwrap() -= 1;
+                    for pid in received.connected.iter() {
+                        self.peers()[*pid].picker.piece_available(req.piece);
+                    }
                 }
             }
 
             for pid in peer.unchoked_by.iter() {
                 let ref mut ucp = self.peers()[*pid];
-                if peer.data.pieces.usable(&ucp.data.pieces) && !peer.requested_peers.contains(&ucp.data.id) {
-                    println!("Making request to: {:?}", ucp.data.id);
-                    if let Some((piece, _)) = peer.picker.pick(&ucp.data) {
-                        ucp.requests.push(Request { peer: peer.data.id, piece });
-                        peer.requested_peers.insert(ucp.data.id);
+                let cnt = peer.requested_pieces.get_mut(&ucp.data.id).unwrap();
+                if peer.data.pieces.usable(&ucp.data.pieces) {
+                    while *cnt < self.cfg.req_queue_len {
+                        if let Some((piece, _)) = peer.picker.pick(&ucp.data) {
+                            ucp.requests.push(Request { peer: peer.data.id, piece });
+                            *cnt += 1;
+                        } else {
+                            break;
+                        }
                     }
                 }
             }
         }
-        let inc = self.peers().iter().filter(|p| !p.data.pieces.complete()).collect::<Vec<_>>();
-        if  inc.is_empty() {
+        let inc = self.peers().iter().filter(|p| !p.data.pieces.complete()).map(|p| p.data.id).collect::<Vec<_>>();
+        if inc.is_empty() {
             Ok(())
         } else {
-            println!("{:?}", inc[0]);
             Err(())
         }
     }
@@ -130,7 +140,8 @@ struct Peer {
     unchoked: Vec<usize>,
     unchoked_by: Vec<usize>,
     requests: Vec<Request>,
-    requested_peers: HashSet<usize>,
+    requested_pieces: HashMap<usize, u8>,
+    compl: Option<usize>,
 }
 
 #[derive(Debug)]
@@ -143,6 +154,8 @@ struct Request {
 struct TestCfg {
     pieces: u32,
     peers: u16,
+    req_per_tick: u8,
+    req_queue_len: u8,
     unchoke_limit: u8,
     connect_limit: u8,
 }
@@ -163,23 +176,31 @@ struct TestCfg {
 /// A general effiency benchmark can then be obtained by counting ticks
 /// needed for every peer to complete the torrent.
 fn test_efficiency(cfg: TestCfg, picker: Picker) {
-    for _ in 0..10 {
+    let mut total = 0;
+    let mut pat = 0.;
+    let num_runs = 20;
+    for _ in 0..num_runs {
         let mut s = Simulation::new(cfg.clone(), picker.clone());
         s.init();
-        let t = s.run();
-        println!("took {:?} ticks!", t);
-        assert!((t as u32) < (((cfg.pieces + cfg.peers as u32) as f32 * 1.5) as u32));
+        let (t, a) = s.run();
+        total += t;
+        pat += a;
     }
+    let ta = total/num_runs;
+    println!("Avg: {:?}", ta);
+    println!("Avg peer ticks: {:?}", pat/num_runs as f64);
+    assert!((ta as u32) < (((cfg.pieces + cfg.peers as u32) as f32 * 1.5) as u32));
 }
 
-#[ignore]
 #[test]
 fn test_seq_efficiency() {
     let cfg = TestCfg {
-        pieces: 40,
-        peers: 10,
+        pieces: 100,
+        peers: 20,
         unchoke_limit: 5,
-        connect_limit: 10,
+        connect_limit: 20,
+        req_per_tick: 2,
+        req_queue_len: 2,
     };
     let info = Info {
         name: String::from(""),
@@ -197,10 +218,12 @@ fn test_seq_efficiency() {
 #[test]
 fn test_rarest_efficiency() {
     let cfg = TestCfg {
-        pieces: 40,
-        peers: 10,
+        pieces: 100,
+        peers: 20,
         unchoke_limit: 5,
-        connect_limit: 10,
+        connect_limit: 20,
+        req_per_tick: 2,
+        req_queue_len: 2,
     };
     let info = Info {
         name: String::from(""),
