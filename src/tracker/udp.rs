@@ -11,7 +11,7 @@ pub struct Announcer {
 
 impl Announcer {
     pub fn new() -> Announcer {
-        let port = CONFIG.get().port;
+        let port = CONFIG.port;
         println!("Binding on port {:?}", port);
         let sock = UdpSocket::bind(("0.0.0.0", port)).unwrap();
         Announcer {
@@ -87,7 +87,7 @@ impl Announcer {
             // Num Want
             announce_req.write_u32::<BigEndian>(30).unwrap();
             // Port
-            let port = CONFIG.get().port;
+            let port = CONFIG.port;
             announce_req.write_u16::<BigEndian>(port).unwrap();
         };
         self.sock.send_to(&data, (url.host_str().unwrap(), url.port().unwrap())).map_err(

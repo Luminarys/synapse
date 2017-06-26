@@ -1,5 +1,4 @@
-use std::{io, mem};
-use std::cell::UnsafeCell;
+use std::io;
 use rand::{self, Rng};
 use url::percent_encoding::{percent_encode_byte};
 use std::fmt::Write as FWrite;
@@ -48,28 +47,3 @@ pub fn torrent_name(hash: &[u8; 20]) -> String {
     }
     hash_str
 }
-
-pub struct Init<T>(UnsafeCell<Option<T>>);
-
-impl<T> Init<T> {
-    pub fn new() -> Init<T> {
-        Init(UnsafeCell::new(None))
-    }
-
-    pub fn set(&self, val: T) {
-        unsafe {
-            let r = self.0.get().as_mut().unwrap();
-            assert!(r.is_none());
-            mem::replace(r, Some(val));
-        }
-    }
-
-    pub fn get(&self) -> &T {
-        unsafe {
-            self.0.get().as_ref().unwrap().as_ref().unwrap()
-        }
-    }
-}
-
-unsafe impl<T> Send for Init<T> { }
-unsafe impl<T> Sync for Init<T> { }

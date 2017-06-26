@@ -96,7 +96,7 @@ impl Control {
 
     fn deserialize(&mut self) -> io::Result<()> {
         debug!(self.l, "Deserializing torrents!");
-        let sd = &CONFIG.get().session;
+        let sd = &CONFIG.session;
         for entry in fs::read_dir(sd)? {
             if let Err(e) = self.deserialize_torrent(entry) {
                 warn!(self.l, "Failed to deserialize torrent file: {:?}!", e);

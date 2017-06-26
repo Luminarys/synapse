@@ -5,3 +5,4 @@ oprofile*
 perf*
 *.svg
 *.iso
+*.swp

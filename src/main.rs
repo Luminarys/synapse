@@ -42,8 +42,19 @@ lazy_static! {
         atomic::AtomicUsize::new(0)
     };
 
-    pub static ref CONFIG: util::Init<config::Config> = {
-        util::Init::new()
+    pub static ref CONFIG: config::Config = {
+        let args: Vec<_> = env::args().collect();
+        if args.len() >= 2 {
+            info!(LOG, "Using config file!");
+            let mut s = String::new();
+            let mut f = std::fs::File::open(&args[1]).expect("Config file could not be opened!");
+            f.read_to_string(&mut s).expect("Config file could not be read!");
+            let cf = toml::from_str(&s).expect("Config file could not be parsed!");
+            config::Config::from_file(cf)
+        } else {
+            info!(LOG, "Using default config");
+            Default::default()
+        }
     };
 
     pub static ref PEER_ID: [u8; 20] = {
@@ -103,20 +114,8 @@ lazy_static! {
 
 fn main() {
     info!(LOG, "Initializing!");
-    let args: Vec<_> = env::args().collect();
-    let config = if args.len() >= 2 {
-        info!(LOG, "Using config file!");
-        let mut s = String::new();
-        let mut f = std::fs::File::open(&args[1]).expect("Config file could not be opened!");
-        f.read_to_string(&mut s).expect("Config file could not be read!");
-        let cf = toml::from_str(&s).expect("Config file could not be parsed!");
-        config::Config::from_file(cf)
-    } else {
-        info!(LOG, "Using default config");
-        Default::default()
-    };
-    CONFIG.set(config);
 
+    CONFIG.port;
     LISTENER.init();
     RPC.init();
     DISK.init();

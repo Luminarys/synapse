@@ -106,7 +106,7 @@ impl RPC {
 
     pub fn run(&mut self) {
         debug!(self.l, "Awaiting requests");
-        let server = tiny_http::Server::http(("0.0.0.0", CONFIG.get().rpc_port)).unwrap();
+        let server = tiny_http::Server::http(("0.0.0.0", CONFIG.rpc_port)).unwrap();
         while let Ok(pr) = server.recv_timeout(time::Duration::from_secs(1)) {
             if let Some(r) = pr {
                 if self.handle_request(r).is_err() {

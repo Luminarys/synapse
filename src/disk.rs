@@ -100,7 +100,7 @@ impl Disk {
     }
 
     pub fn run(&mut self) {
-        let sd = &CONFIG.get().session;
+        let sd = &CONFIG.session;
         fs::create_dir_all(sd).unwrap();
         debug!(self.l, "Initialized!");
         loop {

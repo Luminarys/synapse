@@ -110,7 +110,7 @@ impl Request {
             id: torrent.id,
             url: torrent.info.announce.clone(),
             hash: torrent.info.hash,
-            port: CONFIG.get().port,
+            port: CONFIG.port,
             uploaded: torrent.uploaded as u64 * torrent.info.piece_len as u64,
             downloaded: torrent.downloaded as u64 * torrent.info.piece_len as u64,
             left: torrent.info.total_len - torrent.downloaded as u64 * torrent.info.piece_len as u64,

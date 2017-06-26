@@ -35,7 +35,7 @@ pub enum Request {
 impl Listener {
     pub fn new(rx: mpsc::Receiver<Request>, l: Logger) -> Listener {
         let ip = Ipv4Addr::new(0, 0, 0, 0);
-        let port = CONFIG.get().port;
+        let port = CONFIG.port;
         debug!(l, "Binding to port {:?}!", port);
         let listener = TcpListener::bind(SocketAddrV4::new(ip, port)).unwrap();
         listener.set_nonblocking(true).unwrap();
