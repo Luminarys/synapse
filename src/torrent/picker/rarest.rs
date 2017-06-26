@@ -148,7 +148,7 @@ impl Picker {
         let offset: u64 = offset as u64/16384;
         let block = idx + offset;
         self.c.waiting.remove(&block);
-        let peers = self.c.waiting_peers.remove(&block).unwrap_or(HashSet::with_capacity(0));
+        let peers = self.c.waiting_peers.remove(&block).unwrap_or_else(|| HashSet::with_capacity(0));
         for i in 0..self.c.scale {
             if (idx + i < self.c.blocks.len() && !self.c.blocks.has_bit(idx + i)) || self.c.waiting.contains(&(idx + i)) {
                 return (false, peers);

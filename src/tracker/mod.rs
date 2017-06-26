@@ -173,11 +173,8 @@ impl TrackerResponse {
 
     pub fn from_bencode(data: BEncode) -> TrackerRes {
         let mut d = data.to_dict().ok_or(TrackerError::InvalidResponse("Tracker response must be a dictionary type!"))?;
-        match d.remove("failure_reason") {
-            Some(BEncode::String(data)) => {
-                return Err(TrackerError::Error(String::from_utf8(data).map_err(|_| TrackerError::InvalidResponse("Failure reason must be UTF8!"))?));
-            }
-            _ => { }
+        if let Some(BEncode::String(data)) = d.remove("failure_reason") {
+            return Err(TrackerError::Error(String::from_utf8(data).map_err(|_| TrackerError::InvalidResponse("Failure reason must be UTF8!"))?));
         }
         let mut resp = TrackerResponse::empty();
         match d.remove("peers") {

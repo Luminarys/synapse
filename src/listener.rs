@@ -56,8 +56,7 @@ impl Listener {
 
     pub fn run(&mut self) {
         debug!(self.l, "Accepting connections!");
-        loop {
-            let res = if let Ok(r) = self.poll.wait(15) { r } else { break; };
+        while let Ok(res) = self.poll.wait(15) {
             for not in res {
                 match not.id {
                     id if id == self.lid => self.handle_conn(),
@@ -91,14 +90,11 @@ impl Listener {
     fn handle_peer(&mut self, not: amy::Notification) {
         let pid = not.id;
         let res = self.incoming.get_mut(&pid).unwrap().read();
-        match res {
-            Some(hs) => {
-                debug!(self.l, "Completed handshake({:?}) with peer, transferring!", hs);
-                let peer = self.incoming.remove(&pid).unwrap();
-                self.reg.deregister(&peer.conn).unwrap();
-                CONTROL.ctrl_tx.lock().unwrap().send(control::Request::AddPeer(peer, hs.get_handshake_hash())).unwrap();
-            }
-            None => { }
+        if let Some(hs) = res {
+            debug!(self.l, "Completed handshake({:?}) with peer, transferring!", hs);
+            let peer = self.incoming.remove(&pid).unwrap();
+            self.reg.deregister(&peer.conn).unwrap();
+            CONTROL.ctrl_tx.lock().unwrap().send(control::Request::AddPeer(peer, hs.get_handshake_hash())).unwrap();
         }
         if self.incoming[&pid].error().is_some() {
             debug!(self.l, "Peer connection failed!");

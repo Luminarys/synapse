@@ -29,8 +29,8 @@ impl Reader {
                 Ok(Some(msg))
             }
             ReadRes::Incomplete(state) => { self.state = state; Ok(None) },
-            ReadRes::EOF => return io_err("EOF"),
-            ReadRes::Err(e) => return Err(e),
+            ReadRes::EOF => io_err("EOF"),
+            ReadRes::Err(e) => Err(e),
         }
     }
 }
@@ -66,7 +66,7 @@ impl ReadState {
         match self {
             ReadState::ReadingHandshake { mut data, mut idx } => {
                 match conn.read(&mut data[idx as usize..]) {
-                    Ok(0) => return ReadRes::EOF,
+                    Ok(0) => ReadRes::EOF,
                     Ok(amnt) => {
                         idx += amnt as u8;
                         if idx == data.len() as u8 {
@@ -236,7 +236,7 @@ impl ReadState {
                 ReadState::ReadingMsg { data: buf, idx: 5, len: len }.next_state(conn)
             },
             _ => {
-                return ReadRes::Err(io_err_val("Invalid ID provided!"));
+                ReadRes::Err(io_err_val("Invalid ID provided!"))
             }
         }
     }

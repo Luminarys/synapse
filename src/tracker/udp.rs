@@ -61,8 +61,8 @@ impl Announcer {
             announce_req.write_u64::<BigEndian>(connection_id).unwrap();
             announce_req.write_u32::<BigEndian>(1).unwrap();
             announce_req.write_u32::<BigEndian>(transaction_id).unwrap();
-            announce_req.write(&req.hash).unwrap();
-            announce_req.write(&PEER_ID[..]).unwrap();
+            announce_req.write_all(&req.hash).unwrap();
+            announce_req.write_all(&PEER_ID[..]).unwrap();
             announce_req.write_u64::<BigEndian>(req.downloaded as u64).unwrap();
             announce_req.write_u64::<BigEndian>(req.left as u64).unwrap();
             announce_req.write_u64::<BigEndian>(req.uploaded as u64).unwrap();

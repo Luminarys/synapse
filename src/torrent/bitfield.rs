@@ -111,15 +111,15 @@ impl Bitfield {
                 }
             }
         }
-        return false;
+        false
     }
 
-    pub fn iter<'a>(&'a self) -> BitfieldIter<'a> {
-        BitfieldIter::new(&self)
+    pub fn iter(&self) -> BitfieldIter {
+        BitfieldIter::new(self)
     }
 
-    pub fn iter_from<'a>(&'a self, idx: u64) -> BitfieldIter<'a> {
-        BitfieldIter::from_pos(&self, idx)
+    pub fn iter_from(&self, idx: u64) -> BitfieldIter {
+        BitfieldIter::from_pos(self, idx)
     }
 }
 
@@ -163,8 +163,6 @@ impl<'a> Iterator for BitfieldIter<'a> {
             self.idx += 1;
             if self.pf.has_bit(self.idx - 1) {
                 return Some(self.idx - 1);
-            } else {
-                continue;
             }
         }
         None

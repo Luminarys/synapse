@@ -71,19 +71,17 @@ impl PartialEq for Message {
             (&Message::Handshake { rsv, hash, id }, &Message::Handshake { rsv: rsv_, hash: hash_, id: id_ }) => {
                 rsv == rsv_ && hash == hash_ && id == id_
             },
-            (&Message::KeepAlive, &Message::KeepAlive) => true,
-            (&Message::Choke, &Message::Choke) => true,
-            (&Message::Unchoke, &Message::Unchoke) => true,
-            (&Message::Interested, &Message::Interested) => true,
-            (&Message::Uninterested, &Message::Uninterested) => true,
-            (&Message::Have(p), &Message::Have(p_)) => p == p_,
-            (&Message::Request { index, begin, length }, &Message::Request { index: i, begin: b, length: l }) => {
-                index == i && begin == b && length == l
-            },
-            (&Message::Cancel { index, begin, length }, &Message::Cancel { index: i, begin: b, length: l }) => {
-                index == i && begin == b && length == l
-            },
-            _ => false
+            (&Message::KeepAlive, &Message::KeepAlive) |
+                (&Message::Choke, &Message::Choke) |
+                (&Message::Unchoke, &Message::Unchoke) |
+                (&Message::Interested, &Message::Interested) |
+                (&Message::Uninterested, &Message::Uninterested) => true,
+                (&Message::Have(p), &Message::Have(p_)) => p == p_,
+                (&Message::Request { index, begin, length }, &Message::Request { index: i, begin: b, length: l }) |
+                    (&Message::Cancel { index, begin, length }, &Message::Cancel { index: i, begin: b, length: l }) => {
+                        index == i && begin == b && length == l
+                    },
+                _ => false
         }
     }
 }
@@ -93,7 +91,7 @@ impl Message {
         use ::PEER_ID;
         Message::Handshake {
             rsv: [0u8; 8],
-            hash: torrent.hash.clone(),
+            hash: torrent.hash,
             id: *PEER_ID
         }
     }
@@ -144,7 +142,7 @@ impl Message {
 
     pub fn is_special(&self) -> bool {
         match *self {
-            Message::Handshake { rsv: _, hash: _, id: _ } | Message::Bitfield(_) => true,
+            Message::Handshake { .. } | Message::Bitfield(_) => true,
             _ => false,
         }
     }
@@ -153,16 +151,15 @@ impl Message {
         match *self {
             Message::Handshake { .. } => 68,
             Message::KeepAlive => 4,
-            Message::Choke => 5,
-            Message::Unchoke => 5,
-            Message::Interested => 5,
-            Message::Uninterested => 5,
+            Message::Choke |
+                Message::Unchoke |
+                Message::Interested |
+                Message::Uninterested => 5,
             Message::Have(_) => 9,
             Message::Bitfield(ref pf) => 5 + pf.bytes(),
-            Message::Request{ .. } => 17,
+            Message::Request{ .. } | Message::Cancel { .. } => 17,
             Message::Piece{ ref data, .. } => 13 + data.len(),
             Message::SharedPiece{ ref data, .. } => 13 + data.len(),
-            Message::Cancel { .. } => 17,
         }
     }
 
@@ -216,13 +213,7 @@ impl Message {
                 buf.write_u32::<BigEndian>(begin)?;
                 buf.write_u32::<BigEndian>(length)?;
             }
-            Message::Piece{ index, begin, length, .. } => {
-                buf.write_u32::<BigEndian>(9 + length)?;
-                buf.write_u8(7)?;
-                buf.write_u32::<BigEndian>(index)?;
-                buf.write_u32::<BigEndian>(begin)?;
-            }
-            Message::SharedPiece{ index, begin, length, .. } => {
+            Message::Piece{ index, begin, length, .. } | Message::SharedPiece{ index, begin, length, .. } => {
                 buf.write_u32::<BigEndian>(9 + length)?;
                 buf.write_u8(7)?;
                 buf.write_u32::<BigEndian>(index)?;

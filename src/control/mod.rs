@@ -96,7 +96,7 @@ impl Control {
 
     fn deserialize(&mut self) -> io::Result<()> {
         debug!(self.l, "Deserializing torrents!");
-        let ref sd = CONFIG.get().session;
+        let sd = &CONFIG.get().session;
         for entry in fs::read_dir(sd)? {
             if let Err(e) = self.deserialize_torrent(entry) {
                 warn!(self.l, "Failed to deserialize torrent file: {:?}!", e);
@@ -143,25 +143,20 @@ impl Control {
 
     fn handle_trk_ev(&mut self) {
         debug!(self.l, "Handling tracker response");
-        loop {
-            match self.trk_rx.try_recv() {
-                Ok((id, resp)) => {
-                    {
-                        let torrent = self.torrents.get_mut(&id).unwrap();
-                        torrent.set_tracker_response(&resp);
-                    }
-                    trace!(self.l, "Adding peers!");
-                    if let Ok(r) = resp {
-                        for ip in r.peers.iter() {
-                            trace!(self.l, "Adding peer({:?})!", ip);
-                            if let Ok(peer) = Peer::new_outgoing(ip) {
-                                trace!(self.l, "Added peer({:?})!", ip);
-                                self.add_peer(id, peer);
-                            }
-                        }
+        while let Ok((id, resp)) = self.trk_rx.try_recv() {
+            {
+                let torrent = self.torrents.get_mut(&id).unwrap();
+                torrent.set_tracker_response(&resp);
+            }
+            trace!(self.l, "Adding peers!");
+            if let Ok(r) = resp {
+                for ip in r.peers.iter() {
+                    trace!(self.l, "Adding peer({:?})!", ip);
+                    if let Ok(peer) = Peer::new_outgoing(ip) {
+                        trace!(self.l, "Added peer({:?})!", ip);
+                        self.add_peer(id, peer);
                     }
                 }
-                Err(_) => { break; }
             }
         }
     }
@@ -172,17 +167,12 @@ impl Control {
     }
 
     fn handle_disk_ev(&mut self) {
-        loop {
-            match self.disk_rx.try_recv() {
-                Ok(resp) => {
-                    trace!(self.l, "Got disk response {:?}!", resp);
-                    let pid = resp.context.id;
-                    let tid = self.peers[&pid];
-                    let ref mut torrent = self.torrents.get_mut(&tid).unwrap();
-                    torrent.block_available(pid, resp);
-                }
-                Err(_) => { break; }
-            }
+        while let Ok(resp) = self.disk_rx.try_recv() {
+            trace!(self.l, "Got disk response {:?}!", resp);
+            let pid = resp.context.id;
+            let tid = self.peers[&pid];
+            let torrent = &mut self.torrents.get_mut(&tid).unwrap();
+            torrent.block_available(pid, resp);
         }
     }
 
@@ -196,7 +186,7 @@ impl Control {
                 }
                 Ok(Request::AddPeer(p, hash)) => {
                     trace!(self.l, "Adding peer {:?} for hash {:?}!", p, hash);
-                    if let Some(tid) = self.hash_idx.get(&hash).map(|tid| *tid) {
+                    if let Some(tid) = self.hash_idx.get(&hash).cloned() {
                         self.add_peer(tid, p);
                     } else {
                         warn!(self.l, "Couldn't add peer, torrent with hash {:?} doesn't exist", hash);
@@ -211,7 +201,7 @@ impl Control {
                 Err(_) => { break; }
             }
         }
-        return false;
+        false
     }
 
     fn handle_peer_ev(&mut self, not: amy::Notification) {

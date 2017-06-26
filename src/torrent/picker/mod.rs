@@ -41,23 +41,20 @@ impl Picker {
     }
 
     pub fn piece_available(&mut self, idx: u32) {
-        match *self {
-            Picker::Rarest(ref mut p) => p.piece_available(idx),
-            _ => { }
+        if let Picker::Rarest(ref mut p) = *self {
+            p.piece_available(idx);
         }
     }
 
     pub fn add_peer(&mut self, peer: &Peer) {
-        match *self {
-            Picker::Rarest(ref mut p) => p.add_peer(peer),
-            _ => { }
+        if let Picker::Rarest(ref mut p) = *self {
+            p.add_peer(peer);
         }
     }
 
     pub fn remove_peer(&mut self, peer: &Peer) {
-        match *self {
-            Picker::Rarest(ref mut p) => p.remove_peer(peer),
-            _ => { }
+        if let Picker::Rarest(ref mut p) = *self {
+            p.remove_peer(peer);
         }
     }
 

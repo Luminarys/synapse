@@ -97,7 +97,7 @@ impl BEncode {
             BEncode::Int(i) => write!(w, "i{}e", i)?,
             BEncode::String(ref s) => {
                 write!(w, "{}:", s.len())?;
-                w.write_all(&s)?;
+                w.write_all(s)?;
             },
             BEncode::List(ref v) => {
                 write!(w, "l")?;
@@ -120,7 +120,7 @@ impl BEncode {
 }
 
 pub fn decode_buf(bytes: &[u8]) -> Result<BEncode, BError> {
-    return decode(&mut Cursor::new(bytes));
+    decode(&mut Cursor::new(bytes))
 }
 
 pub fn decode<R: io::Read>(bytes: &mut R) -> Result<BEncode, BError> {

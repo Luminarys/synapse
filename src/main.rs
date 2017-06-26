@@ -128,17 +128,14 @@ fn main() {
     let mut i = time::Instant::now();
     loop {
         i += time::Duration::from_secs(1);
-        match t.wait(i) {
-            Some(_) => {
-                info!(LOG, "Shutting down!");
-                CONTROL.ctrl_tx.lock().unwrap().send(control::Request::Shutdown).unwrap();
-                while TC.load(atomic::Ordering::SeqCst) != 0 {
-                    thread::sleep(time::Duration::from_secs(1));
-                }
-                info!(LOG, "Shutdown complete!");
-                break;
+        if t.wait(i).is_some() {
+            info!(LOG, "Shutting down!");
+            CONTROL.ctrl_tx.lock().unwrap().send(control::Request::Shutdown).unwrap();
+            while TC.load(atomic::Ordering::SeqCst) != 0 {
+                thread::sleep(time::Duration::from_secs(1));
             }
-            _ => { }
+            info!(LOG, "Shutdown complete!");
+            break;
         }
         if TC.load(atomic::Ordering::SeqCst) == 0 {
             info!(LOG, "Shutdown complete!");

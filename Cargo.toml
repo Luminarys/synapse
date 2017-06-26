@@ -24,6 +24,7 @@ slog = "2"
 slog-term = "2"
 slog-async = "2"
 
+
 [profile.bench]
 opt-level = 3
 debug = true
@@ -41,3 +42,6 @@ lto = true
 debug-assertions = true
 codegen-units = 1
 panic = 'unwind'
+
+[features]
+default = []

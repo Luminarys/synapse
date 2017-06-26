@@ -106,24 +106,24 @@ impl Torrent {
         };
         let data = bincode::serialize(&d, bincode::Infinite).unwrap();
         debug!(self.l, "Sending serialization request!");
-        DISK.tx.send(disk::Request::serialize(data, self.info.hash.clone())).unwrap();
+        DISK.tx.send(disk::Request::serialize(data, self.info.hash)).unwrap();
     }
 
     pub fn delete(&self) {
         debug!(self.l, "Sending file deletion request!");
-        DISK.tx.send(disk::Request::delete(self.info.hash.clone())).unwrap();
+        DISK.tx.send(disk::Request::delete(self.info.hash)).unwrap();
     }
 
     pub fn set_tracker_response(&mut self, resp: &TrackerRes) {
         debug!(self.l, "Processing tracker response {:?}!", resp);
-        match resp {
-            &Ok(ref r) => {
+        match *resp {
+            Ok(ref r) => {
                 let mut time = Instant::now();
                 time += Duration::from_secs(r.interval as u64);
                 self.tracker = TrackerStatus::Ok { seeders: r.seeders, leechers: r.leechers, interval: r.interval };
                 self.tracker_update = Some(time);
             }
-            &Err(ref e) => {
+            Err(ref e) => {
                 self.tracker = TrackerStatus::Error(e.clone());
             }
         }
@@ -134,7 +134,7 @@ impl Torrent {
             debug!(self.l, "Updating tracker at inteval!");
             let cur = Instant::now();
             if cur >= end {
-                TRACKER.tx.send(tracker::Request::interval(&self)).unwrap();
+                TRACKER.tx.send(tracker::Request::interval(self)).unwrap();
             }
         }
     }
@@ -172,7 +172,7 @@ impl Torrent {
                 pf.cap(self.pieces.len());
                 peer.pieces = pf;
                 if self.pieces.usable(&peer.pieces) {
-                    self.picker.add_peer(&peer);
+                    self.picker.add_peer(peer);
                     peer.interested();
                 }
                 if !peer.pieces.complete() {
@@ -211,7 +211,7 @@ impl Torrent {
                     self.downloaded += 1;
                     self.pieces.set_bit(index as u64);
                     if self.pieces.complete() {
-                        TRACKER.tx.send(tracker::Request::completed(&self)).unwrap();
+                        TRACKER.tx.send(tracker::Request::completed(self)).unwrap();
                     }
                     let m = Message::Have(index);
                     for pid in self.leechers.iter() {
@@ -245,6 +245,7 @@ impl Torrent {
             Message::Cancel { .. } => {
                 // TODO create some sort of filter so that when we finish reading a cancel'd piece
                 // it never gets sent.
+                trace!(self.l, "Received cancel!");
             }
             Message::Interested => {
                 peer.remote_status.interested = true;
@@ -271,7 +272,7 @@ impl Torrent {
     }
 
     fn complete(&self) -> bool {
-        return self.pieces.complete();
+        self.pieces.complete()
     }
 
     /// Calculates the file offsets for a given index, begin, and block length.
@@ -326,7 +327,7 @@ impl Torrent {
     fn make_requests(&mut self, peer: &mut Peer) {
         // keep 5 outstanding requests?
         while peer.queued < 5 {
-            if let Some((idx, offset)) = self.picker.pick(&peer) {
+            if let Some((idx, offset)) = self.picker.pick(peer) {
                 if self.info.is_last_piece((idx, offset)) {
                     peer.send_message(Message::request(idx, offset, self.info.last_piece_len()));
                 } else {
@@ -374,7 +375,7 @@ impl Torrent {
         debug!(self.l, "Adding peer!");
         let pid = self.reg.register(&peer.conn, amy::Event::Both).unwrap();
         peer.id = pid;
-        peer.set_torrent(&self);
+        peer.set_torrent(self);
         if peer.error().is_some() {
             self.reg.deregister(&peer.conn).unwrap();
             return None;
@@ -399,7 +400,7 @@ impl Torrent {
         debug!(self.l, "Pausing torrent!");
         if !self.paused {
             debug!(self.l, "Sending stopped request to trk");
-            TRACKER.tx.send(tracker::Request::stopped(&self)).unwrap();
+            TRACKER.tx.send(tracker::Request::stopped(self)).unwrap();
         }
         self.paused = true;
     }
@@ -408,7 +409,7 @@ impl Torrent {
         debug!(self.l, "Resuming torrent!");
         if self.paused {
             debug!(self.l, "Sending started request to trk");
-            TRACKER.tx.send(tracker::Request::started(&self)).unwrap();
+            TRACKER.tx.send(tracker::Request::started(self)).unwrap();
         }
         for (_, peer) in self.peers().iter_mut() {
             self.make_requests(peer);
@@ -457,7 +458,7 @@ impl Drop for Torrent {
         }
         if !self.paused {
             debug!(self.l, "Sending stop request to trk");
-            TRACKER.tx.send(tracker::Request::stopped(&self)).unwrap();
+            TRACKER.tx.send(tracker::Request::stopped(self)).unwrap();
         }
     }
 }

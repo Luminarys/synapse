@@ -117,12 +117,8 @@ impl Peer {
 
     fn _readable(&mut self) -> io::Result<Vec<Message>> {
         let mut msgs = Vec::with_capacity(1);
-        loop {
-            if let Some(msg) = self.reader.readable(&mut self.conn)? {
-                msgs.push(msg);
-            } else {
-                break;
-            }
+        while let Some(msg) = self.reader.readable(&mut self.conn)? {
+            msgs.push(msg);
         }
         Ok(msgs)
     }
@@ -170,7 +166,7 @@ impl Peer {
         if msg.is_piece() {
             self.uploaded += 1;
         }
-        return self.writer.write_message(msg, &mut self.conn);
+        self.writer.write_message(msg, &mut self.conn)
     }
 
     pub fn choke(&mut self) {

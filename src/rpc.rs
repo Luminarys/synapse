@@ -78,8 +78,8 @@ macro_rules! id_match {
                     (s, end, idx)
                 };
             };
-            let ref start = M.0;
-            let ref end = M.1;
+            let start = &M.0;
+            let end = &M.1;
             let idx = M.2;
             if $req.url().starts_with(start) && $req.url().ends_with(end) {
                 let len = $req.url().len();
@@ -112,13 +112,8 @@ impl RPC {
                 if self.handle_request(r).is_err() {
                     CONTROL.ctrl_tx.lock().unwrap().send(control::Request::Shutdown).unwrap();
                 }
-            } else {
-                match self.rrx.try_recv() {
-                    Ok(Request::Shutdown) => {
-                        return;
-                    }
-                    _ => { }
-                }
+            } else if let Ok(Request::Shutdown) = self.rrx.try_recv() {
+                    return;
             }
         }
     }
@@ -144,7 +139,7 @@ impl RPC {
         if request.url() == "/torrent" {
             let mut data = Vec::new();
             request.as_reader().read_to_end(&mut data).unwrap();
-            resp = match bencode::decode_buf(&mut data) {
+            resp = match bencode::decode_buf(&data) {
                 Ok(b) => Ok(Request::AddTorrent(b)),
                 Err(_) => Err("Bad torrent!".to_owned()),
             };

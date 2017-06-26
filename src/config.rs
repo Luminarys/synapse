@@ -47,6 +47,6 @@ impl Default for Config {
     }
 }
 
-fn expand_tilde(s: &String) -> String {
+fn expand_tilde(s: &str) -> String {
     s.replace('~', &env::home_dir().unwrap().into_os_string().into_string().unwrap())
 }

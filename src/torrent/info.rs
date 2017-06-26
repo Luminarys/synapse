@@ -88,7 +88,7 @@ impl Info {
                     .and_then(|p| p.to_bytes())
                     .map(|mut p| {
                         let mut v = Vec::new();
-                        while p.len() != 0 {
+                        while !p.is_empty() {
                             let remaining = p.split_off(20);
                             v.push(p);
                             p = remaining;
@@ -97,7 +97,7 @@ impl Info {
                     })
                     .ok_or("Info must provide valid hashes")?;
                 let files = parse_bencode_files(i)?;
-                let name = if files.len() == 0 {
+                let name = if files.is_empty() {
                     files[0].path.clone().into_os_string().into_string().unwrap()
                 } else if !files[0].path.has_root() {
                     let mut piter = files[0].path.components();
@@ -162,7 +162,7 @@ fn parse_bencode_files(mut data: BTreeMap<String, BEncode>) -> Result<Vec<File>,
                 file.path = path.join(file.path);
                 files.push(file);
             }
-            return Ok(files);
+            Ok(files)
         }
         None => File::from_bencode(BEncode::Dict(data)).map(|f| vec![f]),
     }
