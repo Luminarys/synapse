@@ -141,7 +141,10 @@ impl Torrent {
 
     pub fn reap_peers(&mut self) {
         debug!(self.l, "Reaping peers");
-        self.peers().retain(|_, p| p.error().is_none());
+        let to_remove = self.peers().iter().filter_map(|(i, p)| p.error().map(|_| *i)).collect::<Vec<_>>();
+        for pid in to_remove {
+            self.remove_peer(pid);
+        }
     }
 
     pub fn get_throttle(&self, id: usize) -> Throttle {
@@ -329,6 +332,8 @@ impl Torrent {
                 } else {
                     peer.request_piece(idx, offset, 16384);
                 }
+            } else {
+                break;
             }
         }
     }
@@ -365,8 +370,8 @@ impl Torrent {
     }
 
     pub fn add_peer(&mut self, conn: PeerConn) -> Option<usize> {
-        debug!(self.l, "Adding peer!");
         let pid = self.reg.register(conn.sock(), amy::Event::Both).unwrap();
+        debug!(self.l, "Adding peer {:?}!", pid);
         let p = Peer::new(pid, conn, self);
         if p.error().is_none() {
             self.picker.add_peer(&p);
