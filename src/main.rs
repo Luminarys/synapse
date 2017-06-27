@@ -47,10 +47,24 @@ lazy_static! {
         if args.len() >= 2 {
             info!(LOG, "Using config file!");
             let mut s = String::new();
-            let mut f = std::fs::File::open(&args[1]).expect("Config file could not be opened!");
-            f.read_to_string(&mut s).expect("Config file could not be read!");
-            let cf = toml::from_str(&s).expect("Config file could not be parsed!");
-            config::Config::from_file(cf)
+            let contents = std::fs::File::open(&args[1]).and_then(|mut f| {
+                f.read_to_string(&mut s).map(|_| s)
+            });
+            match contents {
+                Ok(s) => {
+                    match toml::from_str(&s) {
+                        Ok(cf) => config::Config::from_file(cf),
+                        Err(e) => {
+                            error!(LOG, "Failed to parse config: {}. Falling back to default.", e);
+                            Default::default()
+                        }
+                    }
+                }
+                Err(e) => {
+                    error!(LOG, "Failed to open config: {}. Falling back to default.", e);
+                    Default::default()
+                }
+            }
         } else {
             info!(LOG, "Using default config");
             Default::default()
