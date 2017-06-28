@@ -60,7 +60,9 @@ pub struct SessionUpdate;
 impl Job for SessionUpdate {
     fn update(&mut self, torrents: &mut HashMap<usize, Torrent>) {
         for (_, torrent) in torrents.iter_mut() {
-            torrent.serialize();
+            if torrent.dirty() {
+                torrent.serialize();
+            }
         }
     }
 }

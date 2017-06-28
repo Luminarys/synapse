@@ -54,6 +54,7 @@ pub struct Torrent {
     paused: bool,
     choker: choker::Choker,
     l: Logger,
+    dirty: bool,
 }
 
 impl Torrent {
@@ -70,7 +71,7 @@ impl Torrent {
             uploaded: 0, downloaded: 0, reg, leechers, throttle,
             paused: false, tracker: TrackerStatus::Updating,
             tracker_update: None, choker: choker::Choker::new(),
-            l: l.clone(),
+            l: l.clone(), dirty: false,
         };
         debug!(l, "Sending start request");
         TRACKER.tx.send(tracker::Request::started(&t)).unwrap();
@@ -88,14 +89,14 @@ impl Torrent {
             uploaded: d.uploaded, downloaded: d.downloaded, reg, leechers, throttle,
             paused: d.paused, tracker: TrackerStatus::Updating,
             tracker_update: None, choker: choker::Choker::new(),
-            l: l.clone(),
+            l: l.clone(), dirty: false,
         };
         debug!(l, "Sending start request");
         TRACKER.tx.send(tracker::Request::started(&t)).unwrap();
         Ok(t)
     }
 
-    pub fn serialize(&self) {
+    pub fn serialize(&mut self) {
         let d = TorrentData {
             info: self.info.clone(),
             pieces: self.pieces.clone(),
@@ -107,6 +108,7 @@ impl Torrent {
         let data = bincode::serialize(&d, bincode::Infinite).unwrap();
         debug!(self.l, "Sending serialization request!");
         DISK.tx.send(disk::Request::serialize(data, self.info.hash)).unwrap();
+        self.dirty = false;
     }
 
     pub fn delete(&self) {
@@ -149,6 +151,10 @@ impl Torrent {
 
     pub fn get_throttle(&self, id: usize) -> Throttle {
         self.throttle.new_sibling(id)
+    }
+
+    pub fn dirty(&self) -> bool {
+        self.dirty
     }
 
     pub fn block_available(&mut self, pid: usize, resp: disk::Response) {
@@ -206,6 +212,7 @@ impl Torrent {
                 if self.pieces.complete() || self.pieces.has_bit(index as u64) {
                     return;
                 }
+                self.dirty = true;
 
                 self.write_piece(index, begin, length, data);
                 let (piece_done, mut peers) = self.picker.completed(index, begin);
@@ -237,6 +244,7 @@ impl Torrent {
                 }
             }
             Message::Request { index, begin, length } => {
+                self.dirty = true;
                 // TODO get this from some sort of allocator.
                 if !peer.local_status().choked {
                     self.request_read(peer.id(), index, begin, length, Box::new([0u8; 16384]));
