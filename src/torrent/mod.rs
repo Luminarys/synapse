@@ -35,7 +35,7 @@ struct TorrentData {
     uploaded: usize,
     downloaded: usize,
     picker: Picker,
-    paused: bool,
+    status: Status,
 }
 
 pub struct Torrent {
@@ -51,10 +51,30 @@ pub struct Torrent {
     peers: UnsafeCell<HashMap<usize, Peer>>,
     leechers: HashSet<usize>,
     picker: Picker,
-    paused: bool,
+    status: Status,
     choker: choker::Choker,
     l: Logger,
     dirty: bool,
+}
+
+#[derive(Copy, Clone, Debug, Serialize, Deserialize)]
+pub enum Status {
+    Pending,
+    Paused,
+    Leeching,
+    Idle,
+    Seeding,
+    Hashing,
+    DiskError,
+}
+
+impl Status {
+    pub fn stopped(&self) -> bool {
+        match *self {
+            Status::Paused | Status::DiskError => true,
+            _ => false
+        }
+    }
 }
 
 impl Torrent {
@@ -69,9 +89,9 @@ impl Torrent {
         let t = Torrent {
             id, info, peers, pieces, picker,
             uploaded: 0, downloaded: 0, reg, leechers, throttle,
-            paused: false, tracker: TrackerStatus::Updating,
+            tracker: TrackerStatus::Updating,
             tracker_update: None, choker: choker::Choker::new(),
-            l: l.clone(), dirty: false,
+            l: l.clone(), dirty: false, status: Status::Pending,
         };
         debug!(l, "Sending start request");
         TRACKER.tx.send(tracker::Request::started(&t)).unwrap();
@@ -84,12 +104,17 @@ impl Torrent {
         d.picker.unset_waiting();
         let peers = UnsafeCell::new(HashMap::new());
         let leechers = HashSet::new();
+        let status = if d.pieces.complete() {
+            Status::Idle
+        } else {
+            Status::Pending
+        };
         let t = Torrent {
             id, info: d.info, peers, pieces: d.pieces, picker: d.picker,
             uploaded: d.uploaded, downloaded: d.downloaded, reg, leechers, throttle,
-            paused: d.paused, tracker: TrackerStatus::Updating,
+            tracker: TrackerStatus::Updating,
             tracker_update: None, choker: choker::Choker::new(),
-            l: l.clone(), dirty: false,
+            l: l.clone(), dirty: false, status
         };
         debug!(l, "Sending start request");
         TRACKER.tx.send(tracker::Request::started(&t)).unwrap();
@@ -103,7 +128,7 @@ impl Torrent {
             uploaded: self.uploaded,
             downloaded: self.downloaded,
             picker: self.picker.clone(),
-            paused: self.paused,
+            status: self.status,
         };
         let data = bincode::serialize(&d, bincode::Infinite).unwrap();
         debug!(self.l, "Sending serialization request!");
@@ -184,8 +209,9 @@ impl Torrent {
                     peer.send_message(p);
                 }
             }
-            disk::Response::Error { .. } => {
-                warn!(self.l, "Disk error!");
+            disk::Response::Error { err, .. } => {
+                warn!(self.l, "Disk error: {:?}", err);
+                self.status = Status::DiskError;
             }
         }
     }
@@ -236,6 +262,11 @@ impl Torrent {
                     return;
                 }
                 self.dirty = true;
+                if !self.status.stopped() {
+                    self.status = Status::Leeching;
+                } else {
+                    return;
+                }
 
                 self.write_piece(index, begin, length, data);
                 let (piece_done, mut peers) = self.picker.completed(index, begin);
@@ -262,18 +293,23 @@ impl Torrent {
                         }
                     }
                 }
-                if !peer.remote_status().choked && !self.pieces.complete() && !self.paused {
+                if !peer.remote_status().choked && !self.pieces.complete() && !self.status.stopped() {
                     self.make_requests(peer);
                 }
             }
             Message::Request { index, begin, length } => {
-                self.dirty = true;
-                // TODO get this from some sort of allocator.
-                if !peer.local_status().choked {
-                    self.request_read(peer.id(), index, begin, length, Box::new([0u8; 16384]));
+                if !self.status.stopped() {
+                    self.status = Status::Seeding;
+                    self.dirty = true;
+                    // TODO get this from some sort of allocator.
+                    if !peer.local_status().choked {
+                        self.request_read(peer.id(), index, begin, length, Box::new([0u8; 16384]));
+                    } else {
+                        peer.set_error(io_err_val("Peer requested while choked!"));
+                    }
                 } else {
-                    peer.set_error(io_err_val("Peer requested while choked!"));
                 }
+                // TODO: add this to a queue to fulfill later
             }
             Message::Cancel { .. } => {
                 // TODO create some sort of filter so that when we finish reading a cancel'd piece
@@ -374,13 +410,6 @@ impl Torrent {
     }
 
     pub fn rpc_info(&self) -> rpc::TorrentInfo {
-        let status = if self.paused {
-            rpc::Status::Paused
-        } else if self.pieces.complete() {
-            rpc::Status::Seeding
-        } else {
-            rpc::Status::Downloading
-        };
         rpc::TorrentInfo {
             name: self.info.name.clone(),
             size: self.info.total_len,
@@ -388,7 +417,7 @@ impl Torrent {
             uploaded: self.uploaded as u64 * self.info.piece_len as u64,
             tracker: self.info.announce.clone(),
             tracker_status: self.tracker.clone(),
-            status: status,
+            status: self.status,
         }
     }
 
@@ -427,23 +456,33 @@ impl Torrent {
 
     pub fn pause(&mut self) {
         debug!(self.l, "Pausing torrent!");
-        if !self.paused {
-            debug!(self.l, "Sending stopped request to trk");
-            TRACKER.tx.send(tracker::Request::stopped(self)).unwrap();
+        match self.status {
+            Status::Paused => { }
+            _ => {
+                debug!(self.l, "Sending stopped request to trk");
+                TRACKER.tx.send(tracker::Request::stopped(self)).unwrap();
+            }
         }
-        self.paused = true;
+        self.status = Status::Paused;
     }
 
     pub fn resume(&mut self) {
         debug!(self.l, "Resuming torrent!");
-        if self.paused {
-            debug!(self.l, "Sending started request to trk");
-            TRACKER.tx.send(tracker::Request::started(self)).unwrap();
+        match self.status {
+            Status::Paused => {
+                debug!(self.l, "Sending started request to trk");
+                TRACKER.tx.send(tracker::Request::started(self)).unwrap();
+                for (_, peer) in self.peers().iter_mut() {
+                    self.make_requests(peer);
+                }
+            }
+            _ => { }
         }
-        for (_, peer) in self.peers().iter_mut() {
-            self.make_requests(peer);
+        if self.pieces.complete() {
+            self.status = Status::Idle;
+        } else {
+            self.status = Status::Pending;
         }
-        self.paused = false;
     }
 
     pub fn change_picker(&mut self, mut picker: Picker) {
@@ -485,9 +524,11 @@ impl Drop for Torrent {
             self.reg.deregister(peer.conn().sock()).unwrap();
             self.leechers.remove(&id);
         }
-        if !self.paused {
-            debug!(self.l, "Sending stop request to trk");
-            TRACKER.tx.send(tracker::Request::stopped(self)).unwrap();
+        match self.status {
+            Status::Paused => { }
+            _ => {
+                TRACKER.tx.send(tracker::Request::stopped(self)).unwrap();
+            }
         }
     }
 }

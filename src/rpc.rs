@@ -2,6 +2,7 @@ use std::sync::mpsc;
 use std::{thread, time};
 use bencode::{self, BEncode};
 use slog::Logger;
+use torrent::Status;
 use {amy, tiny_http, serde_json, control, CONTROL, torrent, CONFIG, TC};
 
 pub struct Handle {
@@ -50,13 +51,6 @@ pub struct TorrentInfo {
     pub uploaded: u64,
     pub tracker: String,
     pub tracker_status: torrent::TrackerStatus,
-}
-
-#[derive(Serialize, Debug)]
-pub enum Status {
-    Downloading,
-    Seeding,
-    Paused,
 }
 
 pub struct RPC {
