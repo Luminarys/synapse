@@ -39,12 +39,12 @@ struct TorrentData {
 }
 
 pub struct Torrent {
-    pub info: Info,
-    pub pieces: Bitfield,
-    pub uploaded: usize,
-    pub downloaded: usize,
-    pub id: usize,
-    pub throttle: Throttle,
+    pieces: Bitfield,
+    info: Info,
+    id: usize,
+    downloaded: usize,
+    uploaded: usize,
+    throttle: Throttle,
     tracker: TrackerStatus,
     tracker_update: Option<Instant>,
     reg: Arc<amy::Registrar>,
@@ -153,8 +153,24 @@ impl Torrent {
         self.throttle.new_sibling(id)
     }
 
+    pub fn id(&self) -> usize {
+        self.id
+    }
+
     pub fn dirty(&self) -> bool {
         self.dirty
+    }
+
+    pub fn uploaded(&self) -> usize {
+        self.uploaded
+    }
+
+    pub fn downloaded(&self) -> usize {
+        self.downloaded
+    }
+
+    pub fn info(&self) -> &Info {
+        &self.info
     }
 
     pub fn block_available(&mut self, pid: usize, resp: disk::Response) {

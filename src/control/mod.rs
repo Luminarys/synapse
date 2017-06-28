@@ -119,7 +119,7 @@ impl Control {
         let log = self.l.new(o!("torrent" => tid));
         if let Ok(t) = Torrent::deserialize(tid, &data, throttle, r, log) {
             trace!(self.l, "Succesfully parsed torrent file {:?}", dir.path());
-            self.hash_idx.insert(t.info.hash, tid);
+            self.hash_idx.insert(t.info().hash, tid);
             self.tid_cnt += 1;
             self.torrents.insert(tid, t);
         } else {
@@ -248,7 +248,7 @@ impl Control {
         let throttle = self.throttler.get_throttle(tid);
         let log = self.l.new(o!("torrent" => tid));
         let t = Torrent::new(tid, info, throttle, r, log);
-        self.hash_idx.insert(t.info.hash, tid);
+        self.hash_idx.insert(t.info().hash, tid);
         self.tid_cnt += 1;
         self.torrents.insert(tid, t);
     }
@@ -298,7 +298,7 @@ impl Control {
             }
             rpc::Request::RemoveTorrent(id) => {
                 if let Some(t) = self.torrents.remove(&id) {
-                    self.hash_idx.remove(&t.info.hash);
+                    self.hash_idx.remove(&t.info().hash);
                     t.delete();
                     RPC.tx.send(rpc::Response::Ack).unwrap();
                 } else {
