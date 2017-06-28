@@ -169,10 +169,8 @@ impl Control {
     fn handle_disk_ev(&mut self) {
         while let Ok(resp) = self.disk_rx.try_recv() {
             trace!(self.l, "Got disk response {:?}!", resp);
-            let pid = resp.context.id;
-            let tid = self.peers[&pid];
-            let torrent = &mut self.torrents.get_mut(&tid).unwrap();
-            torrent.block_available(pid, resp);
+            let torrent = &mut self.torrents.get_mut(&resp.tid()).unwrap();
+            torrent.handle_disk_resp(resp);
         }
     }
 

@@ -107,13 +107,13 @@ impl Torrent {
         };
         let data = bincode::serialize(&d, bincode::Infinite).unwrap();
         debug!(self.l, "Sending serialization request!");
-        DISK.tx.send(disk::Request::serialize(data, self.info.hash)).unwrap();
+        DISK.tx.send(disk::Request::serialize(self.id, data, self.info.hash)).unwrap();
         self.dirty = false;
     }
 
     pub fn delete(&self) {
         debug!(self.l, "Sending file deletion request!");
-        DISK.tx.send(disk::Request::delete(self.info.hash)).unwrap();
+        DISK.tx.send(disk::Request::delete(self.id, self.info.hash)).unwrap();
     }
 
     pub fn set_tracker_response(&mut self, resp: &TrackerRes) {
@@ -173,14 +173,21 @@ impl Torrent {
         &self.info
     }
 
-    pub fn block_available(&mut self, pid: usize, resp: disk::Response) {
-        trace!(self.l, "Received piece from disk, uploading!");
-        let peer = self.peers().get_mut(&pid).unwrap();
-        let ctx = resp.context;
-        let p = Message::s_piece(ctx.idx, ctx.begin, ctx.length, resp.data);
-        // This may not be 100% accurate, but close enough for now.
-        self.uploaded += 1;
-        peer.send_message(p);
+    pub fn handle_disk_resp(&mut self, resp: disk::Response) {
+        match resp {
+            disk::Response::Read { context, data } => {
+                trace!(self.l, "Received piece from disk, uploading!");
+                if let Some(peer) = self.peers().get_mut(&context.pid) {
+                    let p = Message::s_piece(context.idx, context.begin, context.length, data);
+                    // This may not be 100% accurate, but close enough for now.
+                    self.uploaded += 1;
+                    peer.send_message(p);
+                }
+            }
+            disk::Response::Error { .. } => {
+                warn!(self.l, "Disk error!");
+            }
+        }
     }
 
     pub fn peer_readable(&mut self, pid: usize) {
@@ -338,13 +345,13 @@ impl Torrent {
     /// The disk send handle is also provided.
     fn write_piece(&self, index: u32, begin: u32, len: u32, data: Box<[u8; 16384]>) {
         let locs = self.calc_block_locs(index, begin, len);
-        DISK.tx.send(disk::Request::write(data, locs)).unwrap();
+        DISK.tx.send(disk::Request::write(self.id, data, locs)).unwrap();
     }
 
     /// Issues a read request of the given torrent
     fn request_read(&self, id: usize, index: u32, begin: u32, len: u32, data: Box<[u8; 16384]>) {
         let locs = self.calc_block_locs(index, begin, len);
-        let ctx = disk::Ctx::new(id, index, begin, len);
+        let ctx = disk::Ctx::new(id, self.id, index, begin, len);
         DISK.tx.send(disk::Request::read(ctx, data, locs)).unwrap();
     }
 

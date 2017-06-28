@@ -1,6 +1,6 @@
 use std::sync::{mpsc, Arc, atomic};
 use std::{fs, fmt, thread, path};
-use std::io::{Seek, SeekFrom, Write, Read};
+use std::io::{self, Seek, SeekFrom, Write, Read};
 use std::path::PathBuf;
 use slog::Logger;
 use util::torrent_name;
@@ -26,41 +26,42 @@ impl Handle {
 unsafe impl Sync for Handle {}
 
 pub enum Request {
-    Write { data: Box<[u8; 16384]>, locations: Vec<Location> },
+    Write { tid: usize, data: Box<[u8; 16384]>, locations: Vec<Location> },
     Read { data: Box<[u8; 16384]>, locations: Vec<Location>, context: Ctx },
-    Serialize { data: Vec<u8>, hash: [u8; 20] },
-    Delete { hash: [u8; 20] },
+    Serialize { tid: usize, data: Vec<u8>, hash: [u8; 20] },
+    Delete { tid: usize, hash: [u8; 20] },
     Shutdown,
 }
 
 pub struct Ctx {
-    pub id: usize,
+    pub pid: usize,
+    pub tid: usize,
     pub idx: u32,
     pub begin: u32,
     pub length: u32,
 }
 
 impl Ctx {
-    pub fn new(id: usize, idx: u32, begin: u32, length: u32) -> Ctx {
-        Ctx { id, idx, begin, length }
+    pub fn new(pid: usize, tid: usize, idx: u32, begin: u32, length: u32) -> Ctx {
+        Ctx { pid, tid, idx, begin, length }
     }
 }
 
 impl Request {
-    pub fn write(data: Box<[u8; 16384]>, locations: Vec<Location>) -> Request {
-        Request::Write { data, locations }
+    pub fn write(tid: usize, data: Box<[u8; 16384]>, locations: Vec<Location>) -> Request {
+        Request::Write { tid, data, locations }
     }
 
     pub fn read(context: Ctx, data: Box<[u8; 16384]>, locations: Vec<Location>) -> Request {
         Request::Read { context, data, locations }
     }
 
-    pub fn serialize(data: Vec<u8>, hash: [u8; 20]) -> Request {
-        Request::Serialize { data, hash }
+    pub fn serialize(tid: usize, data: Vec<u8>, hash: [u8; 20]) -> Request {
+        Request::Serialize { tid, data, hash }
     }
 
-    pub fn delete(hash: [u8; 20]) -> Request {
-        Request::Delete { hash }
+    pub fn delete(tid: usize, hash: [u8; 20]) -> Request {
+        Request::Delete { tid, hash }
     }
 
     pub fn shutdown() -> Request {
@@ -81,9 +82,26 @@ impl Location {
     }
 }
 
-pub struct Response {
-    pub context: Ctx,
-    pub data: Arc<Box<[u8; 16384]>>,
+pub enum Response {
+    Read { context: Ctx, data: Arc<Box<[u8; 16384]>> },
+    Error { tid: usize, err: io::Error, }
+}
+
+impl Response {
+    pub fn read(context: Ctx, data: Arc<Box<[u8; 16384]>>) -> Response {
+        Response::Read { context, data }
+    }
+
+    pub fn error(tid: usize, err: io::Error) -> Response {
+        Response::Error { tid, err }
+    }
+
+    pub fn tid(&self) -> usize {
+        match *self {
+            Response::Read { ref context, .. } => context.tid,
+            Response::Error { tid, .. } => tid
+        }
+    }
 }
 
 impl fmt::Debug for Response {
@@ -105,27 +123,38 @@ impl Disk {
         debug!(self.l, "Initialized!");
         loop {
             match self.queue.recv() {
-                Ok(Request::Write { data, locations }) => {
+                Ok(Request::Write { tid, data, locations }) => {
                     trace!(self.l, "Writing data!");
                     for loc in locations {
-                        fs::OpenOptions::new().write(true).open(&loc.file).and_then(|mut f| {
-                            f.seek(SeekFrom::Start(loc.offset)).unwrap();
+                        let res = fs::OpenOptions::new().write(true).open(&loc.file).and_then(|mut f| {
+                            f.seek(SeekFrom::Start(loc.offset)).map(|_| f)
+                        }).and_then(|mut f| {
                             f.write(&data[loc.start..loc.end])
-                        }).unwrap();
+                        });
+                        if let Err(e) = res {
+                            CONTROL.disk_tx.lock().unwrap().send(Response::error(tid, e)).unwrap();
+                            return;
+                        }
                     }
                 }
                 Ok(Request::Read { context, mut data, locations }) =>  {
                     trace!(self.l, "Reading data!");
                     for loc in locations {
-                        fs::OpenOptions::new().read(true).open(&loc.file).and_then(|mut f| {
+                        let res = fs::OpenOptions::new().read(true).open(&loc.file).and_then(|mut f| {
                             f.seek(SeekFrom::Start(loc.offset)).unwrap();
+                            f.seek(SeekFrom::Start(loc.offset)).map(|_| f)
+                        }).and_then(|mut f| {
                             f.read(&mut data[loc.start..loc.end])
-                        }).unwrap();
+                        });
+                        if let Err(e) = res {
+                            CONTROL.disk_tx.lock().unwrap().send(Response::error(context.tid, e)).unwrap();
+                            return;
+                        }
                     }
                     let data = Arc::new(data);
-                    CONTROL.disk_tx.lock().unwrap().send(Response { context, data }).unwrap();
+                    CONTROL.disk_tx.lock().unwrap().send(Response::read(context, data)).unwrap();
                 }
-                Ok(Request::Serialize { data, hash }) => {
+                Ok(Request::Serialize { tid, data, hash }) => {
                     trace!(self.l, "Serializing torrent!");
                     let mut pb = path::PathBuf::from(sd);
                     pb.push(torrent_name(&hash));
@@ -133,14 +162,17 @@ impl Disk {
                         f.write(&data)
                     });
                     if let Err(e) = res {
-                        println!("Failed to serialize torrent {:?}!", e);
+                        CONTROL.disk_tx.lock().unwrap().send(Response::error(tid, e)).unwrap();
+                        return;
                     }
                 }
-                Ok(Request::Delete { hash } ) => {
+                Ok(Request::Delete { tid, hash } ) => {
                     trace!(self.l, "Deleting torrent!");
                     let mut pb = path::PathBuf::from(sd);
                     pb.push(torrent_name(&hash));
-                    fs::remove_file(pb).unwrap();
+                    if let Err(e) = fs::remove_file(pb) {
+                        CONTROL.disk_tx.lock().unwrap().send(Response::error(tid, e)).unwrap();
+                    }
                 }
                 Ok(Request::Shutdown) => {
                     break
