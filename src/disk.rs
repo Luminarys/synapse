@@ -141,7 +141,6 @@ impl Disk {
                     trace!(self.l, "Reading data!");
                     for loc in locations {
                         let res = fs::OpenOptions::new().read(true).open(&loc.file).and_then(|mut f| {
-                            f.seek(SeekFrom::Start(loc.offset)).unwrap();
                             f.seek(SeekFrom::Start(loc.offset)).map(|_| f)
                         }).and_then(|mut f| {
                             f.read(&mut data[loc.start..loc.end])
