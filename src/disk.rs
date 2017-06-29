@@ -2,13 +2,17 @@ use std::sync::{mpsc, Arc, atomic};
 use std::{fs, fmt, thread, path};
 use std::io::{self, Seek, SeekFrom, Write, Read};
 use std::path::PathBuf;
+use torrent::Info;
 use slog::Logger;
 use util::torrent_name;
+use threadpool::ThreadPool;
 use {CONTROL, CONFIG, TC};
 
 pub struct Disk {
     queue: mpsc::Receiver<Request>,
-    l: Logger
+    l: Logger,
+    pool: ThreadPool,
+    threads: usize,
 }
 
 pub struct Handle {
@@ -30,6 +34,7 @@ pub enum Request {
     Read { data: Box<[u8; 16384]>, locations: Vec<Location>, context: Ctx },
     Serialize { tid: usize, data: Vec<u8>, hash: [u8; 20] },
     Delete { tid: usize, hash: [u8; 20] },
+    Validate { tid: usize, info: Arc<Info> },
     Shutdown,
 }
 
@@ -66,6 +71,59 @@ impl Request {
 
     pub fn shutdown() -> Request {
         Request::Shutdown
+    }
+
+    pub fn execute(self) -> io::Result<Option<Response>> {
+        let sd = &CONFIG.session;
+        match self {
+            Request::Write { data, locations, .. } => {
+                for loc in locations {
+                    fs::OpenOptions::new().write(true).open(&loc.file).and_then(|mut f| {
+                        f.seek(SeekFrom::Start(loc.offset)).map(|_| f)
+                    }).and_then(|mut f| {
+                        f.write(&data[loc.start..loc.end])
+                    })?;
+                }
+            }
+            Request::Read { context, mut data, locations, .. } =>  {
+                for loc in locations {
+                    fs::OpenOptions::new().read(true).open(&loc.file).and_then(|mut f| {
+                        f.seek(SeekFrom::Start(loc.offset)).map(|_| f)
+                    }).and_then(|mut f| {
+                        f.read(&mut data[loc.start..loc.end])
+                    })?;
+                }
+                let data = Arc::new(data);
+                return Ok(Some(Response::read(context, data)))
+            }
+            Request::Serialize { data, hash, .. } => {
+                let mut pb = path::PathBuf::from(sd);
+                pb.push(torrent_name(&hash));
+                fs::OpenOptions::new().write(true).create(true).open(&pb).and_then(|mut f| {
+                    f.write(&data)
+                })?;
+            }
+            Request::Delete { hash, .. } => {
+                let mut pb = path::PathBuf::from(sd);
+                pb.push(torrent_name(&hash));
+                fs::remove_file(pb)?;
+            }
+            Request::Validate { info, .. } => {
+            }
+            Request::Shutdown => unreachable!(),
+        }
+        Ok(None)
+    }
+
+    pub fn tid(&self) -> usize {
+        match *self {
+            Request::Serialize { tid, .. }
+            | Request::Validate { tid, .. }
+            | Request::Delete { tid, .. }
+            | Request::Write { tid, .. } => tid,
+            Request::Read { ref context, .. } => context.tid,
+            Request::Shutdown => unreachable!(),
+        }
     }
 }
 
@@ -112,8 +170,11 @@ impl fmt::Debug for Response {
 
 impl Disk {
     pub fn new(queue: mpsc::Receiver<Request>, l: Logger) -> Disk {
+        let threads = 2;
         Disk {
-            queue, l
+            queue, l,
+            pool: ThreadPool::new_with_name("disk_pool".into(), threads),
+            threads,
         }
     }
 
@@ -123,58 +184,32 @@ impl Disk {
         debug!(self.l, "Initialized!");
         loop {
             match self.queue.recv() {
-                Ok(Request::Write { tid, data, locations }) => {
-                    trace!(self.l, "Writing data!");
-                    for loc in locations {
-                        let res = fs::OpenOptions::new().write(true).open(&loc.file).and_then(|mut f| {
-                            f.seek(SeekFrom::Start(loc.offset)).map(|_| f)
-                        }).and_then(|mut f| {
-                            f.write(&data[loc.start..loc.end])
-                        });
-                        if let Err(e) = res {
-                            CONTROL.disk_tx.lock().unwrap().send(Response::error(tid, e)).unwrap();
-                            return;
-                        }
-                    }
-                }
-                Ok(Request::Read { context, mut data, locations }) =>  {
-                    trace!(self.l, "Reading data!");
-                    for loc in locations {
-                        let res = fs::OpenOptions::new().read(true).open(&loc.file).and_then(|mut f| {
-                            f.seek(SeekFrom::Start(loc.offset)).map(|_| f)
-                        }).and_then(|mut f| {
-                            f.read(&mut data[loc.start..loc.end])
-                        });
-                        if let Err(e) = res {
-                            CONTROL.disk_tx.lock().unwrap().send(Response::error(context.tid, e)).unwrap();
-                            return;
-                        }
-                    }
-                    let data = Arc::new(data);
-                    CONTROL.disk_tx.lock().unwrap().send(Response::read(context, data)).unwrap();
-                }
-                Ok(Request::Serialize { tid, data, hash }) => {
-                    trace!(self.l, "Serializing torrent!");
-                    let mut pb = path::PathBuf::from(sd);
-                    pb.push(torrent_name(&hash));
-                    let res = fs::OpenOptions::new().write(true).create(true).open(&pb).and_then(|mut f| {
-                        f.write(&data)
-                    });
-                    if let Err(e) = res {
-                        CONTROL.disk_tx.lock().unwrap().send(Response::error(tid, e)).unwrap();
-                        return;
-                    }
-                }
-                Ok(Request::Delete { tid, hash } ) => {
-                    trace!(self.l, "Deleting torrent!");
-                    let mut pb = path::PathBuf::from(sd);
-                    pb.push(torrent_name(&hash));
-                    if let Err(e) = fs::remove_file(pb) {
-                        CONTROL.disk_tx.lock().unwrap().send(Response::error(tid, e)).unwrap();
-                    }
-                }
                 Ok(Request::Shutdown) => {
                     break
+                }
+                Ok(r) => {
+                    // Adjust the pool size
+                    if self.pool.active_count() == self.threads {
+                        self.threads += 1;
+                        debug!(self.l, "Increasing disk pool to {:?}", self.threads);
+                    } else if self.pool.active_count() + 2 < self.threads {
+                        self.threads -= 1;
+                        debug!(self.l, "Decreasing disk pool to {:?}", self.threads);
+                    }
+                    self.pool.set_num_threads(self.threads);
+                    trace!(self.l, "Handling disk job!");
+                    self.pool.execute(move || {
+                        let tid = r.tid();
+                        match r.execute() {
+                            Ok(Some(r)) => {
+                                CONTROL.disk_tx.lock().unwrap().send(r).unwrap();
+                            }
+                            Ok(None) => { }
+                            Err(e) => {
+                                CONTROL.disk_tx.lock().unwrap().send(Response::error(tid, e)).unwrap();
+                            }
+                        }
+                    });
                 }
                 _ => break,
             }

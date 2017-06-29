@@ -22,6 +22,7 @@ bincode = "0.8"
 signal = "0.3"
 slog-term = "2"
 slog-async = "2"
+threadpool = "1.0"
 
 [dependencies.slog]
 version = "2"

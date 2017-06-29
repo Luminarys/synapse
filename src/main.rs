@@ -19,6 +19,7 @@ extern crate signal;
 extern crate slog;
 extern crate slog_term;
 extern crate slog_async;
+extern crate threadpool;
 
 mod bencode;
 mod torrent;

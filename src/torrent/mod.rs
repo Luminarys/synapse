@@ -40,7 +40,7 @@ struct TorrentData {
 
 pub struct Torrent {
     pieces: Bitfield,
-    info: Info,
+    info: Arc<Info>,
     id: usize,
     downloaded: usize,
     uploaded: usize,
@@ -87,7 +87,7 @@ impl Torrent {
         let picker = Picker::new_rarest(&info);
         let leechers = HashSet::new();
         let t = Torrent {
-            id, info, peers, pieces, picker,
+            id, info: Arc::new(info), peers, pieces, picker,
             uploaded: 0, downloaded: 0, reg, leechers, throttle,
             tracker: TrackerStatus::Updating,
             tracker_update: None, choker: choker::Choker::new(),
@@ -110,7 +110,7 @@ impl Torrent {
             Status::Pending
         };
         let t = Torrent {
-            id, info: d.info, peers, pieces: d.pieces, picker: d.picker,
+            id, info: Arc::new(d.info), peers, pieces: d.pieces, picker: d.picker,
             uploaded: d.uploaded, downloaded: d.downloaded, reg, leechers, throttle,
             tracker: TrackerStatus::Updating,
             tracker_update: None, choker: choker::Choker::new(),
@@ -123,7 +123,7 @@ impl Torrent {
 
     pub fn serialize(&mut self) {
         let d = TorrentData {
-            info: self.info.clone(),
+            info: self.info.as_ref().clone(),
             pieces: self.pieces.clone(),
             uploaded: self.uploaded,
             downloaded: self.downloaded,
@@ -254,6 +254,7 @@ impl Torrent {
                 self.picker.piece_available(idx);
             }
             Message::Unchoke => {
+                debug!(self.l, "Unchoked by: {:?}!", peer);
                 self.make_requests(peer);
             }
             Message::Choke => { }
@@ -274,6 +275,7 @@ impl Torrent {
                     self.downloaded += 1;
                     self.pieces.set_bit(index as u64);
                     if self.pieces.complete() {
+                        self.status = Status::Idle;
                         TRACKER.tx.send(tracker::Request::completed(self)).unwrap();
                     }
                     let m = Message::Have(index);

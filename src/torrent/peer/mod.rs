@@ -206,7 +206,7 @@ impl Peer {
 
     fn _readable(&mut self) -> io::Result<Vec<Message>> {
         let mut msgs = Vec::with_capacity(1);
-        while let Some(msg) = self.conn.readable()? {
+        while let Some(msg) = self.read() {
             msgs.push(msg);
         }
         Ok(msgs)
