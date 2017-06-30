@@ -96,7 +96,7 @@ impl Common {
     pub fn new(info: &Info) -> Common {
         let scale = info.piece_len/16384;
         // The n - 1 piece length, since the last one is (usually) shorter.
-        let compl_piece_len = scale * (info.pieces() as usize - 1);
+        let compl_piece_len = scale * (info.pieces() - 1);
         // the nth piece length
         let mut last_piece_len = info.total_len - info.piece_len as u64 * (info.pieces() as u64 - 1) as u64;
         if last_piece_len % 16384 == 0 {
@@ -105,13 +105,13 @@ impl Common {
             last_piece_len /= 16384;
             last_piece_len += 1;
         }
-        let len = compl_piece_len + last_piece_len as usize;
+        let len = compl_piece_len as u64 + last_piece_len;
         let blocks = Bitfield::new(len as u64);
         Common {
             blocks,
             scale: scale as u64,
             waiting: HashSet::new(),
-            endgame_cnt: len as u64,
+            endgame_cnt: len,
             waiting_peers: HashMap::new(),
         }
     }

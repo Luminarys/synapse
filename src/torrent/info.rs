@@ -1,15 +1,16 @@
 use bencode::BEncode;
 use std::path::PathBuf;
 use std::collections::BTreeMap;
-use std::{io, fs, fmt};
+use std::{io, fs, fmt, cmp};
 use sha1::Sha1;
 use util::torrent_name;
+use disk;
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct Info {
     pub name: String,
     pub announce: String,
-    pub piece_len: usize,
+    pub piece_len: u32,
     pub total_len: u64,
     pub hashes: Vec<Vec<u8>>,
     pub hash: [u8; 20],
@@ -109,7 +110,7 @@ impl Info {
                 Ok(Info {
                     name,
                     announce: a,
-                    piece_len: pl as usize,
+                    piece_len: pl as u32,
                     hashes,
                     hash,
                     files,
@@ -125,27 +126,78 @@ impl Info {
         Ok(())
     }
 
-    pub fn last_piece_len(&self) -> u32 {
-        let res = (self.total_len % 16384) as u32;
-        if res == 0 {
+    pub fn block_len(&self, idx: u32, offset: u32) -> u32 {
+        if idx != self.pieces() - 1 {
             16384
         } else {
-            res
+            let last_piece_len = (self.total_len - self.piece_len as u64 * (self.pieces() as u64 - 1)) as u32;
+            // Note this is not the real last block len, just what it will be IF the offset really
+            // is for the last block
+            let last_block_len = last_piece_len - offset;
+            if offset < last_piece_len && last_block_len <= 16384 {
+                last_block_len
+            } else {
+                16384
+            }
         }
     }
 
-    pub fn is_last_piece(&self, (idx, offset): (u32, u32)) -> bool {
-        let last_piece_len = (self.total_len - self.piece_len as u64 * (self.pieces() as u64 - 1)) as u32;
-        if offset < last_piece_len {
-            let last_offset = last_piece_len - offset;
-            idx == self.pieces() - 1 && last_offset <= 16384
+    pub fn piece_len(&self, idx: u32) -> u32 {
+        if idx != self.pieces() - 1 {
+            self.piece_len
         } else {
-            false
+            (self.total_len - self.piece_len as u64 * (self.pieces() as u64 - 1)) as u32
         }
     }
 
     pub fn pieces(&self) -> u32 {
         self.hashes.len() as u32
+    }
+
+    /// Calculates the file offsets for a given block at index/begin
+    pub fn block_disk_locs(&self, index: u32, begin: u32) -> Vec<disk::Location> {
+        let len = self.block_len(index, begin);
+        self.calc_disk_locs(index, begin, len)
+    }
+
+    /// Calculates the file offsets for a given piece at index
+    pub fn piece_disk_locs(&self, index: u32) -> Vec<disk::Location> {
+        let len = self.piece_len(index);
+        self.calc_disk_locs(index, 0, len)
+    }
+
+    /// Calculates the file offsets for a given index, begin, and block length.
+    fn calc_disk_locs(&self, index: u32, begin: u32, mut len: u32) -> Vec<disk::Location> {
+        // The absolute byte offset where we start processing data.
+        let mut cur_start = index * self.piece_len as u32 + begin;
+        // Current index of the data block we're writing
+        let mut data_start = 0;
+        // The current file end length.
+        let mut fidx = 0;
+        // Iterate over all file lengths, if we find any which end a bigger
+        // idx than cur_start, write from cur_start..cur_start + file_write_len for that file
+        // and continue if we're now at the end of the file.
+        let mut locs = Vec::new();
+        for f in self.files.iter() {
+            fidx += f.length;
+            if (cur_start as usize) < fidx {
+                let file_write_len = cmp::min(fidx - cur_start as usize, len as usize);
+                let offset = (cur_start - (fidx - f.length) as u32) as u64;
+                if file_write_len == len as usize {
+                    // The file is longer than our len, just write to it,
+                    // exit loop
+                    locs.push(disk::Location::new(f.path.clone(), offset, data_start, data_start + file_write_len));
+                    break;
+                } else {
+                    // Write to the end of file, continue
+                    locs.push(disk::Location::new(f.path.clone(), offset, data_start, data_start + file_write_len as usize));
+                    len -= file_write_len as u32;
+                    cur_start += file_write_len as u32;
+                    data_start += file_write_len;
+                }
+            }
+        }
+        locs
     }
 }
 

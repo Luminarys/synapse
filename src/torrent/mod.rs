@@ -10,7 +10,7 @@ pub use self::peer::{Peer, PeerConn};
 
 use self::peer::Message;
 use self::picker::Picker;
-use std::{fmt, cmp};
+use std::fmt;
 use {amy, bincode, rpc, disk, DISK, tracker, TRACKER};
 use throttle::Throttle;
 use tracker::{TrackerError, TrackerRes};
@@ -64,7 +64,7 @@ pub enum Status {
     Leeching,
     Idle,
     Seeding,
-    Hashing,
+    Validating,
     DiskError,
 }
 
@@ -209,6 +209,15 @@ impl Torrent {
                     peer.send_message(p);
                 }
             }
+            disk::Response::ValidationComplete { invalid, .. } => {
+                debug!(self.l, "Validation completed!");
+                if invalid.is_empty() {
+                    self.status = Status::Idle;
+                    TRACKER.tx.send(tracker::Request::completed(self)).unwrap();
+                } else {
+                    // TODO: Refetch the pieces.
+                }
+            }
             disk::Response::Error { err, .. } => {
                 warn!(self.l, "Disk error: {:?}", err);
                 self.status = Status::DiskError;
@@ -269,14 +278,18 @@ impl Torrent {
                     return;
                 }
 
-                self.write_piece(index, begin, length, data);
+                if self.info.block_len(index, begin) != length {
+                    peer.set_error(io_err_val("Peer returned block of invalid len!"));
+                    return;
+                }
+                self.write_piece(index, begin, data);
                 let (piece_done, mut peers) = self.picker.completed(index, begin);
                 if piece_done {
                     self.downloaded += 1;
                     self.pieces.set_bit(index as u64);
                     if self.pieces.complete() {
-                        self.status = Status::Idle;
-                        TRACKER.tx.send(tracker::Request::completed(self)).unwrap();
+                        DISK.tx.send(disk::Request::validate(self.id, self.info.clone())).unwrap();
+                        self.status = Status::Validating;
                     }
                     let m = Message::Have(index);
                     for pid in self.leechers.iter() {
@@ -304,10 +317,12 @@ impl Torrent {
                     self.status = Status::Seeding;
                     self.dirty = true;
                     // TODO get this from some sort of allocator.
-                    if !peer.local_status().choked {
-                        self.request_read(peer.id(), index, begin, length, Box::new([0u8; 16384]));
-                    } else {
+                    if peer.local_status().choked {
                         peer.set_error(io_err_val("Peer requested while choked!"));
+                    } else if length != self.info.block_len(index, begin) {
+                        peer.set_error(io_err_val("Peer requested block of invalid len!"));
+                    } else {
+                        self.request_read(peer.id(), index, begin, Box::new([0u8; 16384]));
                     }
                 } else {
                 }
@@ -344,51 +359,18 @@ impl Torrent {
         self.pieces.complete()
     }
 
-    /// Calculates the file offsets for a given index, begin, and block length.
-    fn calc_block_locs(&self, index: u32, begin: u32, mut len: u32) -> Vec<disk::Location> {
-        // The absolute byte offset where we start processing data.
-        let mut cur_start = index * self.info.piece_len as u32 + begin;
-        // Current index of the data block we're writing
-        let mut data_start = 0;
-        // The current file end length.
-        let mut fidx = 0;
-        // Iterate over all file lengths, if we find any which end a bigger
-        // idx than cur_start, write from cur_start..cur_start + file_write_len for that file
-        // and continue if we're now at the end of the file.
-        let mut locs = Vec::new();
-        for f in self.info.files.iter() {
-            fidx += f.length;
-            if (cur_start as usize) < fidx {
-                let file_write_len = cmp::min(fidx - cur_start as usize, len as usize);
-                let offset = (cur_start - (fidx - f.length) as u32) as u64;
-                if file_write_len == len as usize {
-                    // The file is longer than our len, just write to it,
-                    // exit loop
-                    locs.push(disk::Location::new(f.path.clone(), offset, data_start, data_start + file_write_len));
-                    break;
-                } else {
-                    // Write to the end of file, continue
-                    locs.push(disk::Location::new(f.path.clone(), offset, data_start, data_start + file_write_len as usize));
-                    len -= file_write_len as u32;
-                    cur_start += file_write_len as u32;
-                    data_start += file_write_len;
-                }
-            }
-        }
-        locs
-    }
-
     /// Writes a piece of torrent info, with piece index idx,
     /// piece offset begin, piece length of len, and data bytes.
     /// The disk send handle is also provided.
-    fn write_piece(&self, index: u32, begin: u32, len: u32, data: Box<[u8; 16384]>) {
-        let locs = self.calc_block_locs(index, begin, len);
+    fn write_piece(&self, index: u32, begin: u32, data: Box<[u8; 16384]>) {
+        let locs = self.info.block_disk_locs(index, begin);
         DISK.tx.send(disk::Request::write(self.id, data, locs)).unwrap();
     }
 
     /// Issues a read request of the given torrent
-    fn request_read(&self, id: usize, index: u32, begin: u32, len: u32, data: Box<[u8; 16384]>) {
-        let locs = self.calc_block_locs(index, begin, len);
+    fn request_read(&self, id: usize, index: u32, begin: u32, data: Box<[u8; 16384]>) {
+        let locs = self.info.block_disk_locs(index, begin);
+        let len = self.info.block_len(index, begin);
         let ctx = disk::Ctx::new(id, self.id, index, begin, len);
         DISK.tx.send(disk::Request::read(ctx, data, locs)).unwrap();
     }
@@ -396,11 +378,7 @@ impl Torrent {
     fn make_requests(&mut self, peer: &mut Peer) {
         while peer.can_queue_req() {
             if let Some((idx, offset)) = self.picker.pick(peer) {
-                if self.info.is_last_piece((idx, offset)) {
-                    peer.request_piece(idx, offset, self.info.last_piece_len());
-                } else {
-                    peer.request_piece(idx, offset, 16384);
-                }
+                peer.request_piece(idx, offset, self.info.block_len(idx, offset));
             } else {
                 break;
             }

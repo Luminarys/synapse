@@ -6,6 +6,7 @@ use torrent::Info;
 use slog::Logger;
 use util::torrent_name;
 use threadpool::ThreadPool;
+use sha1::Sha1;
 use {CONTROL, CONFIG, TC};
 
 pub struct Disk {
@@ -65,6 +66,10 @@ impl Request {
         Request::Serialize { tid, data, hash }
     }
 
+    pub fn validate(tid: usize, info: Arc<Info>) -> Request {
+        Request::Validate { tid, info }
+    }
+
     pub fn delete(tid: usize, hash: [u8; 20]) -> Request {
         Request::Delete { tid, hash }
     }
@@ -75,23 +80,26 @@ impl Request {
 
     pub fn execute(self) -> io::Result<Option<Response>> {
         let sd = &CONFIG.session;
+        let dd = &CONFIG.directory;
         match self {
             Request::Write { data, locations, .. } => {
+                let mut pb = path::PathBuf::from(dd);
                 for loc in locations {
-                    fs::OpenOptions::new().write(true).open(&loc.file).and_then(|mut f| {
-                        f.seek(SeekFrom::Start(loc.offset)).map(|_| f)
-                    }).and_then(|mut f| {
-                        f.write(&data[loc.start..loc.end])
-                    })?;
+                    pb.push(&loc.file);
+                    let mut f = fs::OpenOptions::new().write(true).open(&pb)?;
+                    f.seek(SeekFrom::Start(loc.offset))?;
+                    f.write(&data[loc.start..loc.end])?;
+                    pb.pop();
                 }
             }
             Request::Read { context, mut data, locations, .. } =>  {
+                let mut pb = path::PathBuf::from(dd);
                 for loc in locations {
-                    fs::OpenOptions::new().read(true).open(&loc.file).and_then(|mut f| {
-                        f.seek(SeekFrom::Start(loc.offset)).map(|_| f)
-                    }).and_then(|mut f| {
-                        f.read(&mut data[loc.start..loc.end])
-                    })?;
+                    pb.push(&loc.file);
+                    let mut f = fs::OpenOptions::new().read(true).open(&pb)?;
+                    f.seek(SeekFrom::Start(loc.offset))?;
+                    f.read(&mut data[loc.start..loc.end])?;
+                    pb.pop();
                 }
                 let data = Arc::new(data);
                 return Ok(Some(Response::read(context, data)))
@@ -99,16 +107,43 @@ impl Request {
             Request::Serialize { data, hash, .. } => {
                 let mut pb = path::PathBuf::from(sd);
                 pb.push(torrent_name(&hash));
-                fs::OpenOptions::new().write(true).create(true).open(&pb).and_then(|mut f| {
-                    f.write(&data)
-                })?;
+                let mut f = fs::OpenOptions::new().write(true).create(true).open(&pb)?;
+                f.write(&data)?;
             }
             Request::Delete { hash, .. } => {
                 let mut pb = path::PathBuf::from(sd);
                 pb.push(torrent_name(&hash));
                 fs::remove_file(pb)?;
             }
-            Request::Validate { info, .. } => {
+            Request::Validate { tid, info } => {
+                let mut invalid = Vec::new();
+                let mut buf = vec![0u8; 16384];
+                let mut pb = path::PathBuf::from(sd);
+
+                let mut init_locs = info.piece_disk_locs(0);
+                let mut cf = init_locs.remove(0).file;
+                pb.push(&cf);
+                let mut f = fs::OpenOptions::new().write(true).open(&pb)?;
+
+                for i in 0..info.pieces() {
+                    let mut hasher = Sha1::new();
+                    let locs = info.piece_disk_locs(i);
+                    for loc in locs {
+                        if &loc.file != &cf {
+                            pb.pop();
+                            pb.push(&loc.file);
+                            f = fs::OpenOptions::new().write(true).open(&pb)?;
+                            cf = loc.file;
+                        }
+                        let amnt = f.read(&mut buf)?;
+                        hasher.update(&buf[0..amnt]);
+                    }
+                    let hash = hasher.digest().bytes();
+                    if &hash[..] != &info.hashes[i as usize][..] {
+                        invalid.push(i);
+                    }
+                }
+                return Ok(Some(Response::validation_complete(tid, invalid)));
             }
             Request::Shutdown => unreachable!(),
         }
@@ -142,6 +177,7 @@ impl Location {
 
 pub enum Response {
     Read { context: Ctx, data: Arc<Box<[u8; 16384]>> },
+    ValidationComplete { tid: usize, invalid: Vec<u32>, },
     Error { tid: usize, err: io::Error, }
 }
 
@@ -154,9 +190,14 @@ impl Response {
         Response::Error { tid, err }
     }
 
+    pub fn validation_complete(tid: usize, invalid: Vec<u32>) -> Response {
+        Response::ValidationComplete { tid, invalid }
+    }
+
     pub fn tid(&self) -> usize {
         match *self {
             Response::Read { ref context, .. } => context.tid,
+            Response::ValidationComplete { tid, .. } => tid,
             Response::Error { tid, .. } => tid
         }
     }
@@ -189,6 +230,7 @@ impl Disk {
                 }
                 Ok(r) => {
                     // Adjust the pool size
+                    // TODO: Use a backoff for this to minimize syscalls used
                     if self.pool.active_count() == self.threads {
                         self.threads += 1;
                         debug!(self.l, "Increasing disk pool to {:?}", self.threads);
