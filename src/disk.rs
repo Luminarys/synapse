@@ -118,12 +118,12 @@ impl Request {
             Request::Validate { tid, info } => {
                 let mut invalid = Vec::new();
                 let mut buf = vec![0u8; 16384];
-                let mut pb = path::PathBuf::from(sd);
+                let mut pb = path::PathBuf::from(dd);
 
                 let mut init_locs = info.piece_disk_locs(0);
                 let mut cf = init_locs.remove(0).file;
                 pb.push(&cf);
-                let mut f = fs::OpenOptions::new().write(true).open(&pb)?;
+                let mut f = fs::OpenOptions::new().read(true).open(&pb)?;
 
                 for i in 0..info.pieces() {
                     let mut hasher = Sha1::new();
@@ -132,7 +132,7 @@ impl Request {
                         if &loc.file != &cf {
                             pb.pop();
                             pb.push(&loc.file);
-                            f = fs::OpenOptions::new().write(true).open(&pb)?;
+                            f = fs::OpenOptions::new().read(true).open(&pb)?;
                             cf = loc.file;
                         }
                         let amnt = f.read(&mut buf)?;

@@ -104,17 +104,12 @@ impl Torrent {
         d.picker.unset_waiting();
         let peers = UnsafeCell::new(HashMap::new());
         let leechers = HashSet::new();
-        let status = if d.pieces.complete() {
-            Status::Idle
-        } else {
-            Status::Pending
-        };
         let t = Torrent {
             id, info: Arc::new(d.info), peers, pieces: d.pieces, picker: d.picker,
             uploaded: d.uploaded, downloaded: d.downloaded, reg, leechers, throttle,
             tracker: TrackerStatus::Updating,
             tracker_update: None, choker: choker::Choker::new(),
-            l: l.clone(), dirty: false, status
+            l: l.clone(), dirty: false, status: d.status
         };
         debug!(l, "Sending start request");
         TRACKER.tx.send(tracker::Request::started(&t)).unwrap();
@@ -459,6 +454,17 @@ impl Torrent {
                 TRACKER.tx.send(tracker::Request::started(self)).unwrap();
                 for (_, peer) in self.peers().iter_mut() {
                     self.make_requests(peer);
+                }
+            }
+            Status::DiskError => {
+                if self.pieces.complete() {
+                    DISK.tx.send(disk::Request::validate(self.id, self.info.clone())).unwrap();
+                    self.status = Status::Validating;
+                } else {
+                    for (_, peer) in self.peers().iter_mut() {
+                        self.make_requests(peer);
+                    }
+                    self.status = Status::Idle;
                 }
             }
             _ => { }
