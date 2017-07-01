@@ -1,4 +1,5 @@
 use std::collections::HashSet;
+use std::cmp;
 use torrent::{Info, Peer, picker};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -72,6 +73,11 @@ impl Picker {
         (true, peers)
     }
 
+    pub fn invalidate_piece(&mut self, idx: u32) {
+        self.piece_idx = cmp::min(idx as u64, self.piece_idx);
+        self.c.invalidate_piece(idx);
+    }
+
     fn update_piece_idx(&mut self) {
         let mut idx = self.piece_idx * self.c.scale;
         loop {
@@ -134,5 +140,12 @@ mod tests {
         assert_eq!(picker.pick(&peer), Some((0, 0)));
         peer.pieces_mut().set_bit(2);
         assert_eq!(picker.pick(&peer), Some((2, 0)));
+
+        picker.completed(0, 0);
+        picker.completed(1, 0);
+        picker.completed(2, 0);
+        assert_eq!(picker.pick(&peer), None);
+        picker.invalidate_piece(1);
+        assert_eq!(picker.pick(&peer), Some((1, 0)));
     }
 }

@@ -40,6 +40,13 @@ impl Picker {
         }
     }
 
+    pub fn invalidate_piece(&mut self, idx: u32) {
+        match *self {
+            Picker::Sequential(ref mut p) => p.invalidate_piece(idx),
+            Picker::Rarest(ref mut p) => p.invalidate_piece(idx),
+        }
+    }
+
     pub fn piece_available(&mut self, idx: u32) {
         if let Picker::Rarest(ref mut p) = *self {
             p.piece_available(idx);
@@ -114,6 +121,13 @@ impl Common {
             endgame_cnt: len,
             waiting_peers: HashMap::new(),
         }
+    }
+
+    pub fn invalidate_piece(&mut self, idx: u32) {
+        for i in 0..self.scale {
+            self.blocks.unset_bit(idx as u64 * self.scale + i);
+        }
+        self.endgame_cnt += idx as u64 * self.scale;
     }
 
     fn unset_waiting(&mut self) {

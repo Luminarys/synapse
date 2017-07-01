@@ -174,6 +174,10 @@ impl Picker {
         }
         (true, peers)
     }
+
+    pub fn invalidate_piece(&mut self, idx: u32) {
+        self.c.invalidate_piece(idx);
+    }
 }
 
 #[cfg(test)]
@@ -219,14 +223,14 @@ mod tests {
             name: String::from(""),
             announce: String::from(""),
             piece_len: 16384,
-            total_len: 16384 * 4,
-            hashes: vec![vec![0u8]; 4],
+            total_len: 16384 * 3,
+            hashes: vec![vec![0u8]; 3],
             hash: [0u8; 20],
             files: vec![],
         };
 
         let mut picker = Picker::new(&info);
-        let b = Bitfield::new(4);
+        let b = Bitfield::new(3);
         let mut peers = vec![Peer::test_from_pieces(0, b.clone()), Peer::test_from_pieces(0, b.clone()), Peer::test_from_pieces(0, b.clone())];
         assert_eq!(picker.pick(&peers[0]), None);
 
@@ -245,7 +249,13 @@ mod tests {
         assert_eq!(picker.pick(&peers[1]), Some((2, 0)));
         assert_eq!(picker.pick(&peers[2]), Some((0, 0)));
         assert_eq!(picker.pick(&peers[2]), Some((1, 0)));
+
+        picker.completed(0, 0);
+        picker.completed(1, 0);
+        picker.completed(2, 0);
         assert_eq!(picker.pick(&peers[1]), None);
+        picker.invalidate_piece(1);
+        assert_eq!(picker.pick(&peers[1]), Some((1, 0)));
     }
 }
 

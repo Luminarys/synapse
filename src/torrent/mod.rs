@@ -215,7 +215,12 @@ impl Torrent {
                     self.status = Status::Idle;
                     TRACKER.tx.send(tracker::Request::completed(self)).unwrap();
                 } else {
-                    // TODO: Refetch the pieces.
+                    for piece in invalid {
+                        self.picker.invalidate_piece(piece);
+                    }
+                    for (_, peer) in self.peers().iter_mut() {
+                        self.make_requests(peer);
+                    }
                 }
             }
             disk::Response::Error { err, .. } => {
