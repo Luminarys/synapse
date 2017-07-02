@@ -200,15 +200,7 @@ fn test_seq_efficiency() {
         req_per_tick: 2,
         req_queue_len: 2,
     };
-    let info = Info {
-        name: String::from(""),
-        announce: String::from(""),
-        piece_len: 16384,
-        total_len: 16384 * cfg.pieces as u64,
-        hashes: vec![vec![0u8]; cfg.pieces as usize],
-        hash: [0u8; 20],
-        files: vec![],
-    };
+    let info = Info::with_pieces(cfg.pieces as usize);
     let p = Picker::new_sequential(&info);
     test_efficiency(cfg, p);
 }
@@ -224,15 +216,7 @@ fn test_rarest_efficiency() {
         req_per_tick: 2,
         req_queue_len: 2,
     };
-    let info = Info {
-        name: String::from(""),
-        announce: String::from(""),
-        piece_len: 16384,
-        total_len: 16384 * cfg.pieces as u64,
-        hashes: vec![vec![0u8]; cfg.pieces as usize],
-        hash: [0u8; 20],
-        files: vec![],
-    };
+    let info = Info::with_pieces(cfg.pieces as usize);
     let p = Picker::new_rarest(&info);
     test_efficiency(cfg, p);
 }

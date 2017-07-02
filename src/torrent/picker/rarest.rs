@@ -187,15 +187,7 @@ mod tests {
 
     #[test]
     fn test_available() {
-        let info = Info {
-            name: String::from(""),
-            announce: String::from(""),
-            piece_len: 16384,
-            total_len: 16384 * 3,
-            hashes: vec![vec![0u8]; 3],
-            hash: [0u8; 20],
-            files: vec![],
-        };
+        let info = Info::with_pieces(3);
 
         let mut picker = Picker::new(&info);
         let b = Bitfield::new(3);
@@ -219,15 +211,7 @@ mod tests {
 
     #[test]
     fn test_unavailable() {
-        let info = Info {
-            name: String::from(""),
-            announce: String::from(""),
-            piece_len: 16384,
-            total_len: 16384 * 3,
-            hashes: vec![vec![0u8]; 3],
-            hash: [0u8; 20],
-            files: vec![],
-        };
+        let info = Info::with_pieces(3);
 
         let mut picker = Picker::new(&info);
         let b = Bitfield::new(3);

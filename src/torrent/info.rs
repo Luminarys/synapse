@@ -97,7 +97,7 @@ impl Info {
                         }
                         v
                     })
-                    .ok_or("Info must provide valid hashes")?;
+                .ok_or("Info must provide valid hashes")?;
 
                 let private = i.remove("private")
                     .and_then(|v| v.to_int())
@@ -126,8 +126,22 @@ impl Info {
                     private,
                 })
             })
+
     }
 
+    #[cfg(test)]
+    pub fn with_pieces(pieces: usize) -> Info {
+        Info {
+            name: String::from(""),
+            announce: String::from(""),
+            piece_len: 16384,
+            total_len: 16384 * pieces as u64,
+            hashes: vec![vec![0u8]; pieces],
+            hash: [0u8; 20],
+            files: vec![],
+            private: false,
+        }
+    }
     pub fn create_files(&self) -> Result<(), io::Error> {
         for file in self.files.iter() {
             file.create()?;
@@ -215,8 +229,8 @@ fn parse_bencode_files(mut data: BTreeMap<String, BEncode>) -> Result<Vec<File>,
         Some(fs) => {
             let mut path = PathBuf::new();
             path.push(data.remove("name")
-                .and_then(|v| v.to_string())
-                .ok_or("Multifile mode must have a name field")?);
+                      .and_then(|v| v.to_string())
+                      .ok_or("Multifile mode must have a name field")?);
             let mut files = Vec::new();
             for f in fs {
                 let mut file = File::from_bencode(f)?;
