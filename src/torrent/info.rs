@@ -15,6 +15,7 @@ pub struct Info {
     pub hashes: Vec<Vec<u8>>,
     pub hash: [u8; 20],
     pub files: Vec<File>,
+    pub private: bool,
 }
 
 impl fmt::Debug for Info {
@@ -97,6 +98,12 @@ impl Info {
                         v
                     })
                     .ok_or("Info must provide valid hashes")?;
+
+                let private = i.remove("private")
+                    .and_then(|v| v.to_int())
+                    .map(|p| p == 1)
+                    .unwrap_or(false);
+
                 let files = parse_bencode_files(i)?;
                 let name = if files.is_empty() {
                     files[0].path.clone().into_os_string().into_string().unwrap()
@@ -106,6 +113,7 @@ impl Info {
                 } else {
                     unreachable!();
                 };
+
                 let total_len = files.iter().map(|f| f.length as u64).sum();
                 Ok(Info {
                     name,
@@ -115,6 +123,7 @@ impl Info {
                     hash,
                     files,
                     total_len,
+                    private,
                 })
             })
     }
