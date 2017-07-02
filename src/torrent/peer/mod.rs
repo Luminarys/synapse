@@ -186,7 +186,7 @@ impl Peer {
     }
 
     pub fn can_queue_req(&mut self) -> bool {
-        self.queued < 5
+        !self.remote_status.choked && self.queued < 5
     }
 
     /// Attempts to read a single message from the peer,
@@ -196,39 +196,8 @@ impl Peer {
         match self.conn.readable() {
             Ok(mut res) => {
                 match res.as_mut() {
-                    Some(&mut Message::Piece { .. }) => {
-                        self.downloaded += 1;
-                        self.queued -= 1;
-                    }
-                    Some(&mut Message::Request { .. }) => {
-                        if self.local_status.choked {
-                            self.set_error(io_err_val("Peer requested while choked!"));
-                        }
-                    }
-                    Some(&mut Message::Choke { .. }) => {
-                        self.remote_status.choked = true;
-                    }
-                    Some(&mut Message::Unchoke { .. }) => {
-                        self.remote_status.choked = false;
-                    }
-                    Some(&mut Message::Interested { .. }) => {
-                        self.remote_status.interested = true;
-                    }
-                    Some(&mut Message::Uninterested { .. }) => {
-                        self.remote_status.interested = false;
-                    }
-                    Some(&mut Message::Have(idx)) => {
-                        if idx >= self.pieces.len() as u32 {
-                            self.set_error(io_err_val("Invalid piece provided in HAVE"));
-                        }
-                        self.pieces.set_bit(idx as u64);
-                    }
-                    Some(&mut Message::Bitfield(ref mut pieces)) => {
-                        // Set the correct length, then swap the pieces
-                        pieces.cap(self.pieces.len());
-                        mem::swap(pieces, &mut self.pieces);
-                    }
-                    _ => { }
+                    Some(m) => self.process_message(m),
+                    None => { }
                 }
                 res
             },
@@ -236,6 +205,51 @@ impl Peer {
                 self.error = Some(e);
                 None
             }
+        }
+    }
+
+    fn process_message(&mut self, msg: &mut Message) {
+        match *msg {
+            Message::Piece { .. } => {
+                self.downloaded += 1;
+                self.queued -= 1;
+            }
+            Message::Request { .. } => {
+                if self.local_status.choked {
+                    self.set_error(io_err_val("Peer requested while choked!"));
+                }
+            }
+            Message::Choke { .. } => {
+                self.remote_status.choked = true;
+            }
+            Message::Unchoke { .. } => {
+                self.remote_status.choked = false;
+            }
+            Message::Interested { .. } => {
+                self.remote_status.interested = true;
+            }
+            Message::Uninterested { .. } => {
+                self.remote_status.interested = false;
+            }
+            Message::Have(idx) => {
+                if idx >= self.pieces.len() as u32 {
+                    self.set_error(io_err_val("Invalid piece provided in HAVE"));
+                }
+                self.pieces.set_bit(idx as u64);
+            }
+            Message::Bitfield(ref mut pieces) => {
+                // Set the correct length, then swap the pieces
+                pieces.cap(self.pieces.len());
+                mem::swap(pieces, &mut self.pieces);
+            }
+            Message::KeepAlive => {
+                // TODO: Keep track of some internal timer maybe?
+            }
+            Message::Cancel { .. } => {
+                // TODO: Move out the write queue to the peer level, and find/remove appropriate
+                // msg
+            }
+            _ => { }
         }
     }
 

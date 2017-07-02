@@ -254,7 +254,7 @@ impl Torrent {
                 }
             }
             Message::Have(idx) => {
-                if peer.pieces().complete() && self.leechers.contains(&peer.id()) {
+                if peer.pieces().complete() {
                     self.leechers.remove(&peer.id());
                 }
                 if self.pieces.usable(peer.pieces()) {
@@ -267,9 +267,14 @@ impl Torrent {
                 self.make_requests(peer);
             }
             Message::Piece { index, begin, data, length } => {
-                if self.pieces.complete() || self.pieces.has_bit(index as u64) {
+                // Ignore a piece we already have, this could happen from endgame
+                if self.pieces.has_bit(index as u64) {
                     return;
                 }
+
+
+                // Even though we have the data, if we are stopped we shouldn't use the disk
+                // regardless.
                 if !self.status.stopped() {
                     self.status = Status::Leeching;
                 } else {
@@ -284,16 +289,24 @@ impl Torrent {
                     return;
                 }
 
+                // Internal data structures which are being serialized have changed, flag self as
+                // dirty
                 self.dirty = true;
                 self.write_piece(index, begin, data);
+
+
                 let (piece_done, mut peers) = self.picker.completed(index, begin);
                 if piece_done {
                     self.downloaded += 1;
                     self.pieces.set_bit(index as u64);
+
+                    // Begin validation if the torrent is done
                     if self.pieces.complete() {
                         DISK.tx.send(disk::Request::validate(self.id, self.info.clone())).unwrap();
                         self.status = Status::Validating;
                     }
+
+                    // Tell all relevant peers we got the piece
                     let m = Message::Have(index);
                     for pid in self.leechers.iter() {
                         let peer = self.peers().get_mut(pid).expect("Seeder IDs should be in peers");
@@ -302,6 +315,9 @@ impl Torrent {
                         }
                     }
                 }
+
+                // If there are any peers we've asked duplicate pieces for(due to endgame),
+                // cancel it, though we should still assume they'll probably send it anyways
                 if peers.len() > 1 {
                     peers.remove(&peer.id());
                     let m = Message::Cancel { index, begin, length };
@@ -311,7 +327,8 @@ impl Torrent {
                         }
                     }
                 }
-                if !peer.remote_status().choked && !self.pieces.complete() && !self.status.stopped() {
+
+                if !self.pieces.complete() {
                     self.make_requests(peer);
                 }
             }
@@ -377,6 +394,9 @@ impl Torrent {
     }
 
     fn make_requests(&mut self, peer: &mut Peer) {
+        if self.status.stopped() {
+            return;
+        }
         while peer.can_queue_req() {
             if let Some((idx, offset)) = self.picker.pick(peer) {
                 peer.request_piece(idx, offset, self.info.block_len(idx, offset));
