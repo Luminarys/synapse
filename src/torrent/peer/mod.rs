@@ -11,6 +11,7 @@ use std::net::SocketAddr;
 use std::{io, fmt, mem};
 use torrent::{Torrent, Bitfield};
 use throttle::Throttle;
+use util::io_err_val;
 
 /// Peer connection and associated metadata.
 pub struct Peer {
@@ -155,10 +156,6 @@ impl Peer {
         &self.pieces
     }
 
-    pub fn set_pieces(&mut self, bf: Bitfield) {
-        self.pieces = bf;
-    }
-
     #[cfg(test)]
     pub fn pieces_mut(&mut self) -> &mut Bitfield {
         &mut self.pieces
@@ -197,26 +194,39 @@ impl Peer {
     /// the torrent
     pub fn read(&mut self) -> Option<Message> {
         match self.conn.readable() {
-            Ok(res) => {
-                match res.as_ref() {
-                    Some(&Message::Piece { .. }) => {
+            Ok(mut res) => {
+                match res.as_mut() {
+                    Some(&mut Message::Piece { .. }) => {
                         self.downloaded += 1;
                         self.queued -= 1;
                     }
-                    Some(&Message::Choke { .. }) => {
+                    Some(&mut Message::Request { .. }) => {
+                        if self.local_status.choked {
+                            self.set_error(io_err_val("Peer requested while choked!"));
+                        }
+                    }
+                    Some(&mut Message::Choke { .. }) => {
                         self.remote_status.choked = true;
                     }
-                    Some(&Message::Unchoke { .. }) => {
+                    Some(&mut Message::Unchoke { .. }) => {
                         self.remote_status.choked = false;
                     }
-                    Some(&Message::Interested { .. }) => {
+                    Some(&mut Message::Interested { .. }) => {
                         self.remote_status.interested = true;
                     }
-                    Some(&Message::Uninterested { .. }) => {
+                    Some(&mut Message::Uninterested { .. }) => {
                         self.remote_status.interested = false;
                     }
-                    Some(&Message::Have(idx)) => {
+                    Some(&mut Message::Have(idx)) => {
+                        if idx >= self.pieces.len() as u32 {
+                            self.set_error(io_err_val("Invalid piece provided in HAVE"));
+                        }
                         self.pieces.set_bit(idx as u64);
+                    }
+                    Some(&mut Message::Bitfield(ref mut pieces)) => {
+                        // Set the correct length, then swap the pieces
+                        pieces.cap(self.pieces.len());
+                        mem::swap(pieces, &mut self.pieces);
                     }
                     _ => { }
                 }

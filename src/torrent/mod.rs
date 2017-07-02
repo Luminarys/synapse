@@ -244,9 +244,7 @@ impl Torrent {
             Message::Handshake { .. } => {
                 debug!(self.l, "Connection established with peer {:?}", peer.id());
             }
-            Message::Bitfield(mut pf) => {
-                pf.cap(self.pieces.len());
-                peer.set_pieces(pf);
+            Message::Bitfield(_) => {
                 if self.pieces.usable(peer.pieces()) {
                     self.picker.add_peer(peer);
                     peer.interested();
@@ -256,9 +254,6 @@ impl Torrent {
                 }
             }
             Message::Have(idx) => {
-                if idx >= self.pieces.len() as u32 {
-                    peer.set_error(io_err_val("Invalid piece provided in HAVE"));
-                }
                 if peer.pieces().complete() && self.leechers.contains(&peer.id()) {
                     self.leechers.remove(&peer.id());
                 }
@@ -271,7 +266,6 @@ impl Torrent {
                 debug!(self.l, "Unchoked by: {:?}!", peer);
                 self.make_requests(peer);
             }
-            Message::Choke => { }
             Message::Piece { index, begin, data, length } => {
                 if self.pieces.complete() || self.pieces.has_bit(index as u64) {
                     return;
@@ -283,6 +277,9 @@ impl Torrent {
                 }
 
                 if self.info.block_len(index, begin) != length {
+                    // TODO: Consider moving a ref to info inside peer, we ideally want
+                    // to minimize the things taht torrent controls for the peer to reduce
+                    // bugs.
                     peer.set_error(io_err_val("Peer returned block of invalid len!"));
                     return;
                 }
@@ -323,16 +320,14 @@ impl Torrent {
                     self.status = Status::Seeding;
                     self.dirty = true;
                     // TODO get this from some sort of allocator.
-                    if peer.local_status().choked {
-                        peer.set_error(io_err_val("Peer requested while choked!"));
-                    } else if length != self.info.block_len(index, begin) {
+                    if length != self.info.block_len(index, begin) {
                         peer.set_error(io_err_val("Peer requested block of invalid len!"));
                     } else {
                         self.request_read(peer.id(), index, begin, Box::new([0u8; 16384]));
                     }
                 } else {
-                }
                 // TODO: add this to a queue to fulfill later
+                }
             }
             Message::Cancel { .. } => {
                 // TODO create some sort of filter so that when we finish reading a cancel'd piece

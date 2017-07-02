@@ -80,6 +80,7 @@ impl Writer {
                 }
             }
         } else {
+            // TODO: Acquire from buffer
             let mut buf = vec![0; msg.len()];
             // Should never go wrong
             msg.encode(&mut buf).unwrap();
