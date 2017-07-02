@@ -117,7 +117,7 @@ impl Request {
             }
             Request::Validate { tid, info } => {
                 let mut invalid = Vec::new();
-                let mut buf = vec![0u8; 16384];
+                let mut buf = vec![0u8; info.piece_len as usize];
                 let mut pb = path::PathBuf::from(dd);
 
                 let mut init_locs = info.piece_disk_locs(0);
@@ -231,6 +231,8 @@ impl Disk {
                 Ok(r) => {
                     // Adjust the pool size
                     // TODO: Use a backoff for this to minimize syscalls used
+                    // TODO: If the disk is blocked we don't want to spawn unlimited requests.
+                    // We probably will want to block at some max.
                     if self.pool.active_count() == self.threads {
                         self.threads += 1;
                         debug!(self.l, "Increasing disk pool to {:?}", self.threads);

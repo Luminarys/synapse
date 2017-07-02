@@ -192,26 +192,6 @@ impl Peer {
         self.queued < 5
     }
 
-    /// Attempts to read as many messages as possible from
-    /// the connection, returning a vector of the results.
-    pub fn readable(&mut self) -> Vec<Message> {
-        match self._readable() {
-            Ok(r) => r,
-            Err(e) => {
-                self.error = Some(e);
-                Vec::new()
-            }
-        }
-    }
-
-    fn _readable(&mut self) -> io::Result<Vec<Message>> {
-        let mut msgs = Vec::with_capacity(1);
-        while let Some(msg) = self.read() {
-            msgs.push(msg);
-        }
-        Ok(msgs)
-    }
-
     /// Attempts to read a single message from the peer,
     /// processing it interally first before passing it to
     /// the torrent

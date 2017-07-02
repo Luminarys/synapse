@@ -37,19 +37,22 @@ impl Choker {
         }
     }
 
-    fn unchoke_random(&mut self, peers: &mut HashMap<usize, Peer>) -> usize {
-        let random_id = *random_sample(self.interested.iter()).unwrap();
-        let mut peer = peers.get_mut(&random_id).unwrap();
-        self.interested.remove(&random_id);
-        self.add_peer(&mut peer);
-        random_id
+    fn unchoke_random(&mut self, peers: &mut HashMap<usize, Peer>) -> Option<usize> {
+        if let Some(random_id) = random_sample(self.interested.iter()).cloned() {
+            let mut peer = peers.get_mut(&random_id).unwrap();
+            self.interested.remove(&random_id);
+            self.add_peer(&mut peer);
+            Some(random_id)
+        } else {
+            None
+        }
     }
 
     pub fn remove_peer(&mut self, peer: &mut Peer, peers: &mut HashMap<usize, Peer>) -> Option<SwapRes> {
         if let Some(idx) = self.unchoked.iter().position(|&id| id == peer.id()) {
             self.unchoked.remove(idx);
             peer.choke();
-            Some(SwapRes { choked: peer.id(), unchoked: self.unchoke_random(peers)})
+            self.unchoke_random(peers).map(|unchoked| SwapRes { choked: peer.id(), unchoked })
         } else {
             self.interested.remove(&peer.id());
             None
@@ -107,7 +110,7 @@ impl Choker {
         }
 
         // Unchoke one random interested peer
-        let r = SwapRes { choked: id, unchoked: self.unchoke_random(peers) };
+        let r = SwapRes { choked: id, unchoked: self.unchoke_random(peers).unwrap() };
         self.interested.insert(id);
         r
     }

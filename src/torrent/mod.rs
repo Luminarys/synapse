@@ -111,6 +111,9 @@ impl Torrent {
             tracker_update: None, choker: choker::Choker::new(),
             l: l.clone(), dirty: false, status: d.status
         };
+        if let Status::Validating = d.status {
+            DISK.tx.send(disk::Request::validate(t.id, t.info.clone())).unwrap();
+        }
         debug!(l, "Sending start request");
         TRACKER.tx.send(tracker::Request::started(&t)).unwrap();
         Ok(t)
@@ -207,9 +210,11 @@ impl Torrent {
             disk::Response::ValidationComplete { invalid, .. } => {
                 debug!(self.l, "Validation completed!");
                 if invalid.is_empty() {
+                    info!(self.l, "Torrent succesfully downloaded!");
                     self.status = Status::Idle;
                     TRACKER.tx.send(tracker::Request::completed(self)).unwrap();
                 } else {
+                    warn!(self.l, "Torrent has incorrect pieces {:?}, redownloading", invalid);
                     for piece in invalid {
                         self.picker.invalidate_piece(piece);
                     }
@@ -227,7 +232,7 @@ impl Torrent {
 
     pub fn peer_readable(&mut self, pid: usize) {
         let peer = self.peers().get_mut(&pid).unwrap();
-        for msg in peer.readable() {
+        while let Some(msg) = peer.read() {
             self.handle_msg(msg, pid);
         }
     }
@@ -271,7 +276,6 @@ impl Torrent {
                 if self.pieces.complete() || self.pieces.has_bit(index as u64) {
                     return;
                 }
-                self.dirty = true;
                 if !self.status.stopped() {
                     self.status = Status::Leeching;
                 } else {
@@ -282,6 +286,8 @@ impl Torrent {
                     peer.set_error(io_err_val("Peer returned block of invalid len!"));
                     return;
                 }
+
+                self.dirty = true;
                 self.write_piece(index, begin, data);
                 let (piece_done, mut peers) = self.picker.completed(index, begin);
                 if piece_done {
@@ -416,6 +422,8 @@ impl Torrent {
         if p.error().is_none() {
             self.picker.add_peer(&p);
             self.peers().insert(pid, p);
+            // We want to make sure any queued up messages are drained once we register
+            self.peer_readable(pid);
             Some(pid)
         } else {
             self.reg.deregister(p.conn().sock()).unwrap();
