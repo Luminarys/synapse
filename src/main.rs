@@ -20,6 +20,8 @@ extern crate slog;
 extern crate slog_term;
 extern crate slog_async;
 extern crate threadpool;
+#[macro_use]
+extern crate error_chain;
 
 mod bencode;
 mod torrent;

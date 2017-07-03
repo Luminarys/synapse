@@ -74,7 +74,7 @@ impl Control {
 
     pub fn run(&mut self) {
         if self.deserialize().is_err() {
-            println!("Session deserialization failed!");
+            warn!(self.l, "Session deserialization failed!");
         }
         debug!(self.l, "Initialized!");
         loop {

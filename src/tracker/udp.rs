@@ -12,7 +12,6 @@ pub struct Announcer {
 impl Announcer {
     pub fn new() -> Announcer {
         let port = CONFIG.port;
-        println!("UDP Binding on port {:?}", port);
         let sock = UdpSocket::bind(("0.0.0.0", port)).unwrap();
         Announcer {
             sock

@@ -23,6 +23,7 @@ signal = "0.3"
 slog-term = "2"
 slog-async = "2"
 threadpool = "1.0"
+error-chain = "0.10"
 
 [dependencies.slog]
 version = "2"

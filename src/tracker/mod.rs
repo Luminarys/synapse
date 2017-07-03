@@ -11,6 +11,41 @@ use bencode::BEncode;
 use url::Url;
 use {CONTROL, CONFIG, TC};
 
+error_chain! {
+    errors {
+        InvalidRequest(r: &'static str) {
+            description("invalid tracker request")
+            display("invalid tracker request: {}", r)
+        }
+
+        InvalidResponse(r: &'static str) {
+            description("invalid tracker response")
+            display("invalid tracker response: {}", r)
+        }
+
+        TrackerError(e: String) {
+            description("tracker error response")
+            display("tracker error: {}", e)
+        }
+
+        UnexpectedEOF {
+            description("the tracker closed the connection unexpectedly")
+            display("tracker EOF")
+        }
+
+        Timeout {
+            description("the tracker failed to respond to the request in a timely manner")
+            display("tracker timeout")
+        }
+    }
+}
+
+pub trait Pollable {
+    fn new_request(&mut self, req: Request) -> usize;
+    fn readable(&mut self, id: usize);
+    fn writable(&mut self, id: usize);
+}
+
 pub struct Tracker {
     queue: mpsc::Receiver<Request>,
     http: http::Announcer,
@@ -142,16 +177,7 @@ pub enum Event {
     Completed,
 }
 
-pub type Response = (usize, TrackerRes);
-pub type TrackerRes = Result<TrackerResponse, TrackerError>;
-
-#[derive(Clone, Debug, Serialize)]
-pub enum TrackerError {
-    Error(String),
-    InvalidURL,
-    ConnectionFailure,
-    InvalidResponse(&'static str),
-}
+pub type Response = (usize, Result<TrackerResponse>);
 
 #[derive(Debug)]
 pub struct TrackerResponse {
@@ -171,10 +197,12 @@ impl TrackerResponse {
         }
     }
 
-    pub fn from_bencode(data: BEncode) -> TrackerRes {
-        let mut d = data.to_dict().ok_or(TrackerError::InvalidResponse("Tracker response must be a dictionary type!"))?;
+    pub fn from_bencode(data: BEncode) -> Result<TrackerResponse> {
+        let mut d = data.to_dict()
+            .ok_or(ErrorKind::InvalidResponse("Tracker response must be a dictionary type!"))?;
         if let Some(BEncode::String(data)) = d.remove("failure reason") {
-            return Err(TrackerError::Error(String::from_utf8(data).map_err(|_| TrackerError::InvalidResponse("Failure reason must be UTF8!"))?));
+            let reason = String::from_utf8(data).chain_err(|| ErrorKind::InvalidResponse("Failure reason must be UTF8!"))?;
+            return Err(ErrorKind::TrackerError(reason).into());
         }
         let mut resp = TrackerResponse::empty();
         match d.remove("peers") {
@@ -186,7 +214,7 @@ impl TrackerResponse {
                 }
             }
             _ => {
-                return Err(TrackerError::InvalidResponse("Response must have peers field!"));
+                return Err(ErrorKind::InvalidResponse("Response must have peers field!").into());
             }
         };
         match d.remove("interval") {
@@ -194,7 +222,7 @@ impl TrackerResponse {
                 resp.interval = *i as u32;
             }
             _ => {
-                return Err(TrackerError::InvalidResponse("Response must have interval!"));
+                return Err(ErrorKind::InvalidResponse("Response must have interval!").into());
             }
         };
         Ok(resp)
