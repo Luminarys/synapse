@@ -245,9 +245,14 @@ impl Peer {
             Message::KeepAlive => {
                 // TODO: Keep track of some internal timer maybe?
             }
-            Message::Cancel { .. } => {
-                // TODO: Move out the write queue to the peer level, and find/remove appropriate
-                // msg
+            Message::Cancel { index, begin, .. } => {
+                // Remove all matching piece's queued to write
+                self.conn.writer.write_queue.retain(|m| {
+                    if let Message::Piece { index: i, begin: b, .. } = *m {
+                        return !(i == index && b == begin);
+                    }
+                    return true;
+                });
             }
             _ => { }
         }

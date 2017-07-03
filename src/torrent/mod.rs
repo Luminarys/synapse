@@ -204,6 +204,7 @@ impl Torrent {
                     let p = Message::s_piece(context.idx, context.begin, context.length, data);
                     // This may not be 100% accurate, but close enough for now.
                     self.uploaded += 1;
+                    self.dirty = true;
                     peer.send_message(p);
                 }
             }
@@ -294,7 +295,6 @@ impl Torrent {
                 self.dirty = true;
                 self.write_piece(index, begin, data);
 
-
                 let (piece_done, mut peers) = self.picker.completed(index, begin);
                 if piece_done {
                     self.downloaded += 1;
@@ -335,7 +335,6 @@ impl Torrent {
             Message::Request { index, begin, length } => {
                 if !self.status.stopped() {
                     self.status = Status::Seeding;
-                    self.dirty = true;
                     // TODO get this from some sort of allocator.
                     if length != self.info.block_len(index, begin) {
                         peer.set_error(io_err_val("Peer requested block of invalid len!"));
@@ -345,11 +344,6 @@ impl Torrent {
                 } else {
                 // TODO: add this to a queue to fulfill later
                 }
-            }
-            Message::Cancel { .. } => {
-                // TODO create some sort of filter so that when we finish reading a cancel'd piece
-                // it never gets sent.
-                trace!(self.l, "Received cancel!");
             }
             Message::Interested => {
                 self.choker.add_peer(&mut peer);

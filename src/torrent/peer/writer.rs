@@ -5,9 +5,12 @@ use std::sync::Arc;
 use util::io_err;
 
 pub struct Writer {
+    // Needed so that the peer can filter out cancel'd messages.
+    // The state of this isn't critical to any invariants of the Writer
+    // so it shouldn't be an issue
+    pub write_queue: VecDeque<Message>,
     blocks_written: usize,
     writable: bool,
-    write_queue: VecDeque<Message>,
     state: WriteState,
 }
 
