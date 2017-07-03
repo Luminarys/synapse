@@ -1,19 +1,21 @@
 mod http;
 mod udp;
 
-use std::sync::mpsc;
+use std::rc::Rc;
 use byteorder::{BigEndian, ReadBytesExt};
 use std::net::{SocketAddr, SocketAddrV4, Ipv4Addr};
 use std::thread;
+use std::result;
 use slog::Logger;
 use torrent::Torrent;
 use bencode::BEncode;
 use url::Url;
 use {CONTROL, CONFIG, TC};
+use amy;
 
 error_chain! {
     errors {
-        InvalidRequest(r: &'static str) {
+        InvalidRequest(r: String) {
             description("invalid tracker request")
             display("invalid tracker request: {}", r)
         }
@@ -40,72 +42,95 @@ error_chain! {
     }
 }
 
-pub trait Pollable {
-    fn new_request(&mut self, req: Request) -> usize;
-    fn readable(&mut self, id: usize);
-    fn writable(&mut self, id: usize);
-}
-
 pub struct Tracker {
-    queue: mpsc::Receiver<Request>,
+    poll: amy::Poller,
+    reg: Rc<amy::Registrar>,
+    queue: amy::Receiver<Request>,
     http: http::Announcer,
     udp: udp::Announcer,
     l: Logger,
 }
 
 impl Tracker {
-    pub fn new(queue: mpsc::Receiver<Request>, l: Logger) -> Tracker {
+    pub fn new(poll: amy::Poller, reg: amy::Registrar, queue: amy::Receiver<Request>, l: Logger) -> Tracker {
         Tracker {
             queue,
             http: http::Announcer::new(),
             udp: udp::Announcer::new(),
             l,
+            poll,
+            reg: Rc::new(reg),
         }
     }
 
     pub fn run(&mut self) {
         debug!(self.l, "Initialized!");
         loop {
-            match self.queue.recv() {
-                Ok(Request::Announce(req)) => {
+            for event in self.poll.wait(3).unwrap() {
+                // TODO: Handle lingering connections.
+                if self.handle_event(event).is_err() {
+                    break;
+                }
+            }
+        }
+    }
+
+    fn handle_event(&mut self, event: amy::Notification)  -> result::Result<(), ()> {
+        if event.id == self.queue.get_id() {
+            self.handle_request()
+        } else {
+            self.handle_socket(event);
+            Ok(())
+        }
+    }
+
+    fn handle_request(&mut self) -> result::Result<(), ()> {
+        while let Ok(r) = self.queue.try_recv() {
+            match r {
+                Request::Announce(req) => {
                     debug!(self.l, "Handling announce request!");
-                    let stopping = req.stopping();
                     let id = req.id;
+                    let stopping = req.stopping();
                     let response = if let Ok(url) = Url::parse(&req.url) {
                         match url.scheme() {
-                            "http" => self.http.announce(req),
-                            "udp" => self.udp.announce(req),
-                            _ => Err(TrackerError::InvalidURL),
+                            "http" => self.http.new_announce(req),
+                            "udp" => self.udp.new_announce(req),
+                            s => Some(Err(ErrorKind::InvalidRequest(format!("Unknown tracker url scheme: {}", s)).into())),
                         }
                     } else {
-                        Err(TrackerError::InvalidURL)
+                        Some(Err(ErrorKind::InvalidRequest(format!("Invalid url: {}", req.url)).into()))
                     };
                     if !stopping {
-                        debug!(self.l, "Sending announce response to control!");
-                        if CONTROL.trk_tx.lock().unwrap().send((id, response)).is_err() {
+                        if let Some(Err(e)) = response {
+                            debug!(self.l, "Sending announce response to control!");
+                            if CONTROL.trk_tx.lock().unwrap().send((id, Err(e))).is_err() {
+                            }
                         }
                     }
                 }
-                Ok(Request::Shutdown) => {
+                Request::Shutdown => {
                     debug!(self.l, "Shutdown!");
-                    break;
+                    return Err(());
                 }
-                _ => { unreachable!() }
             }
         }
+        Ok(())
+    }
+
+    fn handle_socket(&mut self, event: amy::Notification) {
     }
 }
 
 
 pub struct Handle {
-    pub tx: mpsc::Sender<Request>,
+    pub tx: amy::Sender<Request>,
 }
 
 impl Handle {
     pub fn init(&self) { }
 
-    pub fn get(&self) -> mpsc::Sender<Request> {
-        self.tx.clone()
+    pub fn get(&self) -> amy::Sender<Request> {
+        self.tx.try_clone().unwrap()
     }
 }
 
@@ -231,9 +256,11 @@ impl TrackerResponse {
 
 pub fn start(l: Logger) -> Handle {
     debug!(l, "Initializing!");
-    let (tx, rx) = mpsc::channel();
+    let p = amy::Poller::new().unwrap();
+    let mut r = p.get_registrar().unwrap();
+    let (tx, rx) = r.channel().unwrap();
     thread::spawn(move || {
-        let mut d = Tracker::new(rx, l);
+        let mut d = Tracker::new(p, r, rx, l);
         d.run();
         use std::sync::atomic;
         TC.fetch_sub(1, atomic::Ordering::SeqCst);

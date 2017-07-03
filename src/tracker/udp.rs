@@ -1,5 +1,5 @@
 use std::net::{UdpSocket, SocketAddr, SocketAddrV4, Ipv4Addr};
-use tracker::{Announce, TrackerRes, TrackerResponse, TrackerError, Event};
+use tracker::{Announce, Result, Response, Event};
 use {CONFIG, PEER_ID};
 use std::io::{Write, Read, Cursor};
 use byteorder::{ReadBytesExt, WriteBytesExt, BigEndian};
@@ -18,6 +18,25 @@ impl Announcer {
         }
     }
 
+    fn contains(&self, id: usize) -> bool {
+        false
+    }
+
+    fn readable(&mut self, id: usize) -> Option<Response> {
+        None
+    }
+    fn writable(&mut self, id: usize) -> Option<Response> {
+        None
+    }
+    fn tick(&mut self) -> Vec<Response> {
+        Vec::new()
+    }
+
+    pub fn new_announce(&mut self, req: Announce) -> Option<Result<()>> {
+        None
+    }
+
+    /*
     pub fn announce(&mut self, req: Announce) -> TrackerRes {
         let mut data = [0u8; 16];
         let tid = 420;
@@ -124,4 +143,5 @@ impl Announcer {
         }
         Ok(resp)
     }
+        */
 }

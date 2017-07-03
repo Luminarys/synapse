@@ -152,7 +152,7 @@ impl Torrent {
             Err(tracker::Error(tracker::ErrorKind::TrackerError(ref s), _)) => {
                 self.tracker = TrackerStatus::Failure(s.clone());
             }
-            Err(e) => {
+            Err(ref e) => {
                 warn!(self.l, "Failed to query tracker: {:?}", e.backtrace());
                 self.tracker = TrackerStatus::Error;
             }
