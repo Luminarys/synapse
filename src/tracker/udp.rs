@@ -1,34 +1,36 @@
 use std::net::{UdpSocket, SocketAddr, SocketAddrV4, Ipv4Addr};
 use tracker::{Announce, Result, Response, Event};
-use {CONFIG, PEER_ID};
+use {CONFIG, PEER_ID, amy};
+use std::rc::Rc;
 use std::io::{Write, Read, Cursor};
 use byteorder::{ReadBytesExt, WriteBytesExt, BigEndian};
 use url::Url;
 
 pub struct Announcer {
     sock: UdpSocket,
+    reg: Rc<amy::Registrar>,
 }
 
 impl Announcer {
-    pub fn new() -> Announcer {
+    pub fn new(reg: Rc<amy::Registrar>) -> Announcer {
         let port = CONFIG.port;
         let sock = UdpSocket::bind(("0.0.0.0", port)).unwrap();
         Announcer {
-            sock
+            sock, reg
         }
     }
 
-    fn contains(&self, id: usize) -> bool {
+    pub fn contains(&self, id: usize) -> bool {
         false
     }
 
-    fn readable(&mut self, id: usize) -> Option<Response> {
+    pub fn readable(&mut self, id: usize) -> Option<Response> {
         None
     }
-    fn writable(&mut self, id: usize) -> Option<Response> {
+    pub fn writable(&mut self, id: usize) -> Option<Response> {
         None
     }
-    fn tick(&mut self) -> Vec<Response> {
+    pub fn tick(&mut self) -> Vec<Response> {
         Vec::new()
     }
 

@@ -1,27 +1,29 @@
 use tracker::{Announce, Response, Event, Result, ErrorKind};
 use std::time::Duration;
 use util::{encode_param, append_pair};
+use std::rc::Rc;
 use {PEER_ID, bencode, amy};
 
 pub struct Announcer {
+    reg: Rc<amy::Registrar>,
 }
 
 impl Announcer {
-    pub fn new() -> Announcer {
-        Announcer {  }
+    pub fn new(reg: Rc<amy::Registrar>) -> Announcer {
+        Announcer {  reg }
     }
 
-    fn contains(&self, id: usize) -> bool {
+    pub fn contains(&self, id: usize) -> bool {
         false
     }
 
-    fn readable(&mut self, id: usize) -> Option<Response> {
+    pub fn readable(&mut self, id: usize) -> Option<Response> {
         None
     }
-    fn writable(&mut self, id: usize) -> Option<Response> {
+    pub fn writable(&mut self, id: usize) -> Option<Response> {
         None
     }
-    fn tick(&mut self) -> Vec<Response> {
+    pub fn tick(&mut self) -> Vec<Response> {
         Vec::new()
     }
 

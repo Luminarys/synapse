@@ -53,13 +53,14 @@ pub struct Tracker {
 
 impl Tracker {
     pub fn new(poll: amy::Poller, reg: amy::Registrar, queue: amy::Receiver<Request>, l: Logger) -> Tracker {
+        let reg = Rc::new(reg);
         Tracker {
             queue,
-            http: http::Announcer::new(),
-            udp: udp::Announcer::new(),
+            http: http::Announcer::new(reg.clone()),
+            udp: udp::Announcer::new(reg.clone()),
             l,
             poll,
-            reg: Rc::new(reg),
+            reg,
         }
     }
 
@@ -103,8 +104,7 @@ impl Tracker {
                     if !stopping {
                         if let Some(Err(e)) = response {
                             debug!(self.l, "Sending announce response to control!");
-                            if CONTROL.trk_tx.lock().unwrap().send((id, Err(e))).is_err() {
-                            }
+                            CONTROL.trk_tx.lock().unwrap().send((id, Err(e))).unwrap();
                         }
                     }
                 }
@@ -118,6 +118,26 @@ impl Tracker {
     }
 
     fn handle_socket(&mut self, event: amy::Notification) {
+        let resp = if self.http.contains(event.id) {
+            if event.event.readable() {
+                self.http.readable(event.id)
+            } else {
+                self.http.writable(event.id)
+            }
+        } else if self.udp.contains(event.id) {
+            if event.event.readable() {
+                self.udp.readable(event.id)
+            } else {
+                self.udp.writable(event.id)
+            }
+        } else {
+            unreachable!();
+        };
+
+        if let Some(r) = resp {
+            debug!(self.l, "Sending announce response to control!");
+            CONTROL.trk_tx.lock().unwrap().send(r).unwrap();
+        }
     }
 }
 
