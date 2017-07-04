@@ -1,16 +1,29 @@
+mod reader;
+mod writer;
+
 use tracker::{Announce, Response, Event, Result, ErrorKind};
 use std::time::Duration;
 use util::{encode_param, append_pair};
 use std::rc::Rc;
 use {PEER_ID, bencode, amy};
+use self::writer::Writer;
+use std::collections::HashMap;
+use socket::Socket;
 
 pub struct Announcer {
     reg: Rc<amy::Registrar>,
+    connections: HashMap<usize, Tracker>,
+}
+
+struct Tracker {
+    torrent: usize,
+    writer: Writer,
+    sock: Socket,
 }
 
 impl Announcer {
     pub fn new(reg: Rc<amy::Registrar>) -> Announcer {
-        Announcer {  reg }
+        Announcer { reg, connections: HashMap::new(), }
     }
 
     pub fn contains(&self, id: usize) -> bool {
@@ -21,6 +34,17 @@ impl Announcer {
         None
     }
     pub fn writable(&mut self, id: usize) -> Option<Response> {
+        if let Some(mut trk) = self.connections.get_mut(&id) {
+            match trk.writer.writable(&mut trk.sock) {
+                Ok(Some(())) => {
+                    self.reg.reregister(id, &trk.sock, amy::Event::Read);
+                }
+                Ok(None) => {}
+                Err(e) => {
+                    // return Some((trk.torrent, e.into()));
+                }
+            }
+        }
         None
     }
     pub fn tick(&mut self) -> Vec<Response> {

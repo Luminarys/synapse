@@ -1,5 +1,6 @@
 mod http;
 mod udp;
+mod errors;
 
 use std::rc::Rc;
 use byteorder::{BigEndian, ReadBytesExt};
@@ -12,35 +13,7 @@ use bencode::BEncode;
 use url::Url;
 use {CONTROL, CONFIG, TC};
 use amy;
-
-error_chain! {
-    errors {
-        InvalidRequest(r: String) {
-            description("invalid tracker request")
-            display("invalid tracker request: {}", r)
-        }
-
-        InvalidResponse(r: &'static str) {
-            description("invalid tracker response")
-            display("invalid tracker response: {}", r)
-        }
-
-        TrackerError(e: String) {
-            description("tracker error response")
-            display("tracker error: {}", e)
-        }
-
-        UnexpectedEOF {
-            description("the tracker closed the connection unexpectedly")
-            display("tracker EOF")
-        }
-
-        Timeout {
-            description("the tracker failed to respond to the request in a timely manner")
-            display("tracker timeout")
-        }
-    }
-}
+pub use self::errors::{Result, ResultExt, Error, ErrorKind};
 
 pub struct Tracker {
     poll: amy::Poller,
