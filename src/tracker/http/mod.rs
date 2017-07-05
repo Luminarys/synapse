@@ -1,14 +1,19 @@
 mod reader;
 mod writer;
 
-use tracker::{Announce, Response, Event, Result, Error, ErrorKind, dns};
+use tracker::{self, Announce, Response, Result, ResultExt, Error, ErrorKind, dns};
 use std::time::Duration;
+use std::mem;
 use std::sync::Arc;
 use {PEER_ID, bencode, amy};
 use self::writer::Writer;
+use self::reader::Reader;
 use std::collections::HashMap;
 use socket::Socket;
+use std::net::SocketAddr;
 use url::percent_encoding::{percent_encode_byte};
+use net2::{TcpBuilder, TcpStreamExt};
+use std::net::TcpStream;
 use url::Url;
 
 pub struct Announcer {
@@ -16,10 +21,58 @@ pub struct Announcer {
     connections: HashMap<usize, Tracker>,
 }
 
+enum Event {
+    DNSResolved(dns::QueryResponse),
+    Readable,
+    Writable,
+}
+
 struct Tracker {
     torrent: usize,
-    writer: Writer,
-    sock: Socket,
+    state: TrackerState,
+}
+
+enum TrackerState {
+    Error,
+    ResolvingDNS { sock: TcpBuilder, req: Vec<u8>, port: u16 },
+    Writing { sock: TcpStream, writer: Writer },
+    Reading { sock: TcpStream, reader: Reader },
+    Complete,
+}
+
+impl TrackerState {
+    fn handle(&mut self, event: Event) -> Result<()> {
+        let s = mem::replace(self, TrackerState::Error);
+        mem::replace(self, s.next(event)?);
+        Ok(())
+    }
+
+    fn next(self, event: Event) -> Result<TrackerState> {
+        match (self, event) {
+            (TrackerState::ResolvingDNS { sock, req, port }, Event::DNSResolved(r)) => {
+                let addr = SocketAddr::new(r.res?, port);
+                let s = sock.to_tcp_stream().chain_err(|| ErrorKind::IO)?;
+                s.set_nonblocking(true).chain_err(|| ErrorKind::IO)?;
+                s.connect(addr).chain_err(|| ErrorKind::IO)?;
+                Ok(TrackerState::Writing { sock: s, writer: Writer::new(req) })
+            }
+            (TrackerState::Writing { mut sock, mut writer }, Event::Writable) => {
+                match writer.writable(&mut sock)? {
+                    Some(()) => {
+                        // reg.reregister(id, &sock, amy::Event::Read).chain_err(|| ErrorKind::IO)?;
+                        let r = Reader{};
+                        Ok(TrackerState::Reading { sock, reader: r })
+                    }
+                    None => {
+                        Ok(TrackerState::Writing { sock, writer })
+                    }
+                }
+            }
+            (s @ TrackerState::Writing { .. }, _) => Ok(s),
+            (s @ TrackerState::Reading { .. }, _) => Ok(s),
+            _ => bail!("Unknown state transition encountered!")
+        }
+    }
 }
 
 impl Announcer {
@@ -32,17 +85,23 @@ impl Announcer {
     }
 
     pub fn readable(&mut self, id: usize) -> Option<Response> {
+        if let Some(mut trk) = self.connections.get_mut(&id) {
+            match trk.state.handle(Event::Readable) {
+                Ok(()) => { }
+                Err(e) => {
+                    return Some((trk.torrent, Err(e)));
+                }
+            }
+        }
         None
     }
+
     pub fn writable(&mut self, id: usize) -> Option<Response> {
         if let Some(mut trk) = self.connections.get_mut(&id) {
-            match trk.writer.writable(&mut trk.sock) {
-                Ok(Some(())) => {
-                    self.reg.reregister(id, &trk.sock, amy::Event::Read);
-                }
-                Ok(None) => {}
+            match trk.state.handle(Event::Writable) {
+                Ok(()) => { }
                 Err(e) => {
-                    // return Some((trk.torrent, e.into()));
+                    return Some((trk.torrent, Err(e)));
                 }
             }
         }
@@ -53,8 +112,16 @@ impl Announcer {
         Vec::new()
     }
 
-    pub fn dns_resolved(&mut self, resp: dns::QueryResponse) -> Result<()> {
-        Ok(())
+    pub fn dns_resolved(&mut self, resp: dns::QueryResponse) -> Option<Response> {
+        if let Some(mut trk) = self.connections.get_mut(&resp.id) {
+            match trk.state.handle(Event::DNSResolved(resp)) {
+                Ok(()) => { }
+                Err(e) => {
+                    return Some((trk.torrent, Err(e)));
+                }
+            }
+        }
+        None
     }
 
     pub fn new_announce(&mut self, req: Announce, url: &Url) -> Result<()> {
@@ -76,14 +143,14 @@ impl Announcer {
         append_query_pair(&mut http_req, "compact", "1");
         append_query_pair(&mut http_req, "port", &req.port.to_string());
         match req.event {
-            Some(Event::Started) => {
+            Some(tracker::Event::Started) => {
                 append_query_pair(&mut http_req, "numwant", "50");
                 append_query_pair(&mut http_req, "event", "started");
             }
-            Some(Event::Stopped) => {
+            Some(tracker::Event::Stopped) => {
                 append_query_pair(&mut http_req, "event", "started");
             }
-            Some(Event::Completed) => {
+            Some(tracker::Event::Completed) => {
                 append_query_pair(&mut http_req, "numwant", "20");
                 append_query_pair(&mut http_req, "event", "completed");
             }

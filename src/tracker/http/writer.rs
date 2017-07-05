@@ -1,18 +1,5 @@
 use std::io;
-
-error_chain! {
-    errors {
-        EOF {
-            description("the tracker closed the connection unexpectedly")
-                display("tracker EOF")
-        }
-
-        IO {
-            description("unknown IO error occured on socket")
-                display("tracker IO error")
-        }
-    }
-}
+use tracker::errors::{Result, ErrorKind};
 
 pub(super) struct Writer {
     data: Vec<u8>,

@@ -23,12 +23,14 @@ pub struct Tracker {
     http: http::Announcer,
     udp: udp::Announcer,
     dns: dns::Resolver,
+    timer: usize,
     l: Logger,
 }
 
 impl Tracker {
     pub fn new(poll: amy::Poller, mut reg: amy::Registrar, queue: amy::Receiver<Request>, l: Logger) -> Tracker {
         let (dtx, drx) = reg.channel().unwrap();
+        let timer = reg.set_interval(150).unwrap();
         let reg = Arc::new(reg);
         let dns = dns::Resolver::new(reg.clone(), dtx);
         Tracker {
@@ -39,6 +41,7 @@ impl Tracker {
             poll,
             dns,
             dns_res: drx,
+            timer,
         }
     }
 
@@ -59,6 +62,8 @@ impl Tracker {
             return self.handle_request();
         } else if event.id == self.dns_res.get_id() {
             self.handle_dns_res();
+        } else if event.id == self.timer {
+            self.handle_timer();
         } else {
             self.handle_socket(event);
         }
@@ -105,6 +110,12 @@ impl Tracker {
                 // TODO: UDP
             }
         }
+    }
+
+    fn handle_timer(&mut self) {
+        self.http.tick();
+        self.udp.tick();
+        self.dns.tick();
     }
 
 
