@@ -1,12 +1,13 @@
 mod http;
 mod udp;
 mod errors;
+mod dns;
 
-use std::rc::Rc;
 use byteorder::{BigEndian, ReadBytesExt};
 use std::net::{SocketAddr, SocketAddrV4, Ipv4Addr};
 use std::thread;
 use std::result;
+use std::sync::Arc;
 use slog::Logger;
 use torrent::Torrent;
 use bencode::BEncode;
@@ -17,23 +18,27 @@ pub use self::errors::{Result, ResultExt, Error, ErrorKind};
 
 pub struct Tracker {
     poll: amy::Poller,
-    reg: Rc<amy::Registrar>,
     queue: amy::Receiver<Request>,
+    dns_res: amy::Receiver<dns::QueryResponse>,
     http: http::Announcer,
     udp: udp::Announcer,
+    dns: dns::Resolver,
     l: Logger,
 }
 
 impl Tracker {
-    pub fn new(poll: amy::Poller, reg: amy::Registrar, queue: amy::Receiver<Request>, l: Logger) -> Tracker {
-        let reg = Rc::new(reg);
+    pub fn new(poll: amy::Poller, mut reg: amy::Registrar, queue: amy::Receiver<Request>, l: Logger) -> Tracker {
+        let (dtx, drx) = reg.channel().unwrap();
+        let reg = Arc::new(reg);
+        let dns = dns::Resolver::new(reg.clone(), dtx);
         Tracker {
             queue,
             http: http::Announcer::new(reg.clone()),
             udp: udp::Announcer::new(reg.clone()),
             l,
             poll,
-            reg,
+            dns,
+            dns_res: drx,
         }
     }
 
@@ -51,11 +56,13 @@ impl Tracker {
 
     fn handle_event(&mut self, event: amy::Notification)  -> result::Result<(), ()> {
         if event.id == self.queue.get_id() {
-            self.handle_request()
+            return self.handle_request();
+        } else if event.id == self.dns_res.get_id() {
+            self.handle_dns_res();
         } else {
             self.handle_socket(event);
-            Ok(())
         }
+        Ok(())
     }
 
     fn handle_request(&mut self) -> result::Result<(), ()> {
@@ -67,15 +74,15 @@ impl Tracker {
                     let stopping = req.stopping();
                     let response = if let Ok(url) = Url::parse(&req.url) {
                         match url.scheme() {
-                            "http" => self.http.new_announce(req),
+                            "http" => self.http.new_announce(req, &url),
                             "udp" => self.udp.new_announce(req),
-                            s => Some(Err(ErrorKind::InvalidRequest(format!("Unknown tracker url scheme: {}", s)).into())),
+                            s => Err(ErrorKind::InvalidRequest(format!("Unknown tracker url scheme: {}", s)).into()),
                         }
                     } else {
-                        Some(Err(ErrorKind::InvalidRequest(format!("Invalid url: {}", req.url)).into()))
+                        Err(ErrorKind::InvalidRequest(format!("Invalid url: {}", req.url)).into())
                     };
                     if !stopping {
-                        if let Some(Err(e)) = response {
+                        if let Err(e) = response {
                             debug!(self.l, "Sending announce response to control!");
                             CONTROL.trk_tx.lock().unwrap().send((id, Err(e))).unwrap();
                         }
@@ -90,6 +97,17 @@ impl Tracker {
         Ok(())
     }
 
+    fn handle_dns_res(&mut self) {
+        while let Ok(r) = self.dns_res.try_recv() {
+            if self.http.contains(r.id) {
+                self.http.dns_resolved(r);
+            } else {
+                // TODO: UDP
+            }
+        }
+    }
+
+
     fn handle_socket(&mut self, event: amy::Notification) {
         let resp = if self.http.contains(event.id) {
             if event.event.readable() {
@@ -103,6 +121,13 @@ impl Tracker {
             } else {
                 self.udp.writable(event.id)
             }
+        } else if self.dns.contains(event.id) {
+            if event.event.readable() {
+                self.dns.readable(event.id);
+            } else {
+                self.dns.writable(event.id);
+            }
+            None
         } else {
             unreachable!();
         };

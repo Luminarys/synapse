@@ -1,18 +1,18 @@
 use std::net::{UdpSocket, SocketAddr, SocketAddrV4, Ipv4Addr};
 use tracker::{Announce, Result, Response, Event};
 use {CONFIG, PEER_ID, amy};
-use std::rc::Rc;
+use std::sync::Arc;
 use std::io::{Write, Read, Cursor};
 use byteorder::{ReadBytesExt, WriteBytesExt, BigEndian};
 use url::Url;
 
 pub struct Announcer {
     sock: UdpSocket,
-    reg: Rc<amy::Registrar>,
+    reg: Arc<amy::Registrar>,
 }
 
 impl Announcer {
-    pub fn new(reg: Rc<amy::Registrar>) -> Announcer {
+    pub fn new(reg: Arc<amy::Registrar>) -> Announcer {
         let port = CONFIG.port;
         let sock = UdpSocket::bind(("0.0.0.0", port)).unwrap();
         Announcer {
@@ -34,8 +34,8 @@ impl Announcer {
         Vec::new()
     }
 
-    pub fn new_announce(&mut self, req: Announce) -> Option<Result<()>> {
-        None
+    pub fn new_announce(&mut self, req: Announce) -> Result<()> {
+        Ok(())
     }
 
     /*

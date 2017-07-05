@@ -29,6 +29,11 @@ error_chain! {
             description("the tracker failed to respond to the request in a timely manner")
             display("tracker timeout")
         }
+
+        DNS {
+            description("the tracker url could not be resolved to an IP address")
+                display("tracker dns failure")
+        }
     }
 }
 
