@@ -1,5 +1,4 @@
 use std::io;
-use std::result;
 use tracker::errors::{Result, ErrorKind};
 
 pub(super) struct Reader {
@@ -31,7 +30,7 @@ impl ReadState {
 impl Reader {
     pub fn new() -> Reader {
         Reader {
-            data: Vec::with_capacity(75),
+            data: vec![0; 50],
             idx: 0,
             state: ReadState::ParsingHeaders,
         }
@@ -49,17 +48,18 @@ impl Reader {
             Ok(v) => {
                 if self.state.ready() {
                     self.idx += v;
-                    if self.idx == self.data.len() {
-                        self.data.resize(self.idx + 30, 0);
-                    }
                 } else {
-                    for i in 0..v {
+                    for i in 0..(v-3) {
                         if self.data[i..i+4] == b"\r\n\r\n"[..] {
                             self.data = self.data.split_off(i+4);
+                            self.idx = v - (i + 4);
                             self.state = ReadState::ParsingResponse;
                             break;
                         }
                     }
+                }
+                if self.idx == self.data.len() {
+                    self.data.resize(self.idx + 30, 0);
                 }
                 Ok(ReadRes::Again)
             }
@@ -73,7 +73,40 @@ impl Reader {
         }
     }
 
-    pub fn consume(self) -> Vec<u8> {
+    pub fn consume(mut self) -> Vec<u8> {
+        self.data.truncate(self.idx);
         self.data
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Reader;
+    use std::io::Cursor;
+
+    #[test]
+    fn test_empty_resp() {
+        let mut r = Reader::new();
+        let data = "SomeHeader: Foo\r\nConnection: Close\r\n\r\n";
+        let mut c = Cursor::new(data);
+        assert_eq!(r.readable(&mut c).unwrap(), true);
+        assert_eq!(r.consume(), Vec::<u8>::new());
+    }
+
+    #[test]
+    fn test_premature_resp() {
+        let mut r = Reader::new();
+        let data = "SomeHeader: Foo\r\nConnection: C";
+        let mut c = Cursor::new(data);
+        assert_eq!(r.readable(&mut c).is_err(), true);
+    }
+
+    #[test]
+    fn test_valid_resp() {
+        let mut r = Reader::new();
+        let data = "SomeHeader: Foo\r\nConnection: Close\r\n\r\nhello world spam";
+        let mut c = Cursor::new(data);
+        assert_eq!(r.readable(&mut c).unwrap(), true);
+        assert_eq!(r.consume(), b"hello world spam");
     }
 }
