@@ -1,7 +1,7 @@
 mod reader;
 mod writer;
 
-use tracker::{self, Announce, Response, Result, ResultExt, Error, ErrorKind, dns};
+use tracker::{self, Announce, Response, TrackerResponse, Result, ResultExt, Error, ErrorKind, dns};
 use std::time::Duration;
 use std::mem;
 use std::sync::Arc;
@@ -36,7 +36,7 @@ enum TrackerState {
     ResolvingDNS { sock: TcpBuilder, req: Vec<u8>, port: u16 },
     Writing { sock: TcpStream, writer: Writer },
     Reading { sock: TcpStream, reader: Reader },
-    Complete,
+    Complete(TrackerResponse),
 }
 
 impl TrackerState {
@@ -44,10 +44,15 @@ impl TrackerState {
         TrackerState::ResolvingDNS { sock, req, port }
     }
 
-    fn handle(&mut self, event: Event) -> Result<()> {
+    fn handle(&mut self, event: Event) -> Result<Option<TrackerResponse>> {
         let s = mem::replace(self, TrackerState::Error);
-        mem::replace(self, s.next(event)?);
-        Ok(())
+        let n = s.next(event)?;
+        if let TrackerState::Complete(r) = n {
+            Ok(Some(r))
+        } else {
+            mem::replace(self, n);
+            Ok(None)
+        }
     }
 
     fn next(self, event: Event) -> Result<TrackerState> {
@@ -62,8 +67,7 @@ impl TrackerState {
             (TrackerState::Writing { mut sock, mut writer }, Event::Writable) => {
                 match writer.writable(&mut sock)? {
                     Some(()) => {
-                        // reg.reregister(id, &sock, amy::Event::Read).chain_err(|| ErrorKind::IO)?;
-                        let r = Reader{};
+                        let r = Reader::new();
                         Ok(TrackerState::Reading { sock, reader: r })
                     }
                     None => {
@@ -71,8 +75,19 @@ impl TrackerState {
                     }
                 }
             }
+            (TrackerState::Reading { mut sock, mut reader }, Event::Readable) => {
+                if reader.readable(&mut sock)? {
+                    let data = reader.consume();
+                    let content = bencode::decode_buf(&data).chain_err(|| ErrorKind::InvalidResponse("Invalid BEncoded response!"))?;
+                    let resp = TrackerResponse::from_bencode(content)?;
+                    Ok(TrackerState::Complete(resp))
+                } else {
+                    Ok(TrackerState::Reading { sock, reader })
+                }
+            }
             (s @ TrackerState::Writing { .. }, _) => Ok(s),
             (s @ TrackerState::Reading { .. }, _) => Ok(s),
+            (s @ TrackerState::ResolvingDNS { .. }, _) => Ok(s),
             _ => bail!("Unknown state transition encountered!")
         }
     }
@@ -90,7 +105,9 @@ impl Announcer {
     pub fn readable(&mut self, id: usize) -> Option<Response> {
         if let Some(mut trk) = self.connections.get_mut(&id) {
             match trk.state.handle(Event::Readable) {
-                Ok(()) => { }
+                // TODO: deregister socket here
+                Ok(Some(r)) => { return Some(((trk.torrent, Ok(r))) )}
+                Ok(None) => { }
                 Err(e) => {
                     return Some((trk.torrent, Err(e)));
                 }
@@ -102,7 +119,7 @@ impl Announcer {
     pub fn writable(&mut self, id: usize) -> Option<Response> {
         if let Some(mut trk) = self.connections.get_mut(&id) {
             match trk.state.handle(Event::Writable) {
-                Ok(()) => { }
+                Ok(_) => { }
                 Err(e) => {
                     return Some((trk.torrent, Err(e)));
                 }
@@ -118,7 +135,7 @@ impl Announcer {
     pub fn dns_resolved(&mut self, resp: dns::QueryResponse) -> Option<Response> {
         if let Some(mut trk) = self.connections.get_mut(&resp.id) {
             match trk.state.handle(Event::DNSResolved(resp)) {
-                Ok(()) => { }
+                Ok(_) => { }
                 Err(e) => {
                     return Some((trk.torrent, Err(e)));
                 }
@@ -184,11 +201,6 @@ impl Announcer {
 
         Ok(())
     }
-    //     let content = bencode::decode(&mut resp).map_err(
-    //         |_| TrackerError::InvalidResponse("HTTP Response must be valid BENcode")
-    //     )?;
-    //     TrackerResponse::from_bencode(content)
-    // }
 }
 
 fn append_query_pair(s: &mut Vec<u8>, k: &str, v: &str) {

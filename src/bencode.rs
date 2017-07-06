@@ -1,6 +1,8 @@
 use std::collections::BTreeMap;
 use std::io::{self, Cursor};
 use std::str;
+use std::fmt;
+use std::error::Error;
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum BEncode {
@@ -18,6 +20,25 @@ pub enum BError {
     ParseInt,
     EOF,
     IO,
+}
+
+impl fmt::Display for BError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+        match *self {
+            BError::UTF8Decode => write!(f, "UTF8 Decoding Error"),
+            BError::InvalidDict => write!(f, "Invalid BEncoded dictionary"),
+            BError::InvalidChar(c) => write!(f, "Invalid character: {}", c),
+            BError::ParseInt => write!(f, "Invalid integer value encountered"),
+            BError::EOF => write!(f, "Unexpected EOF in data"),
+            BError::IO => write!(f, "IO error"),
+        }
+    }
+}
+
+impl Error for BError {
+    fn description(&self) -> &str {
+        "BEncode processing error"
+    }
 }
 
 impl BEncode {
