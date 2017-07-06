@@ -55,7 +55,9 @@ impl Resolver {
 
     pub fn tick(&mut self) {
         let mut marked = HashSet::new();
-        for (fd, read, write) in &self.chan.get_sock() {
+        // Add any unrecognized fd's to amy for polling, remove
+        // any fd's in amy which are no longer handled by c_ares
+        for (fd, _, _) in &self.chan.get_sock() {
             // Not efficient, but the max number of queries active at at time is likely limited
             if let Some(id) = self.csocks.get(&fd).cloned() {
                 marked.insert(id);
@@ -99,7 +101,9 @@ impl Resolver {
                 id,
                 res,
             };
-            s.lock().unwrap().send(resp).unwrap();
+            if s.lock().unwrap().send(resp).is_err() {
+                // Other end was shutdown, ignore
+            }
         });
     }
 }

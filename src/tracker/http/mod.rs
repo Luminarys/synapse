@@ -14,10 +14,12 @@ use url::percent_encoding::{percent_encode_byte};
 use net2::{TcpBuilder, TcpStreamExt};
 use std::net::TcpStream;
 use url::Url;
+use slog::Logger;
 
 pub struct Announcer {
     reg: Arc<amy::Registrar>,
     connections: HashMap<usize, Tracker>,
+    l: Logger
 }
 
 enum Event {
@@ -61,14 +63,17 @@ impl TrackerState {
                 let addr = SocketAddr::new(r.res?, port);
                 let s = sock.to_tcp_stream().chain_err(|| ErrorKind::IO)?;
                 s.set_nonblocking(true).chain_err(|| ErrorKind::IO)?;
-                s.connect(addr).chain_err(|| ErrorKind::IO)?;
-                Ok(TrackerState::Writing { sock: s, writer: Writer::new(req) })
+                if s.connect(addr).is_err() {
+                    // Because it's nonblocking this just means the socket
+                    // has immediatly returned and isn't necessarily failed.
+                }
+                Ok(TrackerState::Writing { sock: s, writer: Writer::new(req) }.next(Event::Writable)?)
             }
             (TrackerState::Writing { mut sock, mut writer }, Event::Writable) => {
                 match writer.writable(&mut sock)? {
                     Some(()) => {
                         let r = Reader::new();
-                        Ok(TrackerState::Reading { sock, reader: r })
+                        Ok(TrackerState::Reading { sock, reader: r }.next(Event::Readable)?)
                     }
                     None => {
                         Ok(TrackerState::Writing { sock, writer })
@@ -94,8 +99,8 @@ impl TrackerState {
 }
 
 impl Announcer {
-    pub fn new(reg: Arc<amy::Registrar>) -> Announcer {
-        Announcer { reg, connections: HashMap::new(), }
+    pub fn new(reg: Arc<amy::Registrar>, l: Logger) -> Announcer {
+        Announcer { reg, connections: HashMap::new(), l }
     }
 
     pub fn contains(&self, id: usize) -> bool {
@@ -103,10 +108,14 @@ impl Announcer {
     }
 
     pub fn readable(&mut self, id: usize) -> Option<Response> {
+        debug!(self.l, "Announce reading: {:?}", id);
         if let Some(mut trk) = self.connections.get_mut(&id) {
             match trk.state.handle(Event::Readable) {
                 // TODO: deregister socket here
-                Ok(Some(r)) => { return Some(((trk.torrent, Ok(r))) )}
+                Ok(Some(r)) => {
+                    debug!(self.l, "Annoucne response received for {:?}, {:?}", id, r);
+                    return Some(((trk.torrent, Ok(r))))
+                }
                 Ok(None) => { }
                 Err(e) => {
                     return Some((trk.torrent, Err(e)));
@@ -117,9 +126,10 @@ impl Announcer {
     }
 
     pub fn writable(&mut self, id: usize) -> Option<Response> {
+        debug!(self.l, "Announce writing: {:?}", id);
         if let Some(mut trk) = self.connections.get_mut(&id) {
             match trk.state.handle(Event::Writable) {
-                Ok(_) => { }
+                Ok(_) => {  }
                 Err(e) => {
                     return Some((trk.torrent, Err(e)));
                 }
@@ -133,6 +143,7 @@ impl Announcer {
     }
 
     pub fn dns_resolved(&mut self, resp: dns::QueryResponse) -> Option<Response> {
+        debug!(self.l, "Received a DNS resp for {:?}", resp.id);
         if let Some(mut trk) = self.connections.get_mut(&resp.id) {
             match trk.state.handle(Event::DNSResolved(resp)) {
                 Ok(_) => { }
@@ -145,6 +156,7 @@ impl Announcer {
     }
 
     pub fn new_announce(&mut self, req: Announce, url: &Url, dns: &mut dns::Resolver) -> Result<()> {
+        debug!(self.l, "Received a new announce req for {:?}", url);
         let mut http_req = Vec::with_capacity(50);
         // Encode GET req
         http_req.extend_from_slice(b"GET ");
@@ -198,6 +210,7 @@ impl Announcer {
             torrent: req.id,
             state: TrackerState::new(sock, http_req, port),
         });
+        debug!(self.l, "Dispatching DNS req, id {:?}", id);
 
         Ok(())
     }

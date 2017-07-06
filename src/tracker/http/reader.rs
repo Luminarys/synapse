@@ -1,4 +1,5 @@
 use std::io;
+use std::mem;
 use tracker::errors::{Result, ErrorKind};
 
 pub(super) struct Reader {
@@ -8,7 +9,10 @@ pub(super) struct Reader {
 }
 
 enum ReadState {
-    ParsingHeaders,
+    ParsingHeaderR1,
+    ParsingHeaderN1,
+    ParsingHeaderR2,
+    ParsingHeaderN2,
     ParsingResponse,
 }
 
@@ -19,10 +23,36 @@ enum ReadRes {
 }
 
 impl ReadState {
+    fn handle(&mut self, byte: u8) -> bool {
+        let s = mem::replace(self, ReadState::ParsingHeaderR1);
+        mem::replace(self, s.next(byte));
+        self.ready()
+    }
+
+    fn next(self, byte: u8) -> ReadState {
+        match (self, byte) {
+            (ReadState::ParsingHeaderR1, b'\r') => ReadState::ParsingHeaderN1,
+            (ReadState::ParsingHeaderR1, _) => ReadState::ParsingHeaderR1,
+
+            (ReadState::ParsingHeaderN1, b'\r') => ReadState::ParsingHeaderN1,
+            (ReadState::ParsingHeaderN1, b'\n') => ReadState::ParsingHeaderR2,
+            (ReadState::ParsingHeaderN1, _) => ReadState::ParsingHeaderR1,
+
+            (ReadState::ParsingHeaderR2, b'\r') => ReadState::ParsingHeaderN2,
+            (ReadState::ParsingHeaderR2, _) => ReadState::ParsingHeaderR1,
+
+            (ReadState::ParsingHeaderN2, b'\r') => ReadState::ParsingHeaderN1,
+            (ReadState::ParsingHeaderN2, b'\n') => ReadState::ParsingResponse,
+            (ReadState::ParsingHeaderN2, _) => ReadState::ParsingHeaderR1,
+
+            (s, _) => s,
+        }
+    }
+
     fn ready(&self) -> bool {
         match *self {
-            ReadState::ParsingHeaders => false,
             ReadState::ParsingResponse => true,
+            _ => false,
         }
     }
 }
@@ -30,9 +60,9 @@ impl ReadState {
 impl Reader {
     pub fn new() -> Reader {
         Reader {
-            data: vec![0; 50],
+            data: vec![0; 75],
             idx: 0,
-            state: ReadState::ParsingHeaders,
+            state: ReadState::ParsingHeaderN1,
         }
     }
 
@@ -49,11 +79,10 @@ impl Reader {
                 if self.state.ready() {
                     self.idx += v;
                 } else {
-                    for i in 0..(v-3) {
-                        if self.data[i..i+4] == b"\r\n\r\n"[..] {
-                            self.data = self.data.split_off(i+4);
-                            self.idx = v - (i + 4);
-                            self.state = ReadState::ParsingResponse;
+                    for i in 0..v {
+                        if self.state.handle(self.data[i]) {
+                            self.data = self.data.split_off(i + 1);
+                            self.idx = v - (i + 1);
                             break;
                         }
                     }

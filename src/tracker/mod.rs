@@ -35,7 +35,7 @@ impl Tracker {
         let dns = dns::Resolver::new(reg.clone(), dtx);
         Tracker {
             queue,
-            http: http::Announcer::new(reg.clone()),
+            http: http::Announcer::new(reg.clone(), l.new(o!("mod" => "http"))),
             udp: udp::Announcer::new(reg.clone()),
             l,
             poll,
@@ -51,7 +51,8 @@ impl Tracker {
             for event in self.poll.wait(3).unwrap() {
                 // TODO: Handle lingering connections.
                 if self.handle_event(event).is_err() {
-                    break;
+                    debug!(self.l, "Shutdown");
+                    return;
                 }
             }
         }
@@ -94,7 +95,6 @@ impl Tracker {
                     }
                 }
                 Request::Shutdown => {
-                    debug!(self.l, "Shutdown!");
                     return Err(());
                 }
             }
