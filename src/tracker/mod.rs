@@ -25,6 +25,7 @@ pub struct Tracker {
     dns: dns::Resolver,
     timer: usize,
     l: Logger,
+    shutting_down: bool,
 }
 
 impl Tracker {
@@ -42,15 +43,30 @@ impl Tracker {
             dns,
             dns_res: drx,
             timer,
+            shutting_down: false,
         }
     }
 
     pub fn run(&mut self) {
         debug!(self.l, "Initialized!");
-        loop {
-            for event in self.poll.wait(3).unwrap() {
+        'outer: loop {
+            for event in self.poll.wait(10).unwrap() {
                 if self.handle_event(event).is_err() {
-                    debug!(self.l, "Shutdown");
+                    break 'outer;
+                }
+            }
+        }
+
+        debug!(self.l, "Shutting down!");
+        self.shutting_down = true;
+
+        // Shutdown loop - wait for all requests to complete
+        loop {
+            for event in self.poll.wait(50).unwrap() {
+                if self.handle_event(event).is_err() {
+                }
+                if self.http.complete() && self.udp.complete() {
+                    debug!(self.l, "All requests complete, shutdown finished");
                     return;
                 }
             }
@@ -76,7 +92,6 @@ impl Tracker {
                 Request::Announce(req) => {
                     debug!(self.l, "Handling announce request!");
                     let id = req.id;
-                    let stopping = req.stopping();
                     let response = if let Ok(url) = Url::parse(&req.url) {
                         match url.scheme() {
                             "http" => self.http.new_announce(req, &url, &mut self.dns),
@@ -86,11 +101,8 @@ impl Tracker {
                     } else {
                         Err(ErrorKind::InvalidRequest(format!("Invalid url: {}", req.url)).into())
                     };
-                    if !stopping {
-                        if let Err(e) = response {
-                            debug!(self.l, "Sending announce response to control!");
-                            CONTROL.trk_tx.lock().unwrap().send((id, Err(e))).unwrap();
-                        }
+                    if let Err(e) = response {
+                        self.send_response((id, Err(e)));
                     }
                 }
                 Request::Shutdown => {
@@ -110,16 +122,14 @@ impl Tracker {
                 None
             };
             if let Some(r) = resp {
-                debug!(self.l, "Sending announce response to control!");
-                CONTROL.trk_tx.lock().unwrap().send(r).unwrap();
+                self.send_response(r);
             }
         }
     }
 
     fn handle_timer(&mut self) {
         for r in self.http.tick() {
-            debug!(self.l, "Sending timeout response to control!");
-            CONTROL.trk_tx.lock().unwrap().send(r).unwrap();
+            self.send_response(r);
         }
 
         self.udp.tick();
@@ -152,7 +162,13 @@ impl Tracker {
         };
 
         if let Some(r) = resp {
-            debug!(self.l, "Sending announce response to control!");
+            self.send_response(r);
+        }
+    }
+
+    fn send_response(&self, r: Response) {
+        if !self.shutting_down {
+            debug!(self.l, "Sending trk response to control!");
             CONTROL.trk_tx.lock().unwrap().send(r).unwrap();
         }
     }

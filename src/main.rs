@@ -151,6 +151,8 @@ fn main() {
                 thread::sleep(time::Duration::from_secs(1));
             }
             info!(LOG, "Shutdown complete!");
+            // Let any residual logs flush
+            thread::sleep(time::Duration::from_millis(50));
             break;
         }
         if TC.load(atomic::Ordering::SeqCst) == 0 {

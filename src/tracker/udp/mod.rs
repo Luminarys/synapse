@@ -24,6 +24,10 @@ impl Handler {
         false
     }
 
+    pub fn complete(&self) -> bool {
+        false
+    }
+
     pub fn readable(&mut self, id: usize) -> Option<Response> {
         None
     }

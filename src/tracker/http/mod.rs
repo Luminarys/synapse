@@ -100,38 +100,66 @@ impl Handler {
         Handler { reg, connections: HashMap::new(), l }
     }
 
+    pub fn complete(&self) -> bool {
+        self.connections.is_empty()
+    }
+
     pub fn contains(&self, id: usize) -> bool {
         self.connections.contains_key(&id)
     }
 
+    pub fn dns_resolved(&mut self, resp: dns::QueryResponse) -> Option<Response> {
+        let id = resp.id;
+        debug!(self.l, "Received a DNS resp for {:?}", id);
+        let resp = if let Some(mut trk) = self.connections.get_mut(&id) {
+            trk.last_updated = Instant::now();
+            match trk.state.handle(Event::DNSResolved(resp)) {
+                Ok(_) => None,
+                Err(e) => Some((trk.torrent, Err(e))),
+            }
+        } else {
+            None
+        };
+        if resp.is_some() {
+            self.connections.remove(&id);
+        }
+        resp
+    }
+
+    pub fn writable(&mut self, id: usize) -> Option<Response> {
+        let resp = if let Some(mut trk) = self.connections.get_mut(&id) {
+            trk.last_updated = Instant::now();
+            match trk.state.handle(Event::Writable) {
+                Ok(_) => None,
+                Err(e) => Some((trk.torrent, Err(e))),
+            }
+        } else {
+            None
+        };
+        if resp.is_some() {
+            self.connections.remove(&id);
+        }
+        resp
+    }
+
     pub fn readable(&mut self, id: usize) -> Option<Response> {
-        if let Some(mut trk) = self.connections.get_mut(&id) {
+        let resp = if let Some(mut trk) = self.connections.get_mut(&id) {
             trk.last_updated = Instant::now();
             match trk.state.handle(Event::Readable) {
                 Ok(Some(r)) => {
                     debug!(self.l, "Announce response received for {:?} succesfully", id);
-                    return Some(((trk.torrent, Ok(r))))
+                    Some(((trk.torrent, Ok(r))))
                 }
-                Ok(None) => { }
-                Err(e) => {
-                    return Some((trk.torrent, Err(e)));
-                }
+                Ok(None) => None,
+                Err(e) => Some((trk.torrent, Err(e)))
             }
+        } else {
+            None
+        };
+        if resp.is_some() {
+            self.connections.remove(&id);
         }
-        None
-    }
-
-    pub fn writable(&mut self, id: usize) -> Option<Response> {
-        if let Some(mut trk) = self.connections.get_mut(&id) {
-            trk.last_updated = Instant::now();
-            match trk.state.handle(Event::Writable) {
-                Ok(_) => { }
-                Err(e) => {
-                    return Some((trk.torrent, Err(e)));
-                }
-            }
-        }
-        None
+        resp
     }
 
     pub fn tick(&mut self) -> Vec<Response> {
@@ -149,19 +177,6 @@ impl Handler {
         resps
     }
 
-    pub fn dns_resolved(&mut self, resp: dns::QueryResponse) -> Option<Response> {
-        debug!(self.l, "Received a DNS resp for {:?}", resp.id);
-        if let Some(mut trk) = self.connections.get_mut(&resp.id) {
-            trk.last_updated = Instant::now();
-            match trk.state.handle(Event::DNSResolved(resp)) {
-                Ok(_) => { }
-                Err(e) => {
-                    return Some((trk.torrent, Err(e)));
-                }
-            }
-        }
-        None
-    }
 
     pub fn new_announce(&mut self, req: Announce, url: &Url, dns: &mut dns::Resolver) -> Result<()> {
         debug!(self.l, "Received a new announce req for {:?}", url);
