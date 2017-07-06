@@ -37,7 +37,7 @@ impl Tracker {
         Tracker {
             queue,
             http: http::Handler::new(reg.clone(), l.new(o!("mod" => "http"))),
-            udp: udp::Handler::new(reg.clone()),
+            udp: udp::Handler::new(&reg, l.new(o!("mod" => "udp"))).unwrap(),
             l,
             poll,
             dns,
@@ -95,7 +95,7 @@ impl Tracker {
                     let response = if let Ok(url) = Url::parse(&req.url) {
                         match url.scheme() {
                             "http" => self.http.new_announce(req, &url, &mut self.dns),
-                            "udp" => self.udp.new_announce(req),
+                            "udp" => self.udp.new_announce(req, &url, &mut self.dns),
                             s => Err(ErrorKind::InvalidRequest(format!("Unknown tracker url scheme: {}", s)).into()),
                         }
                     } else {
@@ -117,7 +117,8 @@ impl Tracker {
         while let Ok(r) = self.dns_res.try_recv() {
             let resp = if self.http.contains(r.id) {
                 self.http.dns_resolved(r)
-            // TODO: UDP
+            } else if self.udp.id() == r.id {
+                self.udp.dns_resolved(r)
             } else {
                 None
             };
@@ -144,12 +145,8 @@ impl Tracker {
             } else {
                 self.http.writable(event.id)
             }
-        } else if self.udp.contains(event.id) {
-            if event.event.readable() {
-                self.udp.readable(event.id)
-            } else {
-                self.udp.writable(event.id)
-            }
+        } else if self.udp.id() == event.id {
+            self.udp.readable(event.id)
         } else if self.dns.contains(event.id) {
             if event.event.readable() {
                 self.dns.readable(event.id);

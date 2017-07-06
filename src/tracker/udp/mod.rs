@@ -1,45 +1,131 @@
 use std::net::{UdpSocket, SocketAddr, SocketAddrV4, Ipv4Addr};
-use tracker::{Announce, Result, Response, Event};
+use std::time;
+use tracker::{Announce, Result, Response, TrackerResponse, Event, Error, ErrorKind, dns};
+use std::collections::HashMap;
 use {CONFIG, PEER_ID, amy};
 use std::sync::Arc;
-use std::io::{Write, Read, Cursor};
+use std::io::{self, Write, Read, Cursor};
 use byteorder::{ReadBytesExt, WriteBytesExt, BigEndian};
+use slog::Logger;
 use url::Url;
+use rand::random;
 
 pub struct Handler {
+    id: usize,
     sock: UdpSocket,
-    reg: Arc<amy::Registrar>,
+    connections: HashMap<usize, Connection>,
+    conn_count: usize,
+    l: Logger,
+}
+
+struct Connection {
+    torrent: usize,
+    last_updated: time::Instant,
+    state: State,
+    announce: Announce,
+}
+
+enum State {
+    Error,
+    ResolvingDNS { port: u16 },
+    Connecting { addr: SocketAddr, data: [u8; 16] },
+    Announcing { addr: SocketAddr, tid: u32, cid: u64 },
 }
 
 impl Handler {
-    pub fn new(reg: Arc<amy::Registrar>) -> Handler {
+    pub fn new(reg: &Arc<amy::Registrar>, l: Logger) -> io::Result<Handler> {
         let port = CONFIG.port;
-        let sock = UdpSocket::bind(("0.0.0.0", port)).unwrap();
-        Handler {
-            sock, reg
-        }
+        let sock = UdpSocket::bind(("0.0.0.0", port))?;
+        sock.set_nonblocking(true)?;
+        let id = reg.register(&sock, amy::Event::Read)?;
+        Ok(Handler {
+            id,
+            sock,
+            connections: HashMap::new(),
+            l,
+            conn_count: 0,
+        })
     }
 
-    pub fn contains(&self, id: usize) -> bool {
-        false
+    pub fn id(&self) -> usize {
+        self.id
     }
 
     pub fn complete(&self) -> bool {
         false
     }
 
+    pub fn new_announce(&mut self, req: Announce, url: &Url, dns: &mut dns::Resolver) -> Result<()> {
+        debug!(self.l, "Received a new announce req for {:?}", url);
+        let host = url.host_str().ok_or::<Error>(
+            ErrorKind::InvalidRequest(format!("Tracker announce url has no host!")).into()
+        )?;
+        let port = url.port().ok_or::<Error>(
+            ErrorKind::InvalidRequest(format!("Tracker announce url has no port!")).into()
+        )?;
+
+        let id = self.new_conn();
+        self.connections.insert(id, Connection {
+            torrent: req.id,
+            last_updated: time::Instant::now(),
+            state: State::ResolvingDNS { port },
+            announce: req,
+        });
+        debug!(self.l, "Dispatching DNS req for {:?}", id);
+        dns.new_query(id, host);
+        Ok(())
+    }
+
+    pub fn dns_resolved(&mut self, resp: dns::QueryResponse) -> Option<Response> {
+        let id = resp.id;
+        debug!(self.l, "Received a DNS resp for {:?}", id);
+        let resp = if let Some(mut conn) = self.connections.get_mut(&id) {
+            match conn.state {
+                State::ResolvingDNS { port } => {
+                    conn.last_updated = time::Instant::now();
+                    let tid = random::<u32>();
+                    let mut data = [0u8; 16];
+                    {
+                        let mut connect_req = Cursor::new(&mut data[..]);
+                        connect_req.write_u64::<BigEndian>(0x41727101980).unwrap();
+                        connect_req.write_u32::<BigEndian>(0).unwrap();
+                        connect_req.write_u32::<BigEndian>(tid).unwrap();
+                    }
+                    match resp.res {
+                        Ok(ip) => {
+                            conn.state = State::Connecting { addr: SocketAddr::new(ip, port), data };
+                            None
+                        }
+                        Err(e) => Some((conn.torrent, Err(e))),
+                    }
+                }
+                _ => None,
+            }
+        } else {
+            None
+        };
+        if resp.is_some() {
+            self.connections.remove(&id);
+        }
+        resp
+    }
+
     pub fn readable(&mut self, id: usize) -> Option<Response> {
         None
     }
-    pub fn writable(&mut self, id: usize) -> Option<Response> {
-        None
-    }
+
     pub fn tick(&mut self) -> Vec<Response> {
         Vec::new()
     }
 
-    pub fn new_announce(&mut self, req: Announce) -> Result<()> {
-        Ok(())
+    fn new_conn(&mut self) -> usize {
+        let c = self.conn_count;
+        self.conn_count += 1;
+        c
+    }
+
+    fn send_data(&mut self, id: usize) -> Option<Response> {
+        None
     }
 
     /*
