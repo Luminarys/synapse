@@ -105,13 +105,11 @@ impl Handler {
     }
 
     pub fn readable(&mut self, id: usize) -> Option<Response> {
-        debug!(self.l, "Announce reading: {:?}", id);
         if let Some(mut trk) = self.connections.get_mut(&id) {
             trk.last_updated = Instant::now();
             match trk.state.handle(Event::Readable) {
                 Ok(Some(r)) => {
-                    // TODO: deregister socket here
-                    debug!(self.l, "Annoucne response received for {:?}, {:?}", id, r);
+                    debug!(self.l, "Announce response received for {:?} succesfully", id);
                     return Some(((trk.torrent, Ok(r))))
                 }
                 Ok(None) => { }
@@ -124,11 +122,10 @@ impl Handler {
     }
 
     pub fn writable(&mut self, id: usize) -> Option<Response> {
-        debug!(self.l, "Announce writing: {:?}", id);
         if let Some(mut trk) = self.connections.get_mut(&id) {
             trk.last_updated = Instant::now();
             match trk.state.handle(Event::Writable) {
-                Ok(_) => {  }
+                Ok(_) => { }
                 Err(e) => {
                     return Some((trk.torrent, Err(e)));
                 }
@@ -139,9 +136,11 @@ impl Handler {
 
     pub fn tick(&mut self) -> Vec<Response> {
         let mut resps = Vec::new();
-        self.connections.retain(|_, trk| {
+        let ref l = self.l;
+        self.connections.retain(|id, trk| {
             if trk.last_updated.elapsed() > Duration::from_millis(TIMEOUT_MS) {
                 resps.push((trk.torrent, Err(ErrorKind::Timeout.into())));
+                debug!(l, "Announce {:?} timed out", id);
                 false
             } else {
                 true
@@ -170,11 +169,8 @@ impl Handler {
         // Encode GET req
         http_req.extend_from_slice(b"GET ");
 
-        // Encode the URL:
+        // Encode the URL
         http_req.extend_from_slice(url.path().as_bytes());
-        // The fact that I have to do this is genuinely depressing.
-        // This will be rewritten as a proper http protocol
-        // encoder in an event loop.
         http_req.extend_from_slice("?".as_bytes());
         append_query_pair(&mut http_req, "info_hash", &encode_param(&req.hash));
         append_query_pair(&mut http_req, "peer_id", &encode_param(&PEER_ID[..]));
@@ -213,15 +209,16 @@ impl Handler {
         // Encode empty line to terminate request
         http_req.extend_from_slice(b"\r\n");
 
-        // Setup actual connection
+        // Setup actual connection and start DNS query
         let (id, sock) = TSocket::new_v4(self.reg.clone()).chain_err(|| ErrorKind::IO)?;
-        dns.new_query(id, host);
         self.connections.insert(id, Tracker {
             last_updated: Instant::now(),
             torrent: req.id,
             state: TrackerState::new(sock, http_req, port),
         });
+
         debug!(self.l, "Dispatching DNS req, id {:?}", id);
+        dns.new_query(id, host);
 
         Ok(())
     }
