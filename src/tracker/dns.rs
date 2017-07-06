@@ -1,7 +1,7 @@
 use std::collections::{HashSet, HashMap};
 use std::net::IpAddr;
 use std::sync::{Arc, Mutex};
-use tracker::{Result, ResultExt, Error, ErrorKind};
+use tracker::{Result, ResultExt, ErrorKind};
 use std::os::unix::io::{AsRawFd, RawFd};
 use {amy, c_ares};
 

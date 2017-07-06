@@ -117,7 +117,11 @@ impl Tracker {
     }
 
     fn handle_timer(&mut self) {
-        self.http.tick();
+        for r in self.http.tick() {
+            debug!(self.l, "Sending timeout response to control!");
+            CONTROL.trk_tx.lock().unwrap().send(r).unwrap();
+        }
+
         self.udp.tick();
         self.dns.tick();
     }

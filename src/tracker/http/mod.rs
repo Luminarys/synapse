@@ -2,7 +2,7 @@ mod reader;
 mod writer;
 
 use tracker::{self, Announce, Response, TrackerResponse, Result, ResultExt, Error, ErrorKind, dns};
-use std::time::Duration;
+use std::time::{Instant, Duration};
 use std::mem;
 use std::sync::Arc;
 use {PEER_ID, bencode, amy};
@@ -11,10 +11,11 @@ use self::reader::Reader;
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use url::percent_encoding::{percent_encode_byte};
-use net2::{TcpBuilder, TcpStreamExt};
-use std::net::TcpStream;
 use url::Url;
 use slog::Logger;
+use socket::TSocket;
+
+const TIMEOUT_MS: u64 = 2500;
 
 pub struct Handler {
     reg: Arc<amy::Registrar>,
@@ -30,27 +31,27 @@ enum Event {
 
 struct Tracker {
     torrent: usize,
+    last_updated: Instant,
     state: TrackerState,
 }
 
 enum TrackerState {
     Error,
-    ResolvingDNS { sock: TcpBuilder, req: Vec<u8>, port: u16 },
-    Writing { sock: TcpStream, writer: Writer },
-    Reading { sock: TcpStream, reader: Reader },
-    Complete(TrackerResponse, TcpStream),
+    ResolvingDNS { sock: TSocket, req: Vec<u8>, port: u16 },
+    Writing { sock: TSocket, writer: Writer },
+    Reading { sock: TSocket, reader: Reader },
+    Complete(TrackerResponse),
 }
 
 impl TrackerState {
-    fn new(sock: TcpBuilder, req: Vec<u8>, port: u16 ) -> TrackerState {
+    fn new(sock: TSocket, req: Vec<u8>, port: u16 ) -> TrackerState {
         TrackerState::ResolvingDNS { sock, req, port }
     }
 
-    fn handle(&mut self, event: Event, reg: &Arc<amy::Registrar>) -> Result<Option<TrackerResponse>> {
+    fn handle(&mut self, event: Event) -> Result<Option<TrackerResponse>> {
         let s = mem::replace(self, TrackerState::Error);
         let n = s.next(event)?;
-        if let TrackerState::Complete(r, sock) = n {
-            reg.deregister(&sock).chain_err(|| ErrorKind::IO)?;
+        if let TrackerState::Complete(r) = n {
             Ok(Some(r))
         } else {
             mem::replace(self, n);
@@ -62,16 +63,11 @@ impl TrackerState {
         match (self, event) {
             (TrackerState::ResolvingDNS { sock, req, port }, Event::DNSResolved(r)) => {
                 let addr = SocketAddr::new(r.res?, port);
-                let s = sock.to_tcp_stream().chain_err(|| ErrorKind::IO)?;
-                s.set_nonblocking(true).chain_err(|| ErrorKind::IO)?;
-                if s.connect(addr).is_err() {
-                    // Because it's nonblocking this just means the socket
-                    // has immediatly returned and isn't necessarily failed.
-                }
-                Ok(TrackerState::Writing { sock: s, writer: Writer::new(req) }.next(Event::Writable)?)
+                sock.connect(addr);
+                Ok(TrackerState::Writing { sock, writer: Writer::new(req) }.next(Event::Writable)?)
             }
             (TrackerState::Writing { mut sock, mut writer }, Event::Writable) => {
-                match writer.writable(&mut sock)? {
+                match writer.writable(&mut sock.conn)? {
                     Some(()) => {
                         let r = Reader::new();
                         Ok(TrackerState::Reading { sock, reader: r }.next(Event::Readable)?)
@@ -82,11 +78,11 @@ impl TrackerState {
                 }
             }
             (TrackerState::Reading { mut sock, mut reader }, Event::Readable) => {
-                if reader.readable(&mut sock)? {
+                if reader.readable(&mut sock.conn)? {
                     let data = reader.consume();
                     let content = bencode::decode_buf(&data).chain_err(|| ErrorKind::InvalidResponse("Invalid BEncoded response!"))?;
                     let resp = TrackerResponse::from_bencode(content)?;
-                    Ok(TrackerState::Complete(resp, sock))
+                    Ok(TrackerState::Complete(resp))
                 } else {
                     Ok(TrackerState::Reading { sock, reader })
                 }
@@ -111,7 +107,8 @@ impl Handler {
     pub fn readable(&mut self, id: usize) -> Option<Response> {
         debug!(self.l, "Announce reading: {:?}", id);
         if let Some(mut trk) = self.connections.get_mut(&id) {
-            match trk.state.handle(Event::Readable, &self.reg) {
+            trk.last_updated = Instant::now();
+            match trk.state.handle(Event::Readable) {
                 Ok(Some(r)) => {
                     // TODO: deregister socket here
                     debug!(self.l, "Annoucne response received for {:?}, {:?}", id, r);
@@ -129,7 +126,8 @@ impl Handler {
     pub fn writable(&mut self, id: usize) -> Option<Response> {
         debug!(self.l, "Announce writing: {:?}", id);
         if let Some(mut trk) = self.connections.get_mut(&id) {
-            match trk.state.handle(Event::Writable, &self.reg) {
+            trk.last_updated = Instant::now();
+            match trk.state.handle(Event::Writable) {
                 Ok(_) => {  }
                 Err(e) => {
                     return Some((trk.torrent, Err(e)));
@@ -140,13 +138,23 @@ impl Handler {
     }
 
     pub fn tick(&mut self) -> Vec<Response> {
-        Vec::new()
+        let mut resps = Vec::new();
+        self.connections.retain(|_, trk| {
+            if trk.last_updated.elapsed() > Duration::from_millis(TIMEOUT_MS) {
+                resps.push((trk.torrent, Err(ErrorKind::Timeout.into())));
+                false
+            } else {
+                true
+            }
+        });
+        resps
     }
 
     pub fn dns_resolved(&mut self, resp: dns::QueryResponse) -> Option<Response> {
         debug!(self.l, "Received a DNS resp for {:?}", resp.id);
         if let Some(mut trk) = self.connections.get_mut(&resp.id) {
-            match trk.state.handle(Event::DNSResolved(resp), &self.reg) {
+            trk.last_updated = Instant::now();
+            match trk.state.handle(Event::DNSResolved(resp)) {
                 Ok(_) => { }
                 Err(e) => {
                     return Some((trk.torrent, Err(e)));
@@ -204,10 +212,12 @@ impl Handler {
         http_req.extend_from_slice(b"\r\n");
         // Encode empty line to terminate request
         http_req.extend_from_slice(b"\r\n");
-        let sock = TcpBuilder::new_v4().chain_err(|| ErrorKind::IO)?;
-        let id = self.reg.register(&sock, amy::Event::Both).chain_err(|| ErrorKind::IO)?;
+
+        // Setup actual connection
+        let (id, sock) = TSocket::new_v4(self.reg.clone()).chain_err(|| ErrorKind::IO)?;
         dns.new_query(id, host);
         self.connections.insert(id, Tracker {
+            last_updated: Instant::now(),
             torrent: req.id,
             state: TrackerState::new(sock, http_req, port),
         });

@@ -3,6 +3,8 @@ use std::os::unix::io::{RawFd, AsRawFd};
 use std::io::{self, ErrorKind};
 use throttle::Throttle;
 use net2::{TcpBuilder, TcpStreamExt};
+use std::sync::Arc;
+use amy;
 
 /// Wrapper type over Mio sockets, allowing for use of UDP/TCP, encryption,
 /// rate limiting, etc.
@@ -95,5 +97,29 @@ impl io::Write for Socket {
 
     fn flush(&mut self) -> io::Result<()> {
         self.conn.flush()
+    }
+}
+
+pub struct TSocket {
+    pub conn: TcpStream,
+    reg: Arc<amy::Registrar>,
+}
+
+impl TSocket {
+    pub fn new_v4(reg: Arc<amy::Registrar>) -> io::Result<(usize, TSocket)> {
+        let conn = TcpBuilder::new_v4()?.to_tcp_stream()?;
+        conn.set_nonblocking(true)?;
+        let id = reg.register(&conn, amy::Event::Both)?;
+        Ok((id, TSocket { conn, reg }))
+    }
+
+    pub fn connect(&self, addr: SocketAddr) {
+        self.conn.connect(addr);
+    }
+}
+
+impl Drop for TSocket {
+    fn drop(&mut self) {
+        self.reg.deregister(&self.conn);
     }
 }
