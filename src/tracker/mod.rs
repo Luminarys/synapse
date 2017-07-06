@@ -79,7 +79,7 @@ impl Tracker {
                     let stopping = req.stopping();
                     let response = if let Ok(url) = Url::parse(&req.url) {
                         match url.scheme() {
-                            "http" => self.http.new_announce(req, &url),
+                            "http" => self.http.new_announce(req, &url, &mut self.dns),
                             "udp" => self.udp.new_announce(req),
                             s => Err(ErrorKind::InvalidRequest(format!("Unknown tracker url scheme: {}", s)).into()),
                         }
