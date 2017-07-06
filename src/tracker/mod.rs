@@ -20,8 +20,8 @@ pub struct Tracker {
     poll: amy::Poller,
     queue: amy::Receiver<Request>,
     dns_res: amy::Receiver<dns::QueryResponse>,
-    http: http::Announcer,
-    udp: udp::Announcer,
+    http: http::Handler,
+    udp: udp::Handler,
     dns: dns::Resolver,
     timer: usize,
     l: Logger,
@@ -35,8 +35,8 @@ impl Tracker {
         let dns = dns::Resolver::new(reg.clone(), dtx);
         Tracker {
             queue,
-            http: http::Announcer::new(reg.clone(), l.new(o!("mod" => "http"))),
-            udp: udp::Announcer::new(reg.clone()),
+            http: http::Handler::new(reg.clone(), l.new(o!("mod" => "http"))),
+            udp: udp::Handler::new(reg.clone()),
             l,
             poll,
             dns,
@@ -49,7 +49,6 @@ impl Tracker {
         debug!(self.l, "Initialized!");
         loop {
             for event in self.poll.wait(3).unwrap() {
-                // TODO: Handle lingering connections.
                 if self.handle_event(event).is_err() {
                     debug!(self.l, "Shutdown");
                     return;
@@ -104,10 +103,15 @@ impl Tracker {
 
     fn handle_dns_res(&mut self) {
         while let Ok(r) = self.dns_res.try_recv() {
-            if self.http.contains(r.id) {
-                self.http.dns_resolved(r);
+            let resp = if self.http.contains(r.id) {
+                self.http.dns_resolved(r)
+            // TODO: UDP
             } else {
-                // TODO: UDP
+                None
+            };
+            if let Some(r) = resp {
+                debug!(self.l, "Sending announce response to control!");
+                CONTROL.trk_tx.lock().unwrap().send(r).unwrap();
             }
         }
     }

@@ -6,16 +6,16 @@ use std::io::{Write, Read, Cursor};
 use byteorder::{ReadBytesExt, WriteBytesExt, BigEndian};
 use url::Url;
 
-pub struct Announcer {
+pub struct Handler {
     sock: UdpSocket,
     reg: Arc<amy::Registrar>,
 }
 
-impl Announcer {
-    pub fn new(reg: Arc<amy::Registrar>) -> Announcer {
+impl Handler {
+    pub fn new(reg: Arc<amy::Registrar>) -> Handler {
         let port = CONFIG.port;
         let sock = UdpSocket::bind(("0.0.0.0", port)).unwrap();
-        Announcer {
+        Handler {
             sock, reg
         }
     }

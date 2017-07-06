@@ -84,7 +84,10 @@ impl Resolver {
                 true
             } else {
                 csocks.remove(fd);
-                reg.deregister(&CSockWrapper(*fd));
+                if reg.deregister(&CSockWrapper(*fd)).is_err() {
+                    // Probably from EINTR, so we're shutting down
+                    // and it doesn't matter if it's ignored
+                }
                 false
             }
         });

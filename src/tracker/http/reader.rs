@@ -32,20 +32,16 @@ impl ReadState {
     fn next(self, byte: u8) -> ReadState {
         match (self, byte) {
             (ReadState::ParsingHeaderR1, b'\r') => ReadState::ParsingHeaderN1,
-            (ReadState::ParsingHeaderR1, _) => ReadState::ParsingHeaderR1,
 
             (ReadState::ParsingHeaderN1, b'\r') => ReadState::ParsingHeaderN1,
             (ReadState::ParsingHeaderN1, b'\n') => ReadState::ParsingHeaderR2,
-            (ReadState::ParsingHeaderN1, _) => ReadState::ParsingHeaderR1,
 
             (ReadState::ParsingHeaderR2, b'\r') => ReadState::ParsingHeaderN2,
-            (ReadState::ParsingHeaderR2, _) => ReadState::ParsingHeaderR1,
 
             (ReadState::ParsingHeaderN2, b'\r') => ReadState::ParsingHeaderN1,
             (ReadState::ParsingHeaderN2, b'\n') => ReadState::ParsingResponse,
-            (ReadState::ParsingHeaderN2, _) => ReadState::ParsingHeaderR1,
 
-            (s, _) => s,
+            _ => ReadState::ParsingHeaderR1,
         }
     }
 

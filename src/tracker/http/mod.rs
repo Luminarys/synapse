@@ -16,7 +16,7 @@ use std::net::TcpStream;
 use url::Url;
 use slog::Logger;
 
-pub struct Announcer {
+pub struct Handler {
     reg: Arc<amy::Registrar>,
     connections: HashMap<usize, Tracker>,
     l: Logger
@@ -38,7 +38,7 @@ enum TrackerState {
     ResolvingDNS { sock: TcpBuilder, req: Vec<u8>, port: u16 },
     Writing { sock: TcpStream, writer: Writer },
     Reading { sock: TcpStream, reader: Reader },
-    Complete(TrackerResponse),
+    Complete(TrackerResponse, TcpStream),
 }
 
 impl TrackerState {
@@ -46,10 +46,11 @@ impl TrackerState {
         TrackerState::ResolvingDNS { sock, req, port }
     }
 
-    fn handle(&mut self, event: Event) -> Result<Option<TrackerResponse>> {
+    fn handle(&mut self, event: Event, reg: &Arc<amy::Registrar>) -> Result<Option<TrackerResponse>> {
         let s = mem::replace(self, TrackerState::Error);
         let n = s.next(event)?;
-        if let TrackerState::Complete(r) = n {
+        if let TrackerState::Complete(r, sock) = n {
+            reg.deregister(&sock).chain_err(|| ErrorKind::IO)?;
             Ok(Some(r))
         } else {
             mem::replace(self, n);
@@ -85,7 +86,7 @@ impl TrackerState {
                     let data = reader.consume();
                     let content = bencode::decode_buf(&data).chain_err(|| ErrorKind::InvalidResponse("Invalid BEncoded response!"))?;
                     let resp = TrackerResponse::from_bencode(content)?;
-                    Ok(TrackerState::Complete(resp))
+                    Ok(TrackerState::Complete(resp, sock))
                 } else {
                     Ok(TrackerState::Reading { sock, reader })
                 }
@@ -98,9 +99,9 @@ impl TrackerState {
     }
 }
 
-impl Announcer {
-    pub fn new(reg: Arc<amy::Registrar>, l: Logger) -> Announcer {
-        Announcer { reg, connections: HashMap::new(), l }
+impl Handler {
+    pub fn new(reg: Arc<amy::Registrar>, l: Logger) -> Handler {
+        Handler { reg, connections: HashMap::new(), l }
     }
 
     pub fn contains(&self, id: usize) -> bool {
@@ -110,9 +111,9 @@ impl Announcer {
     pub fn readable(&mut self, id: usize) -> Option<Response> {
         debug!(self.l, "Announce reading: {:?}", id);
         if let Some(mut trk) = self.connections.get_mut(&id) {
-            match trk.state.handle(Event::Readable) {
-                // TODO: deregister socket here
+            match trk.state.handle(Event::Readable, &self.reg) {
                 Ok(Some(r)) => {
+                    // TODO: deregister socket here
                     debug!(self.l, "Annoucne response received for {:?}, {:?}", id, r);
                     return Some(((trk.torrent, Ok(r))))
                 }
@@ -128,7 +129,7 @@ impl Announcer {
     pub fn writable(&mut self, id: usize) -> Option<Response> {
         debug!(self.l, "Announce writing: {:?}", id);
         if let Some(mut trk) = self.connections.get_mut(&id) {
-            match trk.state.handle(Event::Writable) {
+            match trk.state.handle(Event::Writable, &self.reg) {
                 Ok(_) => {  }
                 Err(e) => {
                     return Some((trk.torrent, Err(e)));
@@ -145,7 +146,7 @@ impl Announcer {
     pub fn dns_resolved(&mut self, resp: dns::QueryResponse) -> Option<Response> {
         debug!(self.l, "Received a DNS resp for {:?}", resp.id);
         if let Some(mut trk) = self.connections.get_mut(&resp.id) {
-            match trk.state.handle(Event::DNSResolved(resp)) {
+            match trk.state.handle(Event::DNSResolved(resp), &self.reg) {
                 Ok(_) => { }
                 Err(e) => {
                     return Some((trk.torrent, Err(e)));
