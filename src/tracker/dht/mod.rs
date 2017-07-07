@@ -1,5 +1,5 @@
 use std::net::{SocketAddr, UdpSocket};
-use std::{cmp, mem};
+use std::{cmp, mem, io};
 use chrono::{DateTime, Utc};
 use num::bigint::BigUint;
 use CONFIG;
@@ -53,6 +53,18 @@ pub enum NodeState {
     Good,
     Questionable,
     Bad,
+}
+
+impl Manager {
+    pub fn new() -> io::Result<Manager> {
+        let sock = UdpSocket::bind(("0.0.0.0", CONFIG.dht_port))?;
+        sock.set_nonblocking(true)?;
+
+        Ok(Manager {
+            table: RoutingTable::new(),
+            sock,
+        })
+    }
 }
 
 impl RoutingTable {
