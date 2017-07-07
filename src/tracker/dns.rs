@@ -30,8 +30,8 @@ impl AsRawFd for CSockWrapper {
 impl Resolver {
     pub fn new(reg: Arc<amy::Registrar>, send: amy::Sender<QueryResponse>) -> Resolver {
         let mut opts = c_ares::Options::new();
-        opts.set_timeout(1500)
-            .set_tries(2);
+        opts.set_timeout(3000)
+            .set_tries(4);
         Resolver {
             reg,
             socks: HashMap::new(),

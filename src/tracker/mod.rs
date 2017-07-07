@@ -117,7 +117,7 @@ impl Tracker {
         while let Ok(r) = self.dns_res.try_recv() {
             let resp = if self.http.contains(r.id) {
                 self.http.dns_resolved(r)
-            } else if self.udp.id() == r.id {
+            } else if self.udp.contains(r.id) {
                 self.udp.dns_resolved(r)
             } else {
                 None
@@ -133,34 +133,38 @@ impl Tracker {
             self.send_response(r);
         }
 
-        self.udp.tick();
+        for r in self.udp.tick() {
+            self.send_response(r);
+        }
+
         self.dns.tick();
     }
 
 
     fn handle_socket(&mut self, event: amy::Notification) {
-        let resp = if self.http.contains(event.id) {
-            if event.event.readable() {
+        if self.http.contains(event.id) {
+            let resp = if event.event.readable() {
                 self.http.readable(event.id)
             } else {
                 self.http.writable(event.id)
+            };
+            if let Some(r) = resp {
+                self.send_response(r);
             }
         } else if self.udp.id() == event.id {
-            self.udp.readable(event.id)
+            for resp in self.udp.readable() {
+                self.send_response(resp);
+            }
         } else if self.dns.contains(event.id) {
             if event.event.readable() {
                 self.dns.readable(event.id);
             } else {
                 self.dns.writable(event.id);
             }
-            None
         } else {
             unreachable!();
         };
 
-        if let Some(r) = resp {
-            self.send_response(r);
-        }
     }
 
     fn send_response(&self, r: Response) {
