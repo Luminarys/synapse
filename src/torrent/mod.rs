@@ -18,7 +18,6 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use util::{io_err_val, torrent_name};
-use std::cell::UnsafeCell;
 use slog::Logger;
 
 #[derive(Clone, Debug, Serialize)]
@@ -49,7 +48,7 @@ pub struct Torrent {
     tracker: TrackerStatus,
     tracker_update: Option<Instant>,
     reg: Arc<amy::Registrar>,
-    peers: UnsafeCell<HashMap<usize, Peer>>,
+    peers: HashMap<usize, Peer>,
     leechers: HashSet<usize>,
     picker: Picker,
     status: Status,
@@ -83,7 +82,7 @@ impl Torrent {
         debug!(l, "Creating {:?}", info);
         // Create empty initial files
         info.create_files().unwrap();
-        let peers = UnsafeCell::new(HashMap::new());
+        let peers = HashMap::new();
         let pieces = Bitfield::new(info.pieces() as u64);
         let picker = Picker::new_rarest(&info);
         let leechers = HashSet::new();
@@ -103,7 +102,7 @@ impl Torrent {
         let mut d: TorrentData = bincode::deserialize(data)?;
         debug!(l, "Torrent data deserialized!");
         d.picker.unset_waiting();
-        let peers = UnsafeCell::new(HashMap::new());
+        let peers = HashMap::new();
         let leechers = HashSet::new();
         let t = Torrent {
             id, info: Arc::new(d.info), peers, pieces: d.pieces, picker: d.picker,
@@ -171,9 +170,9 @@ impl Torrent {
 
     pub fn reap_peers(&mut self) {
         debug!(self.l, "Reaping peers");
-        let to_remove = self.peers().iter().filter_map(|(i, p)| p.error().map(|_| *i)).collect::<Vec<_>>();
+        let to_remove = self.peers.iter().filter_map(|(i, p)| p.error().map(|_| *i)).collect::<Vec<_>>();
         for pid in to_remove {
-            self.remove_peer(pid);
+            self.remove_peer_id(pid);
         }
     }
 
@@ -205,7 +204,7 @@ impl Torrent {
         match resp {
             disk::Response::Read { context, data } => {
                 trace!(self.l, "Received piece from disk, uploading!");
-                if let Some(peer) = self.peers().get_mut(&context.pid) {
+                if let Some(peer) = self.peers.get_mut(&context.pid) {
                     let p = Message::s_piece(context.idx, context.begin, context.length, data);
                     // This may not be 100% accurate, but close enough for now.
                     self.uploaded += 1;
@@ -224,9 +223,7 @@ impl Torrent {
                     for piece in invalid {
                         self.picker.invalidate_piece(piece);
                     }
-                    for (_, peer) in self.peers().iter_mut() {
-                        self.make_requests(peer);
-                    }
+                    self.request_all();
                 }
             }
             disk::Response::Error { err, .. } => {
@@ -237,14 +234,18 @@ impl Torrent {
     }
 
     pub fn peer_readable(&mut self, pid: usize) {
-        let peer = self.peers().get_mut(&pid).unwrap();
+        let mut peer = self.peers.remove(&pid).unwrap();
         while let Some(msg) = peer.read() {
-            self.handle_msg(msg, pid);
+            self.handle_msg(msg, &mut peer);
+        }
+        if peer.error().is_some() {
+            self.cleanup_peer(&mut peer);
+        } else {
+            self.peers.insert(pid, peer);
         }
     }
 
-    pub fn handle_msg(&mut self, msg: Message, pid: usize) {
-        let mut peer = self.peers().get_mut(&pid).unwrap();
+    pub fn handle_msg(&mut self, msg: Message, peer: &mut Peer) {
         trace!(self.l, "Received {:?} from peer", msg);
         match msg {
             Message::Handshake { .. } => {
@@ -311,7 +312,7 @@ impl Torrent {
                     // Tell all relevant peers we got the piece
                     let m = Message::Have(index);
                     for pid in self.leechers.iter() {
-                        let peer = self.peers().get_mut(pid).expect("Seeder IDs should be in peers");
+                        let peer = self.peers.get_mut(pid).expect("Seeder IDs should be in peers");
                         if !peer.pieces().has_bit(index as u64) {
                             peer.send_message(m.clone());
                         }
@@ -324,7 +325,7 @@ impl Torrent {
                     peers.remove(&peer.id());
                     let m = Message::Cancel { index, begin, length };
                     for pid in peers {
-                        if let Some(peer) = self.peers().get_mut(&pid) {
+                        if let Some(peer) = self.peers.get_mut(&pid) {
                             peer.send_message(m.clone());
                         }
                     }
@@ -348,11 +349,10 @@ impl Torrent {
                 }
             }
             Message::Interested => {
-                self.choker.add_peer(&mut peer);
+                self.choker.add_peer(peer);
             }
             Message::Uninterested => {
-                let peers = self.peers();
-                self.choker.remove_peer(&mut peer, peers);
+                self.choker.remove_peer(peer, &mut self.peers);
             }
             _ => { }
         }
@@ -361,11 +361,10 @@ impl Torrent {
     /// Periodically called to update peers, choking the slowest one and
     /// optimistically unchoking a new peer
     pub fn update_unchoked(&mut self) {
-        let peers = self.peers();
         if self.complete() {
-            self.choker.update_download(peers)
+            self.choker.update_download(&mut self.peers)
         } else {
-            self.choker.update_upload(peers)
+            self.choker.update_upload(&mut self.peers)
         };
     }
 
@@ -389,6 +388,20 @@ impl Torrent {
         DISK.tx.send(disk::Request::read(ctx, data, locs)).unwrap();
     }
 
+    fn make_requests_pid(&mut self, pid: usize) {
+        let peer = self.peers.get_mut(&pid).unwrap();
+        if self.status.stopped() {
+            return;
+        }
+        while peer.can_queue_req() {
+            if let Some((idx, offset)) = self.picker.pick(peer) {
+                peer.request_piece(idx, offset, self.info.block_len(idx, offset));
+            } else {
+                break;
+            }
+        }
+    }
+
     fn make_requests(&mut self, peer: &mut Peer) {
         if self.status.stopped() {
             return;
@@ -403,7 +416,9 @@ impl Torrent {
     }
 
     pub fn peer_writable(&mut self, pid: usize) {
-        self.peers().get_mut(&pid).unwrap().writable();
+        if let Some(mut peer) = self.peers.get_mut(&pid) {
+            peer.writable();
+        }
     }
 
     pub fn rpc_info(&self) -> rpc::TorrentInfo {
@@ -432,7 +447,7 @@ impl Torrent {
         let p = Peer::new(pid, conn, self);
         if p.error().is_none() {
             self.picker.add_peer(&p);
-            self.peers().insert(pid, p);
+            self.peers.insert(pid, p);
             // We want to make sure any queued up messages are drained once we register
             self.peer_readable(pid);
             Some(pid)
@@ -442,15 +457,18 @@ impl Torrent {
         }
     }
 
-    pub fn remove_peer(&mut self, id: usize) -> Peer {
-        debug!(self.l, "Removing peer {:?}!", id);
-        let mut peer = self.peers().remove(&id).unwrap();
-        let peers = self.peers();
-        self.choker.remove_peer(&mut peer, peers);
-        self.reg.deregister(peer.conn().sock()).unwrap();
-        self.leechers.remove(&id);
-        self.picker.remove_peer(&peer);
+    pub fn remove_peer_id(&mut self, id: usize) -> Peer {
+        let mut peer = self.peers.remove(&id).unwrap();
+        self.cleanup_peer(&mut peer);
         peer
+    }
+
+    fn cleanup_peer(&mut self, peer: &mut Peer) {
+        debug!(self.l, "Removing peer {:?}!", peer);
+        self.choker.remove_peer(peer, &mut self.peers);
+        self.reg.deregister(peer.conn().sock()).unwrap();
+        self.leechers.remove(&peer.id());
+        self.picker.remove_peer(&peer);
     }
 
     pub fn pause(&mut self) {
@@ -471,18 +489,14 @@ impl Torrent {
             Status::Paused => {
                 debug!(self.l, "Sending started request to trk");
                 TRACKER.tx.send(tracker::Request::started(self)).unwrap();
-                for (_, peer) in self.peers().iter_mut() {
-                    self.make_requests(peer);
-                }
+                self.request_all();
             }
             Status::DiskError => {
                 if self.pieces.complete() {
                     DISK.tx.send(disk::Request::validate(self.id, self.info.clone())).unwrap();
                     self.status = Status::Validating;
                 } else {
-                    for (_, peer) in self.peers().iter_mut() {
-                        self.make_requests(peer);
-                    }
+                    self.request_all();
                     self.status = Status::Idle;
                 }
             }
@@ -495,22 +509,22 @@ impl Torrent {
         }
     }
 
+    fn request_all(&mut self) {
+        for pid in self.pids() {
+            self.make_requests_pid(pid);
+        }
+    }
+
+    fn pids(&self) -> Vec<usize> {
+        self.peers.keys().cloned().collect()
+    }
+
     pub fn change_picker(&mut self, mut picker: Picker) {
         debug!(self.l, "Swapping pickers!");
-        for (_, peer) in self.peers().iter() {
+        for (_, peer) in self.peers.iter() {
             picker.add_peer(peer);
         }
         self.picker.change_picker(picker);
-    }
-
-    // This obviously could be dangerous, but as long as we:
-    // 1. keep the returned references within the scope of implemented methods
-    // 2. don't invalidate iterators
-    // it's more or less guaranteed to be safe.
-    fn peers<'f>(&self) -> &'f mut HashMap<usize, Peer> {
-        unsafe {
-            self.peers.get().as_mut().unwrap()
-        }
     }
 }
 
@@ -529,7 +543,7 @@ impl fmt::Display for Torrent {
 impl Drop for Torrent {
     fn drop(&mut self) {
         debug!(self.l, "Deregistering peers");
-        for (id, peer) in self.peers().drain() {
+        for (id, peer) in self.peers.drain() {
             trace!(self.l, "Deregistering peer {:?}", peer);
             self.reg.deregister(peer.conn().sock()).unwrap();
             self.leechers.remove(&id);

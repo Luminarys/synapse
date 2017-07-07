@@ -12,6 +12,21 @@ use throttle::Throttler;
 
 mod job;
 
+/// Throttler max token amount
+const THROT_TOKS: usize = 2 * 1024 * 1024;
+/// Tracker update job interval
+const TRK_JOB_SECS: u64 = 60;
+/// Unchoke rotation job interval
+const UNCHK_JOB_SECS: u64 = 30;
+/// Session serialization job interval
+const SES_JOB_SECS: u64 = 10;
+/// Bad peer reap interval
+const REAP_JOB_SECS: u64 = 2;
+/// Interval to requery all jobs and execute if needed
+const JOB_INT_MS: usize = 1000;
+/// Interval to poll for events
+const POLL_INT_MS: usize = 3;
+
 pub struct Control {
     trk_rx: amy::Receiver<tracker::Response>,
     disk_rx: amy::Receiver<disk::Response>,
@@ -61,13 +76,13 @@ impl Control {
         let reg = Arc::new(poll.get_registrar().unwrap());
         // Every minute check to update trackers;
         let mut jobs = job::JobManager::new();
-        jobs.add_job(job::TrackerUpdate, time::Duration::from_secs(60));
-        jobs.add_job(job::UnchokeUpdate, time::Duration::from_secs(30));
-        jobs.add_job(job::SessionUpdate, time::Duration::from_secs(10));
-        jobs.add_job(job::ReapPeers, time::Duration::from_secs(2));
-        let job_timer = reg.set_interval(1000).unwrap();
+        jobs.add_job(job::TrackerUpdate, time::Duration::from_secs(TRK_JOB_SECS));
+        jobs.add_job(job::UnchokeUpdate, time::Duration::from_secs(UNCHK_JOB_SECS));
+        jobs.add_job(job::SessionUpdate, time::Duration::from_secs(SES_JOB_SECS));
+        jobs.add_job(job::ReapPeers, time::Duration::from_secs(REAP_JOB_SECS));
+        let job_timer = reg.set_interval(JOB_INT_MS).unwrap();
         // 5 MiB max bucket
-        let throttler = Throttler::new(0, 0, 1 * 1024 * 1024, &reg);
+        let throttler = Throttler::new(0, 0, THROT_TOKS, &reg);
         Control { trk_rx, disk_rx, ctrl_rx, poll, torrents, peers,
         hash_idx, reg, tid_cnt: 0, throttler, jobs, job_timer, l }
     }
@@ -78,7 +93,7 @@ impl Control {
         }
         debug!(self.l, "Initialized!");
         loop {
-            for event in self.poll.wait(3).unwrap() {
+            for event in self.poll.wait(POLL_INT_MS).unwrap() {
                 if self.handle_event(event) {
                     self.serialize();
                     return;
