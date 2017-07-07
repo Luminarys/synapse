@@ -70,12 +70,14 @@ impl File {
 impl Info {
     pub fn from_bencode(data: BEncode) -> Result<Info, &'static str> {
         data.to_dict()
-            .and_then(|mut d| d.remove("info").and_then(|i| i.to_dict()).map(|i| (d, i)))
-            .ok_or("")
+            .and_then(|mut d| d.remove("info")
+                                .and_then(|i| i.to_dict())
+                                .map(|i| (d, i))
+            )
+            .ok_or("invalid info field")
             .and_then(|(mut d, mut i)| {
                 let mut m = Sha1::new();
                 let mut info_bytes = Vec::new();
-                // TODO: Deal with this error/maybe convert everything to io::Error
                 BEncode::Dict(i.clone()).encode(&mut info_bytes).unwrap();
                 m.update(&info_bytes);
                 let hash = m.digest().bytes();
@@ -126,7 +128,6 @@ impl Info {
                     private,
                 })
             })
-
     }
 
     #[cfg(test)]
