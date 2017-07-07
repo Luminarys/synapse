@@ -63,7 +63,7 @@ impl TrackerState {
         match (self, event) {
             (TrackerState::ResolvingDNS { sock, req, port }, Event::DNSResolved(r)) => {
                 let addr = SocketAddr::new(r.res?, port);
-                sock.connect(addr);
+                sock.connect(addr).chain_err(|| ErrorKind::IO)?;
                 Ok(TrackerState::Writing { sock, writer: Writer::new(req) }.next(Event::Writable)?)
             }
             (TrackerState::Writing { mut sock, mut writer }, Event::Writable) => {

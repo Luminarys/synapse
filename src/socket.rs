@@ -6,6 +6,8 @@ use net2::{TcpBuilder, TcpStreamExt};
 use std::sync::Arc;
 use amy;
 
+const EINPROGRESS: i32 = 115;
+
 /// Wrapper type over Mio sockets, allowing for use of UDP/TCP, encryption,
 /// rate limiting, etc.
 pub struct Socket {
@@ -21,8 +23,14 @@ impl Socket {
         })?;
         let conn = sock.to_tcp_stream()?;
         conn.set_nonblocking(true)?;
-        // TODO: Need to reliably check this.
-        conn.connect(addr);
+        match conn.connect(addr) {
+            Err(e) => {
+                if Some(EINPROGRESS) != e.raw_os_error() {
+                    return Err(e);
+                }
+            }
+            _ => { }
+        }
         Ok(Socket { conn, throttle: None })
     }
 
@@ -113,13 +121,23 @@ impl TSocket {
         Ok((id, TSocket { conn, reg }))
     }
 
-    pub fn connect(&self, addr: SocketAddr) {
-        self.conn.connect(addr);
+    pub fn connect(&self, addr: SocketAddr) -> io::Result<()> {
+        match self.conn.connect(addr) {
+            Err(e) => {
+                if Some(EINPROGRESS) != e.raw_os_error() {
+                    return Err(e);
+                }
+            }
+            _ => { }
+        }
+        Ok(())
     }
 }
 
 impl Drop for TSocket {
     fn drop(&mut self) {
-        self.reg.deregister(&self.conn);
+        if let Err(_) = self.reg.deregister(&self.conn) {
+            // TODO: idk? does it matter?
+        }
     }
 }
