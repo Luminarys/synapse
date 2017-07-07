@@ -17,11 +17,11 @@ use util::io_err_val;
 pub struct Peer {
     pieces: Bitfield,
     remote_status: Status,
+    local_status: Status,
     queued: u16,
     conn: PeerConn,
     id: usize,
     tid: usize,
-    local_status: Status,
     downloaded: usize,
     uploaded: usize,
     error: Option<io::Error>,

@@ -3,7 +3,6 @@ extern crate byteorder;
 extern crate rand;
 extern crate sha1;
 extern crate url;
-extern crate reqwest;
 #[macro_use]
 extern crate lazy_static;
 extern crate net2;
@@ -20,6 +19,9 @@ extern crate slog;
 extern crate slog_term;
 extern crate slog_async;
 extern crate threadpool;
+#[macro_use]
+extern crate error_chain;
+extern crate c_ares;
 
 mod bencode;
 mod torrent;
@@ -149,6 +151,8 @@ fn main() {
                 thread::sleep(time::Duration::from_secs(1));
             }
             info!(LOG, "Shutdown complete!");
+            // Let any residual logs flush
+            thread::sleep(time::Duration::from_millis(50));
             break;
         }
         if TC.load(atomic::Ordering::SeqCst) == 0 {

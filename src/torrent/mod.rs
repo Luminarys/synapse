@@ -11,9 +11,9 @@ pub use self::peer::{Peer, PeerConn};
 use self::peer::Message;
 use self::picker::Picker;
 use std::fmt;
-use {amy, bincode, rpc, disk, DISK, tracker, TRACKER};
+use {amy, bincode, rpc, disk, DISK, TRACKER};
 use throttle::Throttle;
-use tracker::{TrackerError, TrackerRes};
+use tracker::{self, TrackerResponse};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -25,7 +25,8 @@ use slog::Logger;
 pub enum TrackerStatus {
     Updating,
     Ok { seeders: u32, leechers: u32, interval: u32 },
-    Error(TrackerError),
+    Failure(String),
+    Error,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -139,8 +140,8 @@ impl Torrent {
         DISK.tx.send(disk::Request::delete(self.id, self.info.hash)).unwrap();
     }
 
-    pub fn set_tracker_response(&mut self, resp: &TrackerRes) {
-        debug!(self.l, "Processing tracker response {:?}!", resp);
+    pub fn set_tracker_response(&mut self, resp: &tracker::Result<TrackerResponse>) {
+        debug!(self.l, "Processing tracker response");
         match *resp {
             Ok(ref r) => {
                 let mut time = Instant::now();
@@ -148,8 +149,12 @@ impl Torrent {
                 self.tracker = TrackerStatus::Ok { seeders: r.seeders, leechers: r.leechers, interval: r.interval };
                 self.tracker_update = Some(time);
             }
+            Err(tracker::Error(tracker::ErrorKind::TrackerError(ref s), _)) => {
+                self.tracker = TrackerStatus::Failure(s.clone());
+            }
             Err(ref e) => {
-                self.tracker = TrackerStatus::Error(e.clone());
+                warn!(self.l, "Failed to query tracker: {:?}", e.backtrace());
+                self.tracker = TrackerStatus::Error;
             }
         }
     }
@@ -283,9 +288,6 @@ impl Torrent {
                 }
 
                 if self.info.block_len(index, begin) != length {
-                    // TODO: Consider moving a ref to info inside peer, we ideally want
-                    // to minimize the things taht torrent controls for the peer to reduce
-                    // bugs.
                     peer.set_error(io_err_val("Peer returned block of invalid len!"));
                     return;
                 }
