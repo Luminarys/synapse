@@ -188,6 +188,9 @@ impl Handler {
                     true
                 }
             });
+
+            let c = &self.connections;
+            self.transactions.retain(|_, id| c.contains_key(id));
         }
 
         for id in retrans {
