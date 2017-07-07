@@ -279,7 +279,6 @@ impl Torrent {
                     return;
                 }
 
-
                 // Even though we have the data, if we are stopped we shouldn't use the disk
                 // regardless.
                 if !self.status.stopped() {

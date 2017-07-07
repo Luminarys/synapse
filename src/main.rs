@@ -22,6 +22,8 @@ extern crate threadpool;
 #[macro_use]
 extern crate error_chain;
 extern crate c_ares;
+extern crate chrono;
+extern crate num;
 
 mod bencode;
 mod torrent;
@@ -84,7 +86,7 @@ lazy_static! {
         }
 
         let mut rng = rand::thread_rng();
-        for i in 8..19 {
+        for i in prefix.len()..20 {
             pid[i] = rng.gen::<u8>();
         }
         pid

@@ -3,9 +3,21 @@ use std::env;
 #[derive(Debug, Clone)]
 pub struct Config {
     pub port: u16,
+    pub trk_port: u16,
+    pub dht_port: u16,
     pub rpc_port: u16,
     pub session: String,
     pub directory: String,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct ConfigFile {
+    pub port: Option<u16>,
+    pub rpc_port: Option<u16>,
+    pub trk_port: Option<u16>,
+    pub dht_port: Option<u16>,
+    pub session: Option<String>,
+    pub directory: Option<String>,
 }
 
 impl Config {
@@ -17,6 +29,12 @@ impl Config {
         if let Some(p) = file.rpc_port {
             base.rpc_port = p
         }
+        if let Some(p) = file.trk_port {
+            base.trk_port = p
+        }
+        if let Some(p) = file.dht_port {
+            base.dht_port = p
+        }
         if let Some(s) = file.session {
             base.session = expand_tilde(&s);
         }
@@ -27,20 +45,14 @@ impl Config {
     }
 }
 
-#[derive(Serialize, Deserialize)]
-pub struct ConfigFile {
-    pub port: Option<u16>,
-    pub rpc_port: Option<u16>,
-    pub session: Option<String>,
-    pub directory: Option<String>,
-}
-
 impl Default for Config {
     fn default() -> Config {
         let s = "~/.syn_session".to_owned();
         Config {
             port: 16493,
             rpc_port: 8412,
+            trk_port: 16362,
+            dht_port: 14831,
             session: expand_tilde(&s),
             directory: "./".to_owned(),
         }

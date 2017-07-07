@@ -60,9 +60,10 @@ impl Picker {
         offset /= 16384;
         idx *= self.c.scale;
         self.c.waiting.remove(&(idx + offset));
-        // TODO: make this less hacky
         let peers =
-            self.c.waiting_peers.remove(&(idx + offset)).unwrap_or_else(|| HashSet::with_capacity(0));
+            self.c.waiting_peers
+                .remove(&(idx + offset))
+                .unwrap_or_else(|| HashSet::with_capacity(0));
         for i in 0..self.c.scale {
             if (idx + i < self.c.blocks.len() && !self.c.blocks.has_bit(idx + i)) ||
                self.c.waiting.contains(&(idx + i)) {

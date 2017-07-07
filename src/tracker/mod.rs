@@ -2,6 +2,7 @@ mod http;
 mod udp;
 mod errors;
 mod dns;
+mod dht;
 
 use byteorder::{BigEndian, ReadBytesExt};
 use std::net::{SocketAddr, SocketAddrV4, Ipv4Addr};

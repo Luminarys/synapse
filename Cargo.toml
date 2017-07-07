@@ -24,8 +24,21 @@ threadpool = "1.0"
 error-chain = "0.10"
 c-ares = "2"
 
+[dependencies.chrono]
+version = "0.4"
+default-features = false
+features = ["serde"]
+
+[dependencies.num]
+# HMMMMMMM - change ASAP
+git = "https://github.com/rust-num/num"
+branch = "next"
+default-features = false
+features = ["bigint", "serde"]
+
 [dependencies.slog]
 version = "2"
+default-features = false
 features = ["max_level_debug"]
 
 
