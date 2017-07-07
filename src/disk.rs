@@ -1,5 +1,5 @@
 use std::sync::{mpsc, Arc, atomic};
-use std::{fs, fmt, thread, path};
+use std::{fs, fmt, thread, path, time};
 use std::io::{self, Seek, SeekFrom, Write, Read};
 use std::path::PathBuf;
 use torrent::Info;
@@ -8,6 +8,9 @@ use util::torrent_name;
 use threadpool::ThreadPool;
 use sha1::Sha1;
 use {CONTROL, CONFIG, TC};
+
+const MAX_THREADS: usize = 10;
+const BACKOFF_MS: u64 = 50;
 
 pub struct Disk {
     queue: mpsc::Receiver<Request>,
@@ -197,8 +200,8 @@ impl Response {
     pub fn tid(&self) -> usize {
         match *self {
             Response::Read { ref context, .. } => context.tid,
-            Response::ValidationComplete { tid, .. } => tid,
-            Response::Error { tid, .. } => tid
+            Response::ValidationComplete { tid, .. }
+            | Response::Error { tid, .. } => tid
         }
     }
 }
@@ -223,6 +226,7 @@ impl Disk {
         let sd = &CONFIG.session;
         fs::create_dir_all(sd).unwrap();
         debug!(self.l, "Initialized!");
+        let mut backoff = time::Instant::now();
         loop {
             match self.queue.recv() {
                 Ok(Request::Shutdown) => {
@@ -230,15 +234,13 @@ impl Disk {
                 }
                 Ok(r) => {
                     // Adjust the pool size
-                    // TODO: Use a backoff for this to minimize syscalls used
-                    // TODO: If the disk is blocked we don't want to spawn unlimited requests.
-                    // We probably will want to block at some max.
-                    if self.pool.active_count() == self.threads {
-                        self.threads += 1;
+                    if self.pool.active_count() == self.threads && self.pool.active_count() < MAX_THREADS {
                         debug!(self.l, "Increasing disk pool to {:?}", self.threads);
-                    } else if self.pool.active_count() + 2 < self.threads {
-                        self.threads -= 1;
+                        self.threads += 1;
+                    } else if self.pool.active_count() + 2 < self.threads && backoff.elapsed() > time::Duration::from_millis(BACKOFF_MS) {
+                        backoff = time::Instant::now();
                         debug!(self.l, "Decreasing disk pool to {:?}", self.threads);
+                        self.threads -= 1;
                     }
                     self.pool.set_num_threads(self.threads);
                     trace!(self.l, "Handling disk job!");

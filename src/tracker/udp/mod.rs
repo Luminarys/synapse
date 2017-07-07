@@ -14,6 +14,7 @@ use rand::random;
 // the torrent can just resend a request later.
 const TIMEOUT_MS: u64 = 5000;
 const RETRANS_MS: u64 = 500;
+const MAGIC_NUM: u64 = 0x41727101980;
 
 pub struct Handler {
     id: usize,
@@ -102,7 +103,7 @@ impl Handler {
                     let mut data = [0u8; 16];
                     {
                         let mut connect_req = Cursor::new(&mut data[..]);
-                        connect_req.write_u64::<BigEndian>(0x41727101980).unwrap();
+                        connect_req.write_u64::<BigEndian>(MAGIC_NUM).unwrap();
                         connect_req.write_u32::<BigEndian>(0).unwrap();
                         connect_req.write_u32::<BigEndian>(tid).unwrap();
                     }
@@ -312,7 +313,7 @@ impl Handler {
 
     fn new_conn(&mut self) -> usize {
         let c = self.conn_count;
-        self.conn_count += 1;
+        self.conn_count = self.conn_count.wrapping_add(1);
         c
     }
 
