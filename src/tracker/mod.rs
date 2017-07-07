@@ -40,7 +40,7 @@ impl Tracker {
             queue,
             http: http::Handler::new(reg.clone(), l.new(o!("mod" => "http"))),
             udp: udp::Handler::new(&reg, l.new(o!("mod" => "udp"))).unwrap(),
-            dht: dht::Manager::new().unwrap(),
+            dht: dht::Manager::new(&reg).unwrap(),
             l,
             poll,
             dns,
@@ -141,6 +141,7 @@ impl Tracker {
         }
 
         self.dns.tick();
+        self.dht.tick();
     }
 
 
@@ -156,6 +157,10 @@ impl Tracker {
             }
         } else if self.udp.id() == event.id {
             for resp in self.udp.readable() {
+                self.send_response(resp);
+            }
+        } else if self.dht.id() == event.id {
+            for resp in self.dht.readable() {
                 self.send_response(resp);
             }
         } else if self.dns.contains(event.id) {

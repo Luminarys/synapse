@@ -1,8 +1,9 @@
 use std::net::{SocketAddr, UdpSocket};
-use std::{cmp, mem, io};
+use std::{cmp, mem, io, sync};
 use chrono::{DateTime, Utc};
 use num::bigint::BigUint;
-use CONFIG;
+use tracker::Response;
+use {amy, CONFIG};
 
 type ID = BigUint;
 type Distance = BigUint;
@@ -23,6 +24,7 @@ lazy_static! {
 const BUCKET_MAX: usize = 8;
 
 pub struct Manager {
+    id: usize,
     table: RoutingTable,
     sock: UdpSocket,
 }
@@ -56,14 +58,28 @@ pub enum NodeState {
 }
 
 impl Manager {
-    pub fn new() -> io::Result<Manager> {
+    pub fn new(reg: &sync::Arc<amy::Registrar>) -> io::Result<Manager> {
         let sock = UdpSocket::bind(("0.0.0.0", CONFIG.dht_port))?;
         sock.set_nonblocking(true)?;
+        let id = reg.register(&sock, amy::Event::Read)?;
 
         Ok(Manager {
             table: RoutingTable::new(),
             sock,
+            id
         })
+    }
+
+    pub fn id(&self) -> usize {
+        self.id
+    }
+
+    pub fn readable(&mut self) -> Vec<Response> {
+        let mut resps = Vec::new();
+        resps
+    }
+
+    pub fn tick(&mut self) {
     }
 }
 
