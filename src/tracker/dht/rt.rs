@@ -58,6 +58,7 @@ impl RoutingTable {
             } else {
                 // Discard, or TODO: add to queue
             }
+        } else {
         }
     }
 

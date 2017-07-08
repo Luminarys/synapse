@@ -3,6 +3,7 @@ use std::time;
 use tracker::{Announce, Result, ResultExt, Response, TrackerResponse, Event, Error, ErrorKind, dns};
 use std::collections::HashMap;
 use {CONFIG, PEER_ID, amy};
+use util::bytes_to_addr;
 use std::sync::Arc;
 use std::io::{self, Write, Read, Cursor};
 use byteorder::{ReadBytesExt, WriteBytesExt, BigEndian};
@@ -281,9 +282,7 @@ impl Handler {
         resp.seeders = announce_resp.read_u32::<BigEndian>().unwrap();
         if len > 20 {
             for p in announce_resp.get_ref()[20..len].chunks(6) {
-                let ip = Ipv4Addr::new(p[0], p[1], p[2], p[3]);
-                let socket = SocketAddrV4::new(ip, (&p[4..]).read_u16::<BigEndian>().unwrap());
-                resp.peers.push(SocketAddr::V4(socket));
+                resp.peers.push(bytes_to_addr(p));
             }
         }
         Some((conn.torrent, Ok(resp)))
