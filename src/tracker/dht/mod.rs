@@ -24,6 +24,7 @@ lazy_static! {
 }
 
 const BUCKET_MAX: usize = 8;
+const VERSION: &'static str = "SY";
 
 pub struct Manager {
     id: usize,
