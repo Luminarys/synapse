@@ -3,7 +3,7 @@ use std::net::SocketAddr;
 use super::{DHT_ID, ID};
 use bencode::{self, BEncode};
 use num::bigint::BigUint;
-use util::bytes_to_addr;
+use util::{addr_to_bytes, bytes_to_addr};
 use CONFIG;
 
 const VERSION: &'static str = "SY";
@@ -125,6 +125,76 @@ impl Request {
 }
 
 impl Response {
+    fn encode(self) -> Vec<u8> {
+        let mut b = BTreeMap::new();
+        let is_err = self.is_err();
+        b.insert(String::from("t"), BEncode::String(self.transaction));
+        let mut args = BTreeMap::new();
+        match self.kind {
+            ResponseKind::ID(id) => {
+                args.insert(String::from("id"), BEncode::String(id.to_bytes_be()));
+            }
+            ResponseKind::FindNode { id, nodes } => {
+                let mut data = Vec::new();
+                for node in nodes {
+                    data.extend(node.to_bytes())
+                }
+                args.insert(String::from("nodes"), BEncode::String(data));
+                args.insert(String::from("id"), BEncode::String(id.to_bytes_be()));
+            }
+            ResponseKind::GetPeers { id, token, resp } => {
+                args.insert(String::from("id"), BEncode::String(id.to_bytes_be()));
+                args.insert(String::from("token"), BEncode::String(token));
+                match resp {
+                    PeerResp::Values(addrs) => {
+                        let mut data = Vec::new();
+                        for addr in addrs {
+                            data.extend_from_slice(&addr_to_bytes(&addr)[..]);
+                        }
+                        args.insert(String::from("values"), BEncode::String(data));
+                    }
+                    PeerResp::Nodes(nodes) => {
+                        let mut data = Vec::new();
+                        for node in nodes {
+                            data.extend(node.to_bytes())
+                        }
+                        args.insert(String::from("nodes"), BEncode::String(data));
+                    }
+                }
+            }
+            ResponseKind::Error(e) => {
+                let mut err = Vec::new();
+                match e {
+                    ErrorKind::Generic(msg) => {
+                        err.push(BEncode::from_int(201));
+                        err.push(BEncode::from_str(&msg));
+                    }
+                    ErrorKind::Server(msg) => {
+                        err.push(BEncode::from_int(202));
+                        err.push(BEncode::from_str(&msg));
+                    }
+                    ErrorKind::Protocol(msg) => {
+                        err.push(BEncode::from_int(203));
+                        err.push(BEncode::from_str(&msg));
+                    }
+                    ErrorKind::MethodUnknown(msg) => {
+                        err.push(BEncode::from_int(204));
+                        err.push(BEncode::from_str(&msg));
+                    }
+                    _ => unreachable!(),
+                }
+                b.insert(String::from("e"), BEncode::List(err));
+            }
+        }
+        if is_err {
+                b.insert(String::from("y"), BEncode::from_str("e"));
+        } else {
+                b.insert(String::from("y"), BEncode::from_str("r"));
+                b.insert(String::from("r"), BEncode::Dict(args));
+        }
+        BEncode::Dict(b).encode_to_buf()
+    }
+
     fn decode(buf: Vec<u8>) -> Result<Response> {
         let b: BEncode = bencode::decode_buf(&buf).chain_err(|| ErrorKind::InvalidResponse("Invalid BEncoded data"))?;
         let mut d = b.to_dict()
@@ -200,12 +270,25 @@ impl Response {
             }
         }
     }
+
+    fn is_err(&self) -> bool {
+        match self.kind {
+            ResponseKind::Error(_) => true,
+            _ => false,
+        }
+    }
 }
 
 impl Node {
     pub fn new(data: &[u8]) -> Node {
         let id = BigUint::from_bytes_be(&data[0..20]);
         Node { id, addr: bytes_to_addr(&data[20..]) }
+    }
+
+    pub fn to_bytes(&self) -> Vec<u8> {
+        let mut data = self.id.to_bytes_be();
+        data.extend_from_slice(&addr_to_bytes(&self.addr)[..]);
+        data
     }
 }
 
@@ -226,5 +309,13 @@ mod tests {
             }
             _ => panic!("Should decode to ID!"),
         }
+    }
+
+    #[test]
+    fn test_encode_decode_resp() {
+        // {"t":"aa", "y":"r", "r": {"id":"mnopqrstuvwxyz123456"}}
+        let r = Vec::from(&b"d1:rd2:id20:mnopqrstuvwxyz123456e1:t2:aa1:y1:re"[..]);
+        let d = Response::decode(r.clone()).unwrap();
+        assert_eq!(d.encode(), r);
     }
 }

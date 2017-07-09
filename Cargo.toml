@@ -5,7 +5,7 @@ authors = ["Luminarys <postmaster@gensok.io>"]
 
 [dependencies]
 amy = "0.8.0"
-byteorder = "0.5"
+byteorder = "1.0"
 lazy_static = "*"
 rand = "0.3"
 sha1 = "0.2.0"
