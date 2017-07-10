@@ -1,4 +1,4 @@
-use std::net::UdpSocket;
+use std::net::{SocketAddr, UdpSocket};
 use std::{io, sync};
 use num::bigint::BigUint;
 use {amy, tracker, CONFIG};
@@ -71,19 +71,16 @@ impl Manager {
         loop {
             match self.sock.recv_from(&mut self.buf[..]) {
                 Ok((v, addr)) => {
+                    debug!(self.l, "Processing msg from {:?}!", addr);
                     if let Ok(req) = proto::Request::decode(&self.buf[..v]) {
-                        let resp = self.table.handle_req(req).encode();
-                        if self.sock.send_to(&resp, addr).is_err() {
-                            warn!(self.l, "Failed to send message on UDP socket!");
-                        }
+                        let resp = self.table.handle_req(req, addr).encode();
+                        self.send_msg(&resp, addr);
                     } else if let Ok(resp) = proto::Response::decode(&self.buf[..v]) {
-                        match self.table.handle_resp(resp) {
+                        match self.table.handle_resp(resp, addr) {
                             Ok(r) => resps.push(r),
                             Err(q) => {
                                 for (req, a) in q {
-                                    if self.sock.send_to(&req.encode(), a).is_err() {
-                                        warn!(self.l, "Failed to send message on UDP socket!");
-                                    }
+                                    self.send_msg(&req.encode(), a);
                                 }
                             }
                         }
@@ -104,11 +101,25 @@ impl Manager {
         resps
     }
 
+    pub fn get_peers(&mut self, tid: usize, hash: [u8; 20]) {
+        for (req, a) in self.table.get_peers(tid, hash) {
+            self.send_msg(&req.encode(), a);
+        }
+    }
+
+    pub fn add_addr(&mut self, addr: SocketAddr) {
+        self.table.add_addr(addr);
+    }
+
     pub fn tick(&mut self) {
         for (req, a) in self.table.tick() {
-            if self.sock.send_to(&req.encode(), a).is_err() {
-                warn!(self.l, "Failed to send message on UDP socket!");
-            }
+            self.send_msg(&req.encode(), a);
+        }
+    }
+
+    fn send_msg(&mut self, msg: &[u8], addr: SocketAddr) {
+        if let Err(e) = self.sock.send_to(msg, addr) {
+            warn!(self.l, "Failed to send message on UDP socket: {:?}", e);
         }
     }
 }

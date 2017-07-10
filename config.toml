@@ -5,9 +5,9 @@ rpc_port = 8412
 # UDP port used for UDP tracker interaction
 trk_port = 16362
 # UDP port used for DHT interaction
-dht_port = 14831
+dht_port = 6881
 # Node to use for DHT bootstrapping
-dht_bootstrap_node = "dht.libtorrent.org:25401"
+dht_bootstrap_node = "router.bittorrent.com:6881"
 # Location for storing session metadata
 session = "~/.syn_session"
 # Default download directory

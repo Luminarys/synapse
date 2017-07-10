@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 use std::net::SocketAddr;
-use super::ID;
+use super::{ID, VERSION};
 use bencode::{self, BEncode};
 use num::bigint::BigUint;
 use util::{addr_to_bytes, bytes_to_addr};
@@ -42,9 +42,9 @@ error_chain! {
 
 #[derive(Debug)]
 pub struct Request {
-    transaction: Vec<u8>,
-    version: Option<String>,
-    kind: RequestKind
+    pub transaction: Vec<u8>,
+    pub version: Option<String>,
+    pub kind: RequestKind
 }
 
 #[derive(Debug)]
@@ -57,8 +57,8 @@ pub enum RequestKind {
 
 #[derive(Debug)]
 pub struct Response {
-    transaction: Vec<u8>,
-    kind: ResponseKind,
+    pub transaction: Vec<u8>,
+    pub kind: ResponseKind,
 }
 
 #[derive(Debug)]
@@ -82,6 +82,31 @@ pub struct Node {
 }
 
 impl Request {
+    pub fn ping(transaction: Vec<u8>, id: ID) -> Self {
+        Request {
+            transaction,
+            version: Some(VERSION.to_owned()),
+            kind: RequestKind::Ping(id),
+        }
+    }
+
+    pub fn find_node(transaction: Vec<u8>, id: ID, target: ID) -> Self {
+        Request {
+            transaction,
+            version: Some(VERSION.to_owned()),
+            kind: RequestKind::FindNode { id, target },
+        }
+    }
+
+    pub fn id(&self) -> &ID {
+        match self.kind {
+            RequestKind::Ping(ref id) => id,
+            RequestKind::FindNode{ ref id, .. }=> id,
+            RequestKind::GetPeers{ ref id, .. } => id,
+            RequestKind::AnnouncePeer { ref id, .. } => id,
+        }
+    }
+
     pub fn encode(self) -> Vec<u8> {
         let mut b = BTreeMap::new();
         b.insert(String::from("t"), BEncode::String(self.transaction));
@@ -98,7 +123,7 @@ impl Request {
 
                 b.insert(String::from("a"), BEncode::Dict(args));
             }
-            RequestKind::FindNode{ id, target } => {
+            RequestKind::FindNode { id, target } => {
                 b.insert(String::from("q"), BEncode::from_str("find_node"));
 
                 let mut args = BTreeMap::new();
@@ -107,7 +132,7 @@ impl Request {
 
                 b.insert(String::from("a"), BEncode::Dict(args));
             }
-            RequestKind::GetPeers{ id, hash } => {
+            RequestKind::GetPeers { id, hash } => {
                 b.insert(String::from("q"), BEncode::from_str("get_peers"));
 
                 let mut args = BTreeMap::new();
@@ -223,6 +248,27 @@ impl Request {
 }
 
 impl Response {
+    pub fn id(transaction: Vec<u8>, id: ID) -> Self {
+        Response {
+            transaction,
+            kind: ResponseKind::ID(id),
+        }
+    }
+
+    pub fn find_node(transaction: Vec<u8>, id: ID, nodes: Vec<Node>) -> Self {
+        Response {
+            transaction,
+            kind: ResponseKind::FindNode { id, nodes },
+        }
+    }
+
+    pub fn error(transaction: Vec<u8>, error: ErrorKind) -> Self {
+        Response {
+            transaction,
+            kind: ResponseKind::Error(error),
+        }
+    }
+
     pub fn encode(self) -> Vec<u8> {
         let mut b = BTreeMap::new();
         let is_err = self.is_err();

@@ -1,5 +1,5 @@
 use std::env;
-use std::net::SocketAddr;
+use std::net::{SocketAddr, ToSocketAddrs};
 
 #[derive(Debug, Clone)]
 pub struct Config {
@@ -38,8 +38,11 @@ impl Config {
         if let Some(p) = file.dht_port {
             base.dht_port = p
         }
-        if let Some(p) = file.dht_bootstrap_node.and_then(|s| s.parse().ok()) {
-            base.dht_bootstrap_node = Some(p)
+        if let Some(n) = file.dht_bootstrap_node {
+            match (&n).to_socket_addrs() {
+                Ok(mut a) => base.dht_bootstrap_node = a.next(),
+                _ => { }
+            }
         }
         if let Some(s) = file.session {
             base.session = expand_tilde(&s);
