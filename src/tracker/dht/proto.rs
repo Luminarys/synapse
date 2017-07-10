@@ -75,14 +75,14 @@ pub enum PeerResp {
     Nodes(Vec<Node>),
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Node {
     pub id: ID,
     pub addr: SocketAddr,
 }
 
 impl Request {
-    fn encode(self) -> Vec<u8> {
+    pub fn encode(self) -> Vec<u8> {
         let mut b = BTreeMap::new();
         b.insert(String::from("t"), BEncode::String(self.transaction));
         b.insert(String::from("y"), BEncode::from_str("q"));
@@ -135,8 +135,8 @@ impl Request {
         BEncode::Dict(b).encode_to_buf()
     }
 
-    fn decode(buf: Vec<u8>) -> Result<Self> {
-        let b: BEncode = bencode::decode_buf(&buf).chain_err(|| ErrorKind::InvalidRequest("Invalid BEncoded data"))?;
+    pub fn decode(buf: &[u8]) -> Result<Self> {
+        let b: BEncode = bencode::decode_buf(buf).chain_err(|| ErrorKind::InvalidRequest("Invalid BEncoded data"))?;
         let mut d = b.to_dict()
             .ok_or::<Error>(ErrorKind::InvalidRequest("Invalid BEncoded data(must be dict)").into())?;
         let transaction = d.remove("t")
@@ -223,7 +223,7 @@ impl Request {
 }
 
 impl Response {
-    fn encode(self) -> Vec<u8> {
+    pub fn encode(self) -> Vec<u8> {
         let mut b = BTreeMap::new();
         let is_err = self.is_err();
         b.insert(String::from("t"), BEncode::String(self.transaction));
@@ -293,8 +293,8 @@ impl Response {
         BEncode::Dict(b).encode_to_buf()
     }
 
-    fn decode(buf: Vec<u8>) -> Result<Self> {
-        let b: BEncode = bencode::decode_buf(&buf).chain_err(|| ErrorKind::InvalidResponse("Invalid BEncoded data"))?;
+    pub fn decode(buf: &[u8]) -> Result<Self> {
+        let b: BEncode = bencode::decode_buf(buf).chain_err(|| ErrorKind::InvalidResponse("Invalid BEncoded data"))?;
         let mut d = b.to_dict()
             .ok_or::<Error>(ErrorKind::InvalidResponse("Invalid BEncoded data(must be dict)").into())?;
         let transaction = d.remove("t")
@@ -399,7 +399,7 @@ mod tests {
     fn test_decode_id_resp() {
         // {"t":"aa", "y":"r", "r": {"id":"mnopqrstuvwxyz123456"}}
         let r = Vec::from(&b"d1:rd2:id20:mnopqrstuvwxyz123456e1:t2:aa1:y1:re"[..]);
-        let d = Response::decode(r).unwrap();
+        let d = Response::decode(&r).unwrap();
         assert_eq!(d.transaction, b"aa");
         match d.kind {
             ResponseKind::ID(id) => {
@@ -413,35 +413,35 @@ mod tests {
     fn test_encode_decode_resp() {
         // {"t":"aa", "y":"r", "r": {"id":"mnopqrstuvwxyz123456"}}
         let r = Vec::from(&b"d1:rd2:id20:mnopqrstuvwxyz123456e1:t2:aa1:y1:re"[..]);
-        let d = Response::decode(r.clone()).unwrap();
+        let d = Response::decode(&r).unwrap();
         assert_eq!(d.encode(), r);
     }
 
     #[test]
     fn test_encode_decode_req_ping() {
         let r = Vec::from(&b"d1:ad2:id20:abcdefghij0123456789e1:q4:ping1:t2:aa1:y1:qe"[..]);
-        let d = Request::decode(r.clone()).unwrap();
+        let d = Request::decode(&r).unwrap();
         assert_eq!(d.encode(), r);
     }
 
     #[test]
     fn test_encode_decode_req_find() {
         let r = Vec::from(&b"d1:ad2:id20:abcdefghij01234567896:target20:mnopqrstuvwxyz123456e1:q9:find_node1:t2:aa1:y1:qe"[..]);
-        let d = Request::decode(r.clone()).unwrap();
+        let d = Request::decode(&r).unwrap();
         assert_eq!(d.encode(), r);
     }
 
     #[test]
     fn test_encode_decode_req_get() {
         let r = Vec::from(&b"d1:ad2:id20:abcdefghij01234567899:info_hash20:mnopqrstuvwxyz123456e1:q9:get_peers1:t2:aa1:y1:qe"[..]);
-        let d = Request::decode(r.clone()).unwrap();
+        let d = Request::decode(&r).unwrap();
         assert_eq!(d.encode(), r);
     }
 
     #[test]
     fn test_encode_decode_req_annnounce() {
         let r = Vec::from(&b"d1:ad2:id20:abcdefghij012345678912:implied_porti1e9:info_hash20:mnopqrstuvwxyz1234564:porti6881e5:token8:aoeusnthe1:q13:announce_peer1:t2:aa1:y1:qe"[..]);
-        let d = Request::decode(r.clone()).unwrap();
+        let d = Request::decode(&r).unwrap();
         println!("{:?}", d);
         assert_eq!(String::from_utf8(d.encode()).unwrap(), String::from_utf8(r).unwrap());
     }

@@ -1,4 +1,4 @@
-use std::io::{self, Write};
+use std::io;
 use rand::{self, Rng};
 use std::fmt::Write as FWrite;
 use byteorder::{ReadBytesExt, WriteBytesExt, BigEndian};

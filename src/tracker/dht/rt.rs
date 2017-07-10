@@ -1,12 +1,33 @@
 use std::net::SocketAddr;
 use std::{cmp, mem};
+use std::collections::{HashMap, VecDeque};
 use chrono::{DateTime, Utc};
 use num::bigint::BigUint;
-use super::{DHT_ID, ID, Distance, BUCKET_MAX};
+use rand::{self, Rng};
+use super::{ID, Distance, BUCKET_MAX, proto};
+use tracker;
+use bincode;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct RoutingTable {
     buckets: Vec<Bucket>,
+    last_resp_recvd: DateTime<Utc>,
+    last_req_recvd: DateTime<Utc>,
+    last_token_refresh: DateTime<Utc>,
+    id: ID,
+    transactions: HashMap<u32, Transaction>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+struct Transaction {
+    created: DateTime<Utc>,
+    kind: TransactionKind,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+enum TransactionKind {
+    Initialization,
+    Query { id: ID },
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -14,6 +35,7 @@ pub struct Bucket {
     start: ID,
     end: ID,
     last_updated: DateTime<Utc>,
+    queue: VecDeque<proto::Node>,
     nodes: Vec<Node>,
 }
 
@@ -23,6 +45,8 @@ pub struct Node {
     state: NodeState,
     addr: SocketAddr,
     last_updated: DateTime<Utc>,
+    token: Vec<u8>,
+    prev_token: Vec<u8>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -32,15 +56,53 @@ pub enum NodeState {
     Bad,
 }
 
-
 impl RoutingTable {
     pub fn new() -> RoutingTable {
+        let mut id = [0u8; 20];
+        let mut rng = rand::thread_rng();
+        for i in 0..20 {
+            id[i] = rng.gen::<u8>();
+        }
+        
         RoutingTable {
-            buckets: vec![Bucket::new(BigUint::from(0u8), id_from_pow(160))]
+            buckets: vec![Bucket::new(BigUint::from(0u8), id_from_pow(160))],
+            last_resp_recvd: Utc::now(),
+            last_req_recvd: Utc::now(),
+            last_token_refresh: Utc::now(),
+            id: BigUint::from_bytes_be(&id),
+            transactions: HashMap::new(),
         }
     }
 
-    fn add_node(&mut self, node: Node) {
+    pub fn deserialize() -> Option<RoutingTable> {
+        None
+    }
+
+    pub fn add_addr(&mut self, addr: SocketAddr) -> (proto::Request, SocketAddr) {
+        unimplemented!();
+    }
+
+    pub fn handle_req(&mut self, req: proto::Request) -> proto::Response {
+        unimplemented!();
+    }
+
+    pub fn handle_resp(&mut self, resp: proto::Response) -> Result<tracker::Response, Vec<(proto::Request, SocketAddr)>> {
+        unimplemented!();
+    }
+
+    pub fn tick(&mut self) -> Vec<(proto::Request, SocketAddr)> {
+        let mut resps = Vec::new();
+        resps
+    }
+
+    fn serialize(&self) -> Vec<u8> {
+        bincode::serialize(self, bincode::Infinite).unwrap()
+    }
+
+    fn bootstrap(&mut self, node: SocketAddr) {
+    }
+
+    fn add_node(&mut self, node: proto::Node) {
         let idx = self.buckets.binary_search_by(|bucket| {
             if bucket.could_hold(&node.id) {
                 cmp::Ordering::Equal
@@ -52,7 +114,7 @@ impl RoutingTable {
         if self.buckets[idx].full() {
             if self.buckets.len() == 1 {
                 self.split_bucket(idx, id_from_pow(159));
-            } else if self.buckets[idx].could_hold(&DHT_ID) {
+            } else if self.buckets[idx].could_hold(&self.id) {
                 let midpoint = self.buckets[idx].midpoint();
                 self.split_bucket(idx, midpoint);
             } else {
@@ -87,6 +149,7 @@ impl Bucket {
             start,
             end,
             last_updated: Utc::now(),
+            queue: VecDeque::new(),
             nodes: Vec::with_capacity(BUCKET_MAX),
         }
     }
@@ -107,11 +170,14 @@ impl Bucket {
 
 impl Node {
     fn new(id: ID, addr: SocketAddr) -> Node {
+        let token = Node::create_token();
         Node {
             id,
             state: NodeState::Questionable,
             addr,
             last_updated: Utc::now(),
+            prev_token: token.clone(),
+            token: token,
         }
     }
 
@@ -126,6 +192,24 @@ impl Node {
         } else {
             false
         }
+    }
+
+    fn new_token(&mut self) {
+        let new_prev = mem::replace(&mut self.token, Node::create_token());
+        self.prev_token = new_prev;
+    }
+
+    fn token_valid(&self, token: Vec<u8>) -> bool {
+        token == self.token || token == self.prev_token
+    }
+
+    fn create_token() -> Vec<u8> {
+        let mut tok = Vec::new();
+        let mut rng = rand::thread_rng();
+        for i in 0..20 {
+            tok.push(rng.gen::<u8>());
+        }
+        tok
     }
 }
 

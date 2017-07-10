@@ -40,7 +40,7 @@ impl Tracker {
             queue,
             http: http::Handler::new(reg.clone(), l.new(o!("mod" => "http"))),
             udp: udp::Handler::new(&reg, l.new(o!("mod" => "udp"))).unwrap(),
-            dht: dht::Manager::new(&reg).unwrap(),
+            dht: dht::Manager::new(&reg, l.new(o!("mod" => "dht"))).unwrap(),
             l,
             poll,
             dns,

@@ -1,10 +1,12 @@
 use std::env;
+use std::net::SocketAddr;
 
 #[derive(Debug, Clone)]
 pub struct Config {
     pub port: u16,
     pub trk_port: u16,
     pub dht_port: u16,
+    pub dht_bootstrap_node: Option<SocketAddr>,
     pub rpc_port: u16,
     pub session: String,
     pub directory: String,
@@ -16,6 +18,7 @@ pub struct ConfigFile {
     pub rpc_port: Option<u16>,
     pub trk_port: Option<u16>,
     pub dht_port: Option<u16>,
+    pub dht_bootstrap_node: Option<String>,
     pub session: Option<String>,
     pub directory: Option<String>,
 }
@@ -35,6 +38,9 @@ impl Config {
         if let Some(p) = file.dht_port {
             base.dht_port = p
         }
+        if let Some(p) = file.dht_bootstrap_node.and_then(|s| s.parse().ok()) {
+            base.dht_bootstrap_node = Some(p)
+        }
         if let Some(s) = file.session {
             base.session = expand_tilde(&s);
         }
@@ -53,6 +59,7 @@ impl Default for Config {
             rpc_port: 8412,
             trk_port: 16362,
             dht_port: 14831,
+            dht_bootstrap_node: None,
             session: expand_tilde(&s),
             directory: "./".to_owned(),
         }
