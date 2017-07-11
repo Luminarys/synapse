@@ -35,8 +35,7 @@ enum TransactionKind {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 struct Torrent {
-    node: proto::Node,
-    peer: SocketAddr,
+    peers: Vec<SocketAddr>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -99,7 +98,7 @@ impl RoutingTable {
         Vec::new()
     }
 
-    pub fn handle_req(&mut self, req: proto::Request, addr: SocketAddr) -> proto::Response {
+    pub fn handle_req(&mut self, req: proto::Request, mut addr: SocketAddr) -> proto::Response {
         self.last_req_recvd = Utc::now();
         match req.kind {
             // TODO: Consider adding the node if we don't have it?
@@ -125,11 +124,42 @@ impl RoutingTable {
                 proto::Response::find_node(req.transaction, self.id.clone(), nodes)
             },
             proto::RequestKind::AnnouncePeer { id, implied_port, hash, port, token } => {
-                self.get_node_mut(&id).update();
-                // TODO: Actually handle this!
+                if !self.contains_id(&id) {
+                    return proto::Response::error(req.transaction, proto::ErrorKind::Protocol("Unregistered peer!".to_owned()))
+                }
+                {
+                    let node = self.get_node_mut(&id);
+                    if !node.token_valid(&token) {
+                        return proto::Response::error(req.transaction, proto::ErrorKind::Protocol("Bad token!".to_owned()))
+                    }
+                    node.update();
+                }
+                if !self.torrents.contains_key(&hash) {
+                    self.torrents.insert(hash, Torrent { peers: Vec::new(), });
+                }
+                if !implied_port {
+                    addr.set_port(port);
+                }
+                self.torrents.get_mut(&hash).unwrap().peers.push(addr);
                 proto::Response::id(req.transaction, self.id.clone())
             }
-            proto::RequestKind::GetPeers { .. }  => panic!(),
+            proto::RequestKind::GetPeers { id, hash }  => {
+                let token = if !self.contains_id(&id) {
+                    return proto::Response::error(req.transaction, proto::ErrorKind::Protocol("Unregistered peer!".to_owned()))
+                } else {
+                    self.get_node(&id).token.clone()
+                };
+                if let Some(t) = self.torrents.get(&hash) {
+                    proto::Response::peers(req.transaction, self.id.clone(), token, t.peers.clone())
+                } else {
+                    let mut nodes = Vec::new();
+                    let b = self.bucket_idx(&BigUint::from_bytes_be(&hash[..]));
+                    for node in self.buckets[b].nodes.iter() {
+                        nodes.push(node.into());
+                    }
+                    proto::Response::nodes(req.transaction, self.id.clone(), token, nodes)
+                }
+            }
         }
     }
 
@@ -411,8 +441,8 @@ impl Node {
         self.prev_token = new_prev;
     }
 
-    fn token_valid(&self, token: Vec<u8>) -> bool {
-        token == self.token || token == self.prev_token
+    fn token_valid(&self, token: &[u8]) -> bool {
+        token == &self.token[..] || token == &self.prev_token[..]
     }
 
     fn create_token() -> Vec<u8> {

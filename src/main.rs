@@ -133,7 +133,6 @@ lazy_static! {
 
 fn main() {
     info!(LOG, "Initializing!");
-
     CONFIG.port;
     LISTENER.init();
     RPC.init();

@@ -262,6 +262,20 @@ impl Response {
         }
     }
 
+    pub fn peers(transaction: Vec<u8>, id: ID, token: Vec<u8>, nodes: Vec<SocketAddr>) -> Self {
+        Response {
+            transaction,
+            kind: ResponseKind::GetPeers { id, token, resp: PeerResp::Values(nodes) },
+        }
+    }
+
+    pub fn nodes(transaction: Vec<u8>, id: ID, token: Vec<u8>, nodes: Vec<Node>) -> Self {
+        Response {
+            transaction,
+            kind: ResponseKind::GetPeers { id, token, resp: PeerResp::Nodes(nodes) },
+        }
+    }
+
     pub fn error(transaction: Vec<u8>, error: ErrorKind) -> Self {
         Response {
             transaction,
