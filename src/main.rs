@@ -42,6 +42,8 @@ use std::sync::atomic;
 use std::io::Read;
 use slog::Drain;
 
+pub const DHT_EXT: (usize, u8) = (7, 1);
+
 lazy_static! {
     pub static ref TC: atomic::AtomicUsize = {
         atomic::AtomicUsize::new(0)

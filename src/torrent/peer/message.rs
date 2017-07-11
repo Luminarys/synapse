@@ -19,6 +19,7 @@ pub enum Message {
     Piece { index: u32, begin: u32, length: u32, data: Box<[u8; 16384]> },
     SharedPiece { index: u32, begin: u32, length: u32, data: Arc<Box<[u8; 16384]>> },
     Cancel { index: u32, begin: u32, length: u32 },
+    Port(u16),
 }
 
 impl fmt::Debug for Message {
@@ -36,6 +37,7 @@ impl fmt::Debug for Message {
             Message::Piece{ index, begin, .. } => write!(f, "Message::Piece {{ idx: {}, begin: {} }}", index, begin),
             Message::SharedPiece{ index, begin, .. } => write!(f, "Message::SPiece {{ idx: {}, begin: {} }}", index, begin),
             Message::Cancel { index, begin, length } => write!(f, "Message::Cancel {{ idx: {}, begin: {}, len: {} }}", index, begin, length),
+            Message::Port(port) => write!(f, "Message::Port({:?})", port),
         }
     }
 }
@@ -61,6 +63,7 @@ impl Clone for Message {
             }
             Message::SharedPiece { index, begin, length, ref data } => Message::SharedPiece { index, begin, length, data: data.clone() },
             Message::Cancel { index, begin, length } => Message::Cancel { index, begin, length },
+            Message::Port(port) => Message::Port(port),
         }
     }
 }
@@ -71,14 +74,15 @@ impl PartialEq for Message {
             (&Message::Handshake { rsv, hash, id }, &Message::Handshake { rsv: rsv_, hash: hash_, id: id_ }) => {
                 rsv == rsv_ && hash == hash_ && id == id_
             },
-            (&Message::KeepAlive, &Message::KeepAlive) |
-                (&Message::Choke, &Message::Choke) |
-                (&Message::Unchoke, &Message::Unchoke) |
-                (&Message::Interested, &Message::Interested) |
-                (&Message::Uninterested, &Message::Uninterested) => true,
-                (&Message::Have(p), &Message::Have(p_)) => p == p_,
-                (&Message::Request { index, begin, length }, &Message::Request { index: i, begin: b, length: l }) |
-                    (&Message::Cancel { index, begin, length }, &Message::Cancel { index: i, begin: b, length: l }) => {
+            (&Message::KeepAlive, &Message::KeepAlive)
+            | (&Message::Choke, &Message::Choke)
+            | (&Message::Unchoke, &Message::Unchoke)
+            | (&Message::Interested, &Message::Interested)
+            | (&Message::Uninterested, &Message::Uninterested) => true,
+            (&Message::Have(p), &Message::Have(p_)) => p == p_,
+            (&Message::Port(p), &Message::Port(p_)) => p == p_,
+            (&Message::Request { index, begin, length }, &Message::Request { index: i, begin: b, length: l })
+            | (&Message::Cancel { index, begin, length }, &Message::Cancel { index: i, begin: b, length: l }) => {
                         index == i && begin == b && length == l
                     },
                 _ => false
@@ -88,9 +92,12 @@ impl PartialEq for Message {
 
 impl Message {
     pub fn handshake(torrent: &TorrentInfo) -> Message {
-        use ::PEER_ID;
+        use ::{PEER_ID, DHT_EXT};
+        let mut rsv = [0u8; 8];
+        rsv[DHT_EXT.0] |= DHT_EXT.1;
+        // Indicate DHT support
         Message::Handshake {
-            rsv: [0u8; 8],
+            rsv,
             hash: torrent.hash,
             id: *PEER_ID
         }
@@ -151,10 +158,11 @@ impl Message {
         match *self {
             Message::Handshake { .. } => 68,
             Message::KeepAlive => 4,
-            Message::Choke |
-                Message::Unchoke |
-                Message::Interested |
-                Message::Uninterested => 5,
+            Message::Choke
+            | Message::Unchoke
+            | Message::Interested
+            | Message::Uninterested => 5,
+            Message::Port(_) => 7,
             Message::Have(_) => 9,
             Message::Bitfield(ref pf) => 5 + pf.bytes(),
             Message::Request{ .. } | Message::Cancel { .. } => 17,
@@ -193,6 +201,11 @@ impl Message {
             Message::Uninterested => {
                 buf.write_u32::<BigEndian>(1)?;
                 buf.write_u8(3)?;
+            }
+            Message::Port(p) => {
+                buf.write_u32::<BigEndian>(3)?;
+                buf.write_u8(0x09)?;
+                buf.write_u16::<BigEndian>(p)?;
             }
             Message::Have(piece) => {
                 buf.write_u32::<BigEndian>(5)?;

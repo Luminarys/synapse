@@ -11,7 +11,7 @@ pub use self::peer::{Peer, PeerConn};
 use self::peer::Message;
 use self::picker::Picker;
 use std::fmt;
-use {amy, bincode, rpc, disk, DISK, TRACKER};
+use {amy, bincode, rpc, disk, DISK, TRACKER, DHT_EXT, CONFIG};
 use throttle::Throttle;
 use tracker::{self, TrackerResponse};
 use std::collections::{HashMap, HashSet};
@@ -248,8 +248,11 @@ impl Torrent {
     pub fn handle_msg(&mut self, msg: Message, peer: &mut Peer) {
         trace!(self.l, "Received {:?} from peer", msg);
         match msg {
-            Message::Handshake { .. } => {
+            Message::Handshake { rsv, .. } => {
                 debug!(self.l, "Connection established with peer {:?}", peer.id());
+                if (rsv[DHT_EXT.0] & DHT_EXT.1) != 0 {
+                    peer.send_port(CONFIG.dht_port);
+                }
             }
             Message::Bitfield(_) => {
                 if self.pieces.usable(peer.pieces()) {

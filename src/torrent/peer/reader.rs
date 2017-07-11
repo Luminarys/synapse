@@ -229,6 +229,12 @@ impl ReadState {
                 }
                 ReadState::ReadingMsg { data: buf, idx: 5, len: len }.next_state(conn)
             },
+            0x09 => {
+                if len != 3 {
+                    return ReadRes::Err(io_err_val("Invalid Port message length"));
+                }
+                ReadState::ReadingMsg { data: buf, idx: 5, len: len }.next_state(conn)
+            },
             6 | 8 => {
                 if len != 13 {
                     return ReadRes::Err(io_err_val("Invalid Request/Cancel message length"));
@@ -266,6 +272,12 @@ impl ReadState {
                 let beg = (&buf[9..13]).read_u32::<BigEndian>().unwrap();
                 let len = (&buf[13..17]).read_u32::<BigEndian>().unwrap();
                 ReadRes::Message(Message::Cancel { index: idx, begin: beg, length: len })
+            }
+            9 => {
+                if len != 3 {
+                    return ReadRes::Err(io_err_val("Port message must be of len 3"));
+                }
+                ReadRes::Message(Message::Port((&buf[5..7]).read_u16::<BigEndian>().unwrap()))
             }
             _ => {
                 ReadRes::Err(io_err_val("Invalid message ID"))
@@ -440,6 +452,14 @@ mod tests {
                 unreachable!();
             }
         }
+    }
+
+    #[test]
+    fn test_read_port() {
+        let mut r = Reader::new();
+        r.state = ReadState::Idle;
+        let data = vec![0u8, 0, 0, 3, 9, 0x1A, 0xE1];
+        test_message(data, Message::Port(6881));
     }
 
     #[test]
