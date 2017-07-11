@@ -108,6 +108,14 @@ impl Tracker {
                         self.send_response((id, Err(e)));
                     }
                 }
+                Request::GetPeers(gp) => {
+                    debug!(self.l, "Handling dht peer find req!");
+                    self.dht.get_peers(gp.id, gp.hash);
+                }
+                Request::AddNode(addr) => {
+                    debug!(self.l, "Handling dht node addition req!");
+                    self.dht.add_addr(addr);
+                }
                 Request::Shutdown => {
                     return Err(());
                 }
@@ -202,6 +210,8 @@ unsafe impl Sync for Handle {}
 #[derive(Debug)]
 pub enum Request {
     Announce(Announce),
+    GetPeers(GetPeers),
+    AddNode(SocketAddr),
     Shutdown,
 }
 
@@ -215,6 +225,12 @@ pub struct Announce {
     downloaded: u64,
     left: u64,
     event: Option<Event>,
+}
+
+#[derive(Debug)]
+pub struct GetPeers {
+    id: usize,
+    hash: [u8; 20],
 }
 
 impl Announce {

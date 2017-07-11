@@ -98,6 +98,14 @@ impl Request {
         }
     }
 
+    pub fn get_peers(transaction: Vec<u8>, id: ID, hash: [u8; 20]) -> Self {
+        Request {
+            transaction,
+            version: Some(VERSION.to_owned()),
+            kind: RequestKind::GetPeers { id, hash },
+        }
+    }
+
     pub fn encode(self) -> Vec<u8> {
         let mut b = BTreeMap::new();
         b.insert(String::from("t"), BEncode::String(self.transaction));

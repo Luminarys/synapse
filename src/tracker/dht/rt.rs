@@ -31,7 +31,8 @@ struct Transaction {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 enum TransactionKind {
     Initialization,
-    Query { id: ID, torrent: Option<usize> },
+    Query(ID),
+    TSearch { id: ID, torrent: usize, hash: [u8; 20] },
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -96,8 +97,22 @@ impl RoutingTable {
         ((proto::Request::ping(tx, self.id.clone()), addr))
     }
 
-    pub fn get_peers(&mut self, tid: usize, hash: [u8; 20]) -> Vec<(proto::Request, SocketAddr)> {
-        Vec::new()
+    pub fn get_peers(&mut self, torrent: usize, hash: [u8; 20]) -> Vec<(proto::Request, SocketAddr)> {
+        let tid = BigUint::from_bytes_be(&hash[..]);
+        let idx = self.bucket_idx(&tid);
+        let mut nodes: Vec<proto::Node> = Vec::new();
+
+        for node in self.buckets[idx].nodes.iter() {
+            nodes.push(node.into())
+        }
+
+        let mut reqs = Vec::new();
+        for node in nodes {
+            let tx = self.new_tsearch_tx(node.id, torrent, hash);
+            let req = proto::Request::get_peers(tx, self.id.clone(), hash);
+            reqs.push((req, node.addr));
+        }
+        reqs
     }
 
     pub fn handle_req(&mut self, req: proto::Request, mut addr: SocketAddr) -> proto::Response {
@@ -165,7 +180,8 @@ impl RoutingTable {
         }
     }
 
-    pub fn handle_resp(&mut self, resp: proto::Response, addr: SocketAddr) -> Result<tracker::Response, Vec<(proto::Request, SocketAddr)>> {
+    pub fn handle_resp(&mut self, resp: proto::Response, addr: SocketAddr)
+        -> Result<tracker::Response, Vec<(proto::Request, SocketAddr)>> {
         self.last_resp_recvd = Utc::now();
         let mut reqs = Vec::new();
         if resp.transaction.len() < 4 {
@@ -177,91 +193,90 @@ impl RoutingTable {
         } else {
             return Err(reqs);
         };
-        let mut recorded_id = None;
-        let mut tid = None;
-        let init = match tx.kind {
-            TransactionKind::Initialization => true,
-            TransactionKind::Query { id, torrent } => {
-                let idx = self.bucket_idx(&id);
-                if let Some(bidx) = self.buckets[idx].idx_of(&id) {
-                    recorded_id = Some(id);
-                    tid = torrent;
-                    self.buckets[idx].nodes[bidx].update();
-                } else {
-                    return Err(reqs);
-                }
-                false
-            }
-        };
-        println!("DHT: Processing resp");
-        match resp.kind {
-            proto::ResponseKind::ID(ref id) if init => {
-                println!("Succesfully got ID from node");
+
+        match (tx.kind, resp.kind) {
+            (TransactionKind::Initialization, proto::ResponseKind::ID(id)) => {
                 let mut n = Node::new(id.clone(), addr);
                 n.update();
                 self.add_node(n);
                 if self.bootstrapping {
-                    let tx = self.new_query_tx(id.clone(), None);
+                    let tx = self.new_query_tx(id);
                     reqs.push((proto::Request::find_node(tx, self.id.clone(), self.id.clone()), addr));
                 }
+            }
 
-            }
-            _ if init => { }
-            proto::ResponseKind::ID(id) => {
-                println!("Succesfully got ping from node");
-                // Cutoff nodes sending us improper iDs
-                let rid = recorded_id.unwrap();
-                if rid != id {
-                    self.remove_node(&id);
-                    self.remove_node(&rid);
-                } else if self.bootstrapping {
-                    let tx = self.new_query_tx(id.clone(), None);
+            (TransactionKind::Query(ref id1), proto::ResponseKind::ID(ref id2)) if id1 == id2 => {
+                self.get_node_mut(id1).update();
+                if self.bootstrapping {
+                    let tx = self.new_query_tx(id1.clone());
                     reqs.push((proto::Request::find_node(tx, self.id.clone(), self.id.clone()), addr));
                 }
             }
-            proto::ResponseKind::FindNode { id, nodes } => {
-                println!("Succesfully got nodes from node");
-                let rid = recorded_id.unwrap();
-                if rid != id {
-                    self.remove_node(&id);
-                    self.remove_node(&rid);
-                } else {
-                    for node in nodes {
-                        if !self.contains_id(&node.id) {
-                            let id = node.id.clone();
-                            let addr = node.addr.clone();
-                            self.add_node(node.into());
-                            let tx = self.new_query_tx(id, None);
-                            reqs.push((proto::Request::ping(tx, self.id.clone()), addr));
-                        }
+
+            (TransactionKind::Query(ref id1), proto::ResponseKind::FindNode { id: ref id2, ref mut nodes }) if id1 == id2 => {
+                self.get_node_mut(id1).update();
+                for node in nodes.drain(..) {
+                    if !self.contains_id(&node.id) {
+                        let id = node.id.clone();
+                        let addr = node.addr.clone();
+                        self.add_node(node.into());
+                        let tx = self.new_query_tx(id);
+                        reqs.push((proto::Request::ping(tx, self.id.clone()), addr));
                     }
                 }
             }
-            proto::ResponseKind::GetPeers { id, resp: pr, token } => {
-                let tid = tid.unwrap();
-                let rid = recorded_id.unwrap();
-                self.get_node_mut(&id).rem_token = Some(token);
-                if rid != id {
-                    self.remove_node(&id);
-                    self.remove_node(&rid);
-                } else if let proto::PeerResp::Values(addrs) = pr {
+
+            (TransactionKind::TSearch { id: ref id1, torrent, hash },
+             proto::ResponseKind::GetPeers { id: ref id2, resp: ref mut pr, ref mut token }) if id1 == id2 => {
+                {
+                    let node = self.get_node_mut(id1);
+                    node.update();
+                    if let Some(ref mut rt) = node.rem_token {
+                        mem::swap(rt, token);
+                    } else {
+                        node.rem_token = Some(token.clone());
+                    }
+                }
+
+                if let proto::PeerResp::Values(ref mut addrs) = *pr {
                     let mut r = tracker::TrackerResponse::empty();
-                    r.peers = addrs;
-                    return Ok((tid, Ok(r)));
-                } else if let proto::PeerResp::Nodes(nodes) = pr {
-                    for node in nodes {
+                    mem::swap(&mut r.peers, addrs);
+                    return Ok((torrent, Ok(r)));
+                } else if let proto::PeerResp::Nodes(ref mut nodes) = *pr {
+                    for node in nodes.drain(..) {
                         if !self.contains_id(&node.id) {
                             let id = node.id.clone();
                             let addr = node.addr.clone();
                             self.add_node(node.into());
-                            let tx = self.new_query_tx(id.clone(), None);
+                            let tx = self.new_tsearch_tx(id.clone(), torrent, hash);
                             reqs.push((proto::Request::ping(tx, id), addr));
                         }
                     }
                 }
             }
-            proto::ResponseKind::Error(e) => {
-                // TODO: idk?
+
+            (TransactionKind::Query(id), proto::ResponseKind::Error(e)) => {
+                self.get_node_mut(&id).update();
+                println!("Node {:?} encountered error {:?}", id, e);
+            }
+
+            // Mismatched IDs
+            (TransactionKind::Query(id), proto::ResponseKind::ID(_))
+            | (TransactionKind::Query(id), proto::ResponseKind::FindNode{ .. })
+            | (TransactionKind::TSearch { id, ..  }, proto::ResponseKind::GetPeers { .. }) => {
+                self.remove_node(&id);
+            }
+
+            (TransactionKind::Initialization, _) => {
+                unreachable!();
+            }
+
+            (TransactionKind::TSearch { .. }, _) => {
+                unreachable!();
+            }
+
+            (TransactionKind::Query(_), proto::ResponseKind::GetPeers { .. } ) => {
+                unreachable!();
             }
         }
         Err(reqs)
@@ -276,7 +291,6 @@ impl RoutingTable {
 
         let mut nodes_to_ping: Vec<proto::Node> = Vec::new();
         if self.is_bootstrapped() && self.bootstrapping {
-            println!("Bootstrap complete!");
             self.bootstrapping = false;
         }
 
@@ -303,7 +317,7 @@ impl RoutingTable {
             }
         }
         for node in nodes_to_ping {
-            let tx = self.new_query_tx(node.id, None);
+            let tx = self.new_query_tx(node.id);
             reqs.push((proto::Request::ping(tx, self.id.clone()), node.addr));
         }
         reqs
@@ -345,19 +359,29 @@ impl RoutingTable {
         tb
     }
 
-    fn new_query_tx(&mut self, id: ID, torrent: Option<usize>) -> Vec<u8> {
+    fn new_query_tx(&mut self, id: ID) -> Vec<u8> {
         let mut tb = Vec::new();
         let tid = rand::random::<u32>();
         tb.write_u32::<BigEndian>(tid).unwrap();
         self.transactions.insert(tid, Transaction {
             created: Utc::now(),
-            kind: TransactionKind::Query { id, torrent },
+            kind: TransactionKind::Query(id),
+        });
+        tb
+    }
+
+    fn new_tsearch_tx(&mut self, id: ID, torrent: usize, hash: [u8; 20]) -> Vec<u8> {
+        let mut tb = Vec::new();
+        let tid = rand::random::<u32>();
+        tb.write_u32::<BigEndian>(tid).unwrap();
+        self.transactions.insert(tid, Transaction {
+            created: Utc::now(),
+            kind: TransactionKind::TSearch { id, torrent, hash },
         });
         tb
     }
 
     fn add_node(&mut self, node: Node) {
-        println!("");
         let idx = self.bucket_idx(&node.id);
         if self.buckets[idx].full() {
             if self.buckets[idx].could_hold(&self.id) {
