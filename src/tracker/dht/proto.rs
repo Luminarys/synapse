@@ -98,15 +98,6 @@ impl Request {
         }
     }
 
-    pub fn id(&self) -> &ID {
-        match self.kind {
-            RequestKind::Ping(ref id) => id,
-            RequestKind::FindNode{ ref id, .. }=> id,
-            RequestKind::GetPeers{ ref id, .. } => id,
-            RequestKind::AnnouncePeer { ref id, .. } => id,
-        }
-    }
-
     pub fn encode(self) -> Vec<u8> {
         let mut b = BTreeMap::new();
         b.insert(String::from("t"), BEncode::String(self.transaction));

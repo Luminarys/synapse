@@ -1,4 +1,4 @@
-use std::net::{UdpSocket, SocketAddr, Ipv4Addr, SocketAddrV4};
+use std::net::{UdpSocket, SocketAddr};
 use std::time;
 use tracker::{Announce, Result, ResultExt, Response, TrackerResponse, Event, Error, ErrorKind, dns};
 use std::collections::HashMap;

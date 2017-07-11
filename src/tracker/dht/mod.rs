@@ -8,23 +8,10 @@ mod rt;
 mod proto;
 
 type ID = BigUint;
-type Distance = BigUint;
-
-lazy_static! {
-    pub static ref DHT_ID: ID = {
-        use rand::{self, Rng};
-
-        let mut id = [0u8; 20];
-        let mut rng = rand::thread_rng();
-        for i in 0..20 {
-            id[i] = rng.gen::<u8>();
-        }
-        BigUint::from_bytes_be(&id)
-    };
-}
 
 const BUCKET_MAX: usize = 8;
 const VERSION: &'static str = "SY";
+const MIN_BOOTSTRAP_BKTS: usize = 3;
 
 pub struct Manager {
     id: usize,

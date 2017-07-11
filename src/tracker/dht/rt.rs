@@ -4,7 +4,7 @@ use std::collections::{HashMap, VecDeque};
 use chrono::{DateTime, Utc};
 use num::bigint::BigUint;
 use rand::{self, Rng};
-use super::{ID, Distance, BUCKET_MAX, proto};
+use super::{ID, BUCKET_MAX, MIN_BOOTSTRAP_BKTS, proto};
 use byteorder::{ReadBytesExt, WriteBytesExt, BigEndian};
 use tracker;
 use bincode;
@@ -16,6 +16,7 @@ pub struct RoutingTable {
     last_resp_recvd: DateTime<Utc>,
     last_req_recvd: DateTime<Utc>,
     last_token_refresh: DateTime<Utc>,
+    last_tick: DateTime<Utc>,
     transactions: HashMap<u32, Transaction>,
     torrents: HashMap<[u8; 20], Torrent>,
     bootstrapping: bool,
@@ -61,7 +62,7 @@ pub struct Node {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum NodeState {
     Good,
-    Questionable,
+    Questionable(usize),
     Bad,
 }
 
@@ -72,12 +73,13 @@ impl RoutingTable {
         for i in 0..20 {
             id[i] = rng.gen::<u8>();
         }
-        
+
         RoutingTable {
             buckets: vec![Bucket::new(BigUint::from(0u8), id_from_pow(160))],
             last_resp_recvd: Utc::now(),
             last_req_recvd: Utc::now(),
             last_token_refresh: Utc::now(),
+            last_tick: Utc::now(),
             id: BigUint::from_bytes_be(&id),
             transactions: HashMap::new(),
             torrents: HashMap::new(),
@@ -238,6 +240,7 @@ impl RoutingTable {
             proto::ResponseKind::GetPeers { id, resp: pr, token } => {
                 let tid = tid.unwrap();
                 let rid = recorded_id.unwrap();
+                self.get_node_mut(&id).rem_token = Some(token);
                 if rid != id {
                     self.remove_node(&id);
                     self.remove_node(&rid);
@@ -260,14 +263,54 @@ impl RoutingTable {
             proto::ResponseKind::Error(e) => {
                 // TODO: idk?
             }
-            _ => { }
         }
         Err(reqs)
     }
 
     pub fn tick(&mut self) -> Vec<(proto::Request, SocketAddr)> {
-        let mut resps = Vec::new();
-        resps
+        let mut reqs = Vec::new();
+        let dur = self.last_tick.signed_duration_since(Utc::now());
+        if dur.num_seconds() < 10 {
+            return reqs;
+        }
+
+        let mut nodes_to_ping: Vec<proto::Node> = Vec::new();
+        if self.is_bootstrapped() && self.bootstrapping {
+            println!("Bootstrap complete!");
+            self.bootstrapping = false;
+        }
+
+        let dur = self.last_token_refresh.signed_duration_since(Utc::now());
+        let tok_refresh = dur.num_minutes() > 5;
+
+        for bucket in self.buckets.iter_mut() {
+            for node in bucket.nodes.iter_mut() {
+                let dur = node.last_updated.signed_duration_since(Utc::now());
+                if dur.num_minutes() > 15 {
+                    if tok_refresh {
+                        node.new_token();
+                    }
+                    if node.good() {
+                        node.state = NodeState::Questionable(1);
+                        nodes_to_ping.push((&*node).into());
+                    } else if let NodeState::Questionable(1) = node.state {
+                        node.state = NodeState::Questionable(2);
+                        nodes_to_ping.push((&*node).into());
+                    } else {
+                        node.state = NodeState::Bad;
+                    }
+                }
+            }
+        }
+        for node in nodes_to_ping {
+            let tx = self.new_query_tx(node.id, None);
+            reqs.push((proto::Request::ping(tx, self.id.clone()), node.addr));
+        }
+        reqs
+    }
+
+    fn is_bootstrapped(&self) -> bool {
+        self.buckets.len() >= MIN_BOOTSTRAP_BKTS
     }
 
     fn serialize(&self) -> Vec<u8> {
@@ -352,7 +395,7 @@ impl RoutingTable {
         }
         self.buckets.insert(idx + 1, nb);
     }
-    
+
     fn bucket_idx(&self, id: &ID) -> usize {
         self.buckets.binary_search_by(|bucket| {
             if bucket.could_hold(id) {
@@ -448,7 +491,7 @@ impl Node {
     fn create_token() -> Vec<u8> {
         let mut tok = Vec::new();
         let mut rng = rand::thread_rng();
-        for i in 0..20 {
+        for _ in 0..20 {
             tok.push(rng.gen::<u8>());
         }
         tok
@@ -483,10 +526,6 @@ fn id_from_pow(pow: usize) -> ID {
     let block = id[idx];
     id[idx] = block | (1 << offset);
     BigUint::from_bytes_be(&id)
-}
-
-fn distance(a: &ID, b: &ID) -> Distance {
-    a ^ b
 }
 
 #[cfg(test)]
