@@ -530,13 +530,8 @@ fn id_from_pow(pow: usize) -> ID {
 
 #[cfg(test)]
 mod tests {
-    use super::{Bucket, Node, RoutingTable, distance, id_from_pow};
+    use super::{Bucket, Node, RoutingTable, id_from_pow};
     use num::bigint::BigUint;
-
-    #[test]
-    fn test_distance() {
-        assert_eq!(distance(&id_from_pow(10), &id_from_pow(10)), BigUint::from(0u8));
-    }
 
     #[test]
     fn test_id_from_pow() {
