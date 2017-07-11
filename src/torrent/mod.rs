@@ -93,8 +93,7 @@ impl Torrent {
             tracker_update: None, choker: choker::Choker::new(),
             l: l.clone(), dirty: false, status: Status::Pending,
         };
-        debug!(l, "Sending start request");
-        TRACKER.tx.send(tracker::Request::started(&t)).unwrap();
+        t.start();
         t
     }
 
@@ -114,8 +113,7 @@ impl Torrent {
         if let Status::Validating = d.status {
             DISK.tx.send(disk::Request::validate(t.id, t.info.clone())).unwrap();
         }
-        debug!(l, "Sending start request");
-        TRACKER.tx.send(tracker::Request::started(&t)).unwrap();
+        t.start();
         Ok(t)
     }
 
@@ -272,6 +270,11 @@ impl Torrent {
                 }
                 self.picker.piece_available(idx);
             }
+            Message::Port(p) => {
+                let mut s = peer.conn().sock().addr();
+                s.set_port(p);
+                TRACKER.tx.send(tracker::Request::AddNode(s)).unwrap();
+            }
             Message::Unchoke => {
                 debug!(self.l, "Unchoked by: {:?}!", peer);
                 self.make_requests(peer);
@@ -368,6 +371,15 @@ impl Torrent {
         } else {
             self.choker.update_upload(&mut self.peers)
         };
+    }
+
+    fn start(&self) {
+        debug!(self.l, "Sending start request");
+        TRACKER.tx.send(tracker::Request::started(self)).unwrap();
+        // TODO: Consider repeatedly sending out these during annoucne intervals
+        if !self.info.private {
+            TRACKER.tx.send(tracker::Request::DHTAnnounce(self.info.hash)).unwrap();
+        }
     }
 
     fn complete(&self) -> bool {

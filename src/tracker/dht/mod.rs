@@ -111,6 +111,12 @@ impl Manager {
         self.table.add_addr(addr);
     }
 
+    pub fn announce(&mut self, hash: [u8; 20]) {
+        for (req, a) in self.table.announce(hash) {
+            self.send_msg(&req.encode(), a);
+        }
+    }
+
     pub fn tick(&mut self) {
         if self.dht_flush.elapsed() > time::Duration::from_secs(60) {
             let data = self.table.serialize();

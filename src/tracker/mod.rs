@@ -116,6 +116,10 @@ impl Tracker {
                     debug!(self.l, "Handling dht node addition req!");
                     self.dht.add_addr(addr);
                 }
+                Request::DHTAnnounce(hash) => {
+                    debug!(self.l, "Handling dht node addition req!");
+                    self.dht.announce(hash);
+                }
                 Request::Shutdown => {
                     return Err(());
                 }
@@ -212,6 +216,7 @@ pub enum Request {
     Announce(Announce),
     GetPeers(GetPeers),
     AddNode(SocketAddr),
+    DHTAnnounce([u8; 20]),
     Shutdown,
 }
 

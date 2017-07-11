@@ -115,6 +115,10 @@ impl RoutingTable {
         reqs
     }
 
+    pub fn announce(&mut self, hash: [u8; 20]) -> Vec<(proto::Request, SocketAddr)> {
+        unimplemented!();
+    }
+
     pub fn handle_req(&mut self, req: proto::Request, mut addr: SocketAddr) -> proto::Response {
         self.last_req_recvd = Utc::now();
         match req.kind {
