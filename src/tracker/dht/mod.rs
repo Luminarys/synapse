@@ -1,8 +1,13 @@
 use std::net::{SocketAddr, UdpSocket};
 use std::{io, sync};
+use self::io::{Read, Write};
 use num::bigint::BigUint;
 use {amy, tracker, CONFIG};
 use slog::Logger;
+use std::fs::File;
+use std::path::Path;
+use std::thread;
+use std::time;
 
 mod rt;
 mod proto;
@@ -11,11 +16,13 @@ type ID = BigUint;
 
 const BUCKET_MAX: usize = 8;
 const VERSION: &'static str = "SY";
+const SESSION_FILE: &'static str = "dht_data";
 const MIN_BOOTSTRAP_BKTS: usize = 3;
 
 pub struct Manager {
     id: usize,
     table: rt::RoutingTable,
+    dht_flush: time::Instant, 
     sock: UdpSocket,
     buf: Vec<u8>,
     l: Logger,
@@ -27,7 +34,12 @@ impl Manager {
         sock.set_nonblocking(true)?;
         let id = reg.register(&sock, amy::Event::Read)?;
 
-        let table = if let Some(t) = rt::RoutingTable::deserialize() {
+        let p = Path::new(&CONFIG.session[..]).join(SESSION_FILE);
+        let mut data = Vec::new();
+        let mut f = File::open(&p)?;
+        f.read_to_end(&mut data)?;
+        let table = if let Some(t) = rt::RoutingTable::deserialize(&data[..]) {
+            info!(l, "DHT table loaded from disk!");
             t
         } else {
             info!(l, "DHT table could not be read from disk, creating new table!");
@@ -45,6 +57,7 @@ impl Manager {
             sock,
             id,
             buf: vec![0u8; 500],
+            dht_flush: time::Instant::now(),
             l
         })
     }
@@ -99,6 +112,16 @@ impl Manager {
     }
 
     pub fn tick(&mut self) {
+        if self.dht_flush.elapsed() > time::Duration::from_secs(60) {
+            let data = self.table.serialize();
+            thread::spawn(move || {
+                let p = Path::new(&CONFIG.session[..]).join(SESSION_FILE);
+                if let Err(e) = File::open(&p).and_then(|mut f| f.write(&data[..])) {
+                    // TODO: properly log
+                    println!("DHT serialization failed: {:?}!", e);
+                }
+            });
+        }
         for (req, a) in self.table.tick() {
             self.send_msg(&req.encode(), a);
         }

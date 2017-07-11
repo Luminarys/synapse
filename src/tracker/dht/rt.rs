@@ -88,8 +88,8 @@ impl RoutingTable {
         }
     }
 
-    pub fn deserialize() -> Option<RoutingTable> {
-        None
+    pub fn deserialize(data: &[u8]) -> Option<RoutingTable> {
+        bincode::deserialize(data).ok()
     }
 
     pub fn add_addr(&mut self, addr: SocketAddr) -> (proto::Request, SocketAddr) {
@@ -323,12 +323,12 @@ impl RoutingTable {
         reqs
     }
 
-    fn is_bootstrapped(&self) -> bool {
-        self.buckets.len() >= MIN_BOOTSTRAP_BKTS
+    pub fn serialize(&self) -> Vec<u8> {
+        bincode::serialize(self, bincode::Infinite).unwrap()
     }
 
-    fn serialize(&self) -> Vec<u8> {
-        bincode::serialize(self, bincode::Infinite).unwrap()
+    fn is_bootstrapped(&self) -> bool {
+        self.buckets.len() >= MIN_BOOTSTRAP_BKTS
     }
 
     fn get_node_mut(&mut self, id: &ID) -> &mut Node {

@@ -121,8 +121,13 @@ impl Control {
     }
 
     fn deserialize_torrent(&mut self, entry: io::Result<fs::DirEntry>) -> io::Result<()> {
-        trace!(self.l, "Attempting to deserialize file {:?}", entry);
         let dir = entry?;
+        // TODO: We probably should improve this heuristic with and not rely
+        // on directory entries, but this is good enough for now.
+        if dir.file_name().len() != 40 {
+            return Ok(())
+        }
+        trace!(self.l, "Attempting to deserialize file {:?}", dir);
         let mut f = fs::File::open(dir.path())?;
         let mut data = Vec::new();
         f.read_to_end(&mut data)?;
