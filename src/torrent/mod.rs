@@ -8,7 +8,7 @@ pub use self::bitfield::Bitfield;
 pub use self::info::Info;
 pub use self::peer::{Peer, PeerConn};
 
-use self::peer::Message;
+pub use self::peer::Message;
 use self::picker::Picker;
 use std::fmt;
 use {amy, bincode, rpc, disk, DISK, TRACKER, DHT_EXT, CONFIG};

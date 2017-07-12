@@ -18,6 +18,8 @@ pub struct Listener {
     l: Logger,
 }
 
+pub struct Message;
+
 pub struct Handle {
     pub tx: mpsc::Sender<Request>,
 }

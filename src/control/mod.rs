@@ -11,6 +11,8 @@ use std::sync::{Arc, Mutex};
 use throttle::Throttler;
 
 mod job;
+mod cio;
+mod acio;
 
 /// Throttler max token amount
 const THROT_TOKS: usize = 2 * 1024 * 1024;

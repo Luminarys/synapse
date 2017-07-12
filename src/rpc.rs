@@ -20,6 +20,9 @@ impl Handle {
 
 unsafe impl Sync for Handle {}
 
+// TODO: Convert to a less shitty interface for ctl comms
+pub struct Message;
+
 #[derive(Debug)]
 pub enum Request {
     ListTorrents,
