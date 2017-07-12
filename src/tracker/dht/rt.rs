@@ -4,10 +4,9 @@ use std::collections::{HashMap, VecDeque};
 use chrono::{DateTime, Utc};
 use num::bigint::BigUint;
 use rand::{self, Rng};
-use super::{ID, BUCKET_MAX, MIN_BOOTSTRAP_BKTS, proto};
+use super::{proto, ID, BUCKET_MAX, MIN_BOOTSTRAP_BKTS, TX_TIMEOUT_SECS};
 use byteorder::{ReadBytesExt, WriteBytesExt, BigEndian};
-use tracker;
-use bincode;
+use {tracker, bincode};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct RoutingTable {
@@ -88,6 +87,10 @@ impl RoutingTable {
         }
     }
 
+    pub fn init(&mut self) -> Vec<(proto::Request, SocketAddr)> {
+        self.refresh_tokens()
+    }
+
     pub fn deserialize(data: &[u8]) -> Option<RoutingTable> {
         bincode::deserialize(data).ok()
     }
@@ -103,7 +106,7 @@ impl RoutingTable {
         let mut nodes: Vec<proto::Node> = Vec::new();
 
         for node in self.buckets[idx].nodes.iter() {
-            nodes.push(node.into())
+            nodes.push(node.into());
         }
 
         let mut reqs = Vec::new();
@@ -116,7 +119,22 @@ impl RoutingTable {
     }
 
     pub fn announce(&mut self, hash: [u8; 20]) -> Vec<(proto::Request, SocketAddr)> {
-        unimplemented!();
+        let mut nodes: Vec<(proto::Node, Vec<u8>)> = Vec::new();
+        for bucket in self.buckets.iter() {
+            for node in bucket.nodes.iter() {
+                if let Some(ref tok) = node.rem_token {
+                    nodes.push((node.into(), tok.clone()))
+                }
+            }
+        }
+
+        let mut reqs = Vec::new();
+        for (node, tok) in nodes {
+            let tx = self.new_query_tx(node.id);
+            let req = proto::Request::announce(tx, self.id.clone(), hash, tok);
+            reqs.push((req, node.addr));
+        }
+        reqs
     }
 
     pub fn handle_req(&mut self, req: proto::Request, mut addr: SocketAddr) -> proto::Response {
@@ -202,14 +220,16 @@ impl RoutingTable {
             (TransactionKind::Initialization, proto::ResponseKind::ID(id)) => {
                 let mut n = Node::new(id.clone(), addr);
                 n.update();
-                self.add_node(n);
-                if self.bootstrapping {
+                if self.add_node(n).is_ok() && self.bootstrapping {
                     let tx = self.new_query_tx(id);
                     reqs.push((proto::Request::find_node(tx, self.id.clone(), self.id.clone()), addr));
                 }
             }
 
             (TransactionKind::Query(ref id1), proto::ResponseKind::ID(ref id2)) if id1 == id2 => {
+                if !self.contains_id(id1) {
+                    return Err(reqs);
+                }
                 self.get_node_mut(id1).update();
                 if self.bootstrapping {
                     let tx = self.new_query_tx(id1.clone());
@@ -218,20 +238,41 @@ impl RoutingTable {
             }
 
             (TransactionKind::Query(ref id1), proto::ResponseKind::FindNode { id: ref id2, ref mut nodes }) if id1 == id2 => {
+                if !self.contains_id(id1) {
+                    return Err(reqs);
+                }
                 self.get_node_mut(id1).update();
                 for node in nodes.drain(..) {
                     if !self.contains_id(&node.id) {
                         let id = node.id.clone();
                         let addr = node.addr.clone();
-                        self.add_node(node.into());
-                        let tx = self.new_query_tx(id);
-                        reqs.push((proto::Request::ping(tx, self.id.clone()), addr));
+                        if self.add_node(node.into()).is_ok() {
+                            let tx = self.new_query_tx(id);
+                            reqs.push((proto::Request::ping(tx, self.id.clone()), addr));
+                        }
                     }
+                }
+            }
+
+            // Token refresh query
+            (TransactionKind::Query(ref id1), proto::ResponseKind::GetPeers { id: ref id2, ref mut token, .. }) if id1 == id2 => {
+                if !self.contains_id(id1) {
+                    return Err(reqs);
+                }
+                let node = self.get_node_mut(id1);
+                node.update();
+                if let Some(ref mut rt) = node.rem_token {
+                    mem::swap(rt, token);
+                } else {
+                    node.rem_token = Some(token.clone());
                 }
             }
 
             (TransactionKind::TSearch { id: ref id1, torrent, hash },
              proto::ResponseKind::GetPeers { id: ref id2, resp: ref mut pr, ref mut token }) if id1 == id2 => {
+                if !self.contains_id(id1) {
+                    return Err(reqs);
+                }
                 {
                     let node = self.get_node_mut(id1);
                     node.update();
@@ -251,15 +292,19 @@ impl RoutingTable {
                         if !self.contains_id(&node.id) {
                             let id = node.id.clone();
                             let addr = node.addr.clone();
-                            self.add_node(node.into());
-                            let tx = self.new_tsearch_tx(id.clone(), torrent, hash);
-                            reqs.push((proto::Request::ping(tx, id), addr));
+                            if self.add_node(node.into()).is_ok() {
+                                let tx = self.new_tsearch_tx(id.clone(), torrent, hash);
+                                reqs.push((proto::Request::ping(tx, id), addr));
+                            }
                         }
                     }
                 }
             }
 
             (TransactionKind::Query(id), proto::ResponseKind::Error(e)) => {
+                if !self.contains_id(&id) {
+                    return Err(reqs);
+                }
                 self.get_node_mut(&id).update();
                 println!("Node {:?} encountered error {:?}", id, e);
             }
@@ -267,6 +312,7 @@ impl RoutingTable {
             // Mismatched IDs
             (TransactionKind::Query(id), proto::ResponseKind::ID(_))
             | (TransactionKind::Query(id), proto::ResponseKind::FindNode{ .. })
+            | (TransactionKind::Query(id), proto::ResponseKind::GetPeers { .. })
             | (TransactionKind::TSearch { id, ..  }, proto::ResponseKind::GetPeers { .. }) => {
                 self.remove_node(&id);
             }
@@ -276,10 +322,6 @@ impl RoutingTable {
             }
 
             (TransactionKind::TSearch { .. }, _) => {
-                unreachable!();
-            }
-
-            (TransactionKind::Query(_), proto::ResponseKind::GetPeers { .. } ) => {
                 unreachable!();
             }
         }
@@ -292,22 +334,25 @@ impl RoutingTable {
         if dur.num_seconds() < 10 {
             return reqs;
         }
+        self.last_tick = Utc::now();
 
         let mut nodes_to_ping: Vec<proto::Node> = Vec::new();
         if self.is_bootstrapped() && self.bootstrapping {
             self.bootstrapping = false;
         }
 
+        self.transactions.retain(|_, tx| tx.created.signed_duration_since(Utc::now()).num_seconds() < TX_TIMEOUT_SECS);
+
         let dur = self.last_token_refresh.signed_duration_since(Utc::now());
         let tok_refresh = dur.num_minutes() > 5;
 
         for bucket in self.buckets.iter_mut() {
             for node in bucket.nodes.iter_mut() {
-                let dur = node.last_updated.signed_duration_since(Utc::now());
-                if dur.num_minutes() > 15 {
                     if tok_refresh {
                         node.new_token();
                     }
+                let dur = node.last_updated.signed_duration_since(Utc::now());
+                if dur.num_minutes() > 15 {
                     if node.good() {
                         node.state = NodeState::Questionable(1);
                         nodes_to_ping.push((&*node).into());
@@ -333,6 +378,25 @@ impl RoutingTable {
 
     fn is_bootstrapped(&self) -> bool {
         self.buckets.len() >= MIN_BOOTSTRAP_BKTS
+    }
+
+    /// Send a bogus get_peers query and internally refresh our token.
+    fn refresh_tokens(&mut self) -> Vec<(proto::Request, SocketAddr)> {
+        let mut nodes: Vec<proto::Node> = Vec::new();
+        for bucket in self.buckets.iter_mut() {
+            for node in bucket.nodes.iter_mut() {
+                node.new_token();
+                nodes.push((&*node).into());
+            }
+        }
+
+        let mut reqs = Vec::new();
+        for node in nodes {
+            let tx = self.new_query_tx(node.id);
+            let req = proto::Request::get_peers(tx, self.id.clone(), [0xBEu8; 20]);
+            reqs.push((req, node.addr));
+        }
+        reqs
     }
 
     fn get_node_mut(&mut self, id: &ID) -> &mut Node {
@@ -385,16 +449,19 @@ impl RoutingTable {
         tb
     }
 
-    fn add_node(&mut self, node: Node) {
+    fn add_node(&mut self, node: Node) -> Result<(), ()> {
         let idx = self.bucket_idx(&node.id);
         if self.buckets[idx].full() {
             if self.buckets[idx].could_hold(&self.id) {
                 self.split_bucket(idx);
+                self.add_node(node)
             } else {
                 // Discard, or TODO: add to queue
+                Err(())
             }
         } else {
             self.buckets[idx].add_node(node);
+            Ok(())
         }
     }
 

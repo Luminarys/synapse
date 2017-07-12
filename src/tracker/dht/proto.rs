@@ -4,6 +4,7 @@ use super::{ID, VERSION};
 use bencode::{self, BEncode};
 use num::bigint::BigUint;
 use util::{addr_to_bytes, bytes_to_addr};
+use CONFIG;
 // use std::u16;
 
 error_chain! {
@@ -103,6 +104,14 @@ impl Request {
             transaction,
             version: Some(VERSION.to_owned()),
             kind: RequestKind::GetPeers { id, hash },
+        }
+    }
+
+    pub fn announce(transaction: Vec<u8>, id: ID, hash: [u8; 20], token: Vec<u8>) -> Self {
+        Request {
+            transaction,
+            version: Some(VERSION.to_owned()),
+            kind: RequestKind::AnnouncePeer { id, hash, token, port: CONFIG.dht_port, implied_port: false },
         }
     }
 

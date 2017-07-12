@@ -3,11 +3,10 @@ use std::{io, sync};
 use self::io::{Read, Write};
 use num::bigint::BigUint;
 use {amy, tracker, CONFIG};
+use std::{thread, time};
 use slog::Logger;
-use std::fs::File;
+use std::fs::OpenOptions;
 use std::path::Path;
-use std::thread;
-use std::time;
 
 mod rt;
 mod proto;
@@ -18,6 +17,7 @@ const BUCKET_MAX: usize = 8;
 const VERSION: &'static str = "SY";
 const SESSION_FILE: &'static str = "dht_data";
 const MIN_BOOTSTRAP_BKTS: usize = 3;
+const TX_TIMEOUT_SECS: i64 = 20;
 
 pub struct Manager {
     id: usize,
@@ -36,8 +36,9 @@ impl Manager {
 
         let p = Path::new(&CONFIG.session[..]).join(SESSION_FILE);
         let mut data = Vec::new();
-        let mut f = File::open(&p)?;
-        f.read_to_end(&mut data)?;
+        if let Ok(mut f) = OpenOptions::new().read(true).open(&p) {
+            f.read_to_end(&mut data)?;
+        }
         let table = if let Some(t) = rt::RoutingTable::deserialize(&data[..]) {
             info!(l, "DHT table loaded from disk!");
             t
@@ -60,6 +61,12 @@ impl Manager {
             dht_flush: time::Instant::now(),
             l
         })
+    }
+
+    pub fn init(&mut self) {
+        for (q, a) in self.table.init() {
+            self.send_msg(&q.encode(), a);
+        }
     }
 
     pub fn id(&self) -> usize {
@@ -122,11 +129,12 @@ impl Manager {
             let data = self.table.serialize();
             thread::spawn(move || {
                 let p = Path::new(&CONFIG.session[..]).join(SESSION_FILE);
-                if let Err(e) = File::open(&p).and_then(|mut f| f.write(&data[..])) {
+                if let Err(e) = OpenOptions::new().write(true).create(true).open(&p).and_then(|mut f| f.write(&data[..])) {
                     // TODO: properly log
                     println!("DHT serialization failed: {:?}!", e);
                 }
             });
+            self.dht_flush = time::Instant::now();
         }
         for (req, a) in self.table.tick() {
             self.send_msg(&req.encode(), a);

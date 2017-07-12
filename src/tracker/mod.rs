@@ -51,6 +51,8 @@ impl Tracker {
     }
 
     pub fn run(&mut self) {
+        self.dht.init();
+
         debug!(self.l, "Initialized!");
         'outer: loop {
             for event in self.poll.wait(10).unwrap() {
