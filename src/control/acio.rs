@@ -15,24 +15,38 @@ pub struct ACIO {
     data: Rc<UnsafeCell<ACIOData>>,
 }
 
+pub struct ACChans {
+    disk_tx: amy::Sender<disk::Request>,
+    disk_rx: amy::Receiver<disk::Response>,
+
+    rpc_tx: amy::Sender<rpc::Message>,
+    rpc_rx: amy::Receiver<rpc::Request>,
+
+    trk_tx: amy::Sender<tracker::Request>,
+    trk_rx: amy::Receiver<tracker::Response>,
+
+    lst_tx: amy::Sender<listener::Request>,
+    lst_rx: amy::Receiver<listener::Message>,
+}
+
 struct ACIOData {
     poll: amy::Poller,
     reg: amy::Registrar,
     peers: HashMap<usize, torrent::PeerConn>,
     events: Vec<cio::Event>,
     l: Logger,
+    chans: ACChans,
 }
 
 impl ACIO {
-    pub fn new(l: Logger) -> Result<ACIO> {
-        let poll = amy::Poller::new().chain_err(|| ErrorKind::IO)?;
-        let reg = poll.get_registrar().chain_err(|| ErrorKind::IO)?;
+    pub fn new(poll: amy::Poller, reg: amy::Registrar, chans: ACChans, l: Logger) -> Result<ACIO> {
         let data = ACIOData {
             poll,
             reg,
+            chans,
+            l,
             peers: HashMap::new(),
             events: Vec::new(),
-            l
         };
         Ok(ACIO {
             data: Rc::new(UnsafeCell::new(data)),
@@ -41,12 +55,29 @@ impl ACIO {
 
     fn process_event(&mut self, not: amy::Notification, events: &mut Vec<cio::Event>) {
         let id = not.id;
-        if self.d().peers.contains_key(&id) {
+        if self.d().chans.disk_rx.get_id() == id {
+            while let Ok(t) = self.d().chans.disk_rx.try_recv() {
+                events.push(cio::Event::Disk(Ok(t)));
+            }
+        } else if self.d().chans.rpc_rx.get_id() == id {
+            while let Ok(t) = self.d().chans.rpc_rx.try_recv() {
+                events.push(cio::Event::RPC(Ok(t)));
+            }
+        } else if self.d().chans.trk_rx.get_id() == id {
+            while let Ok(t) = self.d().chans.trk_rx.try_recv() {
+                events.push(cio::Event::Tracker(Ok(t)));
+            }
+        } else if self.d().chans.lst_rx.get_id() == id {
+            while let Ok(t) = self.d().chans.lst_rx.try_recv() {
+                events.push(cio::Event::Listener(Ok(t)));
+            }
+        } else if self.d().peers.contains_key(&id) {
             if let Err(e) = self.process_peer_ev(not, events) {
                 self.d().remove_peer(id);
                 events.push(cio::Event::Peer { peer: id, event: Err(e) });
             }
         } else {
+            // Timer event
             events.push(cio::Event::Timer(id));
         }
     }
@@ -72,15 +103,6 @@ impl ACIO {
         }
     }
 }
-
-//pub enum Event {
-//    Timer(cio::TID),
-//    Peer { peer: cio::PID, event: Result<torrent::Message> },
-//    RPC(Result<rpc::Request>),
-//    Tracker(Result<tracker::Response>),
-//    Disk(Result<disk::Response>),
-//    Listener(Result<listener::Message>),
-//}
 
 impl cio::CIO for ACIO {
     fn poll(&mut self, events: &mut Vec<cio::Event>) {
@@ -120,15 +142,35 @@ impl cio::CIO for ACIO {
     }
 
     fn msg_rpc(&mut self, msg: rpc::Message) {
+        if self.d().chans.rpc_tx.send(msg).is_err() {
+            self.d().events.push(
+                cio::Event::RPC(Err(ErrorKind::Channel("Couldn't send to RPC chan").into()))
+            );
+        }
     }
 
     fn msg_trk(&mut self, msg: tracker::Request) {
+        if self.d().chans.trk_tx.send(msg).is_err() {
+            self.d().events.push(
+                cio::Event::Tracker(Err(ErrorKind::Channel("Couldn't send to trk chan").into()))
+            );
+        }
     }
 
     fn msg_disk(&mut self, msg: disk::Request) {
+        if self.d().chans.disk_tx.send(msg).is_err() {
+            self.d().events.push(
+                cio::Event::Disk(Err(ErrorKind::Channel("Couldn't send to disk chan").into()))
+            );
+        }
     }
 
     fn msg_listener(&mut self, msg: listener::Request) {
+        if self.d().chans.lst_tx.send(msg).is_err() {
+            self.d().events.push(
+                cio::Event::Listener(Err(ErrorKind::Channel("Couldn't send to disk chan").into()))
+            );
+        }
     }
 
     fn set_timer(&mut self, interval: usize) -> Result<cio::TID> {
@@ -136,7 +178,7 @@ impl cio::CIO for ACIO {
             .chain_err(|| ErrorKind::IO)
     }
 
-    fn handle(&self) -> Self {
+    fn new_handle(&self) -> Self {
         ACIO {
             data: self.data.clone(),
         }

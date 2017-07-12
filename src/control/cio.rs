@@ -54,6 +54,6 @@ pub trait CIO {
     /// Sets a timer in milliseconds
     fn set_timer(&mut self, interval: usize) -> Result<TID>;
 
-    /// Creates a copy of the IO object, which has the same underlying handles
-    fn handle(&self) -> Self;
+    /// Creates a copy of the IO object, which has the same underlying data
+    fn new_handle(&self) -> Self;
 }
