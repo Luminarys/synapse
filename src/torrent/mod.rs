@@ -11,7 +11,7 @@ pub use self::peer::{Peer, PeerConn};
 use self::peer::Message;
 use self::picker::Picker;
 use std::fmt;
-use {amy, bincode, rpc, disk, DISK, TRACKER};
+use {amy, bincode, rpc, disk, DISK, TRACKER, DHT_EXT, CONFIG};
 use throttle::Throttle;
 use tracker::{self, TrackerResponse};
 use std::collections::{HashMap, HashSet};
@@ -93,8 +93,7 @@ impl Torrent {
             tracker_update: None, choker: choker::Choker::new(),
             l: l.clone(), dirty: false, status: Status::Pending,
         };
-        debug!(l, "Sending start request");
-        TRACKER.tx.send(tracker::Request::started(&t)).unwrap();
+        t.start();
         t
     }
 
@@ -114,8 +113,7 @@ impl Torrent {
         if let Status::Validating = d.status {
             DISK.tx.send(disk::Request::validate(t.id, t.info.clone())).unwrap();
         }
-        debug!(l, "Sending start request");
-        TRACKER.tx.send(tracker::Request::started(&t)).unwrap();
+        t.start();
         Ok(t)
     }
 
@@ -248,8 +246,11 @@ impl Torrent {
     pub fn handle_msg(&mut self, msg: Message, peer: &mut Peer) {
         trace!(self.l, "Received {:?} from peer", msg);
         match msg {
-            Message::Handshake { .. } => {
+            Message::Handshake { rsv, .. } => {
                 debug!(self.l, "Connection established with peer {:?}", peer.id());
+                if (rsv[DHT_EXT.0] & DHT_EXT.1) != 0 {
+                    peer.send_port(CONFIG.dht_port);
+                }
             }
             Message::Bitfield(_) => {
                 if self.pieces.usable(peer.pieces()) {
@@ -269,6 +270,11 @@ impl Torrent {
                 }
                 self.picker.piece_available(idx);
             }
+            Message::Port(p) => {
+                let mut s = peer.conn().sock().addr();
+                s.set_port(p);
+                TRACKER.tx.send(tracker::Request::AddNode(s)).unwrap();
+            }
             Message::Unchoke => {
                 debug!(self.l, "Unchoked by: {:?}!", peer);
                 self.make_requests(peer);
@@ -278,7 +284,6 @@ impl Torrent {
                 if self.pieces.has_bit(index as u64) {
                     return;
                 }
-
 
                 // Even though we have the data, if we are stopped we shouldn't use the disk
                 // regardless.
@@ -366,6 +371,15 @@ impl Torrent {
         } else {
             self.choker.update_upload(&mut self.peers)
         };
+    }
+
+    fn start(&self) {
+        debug!(self.l, "Sending start request");
+        TRACKER.tx.send(tracker::Request::started(self)).unwrap();
+        // TODO: Consider repeatedly sending out these during annoucne intervals
+        if !self.info.private {
+            TRACKER.tx.send(tracker::Request::DHTAnnounce(self.info.hash)).unwrap();
+        }
     }
 
     fn complete(&self) -> bool {

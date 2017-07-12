@@ -317,6 +317,12 @@ impl Peer {
             }
         }
     }
+
+    pub fn send_port(&mut self, port: u16) {
+        if let Err(e) = self.conn.write_message(Message::Port(port)) {
+            self.error = Some(e);
+        }
+    }
 }
 
 impl fmt::Debug for Peer {

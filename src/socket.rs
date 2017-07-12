@@ -34,6 +34,10 @@ impl Socket {
         Ok(Socket { conn, throttle: None })
     }
 
+    pub fn addr(&self) -> SocketAddr {
+        self.conn.peer_addr().unwrap()
+    }
+
     pub fn from_stream(conn: TcpStream) -> io::Result<Socket> {
         conn.set_nonblocking(true)?;
         Ok(Socket { conn, throttle: None })

@@ -42,6 +42,14 @@ impl Error for BError {
 }
 
 impl BEncode {
+    pub fn from_int(i: i64) -> BEncode {
+        BEncode::Int(i)
+    }
+
+    pub fn from_str(s: &str) -> BEncode {
+        BEncode::String(Vec::from(s))
+    }
+
     pub fn to_int(self) -> Option<i64> {
         match self {
             BEncode::Int(v) => Some(v),
@@ -110,6 +118,12 @@ impl BEncode {
             BEncode::Dict(ref v) => Some(v),
             _ => None,
         }
+    }
+
+    pub fn encode_to_buf(&self) -> Vec<u8> {
+        let mut buf = Cursor::new(Vec::new());
+        self.encode(&mut buf).unwrap();
+        buf.into_inner()
     }
 
     pub fn encode<W: io::Write> (&self, w: &mut W) -> io::Result<()> {

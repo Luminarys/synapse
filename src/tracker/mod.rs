@@ -2,6 +2,7 @@ mod http;
 mod udp;
 mod errors;
 mod dns;
+mod dht;
 
 use byteorder::{BigEndian, ReadBytesExt};
 use std::net::{SocketAddr, SocketAddrV4, Ipv4Addr};
@@ -22,6 +23,7 @@ pub struct Tracker {
     dns_res: amy::Receiver<dns::QueryResponse>,
     http: http::Handler,
     udp: udp::Handler,
+    dht: dht::Manager,
     dns: dns::Resolver,
     timer: usize,
     l: Logger,
@@ -38,6 +40,7 @@ impl Tracker {
             queue,
             http: http::Handler::new(reg.clone(), l.new(o!("mod" => "http"))),
             udp: udp::Handler::new(&reg, l.new(o!("mod" => "udp"))).unwrap(),
+            dht: dht::Manager::new(&reg, l.new(o!("mod" => "dht"))).unwrap(),
             l,
             poll,
             dns,
@@ -48,6 +51,8 @@ impl Tracker {
     }
 
     pub fn run(&mut self) {
+        self.dht.init();
+
         debug!(self.l, "Initialized!");
         'outer: loop {
             for event in self.poll.wait(10).unwrap() {
@@ -105,6 +110,18 @@ impl Tracker {
                         self.send_response((id, Err(e)));
                     }
                 }
+                Request::GetPeers(gp) => {
+                    debug!(self.l, "Handling dht peer find req!");
+                    self.dht.get_peers(gp.id, gp.hash);
+                }
+                Request::AddNode(addr) => {
+                    debug!(self.l, "Handling dht node addition req!");
+                    self.dht.add_addr(addr);
+                }
+                Request::DHTAnnounce(hash) => {
+                    debug!(self.l, "Handling dht node addition req!");
+                    self.dht.announce(hash);
+                }
                 Request::Shutdown => {
                     return Err(());
                 }
@@ -138,6 +155,7 @@ impl Tracker {
         }
 
         self.dns.tick();
+        self.dht.tick();
     }
 
 
@@ -153,6 +171,10 @@ impl Tracker {
             }
         } else if self.udp.id() == event.id {
             for resp in self.udp.readable() {
+                self.send_response(resp);
+            }
+        } else if self.dht.id() == event.id {
+            for resp in self.dht.readable() {
                 self.send_response(resp);
             }
         } else if self.dns.contains(event.id) {
@@ -194,6 +216,9 @@ unsafe impl Sync for Handle {}
 #[derive(Debug)]
 pub enum Request {
     Announce(Announce),
+    GetPeers(GetPeers),
+    AddNode(SocketAddr),
+    DHTAnnounce([u8; 20]),
     Shutdown,
 }
 
@@ -207,6 +232,12 @@ pub struct Announce {
     downloaded: u64,
     left: u64,
     event: Option<Event>,
+}
+
+#[derive(Debug)]
+pub struct GetPeers {
+    id: usize,
+    hash: [u8; 20],
 }
 
 impl Announce {

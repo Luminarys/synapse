@@ -22,6 +22,8 @@ extern crate threadpool;
 #[macro_use]
 extern crate error_chain;
 extern crate c_ares;
+extern crate chrono;
+extern crate num;
 
 mod bencode;
 mod torrent;
@@ -39,6 +41,8 @@ use std::{time, env, thread};
 use std::sync::atomic;
 use std::io::Read;
 use slog::Drain;
+
+pub const DHT_EXT: (usize, u8) = (7, 1);
 
 lazy_static! {
     pub static ref TC: atomic::AtomicUsize = {
@@ -84,7 +88,7 @@ lazy_static! {
         }
 
         let mut rng = rand::thread_rng();
-        for i in 8..19 {
+        for i in prefix.len()..20 {
             pid[i] = rng.gen::<u8>();
         }
         pid
@@ -131,7 +135,6 @@ lazy_static! {
 
 fn main() {
     info!(LOG, "Initializing!");
-
     CONFIG.port;
     LISTENER.init();
     RPC.init();
