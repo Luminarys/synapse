@@ -1,5 +1,5 @@
 use std::net::{SocketAddr, UdpSocket};
-use std::{io, sync};
+use std::io;
 use self::io::{Read, Write};
 use num::bigint::BigUint;
 use {amy, tracker, CONFIG};

@@ -3,7 +3,6 @@ use std::os::unix::io::{RawFd, AsRawFd};
 use std::io::{self, ErrorKind};
 use throttle::Throttle;
 use net2::{TcpBuilder, TcpStreamExt};
-use std::sync::Arc;
 use amy;
 
 const EINPROGRESS: i32 = 115;
@@ -43,6 +42,7 @@ impl Socket {
         Ok(Socket { conn, throttle: None })
     }
 
+    #[cfg(test)]
     pub fn empty() -> Socket {
         let conn = TcpBuilder::new_v4().unwrap().to_tcp_stream().unwrap();
         Socket { conn, throttle: None }

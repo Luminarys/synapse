@@ -1,5 +1,5 @@
 use std::{io, thread};
-use std::sync::{atomic, mpsc};
+use std::sync::atomic;
 use std::fmt::Debug;
 use {amy, slog};
 use {TC, LOG};

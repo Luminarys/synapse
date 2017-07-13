@@ -39,15 +39,25 @@ mod throttle;
 mod config;
 
 use std::{time, env, thread};
-use std::sync::atomic;
+use std::sync::{atomic, mpsc};
 use std::io::{self, Read};
 use slog::Drain;
+use control::acio;
 
 pub const DHT_EXT: (usize, u8) = (7, 1);
+
+/// Throttler max token amount
+pub const THROT_TOKS: usize = 2 * 1024 * 1024;
+
+pub const RAREST_PKR: bool = true;
 
 lazy_static! {
     pub static ref TC: atomic::AtomicUsize = {
         atomic::AtomicUsize::new(0)
+    };
+
+    pub static ref SHUTDOWN: atomic::AtomicBool = {
+        atomic::AtomicBool::new(false)
     };
 
     pub static ref CONFIG: config::Config = {
@@ -95,12 +105,6 @@ lazy_static! {
         pid
     };
 
-    pub static ref CONTROL: control::Handle = {
-        TC.fetch_add(1, atomic::Ordering::SeqCst);
-        let log = LOG.new(o!("thread" => "control"));
-        control::start(log)
-    };
-
     pub static ref LOG: slog::Logger = {
         let decorator = slog_term::TermDecorator::new().build();
         let drain = slog_term::FullFormat::new(decorator).build().fuse();
@@ -110,13 +114,41 @@ lazy_static! {
 }
 
 fn init() -> io::Result<()> {
-    let mut cpoll = amy::Poller::new()?;
+    let cpoll = amy::Poller::new()?;
     let mut creg = cpoll.get_registrar()?;
     let dh = disk::start(&mut creg)?;
     let lh = listener::start(&mut creg)?;
     let rh = rpc::start(&mut creg)?;
     let th = tracker::start(&mut creg)?;
-    Ok(())
+    let chans = acio::ACChans {
+        disk_tx: dh.tx,
+        disk_rx: dh.rx,
+        rpc_tx: rh.tx,
+        rpc_rx: rh.rx,
+        trk_tx: th.tx,
+        trk_rx: th.rx,
+        lst_tx: lh.tx,
+        lst_rx: lh.rx,
+    };
+    let (tx, rx) = mpsc::channel();
+    thread::spawn(move || {
+        let throttler = throttle::Throttler::new(0, 0, THROT_TOKS, &creg);
+        if let Ok(acio) = acio::ACIO::new(cpoll, creg, chans, LOG.new(o!("ctrl" => "acio"))) {
+            if let Ok(mut ctrl) = control::Control::new(acio, throttler, LOG.new(o!("thread" => "ctrl"))) {
+                tx.send(true).unwrap();
+                ctrl.run();
+            } else {
+                tx.send(false).unwrap();
+            }
+        } else {
+            tx.send(false).unwrap();
+        }
+    });
+    if rx.recv().unwrap() {
+        Ok(())
+    } else {
+        util::io_err("Failed to intialize control thread!")
+    }
 }
 
 fn main() {
@@ -134,7 +166,8 @@ fn main() {
         i += time::Duration::from_secs(1);
         if t.wait(i).is_some() {
             info!(LOG, "Shutting down!");
-            CONTROL.ctrl_tx.lock().unwrap().send(control::Request::Shutdown).unwrap();
+            SHUTDOWN.store(true, atomic::Ordering::SeqCst);
+            // CONTROL.ctrl_tx.lock().unwrap().send(control::Request::Shutdown).unwrap();
             while TC.load(atomic::Ordering::SeqCst) != 0 {
                 thread::sleep(time::Duration::from_secs(1));
             }

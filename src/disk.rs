@@ -1,5 +1,5 @@
-use std::sync::{mpsc, Arc, atomic};
-use std::{fs, fmt, thread, path, time};
+use std::sync::Arc;
+use std::{fs, fmt, path, time};
 use std::io::{self, Seek, SeekFrom, Write, Read};
 use std::path::PathBuf;
 use torrent::Info;
@@ -8,7 +8,7 @@ use util::torrent_name;
 use threadpool::ThreadPool;
 use sha1::Sha1;
 use amy;
-use {handle, CONTROL, CONFIG, TC};
+use {handle, CONFIG};
 
 const MAX_THREADS: usize = 10;
 const BACKOFF_MS: u64 = 50;
@@ -16,7 +16,6 @@ const POLL_INT_MS: usize = 10;
 
 pub struct Disk {
     poll: amy::Poller,
-    reg: amy::Registrar,
     ch: handle::Handle<Request, Response>,
     l: Logger,
     pool: ThreadPool,
@@ -210,11 +209,10 @@ impl fmt::Debug for Response {
 }
 
 impl Disk {
-    pub fn new(poll: amy::Poller, reg: amy::Registrar, ch: handle::Handle<Request, Response>, l: Logger) -> Disk {
+    pub fn new(poll: amy::Poller, ch: handle::Handle<Request, Response>, l: Logger) -> Disk {
         let threads = 2;
         Disk {
             poll,
-            reg,
             ch,
             l,
             pool: ThreadPool::new_with_name("disk_pool".into(), threads),
@@ -283,9 +281,9 @@ impl Disk {
 }
 
 pub fn start(creg: &mut amy::Registrar) -> io::Result<handle::Handle<Response, Request>> {
-    let mut poll = amy::Poller::new()?;
+    let poll = amy::Poller::new()?;
     let mut reg = poll.get_registrar()?;
     let (ch, dh) = handle::Handle::new(creg, &mut reg)?;
-    dh.run("disk", move |h, l| Disk::new(poll, reg, h, l).run());
+    dh.run("disk", move |h, l| Disk::new(poll, h, l).run());
     Ok(ch)
 }

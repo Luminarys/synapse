@@ -19,19 +19,11 @@ impl Bitfield {
         }
     }
 
-    pub fn num_set(&self) -> u64 {
-        self.iter().count() as u64
-    }
-
     pub fn from(b: Box<[u8]>, len: u64) -> Bitfield {
         Bitfield {
             len: len,
             data: b,
         }
-    }
-
-    pub fn extract(self) -> (Box<[u8]>, u64) {
-        (self.data, self.len)
     }
 
     pub fn len(&self) -> u64 {

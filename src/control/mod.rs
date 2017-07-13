@@ -1,92 +1,62 @@
-use std::{thread, fmt, fs, io, time};
+use std::{fs, io, time};
 use slog::Logger;
-use std::io::{Read};
-use {rpc, tracker, disk, listener, DISK, RPC, CONFIG, TC, TRACKER, LISTENER};
-use util::io_err;
-use amy::{self, Poller, Registrar};
+use std::io::Read;
+use {rpc, tracker, disk, listener, CONFIG};
+use util::{io_err, io_err_val};
 use torrent::{self, peer, Torrent};
 use std::collections::HashMap;
-use bencode::BEncode;
-use std::sync::{Arc, Mutex};
 use throttle::Throttler;
 
+pub mod cio;
+pub mod acio;
 mod job;
-mod cio;
-mod acio;
 
-/// Throttler max token amount
-const THROT_TOKS: usize = 2 * 1024 * 1024;
 /// Tracker update job interval
 const TRK_JOB_SECS: u64 = 60;
 /// Unchoke rotation job interval
 const UNCHK_JOB_SECS: u64 = 30;
 /// Session serialization job interval
 const SES_JOB_SECS: u64 = 10;
-/// Bad peer reap interval
-const REAP_JOB_SECS: u64 = 2;
 /// Interval to requery all jobs and execute if needed
 const JOB_INT_MS: usize = 1000;
-/// Interval to poll for events
-const POLL_INT_MS: usize = 3;
 
-pub struct Control {
-    trk_rx: amy::Receiver<tracker::Response>,
-    disk_rx: amy::Receiver<disk::Response>,
-    ctrl_rx: amy::Receiver<Request>,
+pub struct Control<T: cio::CIO> {
     throttler: Throttler,
-    reg: Arc<Registrar>,
-    poll: Poller,
+    cio: T,
     tid_cnt: usize,
     job_timer: usize,
-    jobs: job::JobManager,
-    torrents: HashMap<usize, Torrent>,
+    jobs: job::JobManager<T>,
+    torrents: HashMap<usize, Torrent<T>>,
     peers: HashMap<usize, usize>,
     hash_idx: HashMap<[u8; 20], usize>,
     l: Logger,
 }
 
-pub struct Handle {
-    pub trk_tx: Mutex<amy::Sender<tracker::Response>>,
-    pub disk_tx: Mutex<amy::Sender<disk::Response>>,
-    pub ctrl_tx: Mutex<amy::Sender<Request>>,
-}
-
-unsafe impl Sync for Handle {}
-
-pub enum Request {
-    AddTorrent(BEncode),
-    AddPeer(peer::PeerConn, [u8; 20]),
-    RPC(rpc::Request),
-    Shutdown,
-}
-
-impl fmt::Debug for Request {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "Request")
-    }
-}
-
-impl Control {
-    pub fn new(poll: Poller,
-               trk_rx: amy::Receiver<tracker::Response>,
-               disk_rx: amy::Receiver<disk::Response>,
-               ctrl_rx: amy::Receiver<Request>,
-               l: Logger) -> Control {
+impl<T: cio::CIO> Control<T> {
+    pub fn new(mut cio: T,
+               throttler: Throttler,
+               l: Logger) -> io::Result<Control<T>> {
         let torrents = HashMap::new();
         let peers = HashMap::new();
         let hash_idx = HashMap::new();
-        let reg = Arc::new(poll.get_registrar().unwrap());
         // Every minute check to update trackers;
         let mut jobs = job::JobManager::new();
         jobs.add_job(job::TrackerUpdate, time::Duration::from_secs(TRK_JOB_SECS));
         jobs.add_job(job::UnchokeUpdate, time::Duration::from_secs(UNCHK_JOB_SECS));
         jobs.add_job(job::SessionUpdate, time::Duration::from_secs(SES_JOB_SECS));
-        jobs.add_job(job::ReapPeers, time::Duration::from_secs(REAP_JOB_SECS));
-        let job_timer = reg.set_interval(JOB_INT_MS).unwrap();
+        let job_timer = cio.set_timer(JOB_INT_MS).map_err(|_| io_err_val("timer failure!"))?;
         // 5 MiB max bucket
-        let throttler = Throttler::new(0, 0, THROT_TOKS, &reg);
-        Control { trk_rx, disk_rx, ctrl_rx, poll, torrents, peers,
-        hash_idx, reg, tid_cnt: 0, throttler, jobs, job_timer, l }
+        Ok(Control {
+            throttler,
+            cio,
+            tid_cnt: 0,
+            job_timer,
+            jobs,
+            torrents,
+            peers,
+            hash_idx,
+            l
+        })
     }
 
     pub fn run(&mut self) {
@@ -94,8 +64,10 @@ impl Control {
             warn!(self.l, "Session deserialization failed!");
         }
         debug!(self.l, "Initialized!");
+        let mut events = Vec::with_capacity(20);
         loop {
-            for event in self.poll.wait(POLL_INT_MS).unwrap() {
+            self.cio.poll(&mut events);
+            for event in events.drain(..) {
                 if self.handle_event(event) {
                     self.serialize();
                     return;
@@ -136,10 +108,9 @@ impl Control {
         trace!(self.l, "Succesfully read file");
 
         let tid = self.tid_cnt;
-        let r = self.reg.clone();
         let throttle = self.throttler.get_throttle(tid);
         let log = self.l.new(o!("torrent" => tid));
-        if let Ok(t) = Torrent::deserialize(tid, &data, throttle, r, log) {
+        if let Ok(t) = Torrent::deserialize(tid, &data, throttle, self.cio.new_handle(), log) {
             trace!(self.l, "Succesfully parsed torrent file {:?}", dir.path());
             self.hash_idx.insert(t.info().hash, tid);
             self.tid_cnt += 1;
@@ -150,34 +121,65 @@ impl Control {
         Ok(())
     }
 
-    fn handle_event(&mut self, not: amy::Notification) -> bool {
-        match not.id {
-            id if id == self.trk_rx.get_id() => self.handle_trk_ev(),
-            id if id == self.disk_rx.get_id() => self.handle_disk_ev(),
-            id if id == self.ctrl_rx.get_id() => return self.handle_ctrl_ev(),
-            id if id == self.throttler.id() => self.throttler.update(),
-            id if id == self.throttler.fid() => self.flush_blocked_peers(),
-            id if id == self.job_timer => self.update_jobs(),
-            _ => self.handle_peer_ev(not),
+    fn handle_event(&mut self, event: cio::Event) -> bool {
+        match event {
+            cio::Event::Tracker(Ok(e)) => {
+                self.handle_trk_ev(e);
+            }
+            cio::Event::Tracker(Err(e)) => {
+                error!(self.l, "tracker error: {:?}", e.backtrace());
+            }
+            cio::Event::Disk(Ok(e)) => {
+                self.handle_disk_ev(e);
+            }
+            cio::Event::Disk(Err(e)) => {
+                error!(self.l, "disk error: {:?}", e.backtrace());
+            }
+            cio::Event::RPC(Ok(e)) => {
+                return self.handle_rpc_ev(e);
+            }
+            cio::Event::RPC(Err(e)) => {
+                error!(self.l, "rpc error: {:?}", e.backtrace());
+            }
+            cio::Event::Listener(Ok(e)) => {
+                self.handle_lst_ev(e);
+            }
+            cio::Event::Listener(Err(e)) => {
+                error!(self.l, "listener error: {:?}", e.backtrace());
+            }
+            cio::Event::Timer(t) => {
+                if t == self.throttler.id() {
+                    self.throttler.update();
+                } else if t == self.throttler.fid() {
+                    self.flush_blocked_peers();
+                } else if t == self.job_timer {
+                    self.update_jobs();
+                } else {
+                    error!(self.l, "unknown timer id {} reported", t);
+                }
+            }
+            cio::Event::Peer { peer, event } => {
+                self.handle_peer_ev(peer, event);
+            }
         }
         false
     }
 
-    fn handle_trk_ev(&mut self) {
+    fn handle_trk_ev(&mut self, tr: tracker::Response) {
         debug!(self.l, "Handling tracker response");
-        while let Ok((id, resp)) = self.trk_rx.try_recv() {
-            {
-                let torrent = self.torrents.get_mut(&id).unwrap();
-                torrent.set_tracker_response(&resp);
-            }
-            trace!(self.l, "Adding peers!");
-            if let Ok(r) = resp {
-                for ip in r.peers.iter() {
-                    trace!(self.l, "Adding peer({:?})!", ip);
-                    if let Ok(peer) = peer::PeerConn::new_outgoing(ip) {
-                        trace!(self.l, "Added peer({:?})!", ip);
-                        self.add_peer(id, peer);
-                    }
+        let id = tr.0;
+        let resp = tr.1;
+        {
+            let torrent = self.torrents.get_mut(&id).unwrap();
+            torrent.set_tracker_response(&resp);
+        }
+        trace!(self.l, "Adding peers!");
+        if let Ok(r) = resp {
+            for ip in r.peers.iter() {
+                trace!(self.l, "Adding peer({:?})!", ip);
+                if let Ok(peer) = peer::PeerConn::new_outgoing(ip) {
+                    trace!(self.l, "Added peer({:?})!", ip);
+                    self.add_peer(id, peer);
                 }
             }
         }
@@ -188,73 +190,32 @@ impl Control {
         self.jobs.update(&mut self.torrents);
     }
 
-    fn handle_disk_ev(&mut self) {
-        while let Ok(resp) = self.disk_rx.try_recv() {
-            trace!(self.l, "Got disk response {:?}!", resp);
-            let torrent = &mut self.torrents.get_mut(&resp.tid()).unwrap();
-            torrent.handle_disk_resp(resp);
+    fn handle_disk_ev(&mut self, resp: disk::Response) {
+        trace!(self.l, "Got disk response {:?}!", resp);
+        let torrent = &mut self.torrents.get_mut(&resp.tid()).unwrap();
+        torrent.handle_disk_resp(resp);
+    }
+
+    fn handle_lst_ev(&mut self, msg: listener::Message) {
+        debug!(self.l, "Adding peer for torrent with hash {:?}!", msg.hash);
+        if let Some(tid) = self.hash_idx.get(&msg.hash).cloned() {
+            self.add_peer(tid, msg.peer);
+        } else {
+            warn!(self.l, "Couldn't add peer, torrent with hash {:?} doesn't exist", msg.hash);
         }
     }
 
-    fn handle_ctrl_ev(&mut self) -> bool {
-        loop {
-            match self.ctrl_rx.try_recv() {
-                Ok(Request::AddTorrent(b)) => {
-                    if let Ok(i) = torrent::Info::from_bencode(b) {
-                        self.add_torrent(i);
-                    }
-                }
-                Ok(Request::AddPeer(p, hash)) => {
-                    trace!(self.l, "Adding peer for torrent with hash {:?}!", hash);
-                    if let Some(tid) = self.hash_idx.get(&hash).cloned() {
-                        self.add_peer(tid, p);
-                    } else {
-                        warn!(self.l, "Couldn't add peer, torrent with hash {:?} doesn't exist", hash);
-                    }
-                }
-                Ok(Request::RPC(r)) => {
-                    self.handle_rpc(r);
-                }
-                Ok(Request::Shutdown) => {
-                    return true;
-                }
-                Err(_) => { break; }
-            }
-        }
-        false
-    }
-
-    fn handle_peer_ev(&mut self, not: amy::Notification) {
-        let pid = not.id;
-        if not.event.readable() {
-            self.peer_readable(pid);
-        }
-        if not.event.writable() {
-            self.peer_writable(pid);
+    fn handle_peer_ev(&mut self, peer: cio::PID, ev: cio::Result<torrent::Message>) {
+        let torrent = self.torrents.get_mut(&self.peers[&peer]).unwrap();
+        if torrent.peer_ev(peer, ev).is_err() {
+            self.peers.remove(&peer);
         }
     }
 
     fn flush_blocked_peers(&mut self) {
-        trace!(self.l, "Flushing blocked peer!");
-        for pid in self.throttler.flush_dl() {
-            trace!(self.l, "Flushing blocked peer!");
-            self.peer_readable(pid);
-        }
-        for pid in self.throttler.flush_ul() {
-            self.peer_writable(pid);
-        }
-    }
-
-    fn peer_readable(&mut self, pid: usize) {
-        let torrent = self.torrents.get_mut(&self.peers[&pid]).unwrap();
-        trace!(self.l, "Peer {:?} readable", pid);
-        torrent.peer_readable(pid);
-    }
-
-    fn peer_writable(&mut self, pid: usize) {
-        let torrent = self.torrents.get_mut(&self.peers[&pid]).unwrap();
-        trace!(self.l, "Peer {:?} writable", pid);
-        torrent.peer_writable(pid);
+        trace!(self.l, "Flushing blocked peers!");
+        self.cio.flush_peers(self.throttler.flush_dl());
+        self.cio.flush_peers(self.throttler.flush_ul());
     }
 
     fn add_torrent(&mut self, info: torrent::Info) {
@@ -264,77 +225,86 @@ impl Control {
             return;
         }
         let tid = self.tid_cnt;
-        let r = self.reg.clone();
         let throttle = self.throttler.get_throttle(tid);
         let log = self.l.new(o!("torrent" => tid));
-        let t = Torrent::new(tid, info, throttle, r, log);
+        let t = Torrent::new(tid, info, throttle, self.cio.new_handle(), log);
         self.hash_idx.insert(t.info().hash, tid);
         self.tid_cnt += 1;
         self.torrents.insert(tid, t);
     }
 
-    fn handle_rpc(&mut self, req: rpc::Request) {
+    fn send_rpc_msg(&mut self, resp: rpc::Response) {
+        self.cio.msg_rpc(rpc::CMessage::Response(resp));
+    }
+
+    fn handle_rpc_ev(&mut self, req: rpc::Request) -> bool {
         match req {
             rpc::Request::ListTorrents => {
                 let mut resp = Vec::new();
                 for (id, _) in self.torrents.iter() {
                     resp.push(*id);
                 }
-                RPC.tx.send(rpc::Response::Torrents(resp)).unwrap();
+                self.send_rpc_msg(rpc::Response::Torrents(resp));
             }
             rpc::Request::TorrentInfo(i) => {
-                if let Some(torrent) = self.torrents.get(&i) {
-                    RPC.tx.send(rpc::Response::TorrentInfo(torrent.rpc_info())).unwrap();
+                let resp = if let Some(torrent) = self.torrents.get(&i) {
+                    rpc::Response::TorrentInfo(torrent.rpc_info())
                 } else {
-                    RPC.tx.send(rpc::Response::Err("Torrent ID not found!".to_owned())).unwrap();
-                }
+                    rpc::Response::Err("Torrent ID not found!".to_owned())
+                };
+                self.send_rpc_msg(resp);
             }
             rpc::Request::AddTorrent(data) => {
-                match torrent::Info::from_bencode(data) {
+                let resp = match torrent::Info::from_bencode(data) {
                     Ok(i) => {
                         self.add_torrent(i);
-                        RPC.tx.send(rpc::Response::Ack).unwrap();
+                        rpc::Response::Ack
                     }
                     Err(e) => {
-                        RPC.tx.send(rpc::Response::Err(e.to_owned())).unwrap();
+                        rpc::Response::Err(e.to_owned())
                     }
-                }
+                };
+                self.send_rpc_msg(resp);
             }
             rpc::Request::PauseTorrent(id) => {
-                if let Some(t) = self.torrents.get_mut(&id) {
+                let resp = if let Some(t) = self.torrents.get_mut(&id) {
                     t.pause();
-                    RPC.tx.send(rpc::Response::Ack).unwrap();
+                    rpc::Response::Ack
                 } else {
-                    RPC.tx.send(rpc::Response::Err("Torrent not found!".to_owned())).unwrap();
-                }
+                    rpc::Response::Err("Torrent not found!".to_owned())
+                };
+                self.send_rpc_msg(resp);
             }
             rpc::Request::ResumeTorrent(id) => {
-                if let Some(t) = self.torrents.get_mut(&id) {
+                let resp = if let Some(t) = self.torrents.get_mut(&id) {
                     t.resume();
-                    RPC.tx.send(rpc::Response::Ack).unwrap();
+                    rpc::Response::Ack
                 } else {
-                    RPC.tx.send(rpc::Response::Err("Torrent not found!".to_owned())).unwrap();
-                }
+                    rpc::Response::Err("Torrent not found!".to_owned())
+                };
+                self.send_rpc_msg(resp);
             }
             rpc::Request::RemoveTorrent(id) => {
-                if let Some(t) = self.torrents.remove(&id) {
+                let resp = if let Some(mut t) = self.torrents.remove(&id) {
                     self.hash_idx.remove(&t.info().hash);
                     t.delete();
-                    RPC.tx.send(rpc::Response::Ack).unwrap();
+                    rpc::Response::Ack
                 } else {
-                    RPC.tx.send(rpc::Response::Err("Torrent not found!".to_owned())).unwrap();
-                }
+                    rpc::Response::Err("Torrent not found!".to_owned())
+                };
+                self.send_rpc_msg(resp);
             }
             rpc::Request::ThrottleUpload(amnt) => {
                 self.throttler.set_ul_rate(amnt);
-                RPC.tx.send(rpc::Response::Ack).unwrap();
+                self.send_rpc_msg(rpc::Response::Ack);
             }
             rpc::Request::ThrottleDownload(amnt) => {
                 self.throttler.set_dl_rate(amnt);
-                RPC.tx.send(rpc::Response::Ack).unwrap();
+                self.send_rpc_msg(rpc::Response::Ack);
             }
-            rpc::Request::Shutdown => { unimplemented!(); }
+            rpc::Request::Shutdown => { return true; }
         }
+        false
     }
 
     fn add_peer(&mut self, id: usize, peer: peer::PeerConn) {
@@ -346,25 +316,13 @@ impl Control {
     }
 }
 
-pub fn start(l: Logger) -> Handle {
-    debug!(l, "Initializing!");
-    let poll = amy::Poller::new().unwrap();
-    let mut reg = poll.get_registrar().unwrap();
-    let (trk_tx, trk_rx) = reg.channel().unwrap();
-    let (disk_tx, disk_rx) = reg.channel().unwrap();
-    let (ctrl_tx, ctrl_rx) = reg.channel().unwrap();
-    thread::spawn(move || {
-        {
-            Control::new(poll, trk_rx, disk_rx, ctrl_rx, l.clone()).run();
-            use std::sync::atomic;
-            TC.fetch_sub(1, atomic::Ordering::SeqCst);
-        }
-        debug!(l, "Triggering thread shutdown sequence!");
-        DISK.tx.send(disk::Request::shutdown()).unwrap();
-        RPC.rtx.send(rpc::Request::Shutdown).unwrap();
-        TRACKER.tx.send(tracker::Request::Shutdown).unwrap();
-        LISTENER.tx.send(listener::Request::Shutdown).unwrap();
-        debug!(l, "Shutdown!");
-    });
-    Handle { trk_tx: Mutex::new(trk_tx), disk_tx: Mutex::new(disk_tx), ctrl_tx: Mutex::new(ctrl_tx) }
+impl<T: cio::CIO> Drop for Control<T> {
+    fn drop(&mut self) {
+        debug!(self.l, "Triggering thread shutdown sequence!");
+        self.cio.msg_disk(disk::Request::shutdown());
+        self.cio.msg_rpc(rpc::CMessage::Shutdown);
+        self.cio.msg_trk(tracker::Request::Shutdown);
+        self.cio.msg_listener(listener::Request::Shutdown);
+        debug!(self.l, "Shutdown!");
+    }
 }

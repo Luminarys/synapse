@@ -1,12 +1,11 @@
-use std::{thread, fmt};
+use std::{fmt};
 use std::io::{self, ErrorKind};
 use std::net::{SocketAddrV4, Ipv4Addr, TcpListener};
 use amy::{self, Poller, Registrar};
 use std::collections::HashMap;
-use std::sync::mpsc;
 use slog::Logger;
 use torrent::peer::PeerConn;
-use {control, handle, CONTROL, CONFIG, TC};
+use {handle, CONFIG};
 
 pub struct Listener {
     listener: TcpListener,
@@ -19,8 +18,8 @@ pub struct Listener {
 }
 
 pub struct Message {
-    peer: PeerConn,
-    hash: [u8; 20],
+    pub peer: PeerConn,
+    pub hash: [u8; 20],
 }
 
 impl fmt::Debug for Message {
@@ -99,7 +98,12 @@ impl Listener {
                 debug!(self.l, "Completed handshake({:?}) with peer, transferring!", hs);
                 let peer = self.incoming.remove(&pid).unwrap();
                 self.reg.deregister(peer.sock()).unwrap();
-                CONTROL.ctrl_tx.lock().unwrap().send(control::Request::AddPeer(peer, hs.get_handshake_hash())).unwrap();
+                if self.ch.send(Message {
+                    peer,
+                    hash: hs.get_handshake_hash(),
+                }).is_err() {
+                    error!(self.l, "failed to send peer to ctrl");
+                }
             }
             Ok(None) => { }
             Err(_) => {
@@ -112,7 +116,7 @@ impl Listener {
 
 pub fn start(creg: &mut amy::Registrar) -> io::Result<handle::Handle<Message, Request>> {
     let poll = Poller::new()?;
-    let reg = poll.get_registrar()?;
+    let mut reg = poll.get_registrar()?;
     let ip = Ipv4Addr::new(0, 0, 0, 0);
     let port = CONFIG.port;
     let listener = TcpListener::bind(SocketAddrV4::new(ip, port))?;

@@ -6,13 +6,13 @@ mod dht;
 
 use byteorder::{BigEndian, ReadBytesExt};
 use std::net::{SocketAddr, SocketAddrV4, Ipv4Addr};
-use std::{thread, result, io};
-use std::sync::Arc;
+use std::{result, io};
 use slog::Logger;
 use torrent::Torrent;
 use bencode::BEncode;
 use url::Url;
-use {CONTROL, CONFIG, TC, LOG};
+use {CONFIG, LOG};
+use control::cio;
 use handle;
 use amy;
 pub use self::errors::{Result, ResultExt, Error, ErrorKind};
@@ -53,8 +53,8 @@ pub struct Announce {
 
 #[derive(Debug)]
 pub struct GetPeers {
-    id: usize,
-    hash: [u8; 20],
+    pub id: usize,
+    pub hash: [u8; 20],
 }
 
 
@@ -248,17 +248,8 @@ impl Tracker {
     }
 }
 
-impl Announce {
-    pub fn stopping(&self) -> bool {
-        match self.event {
-            Some(Event::Stopped) => true,
-            _ => false,
-        }
-    }
-}
-
 impl Request {
-    pub fn new_announce(torrent: &Torrent, event: Option<Event>) -> Request {
+    pub fn new_announce<T: cio::CIO>(torrent: &Torrent<T>, event: Option<Event>) -> Request {
         Request::Announce(Announce {
             id: torrent.id(),
             url: torrent.info().announce.clone(),
@@ -271,19 +262,19 @@ impl Request {
         })
     }
 
-    pub fn started(torrent: &Torrent) -> Request {
+    pub fn started<T: cio::CIO>(torrent: &Torrent<T>) -> Request {
         Request::new_announce(torrent, Some(Event::Started))
     }
 
-    pub fn stopped(torrent: &Torrent) -> Request {
+    pub fn stopped<T: cio::CIO>(torrent: &Torrent<T>) -> Request {
         Request::new_announce(torrent, Some(Event::Stopped))
     }
 
-    pub fn completed(torrent: &Torrent) -> Request {
+    pub fn completed<T: cio::CIO>(torrent: &Torrent<T>) -> Request {
         Request::new_announce(torrent, Some(Event::Completed))
     }
 
-    pub fn interval(torrent: &Torrent) -> Request {
+    pub fn interval<T: cio::CIO>(torrent: &Torrent<T>) -> Request {
         Request::new_announce(torrent, None)
     }
 }
@@ -331,7 +322,7 @@ impl TrackerResponse {
 }
 
 pub fn start(creg: &mut amy::Registrar) -> io::Result<handle::Handle<Response, Request>> {
-    let mut poll = amy::Poller::new()?;
+    let poll = amy::Poller::new()?;
     let mut reg = poll.get_registrar()?;
     let (ch, dh) = handle::Handle::new(creg, &mut reg)?;
     let timer = reg.set_interval(150)?;

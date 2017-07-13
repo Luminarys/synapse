@@ -4,7 +4,6 @@ use tracker::{Announce, Result, ResultExt, Response, TrackerResponse, Event, Err
 use std::collections::HashMap;
 use {CONFIG, PEER_ID, amy};
 use util::bytes_to_addr;
-use std::sync::Arc;
 use std::io::{self, Write, Read, Cursor};
 use byteorder::{ReadBytesExt, WriteBytesExt, BigEndian};
 use slog::Logger;

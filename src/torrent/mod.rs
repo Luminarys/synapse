@@ -11,13 +11,14 @@ pub use self::peer::{Peer, PeerConn};
 pub use self::peer::Message;
 use self::picker::Picker;
 use std::fmt;
-use {amy, bincode, rpc, disk, DISK, TRACKER, DHT_EXT, CONFIG};
+use control::cio;
+use {bincode, rpc, disk, DHT_EXT, CONFIG, RAREST_PKR};
 use throttle::Throttle;
 use tracker::{self, TrackerResponse};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use util::{io_err_val, torrent_name};
+use util::torrent_name;
 use slog::Logger;
 
 #[derive(Clone, Debug, Serialize)]
@@ -38,17 +39,17 @@ struct TorrentData {
     status: Status,
 }
 
-pub struct Torrent {
+pub struct Torrent<T: cio::CIO> {
+    id: usize,
     pieces: Bitfield,
     info: Arc<Info>,
-    id: usize,
+    cio: T,
     downloaded: usize,
     uploaded: usize,
     throttle: Throttle,
     tracker: TrackerStatus,
     tracker_update: Option<Instant>,
-    reg: Arc<amy::Registrar>,
-    peers: HashMap<usize, Peer>,
+    peers: HashMap<usize, Peer<T>>,
     leechers: HashSet<usize>,
     picker: Picker,
     status: Status,
@@ -77,18 +78,22 @@ impl Status {
     }
 }
 
-impl Torrent {
-    pub fn new(id: usize, info: Info, throttle: Throttle, reg: Arc<amy::Registrar>, l: Logger) -> Torrent {
+impl<T: cio::CIO> Torrent<T> {
+    pub fn new(id: usize, info: Info, throttle: Throttle, cio: T, l: Logger) -> Torrent<T> {
         debug!(l, "Creating {:?}", info);
         // Create empty initial files
         info.create_files().unwrap();
         let peers = HashMap::new();
         let pieces = Bitfield::new(info.pieces() as u64);
-        let picker = Picker::new_rarest(&info);
+        let picker = if RAREST_PKR {
+            Picker::new_rarest(&info)
+        } else {
+            Picker::new_sequential(&info)
+        };
         let leechers = HashSet::new();
-        let t = Torrent {
+        let mut t = Torrent {
             id, info: Arc::new(info), peers, pieces, picker,
-            uploaded: 0, downloaded: 0, reg, leechers, throttle,
+            uploaded: 0, downloaded: 0, cio, leechers, throttle,
             tracker: TrackerStatus::Updating,
             tracker_update: None, choker: choker::Choker::new(),
             l: l.clone(), dirty: false, status: Status::Pending,
@@ -97,21 +102,21 @@ impl Torrent {
         t
     }
 
-    pub fn deserialize(id: usize, data: &[u8], throttle: Throttle, reg: Arc<amy::Registrar>, l: Logger) -> Result<Torrent, bincode::Error> {
+    pub fn deserialize(id: usize, data: &[u8], throttle: Throttle, cio: T, l: Logger) -> Result<Torrent<T>, bincode::Error> {
         let mut d: TorrentData = bincode::deserialize(data)?;
         debug!(l, "Torrent data deserialized!");
         d.picker.unset_waiting();
         let peers = HashMap::new();
         let leechers = HashSet::new();
-        let t = Torrent {
+        let mut t = Torrent {
             id, info: Arc::new(d.info), peers, pieces: d.pieces, picker: d.picker,
-            uploaded: d.uploaded, downloaded: d.downloaded, reg, leechers, throttle,
+            uploaded: d.uploaded, downloaded: d.downloaded, cio, leechers, throttle,
             tracker: TrackerStatus::Updating,
             tracker_update: None, choker: choker::Choker::new(),
             l: l.clone(), dirty: false, status: d.status
         };
         if let Status::Validating = d.status {
-            DISK.tx.send(disk::Request::validate(t.id, t.info.clone())).unwrap();
+            t.cio.msg_disk(disk::Request::validate(t.id, t.info.clone()));
         }
         t.start();
         Ok(t)
@@ -128,13 +133,13 @@ impl Torrent {
         };
         let data = bincode::serialize(&d, bincode::Infinite).unwrap();
         debug!(self.l, "Sending serialization request!");
-        DISK.tx.send(disk::Request::serialize(self.id, data, self.info.hash)).unwrap();
+        self.cio.msg_disk(disk::Request::serialize(self.id, data, self.info.hash));
         self.dirty = false;
     }
 
-    pub fn delete(&self) {
+    pub fn delete(&mut self) {
         debug!(self.l, "Sending file deletion request!");
-        DISK.tx.send(disk::Request::delete(self.id, self.info.hash)).unwrap();
+        self.cio.msg_disk(disk::Request::delete(self.id, self.info.hash));
     }
 
     pub fn set_tracker_response(&mut self, resp: &tracker::Result<TrackerResponse>) {
@@ -161,16 +166,9 @@ impl Torrent {
             debug!(self.l, "Updating tracker at inteval!");
             let cur = Instant::now();
             if cur >= end {
-                TRACKER.tx.send(tracker::Request::interval(self)).unwrap();
+                let req = tracker::Request::interval(self);
+                self.cio.msg_trk(req);
             }
-        }
-    }
-
-    pub fn reap_peers(&mut self) {
-        debug!(self.l, "Reaping peers");
-        let to_remove = self.peers.iter().filter_map(|(i, p)| p.error().map(|_| *i)).collect::<Vec<_>>();
-        for pid in to_remove {
-            self.remove_peer_id(pid);
         }
     }
 
@@ -215,7 +213,8 @@ impl Torrent {
                 if invalid.is_empty() {
                     info!(self.l, "Torrent succesfully downloaded!");
                     self.status = Status::Idle;
-                    TRACKER.tx.send(tracker::Request::completed(self)).unwrap();
+                    let req = tracker::Request::completed(self);
+                    self.cio.msg_trk(req);
                 } else {
                     warn!(self.l, "Torrent has incorrect pieces {:?}, redownloading", invalid);
                     for piece in invalid {
@@ -231,19 +230,19 @@ impl Torrent {
         }
     }
 
-    pub fn peer_readable(&mut self, pid: usize) {
+    pub fn peer_ev(&mut self, pid: cio::PID, evt: cio::Result<Message>) -> Result<(), ()> {
         let mut peer = self.peers.remove(&pid).unwrap();
-        while let Some(msg) = peer.read() {
-            self.handle_msg(msg, &mut peer);
+        if let Ok(mut msg) = evt {
+            if peer.handle_msg(&mut msg).is_ok() && self.handle_msg(msg, &mut peer).is_ok() {
+                self.peers.insert(pid, peer);
+                return Ok(());
+            }
         }
-        if peer.error().is_some() {
-            self.cleanup_peer(&mut peer);
-        } else {
-            self.peers.insert(pid, peer);
-        }
+        self.cleanup_peer(&mut peer);
+        Err(())
     }
 
-    pub fn handle_msg(&mut self, msg: Message, peer: &mut Peer) {
+    pub fn handle_msg(&mut self, msg: Message, peer: &mut Peer<T>) -> Result<(), ()> {
         trace!(self.l, "Received {:?} from peer", msg);
         match msg {
             Message::Handshake { rsv, .. } => {
@@ -271,9 +270,9 @@ impl Torrent {
                 self.picker.piece_available(idx);
             }
             Message::Port(p) => {
-                let mut s = peer.conn().sock().addr();
+                let mut s = peer.addr();
                 s.set_port(p);
-                TRACKER.tx.send(tracker::Request::AddNode(s)).unwrap();
+                self.cio.msg_trk(tracker::Request::AddNode(s));
             }
             Message::Unchoke => {
                 debug!(self.l, "Unchoked by: {:?}!", peer);
@@ -282,7 +281,7 @@ impl Torrent {
             Message::Piece { index, begin, data, length } => {
                 // Ignore a piece we already have, this could happen from endgame
                 if self.pieces.has_bit(index as u64) {
-                    return;
+                    return Ok(());
                 }
 
                 // Even though we have the data, if we are stopped we shouldn't use the disk
@@ -290,12 +289,11 @@ impl Torrent {
                 if !self.status.stopped() {
                     self.status = Status::Leeching;
                 } else {
-                    return;
+                    return Ok(());
                 }
 
                 if self.info.block_len(index, begin) != length {
-                    peer.set_error(io_err_val("Peer returned block of invalid len!"));
-                    return;
+                    return Err(());
                 }
 
                 // Internal data structures which are being serialized have changed, flag self as
@@ -310,7 +308,7 @@ impl Torrent {
 
                     // Begin validation if the torrent is done
                     if self.pieces.complete() {
-                        DISK.tx.send(disk::Request::validate(self.id, self.info.clone())).unwrap();
+                        self.cio.msg_disk(disk::Request::validate(self.id, self.info.clone()));
                         self.status = Status::Validating;
                     }
 
@@ -320,6 +318,13 @@ impl Torrent {
                         let peer = self.peers.get_mut(pid).expect("Seeder IDs should be in peers");
                         if !peer.pieces().has_bit(index as u64) {
                             peer.send_message(m.clone());
+                        }
+                    }
+
+                    // Mark uninteresting peers
+                    for (_, peer) in self.peers.iter_mut() {
+                        if !self.pieces.usable(peer.pieces()) {
+                            peer.uninterested();
                         }
                     }
                 }
@@ -345,7 +350,7 @@ impl Torrent {
                     self.status = Status::Seeding;
                     // TODO get this from some sort of allocator.
                     if length != self.info.block_len(index, begin) {
-                        peer.set_error(io_err_val("Peer requested block of invalid len!"));
+                        return Err(());
                     } else {
                         self.request_read(peer.id(), index, begin, Box::new([0u8; 16384]));
                     }
@@ -361,6 +366,7 @@ impl Torrent {
             }
             _ => { }
         }
+        Ok(())
     }
 
     /// Periodically called to update peers, choking the slowest one and
@@ -373,12 +379,16 @@ impl Torrent {
         };
     }
 
-    fn start(&self) {
+    fn start(&mut self) {
         debug!(self.l, "Sending start request");
-        TRACKER.tx.send(tracker::Request::started(self)).unwrap();
+        let req = tracker::Request::started(self);
+        self.cio.msg_trk(req);
         // TODO: Consider repeatedly sending out these during annoucne intervals
         if !self.info.private {
-            TRACKER.tx.send(tracker::Request::DHTAnnounce(self.info.hash)).unwrap();
+            let mut req = tracker::Request::DHTAnnounce(self.info.hash);
+            self.cio.msg_trk(req);
+            req = tracker::Request::GetPeers(tracker::GetPeers { id: self.id, hash: self.info.hash });
+            self.cio.msg_trk(req);
         }
     }
 
@@ -389,17 +399,17 @@ impl Torrent {
     /// Writes a piece of torrent info, with piece index idx,
     /// piece offset begin, piece length of len, and data bytes.
     /// The disk send handle is also provided.
-    fn write_piece(&self, index: u32, begin: u32, data: Box<[u8; 16384]>) {
+    fn write_piece(&mut self, index: u32, begin: u32, data: Box<[u8; 16384]>) {
         let locs = self.info.block_disk_locs(index, begin);
-        DISK.tx.send(disk::Request::write(self.id, data, locs)).unwrap();
+        self.cio.msg_disk(disk::Request::write(self.id, data, locs));
     }
 
     /// Issues a read request of the given torrent
-    fn request_read(&self, id: usize, index: u32, begin: u32, data: Box<[u8; 16384]>) {
+    fn request_read(&mut self, id: usize, index: u32, begin: u32, data: Box<[u8; 16384]>) {
         let locs = self.info.block_disk_locs(index, begin);
         let len = self.info.block_len(index, begin);
         let ctx = disk::Ctx::new(id, self.id, index, begin, len);
-        DISK.tx.send(disk::Request::read(ctx, data, locs)).unwrap();
+        self.cio.msg_disk(disk::Request::read(ctx, data, locs));
     }
 
     fn make_requests_pid(&mut self, pid: usize) {
@@ -416,7 +426,7 @@ impl Torrent {
         }
     }
 
-    fn make_requests(&mut self, peer: &mut Peer) {
+    fn make_requests(&mut self, peer: &mut Peer<T>) {
         if self.status.stopped() {
             return;
         }
@@ -426,12 +436,6 @@ impl Torrent {
             } else {
                 break;
             }
-        }
-    }
-
-    pub fn peer_writable(&mut self, pid: usize) {
-        if let Some(mut peer) = self.peers.get_mut(&pid) {
-            peer.writable();
         }
     }
 
@@ -447,40 +451,21 @@ impl Torrent {
         }
     }
 
-    pub fn file_size(&self) -> usize {
-        let mut size = 0;
-        for file in self.info.files.iter() {
-            size += file.length;
-        }
-        size
-    }
-
     pub fn add_peer(&mut self, conn: PeerConn) -> Option<usize> {
-        let pid = self.reg.register(conn.sock(), amy::Event::Both).unwrap();
-        debug!(self.l, "Adding peer {:?}!", pid);
-        let p = Peer::new(pid, conn, self);
-        if p.error().is_none() {
+        if let Ok(p) = Peer::new(conn, self) {
+            let pid = p.id();
+            debug!(self.l, "Adding peer {:?}!", pid);
             self.picker.add_peer(&p);
             self.peers.insert(pid, p);
-            // We want to make sure any queued up messages are drained once we register
-            self.peer_readable(pid);
             Some(pid)
         } else {
-            self.reg.deregister(p.conn().sock()).unwrap();
-            return None;
+            None
         }
     }
 
-    pub fn remove_peer_id(&mut self, id: usize) -> Peer {
-        let mut peer = self.peers.remove(&id).unwrap();
-        self.cleanup_peer(&mut peer);
-        peer
-    }
-
-    fn cleanup_peer(&mut self, peer: &mut Peer) {
+    fn cleanup_peer(&mut self, peer: &mut Peer<T>) {
         debug!(self.l, "Removing peer {:?}!", peer);
         self.choker.remove_peer(peer, &mut self.peers);
-        self.reg.deregister(peer.conn().sock()).unwrap();
         self.leechers.remove(&peer.id());
         self.picker.remove_peer(&peer);
     }
@@ -491,7 +476,8 @@ impl Torrent {
             Status::Paused => { }
             _ => {
                 debug!(self.l, "Sending stopped request to trk");
-                TRACKER.tx.send(tracker::Request::stopped(self)).unwrap();
+                let req = tracker::Request::stopped(self);
+                self.cio.msg_trk(req);
             }
         }
         self.status = Status::Paused;
@@ -502,12 +488,13 @@ impl Torrent {
         match self.status {
             Status::Paused => {
                 debug!(self.l, "Sending started request to trk");
-                TRACKER.tx.send(tracker::Request::started(self)).unwrap();
+                let req = tracker::Request::started(self);
+                self.cio.msg_trk(req);
                 self.request_all();
             }
             Status::DiskError => {
                 if self.pieces.complete() {
-                    DISK.tx.send(disk::Request::validate(self.id, self.info.clone())).unwrap();
+                    self.cio.msg_disk(disk::Request::validate(self.id, self.info.clone()));
                     self.status = Status::Validating;
                 } else {
                     self.request_all();
@@ -533,6 +520,8 @@ impl Torrent {
         self.peers.keys().cloned().collect()
     }
 
+    // TODO: use this over RPC
+    #[allow(dead_code)]
     pub fn change_picker(&mut self, mut picker: Picker) {
         debug!(self.l, "Swapping pickers!");
         for (_, peer) in self.peers.iter() {
@@ -542,30 +531,31 @@ impl Torrent {
     }
 }
 
-impl fmt::Debug for Torrent {
+impl<T: cio::CIO> fmt::Debug for Torrent<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "Torrent {{ info: {:?} }}", self.info)
     }
 }
 
-impl fmt::Display for Torrent {
+impl<T: cio::CIO> fmt::Display for Torrent<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "Torrent {}", torrent_name(&self.info.hash))
     }
 }
 
-impl Drop for Torrent {
+impl<T: cio::CIO> Drop for Torrent<T> {
     fn drop(&mut self) {
-        debug!(self.l, "Deregistering peers");
+        debug!(self.l, "Removing peers");
         for (id, peer) in self.peers.drain() {
-            trace!(self.l, "Deregistering peer {:?}", peer);
-            self.reg.deregister(peer.conn().sock()).unwrap();
+            trace!(self.l, "Removing peer {:?}", peer);
+            self.cio.remove_peer(id);
             self.leechers.remove(&id);
         }
         match self.status {
             Status::Paused => { }
             _ => {
-                TRACKER.tx.send(tracker::Request::stopped(self)).unwrap();
+                let req = tracker::Request::stopped(self);
+                self.cio.msg_trk(req);
             }
         }
     }

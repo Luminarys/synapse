@@ -1,11 +1,9 @@
-use std::sync::mpsc;
 use std::{thread, time};
 use bencode::{self, BEncode};
 use slog::Logger;
 use torrent::Status;
 use std::io;
-use handle;
-use {amy, tiny_http, serde_json, control, CONTROL, torrent, CONFIG, TC};
+use {amy, tiny_http, serde_json, torrent, handle, CONFIG};
 
 #[derive(Debug)]
 pub enum CMessage {
@@ -30,7 +28,6 @@ pub enum Request {
 pub enum Response {
     Torrents(Vec<usize>),
     TorrentInfo(TorrentInfo),
-    AddResult(Result<usize, &'static str>),
     Ack,
     Err(String),
 }
@@ -46,6 +43,7 @@ pub struct TorrentInfo {
     pub tracker_status: torrent::TrackerStatus,
 }
 
+#[allow(dead_code)]
 pub struct RPC {
     poll: amy::Poller,
     reg: amy::Registrar,
@@ -147,7 +145,7 @@ impl RPC {
                                 break;
                             }
                             Err(_) => {
-                                // TODO: Sleep or use poll instead?
+                                thread::sleep(time::Duration::from_millis(3));
                             }
                         }
                     }
@@ -172,7 +170,7 @@ impl RPC {
 }
 
 pub fn start(creg: &mut amy::Registrar) -> io::Result<handle::Handle<Request, CMessage>> {
-    let mut poll = amy::Poller::new()?;
+    let poll = amy::Poller::new()?;
     let mut reg = poll.get_registrar()?;
     let (ch, dh) = handle::Handle::new(creg, &mut reg)?;
     dh.run("rpc", move |h, l| RPC::new(poll, reg, h, l).run());

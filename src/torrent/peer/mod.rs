@@ -11,20 +11,29 @@ use std::net::SocketAddr;
 use std::{io, fmt, mem};
 use torrent::{Torrent, Bitfield};
 use throttle::Throttle;
-use util::io_err_val;
+use control::cio;
+
+error_chain! {
+    errors {
+        ProtocolError(r: &'static str) {
+            description("Peer did not conform to the bittorrent protocol")
+                display("Peer protocol error: {:?}", r)
+        }
+    }
+}
 
 /// Peer connection and associated metadata.
-pub struct Peer {
+pub struct Peer<T: cio::CIO> {
+    id: usize,
+    cio: T,
     pieces: Bitfield,
     remote_status: Status,
     local_status: Status,
     queued: u16,
-    conn: PeerConn,
-    id: usize,
     tid: usize,
     downloaded: usize,
     uploaded: usize,
-    error: Option<io::Error>,
+    addr: SocketAddr,
 }
 
 pub struct PeerConn {
@@ -51,6 +60,10 @@ impl PeerConn {
 
     pub fn sock(&self) -> &Socket {
         &self.sock
+    }
+
+    pub fn sock_mut(&mut self) -> &mut Socket {
+        &mut self.sock
     }
 
     /// Creates a new "outgoing" peer, which acts as a client.
@@ -94,24 +107,26 @@ impl Status {
     }
 }
 
-impl Peer {
-    pub fn new(id: usize, mut conn: PeerConn, t: &Torrent) -> Peer {
-        conn.set_throttle(t.get_throttle(id));
+impl<T: cio::CIO> Peer<T> {
+    pub fn new(mut conn: PeerConn, t: &mut Torrent<T>) -> cio::Result<Peer<T>> {
+        let addr = conn.sock().addr();
+        conn.set_throttle(t.get_throttle(0));
+        let id = t.cio.add_peer(conn)?;
         let mut p = Peer {
+            id,
+            addr,
             remote_status: Status::new(),
             local_status: Status::new(),
             uploaded: 0,
             downloaded: 0,
-            conn,
+            cio: t.cio.new_handle(),
             queued: 0,
             pieces: Bitfield::new(t.info.hashes.len() as u64),
-            error: None,
             tid: t.id,
-            id,
         };
         p.send_message(Message::handshake(&t.info));
         p.send_message(Message::Bitfield(t.pieces.clone()));
-        p
+        Ok(p)
     }
 
     #[cfg(test)]
@@ -125,7 +140,6 @@ impl Peer {
             conn: PeerConn::test(),
             queued,
             pieces,
-            error: None,
             tid: 0,
         }
     }
@@ -140,16 +154,8 @@ impl Peer {
         Peer::test(id, ul, dl, 0, Bitfield::new(4))
     }
 
-    pub fn error(&self) -> Option<&io::Error> {
-        self.error.as_ref()
-    }
-
-    pub fn set_error(&mut self, err: io::Error) {
-        self.error = Some(err);
-    }
-
-    pub fn conn(&self) -> &PeerConn {
-        &self.conn
+    pub fn addr(&self) -> SocketAddr {
+        self.addr
     }
 
     pub fn pieces(&self) -> &Bitfield {
@@ -165,18 +171,6 @@ impl Peer {
         self.id
     }
 
-    pub fn torrent(&self) -> usize {
-        self.tid
-    }
-
-    pub fn local_status(&self) -> &Status {
-        &self.local_status
-    }
-
-    pub fn remote_status(&self) -> &Status {
-        &self.remote_status
-    }
-
     pub fn flush_ul(&mut self) -> usize {
         mem::replace(&mut self.uploaded, 0)
     }
@@ -189,35 +183,14 @@ impl Peer {
         !self.remote_status.choked && self.queued < 5
     }
 
-    /// Attempts to read a single message from the peer,
-    /// processing it interally first before passing it to
-    /// the torrent
-    pub fn read(&mut self) -> Option<Message> {
-        match self.conn.readable() {
-            Ok(mut res) => {
-                match res.as_mut() {
-                    Some(m) => self.process_message(m),
-                    None => { }
-                }
-                res
-            },
-            Err(e) => {
-                self.error = Some(e);
-                None
-            }
-        }
-    }
-
-    fn process_message(&mut self, msg: &mut Message) {
+    pub fn handle_msg(&mut self, msg: &mut Message) -> Result<()> {
         match *msg {
             Message::Piece { .. } => {
                 self.downloaded += 1;
                 self.queued -= 1;
             }
             Message::Request { .. } => {
-                if self.local_status.choked {
-                    self.set_error(io_err_val("Peer requested while choked!"));
-                }
+                return Err(ErrorKind::ProtocolError("Peer requested while choked!").into())
             }
             Message::Choke { .. } => {
                 self.remote_status.choked = true;
@@ -233,7 +206,7 @@ impl Peer {
             }
             Message::Have(idx) => {
                 if idx >= self.pieces.len() as u32 {
-                    self.set_error(io_err_val("Invalid piece provided in HAVE"));
+                    return Err(ErrorKind::ProtocolError("Invalid piece provided in HAVE!").into())
                 }
                 self.pieces.set_bit(idx as u64);
             }
@@ -245,35 +218,20 @@ impl Peer {
             Message::KeepAlive => {
                 // TODO: Keep track of some internal timer maybe?
             }
-            Message::Cancel { index, begin, .. } => {
-                // Remove all matching piece's queued to write
+            Message::Cancel { .. } => {
+                // TODO: Attempt to drain CIO write queue?
+                /*
                 self.conn.writer.write_queue.retain(|m| {
                     if let Message::Piece { index: i, begin: b, .. } = *m {
                         return !(i == index && b == begin);
                     }
                     return true;
                 });
+                */
             }
             _ => { }
         }
-    }
-
-    /// Returns a boolean indicating whether or not the
-    /// socket should be re-registered
-    pub fn writable(&mut self) {
-        if let Err(e) = self.conn.writable() {
-            self.error = Some(e);
-        }
-    }
-
-    /// Sends a message to the peer.
-    pub fn send_message(&mut self, msg: Message) {
-        if msg.is_piece() {
-            self.uploaded += 1;
-        }
-        if let Err(e) = self.conn.write_message(msg) {
-            self.error = Some(e);
-        }
+        Ok(())
     }
 
     pub fn request_piece(&mut self, idx: u32, offset: u32, len: u32) {
@@ -285,47 +243,50 @@ impl Peer {
     pub fn choke(&mut self) {
         if !self.local_status.choked {
             self.local_status.choked = true;
-            if let Err(e) = self.conn.write_message(Message::Choke) {
-                self.error = Some(e);
-            }
+            self.send_message(Message::Choke);
         }
     }
 
     pub fn unchoke(&mut self) {
         if self.local_status.choked {
             self.local_status.choked = false;
-            if let Err(e) = self.conn.write_message(Message::Unchoke) {
-                self.error = Some(e);
-            }
+            self.send_message(Message::Unchoke);
         }
     }
 
     pub fn interested(&mut self) {
         if !self.local_status.interested {
             self.local_status.interested = true;
-            if let Err(e) = self.conn.write_message(Message::Interested) {
-                self.error = Some(e);
-            }
+            self.send_message(Message::Interested);
         }
     }
 
     pub fn uninterested(&mut self) {
         if self.local_status.interested {
             self.local_status.interested = false;
-            if let Err(e) = self.conn.write_message(Message::Uninterested) {
-                self.error = Some(e);
-            }
+            self.send_message(Message::Uninterested);
         }
     }
 
     pub fn send_port(&mut self, port: u16) {
-        if let Err(e) = self.conn.write_message(Message::Port(port)) {
-            self.error = Some(e);
+        self.send_message(Message::Port(port));
+    }
+
+    pub fn send_message(&mut self, msg: Message) {
+        if msg.is_piece() {
+            self.uploaded += 1;
         }
+        self.cio.msg_peer(self.id, msg);
     }
 }
 
-impl fmt::Debug for Peer {
+impl<T: cio::CIO> Drop for Peer<T> {
+    fn drop(&mut self) {
+        self.cio.remove_peer(self.id);
+    }
+}
+
+impl<T: cio::CIO> fmt::Debug for Peer<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "Peer {{ id: {}, tid: {}, local_status: {:?}, remote_status: {:?} }}",
                self.id, self.tid, self.local_status, self.remote_status)

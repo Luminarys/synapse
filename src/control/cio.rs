@@ -36,20 +36,26 @@ pub trait CIO {
     /// Adds a peer to be polled on
     fn add_peer(&mut self, peer: torrent::PeerConn) -> Result<PID>;
 
+    /// Removes a peer
+    fn remove_peer(&mut self, peer: PID);
+
+    /// Flushes events on the given vec of peers
+    fn flush_peers(&mut self, peers: Vec<PID>);
+
     /// Sends a message to a peer
-    fn msg_peer(&mut self, peer: PID, msg: torrent::Message);
+    fn msg_peer(&self, peer: PID, msg: torrent::Message);
 
     /// Sends a message over RPC
-    fn msg_rpc(&mut self, msg: rpc::Message);
+    fn msg_rpc(&self, msg: rpc::CMessage);
 
     /// Sends a message over RPC
-    fn msg_trk(&mut self, msg: tracker::Request);
+    fn msg_trk(&self, msg: tracker::Request);
 
     /// Sends a message to the disk worker
-    fn msg_disk(&mut self, msg: disk::Request);
+    fn msg_disk(&self, msg: disk::Request);
 
     /// Sends a message to the listener worker
-    fn msg_listener(&mut self, msg: listener::Request);
+    fn msg_listener(&self, msg: listener::Request);
 
     /// Sets a timer in milliseconds
     fn set_timer(&mut self, interval: usize) -> Result<TID>;

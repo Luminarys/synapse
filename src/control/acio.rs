@@ -16,17 +16,17 @@ pub struct ACIO {
 }
 
 pub struct ACChans {
-    disk_tx: amy::Sender<disk::Request>,
-    disk_rx: amy::Receiver<disk::Response>,
+    pub disk_tx: amy::Sender<disk::Request>,
+    pub disk_rx: amy::Receiver<disk::Response>,
 
-    rpc_tx: amy::Sender<rpc::Message>,
-    rpc_rx: amy::Receiver<rpc::Request>,
+    pub rpc_tx: amy::Sender<rpc::CMessage>,
+    pub rpc_rx: amy::Receiver<rpc::Request>,
 
-    trk_tx: amy::Sender<tracker::Request>,
-    trk_rx: amy::Receiver<tracker::Response>,
+    pub trk_tx: amy::Sender<tracker::Request>,
+    pub trk_rx: amy::Receiver<tracker::Response>,
 
-    lst_tx: amy::Sender<listener::Request>,
-    lst_rx: amy::Receiver<listener::Message>,
+    pub lst_tx: amy::Sender<listener::Request>,
+    pub lst_rx: amy::Receiver<listener::Message>,
 }
 
 struct ACIOData {
@@ -121,12 +121,33 @@ impl cio::CIO for ACIO {
         }
     }
 
-    fn add_peer(&mut self, peer: torrent::PeerConn) -> Result<cio::PID> {
-        self.d().reg.register(peer.sock(), amy::Event::Both)
-            .chain_err(|| ErrorKind::IO)
+    fn add_peer(&mut self, mut peer: torrent::PeerConn) -> Result<cio::PID> {
+       let id = self.d().reg.register(peer.sock(), amy::Event::Both)
+            .chain_err(|| ErrorKind::IO)?;
+       peer.sock_mut().throttle.as_mut().map(|t| t.id = id);
+       self.d().peers.insert(id, peer);
+       Ok(id)
     }
 
-    fn msg_peer(&mut self, pid: cio::PID, msg: torrent::Message) {
+    fn remove_peer(&mut self, peer: cio::PID) {
+        self.d().remove_peer(peer);
+    }
+
+    fn flush_peers(&mut self, peers: Vec<cio::PID>) {
+        let mut events = Vec::new();
+
+        for peer in peers {
+            let not = amy::Notification { id: peer, event: amy::Event::Both };
+            if let Err(e) = self.process_peer_ev(not, &mut events) {
+                self.d().remove_peer(peer);
+                events.push(cio::Event::Peer { peer, event: Err(e) });
+            }
+        }
+
+        self.d().events.extend(events.drain(..));
+    }
+
+    fn msg_peer(&self, pid: cio::PID, msg: torrent::Message) {
         let d = self.d();
         let err = if let Some(peer) = d.peers.get_mut(&pid) {
             peer.write_message(msg).chain_err(|| ErrorKind::IO).err()
@@ -141,7 +162,7 @@ impl cio::CIO for ACIO {
         }
     }
 
-    fn msg_rpc(&mut self, msg: rpc::Message) {
+    fn msg_rpc(&self, msg: rpc::CMessage) {
         if self.d().chans.rpc_tx.send(msg).is_err() {
             self.d().events.push(
                 cio::Event::RPC(Err(ErrorKind::Channel("Couldn't send to RPC chan").into()))
@@ -149,7 +170,7 @@ impl cio::CIO for ACIO {
         }
     }
 
-    fn msg_trk(&mut self, msg: tracker::Request) {
+    fn msg_trk(&self, msg: tracker::Request) {
         if self.d().chans.trk_tx.send(msg).is_err() {
             self.d().events.push(
                 cio::Event::Tracker(Err(ErrorKind::Channel("Couldn't send to trk chan").into()))
@@ -157,7 +178,7 @@ impl cio::CIO for ACIO {
         }
     }
 
-    fn msg_disk(&mut self, msg: disk::Request) {
+    fn msg_disk(&self, msg: disk::Request) {
         if self.d().chans.disk_tx.send(msg).is_err() {
             self.d().events.push(
                 cio::Event::Disk(Err(ErrorKind::Channel("Couldn't send to disk chan").into()))
@@ -165,7 +186,7 @@ impl cio::CIO for ACIO {
         }
     }
 
-    fn msg_listener(&mut self, msg: listener::Request) {
+    fn msg_listener(&self, msg: listener::Request) {
         if self.d().chans.lst_tx.send(msg).is_err() {
             self.d().events.push(
                 cio::Event::Listener(Err(ErrorKind::Channel("Couldn't send to disk chan").into()))

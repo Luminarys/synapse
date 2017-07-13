@@ -3,6 +3,7 @@ use std::time::{Instant, Duration};
 use std;
 use torrent::Peer;
 use util::random_sample;
+use control::cio;
 
 pub struct Choker {
     unchoked: Vec<usize>,
@@ -26,7 +27,7 @@ impl Choker {
         }
     }
 
-    pub fn add_peer(&mut self, peer: &mut Peer) {
+    pub fn add_peer<T: cio::CIO>(&mut self, peer: &mut Peer<T>) {
         if self.unchoked.len() < 5 {
             self.unchoked.push(peer.id());
             peer.flush_dl();
@@ -37,7 +38,7 @@ impl Choker {
         }
     }
 
-    fn unchoke_random(&mut self, peers: &mut HashMap<usize, Peer>) -> Option<usize> {
+    fn unchoke_random<T: cio::CIO>(&mut self, peers: &mut HashMap<usize, Peer<T>>) -> Option<usize> {
         if let Some(random_id) = random_sample(self.interested.iter()).cloned() {
             let mut peer = peers.get_mut(&random_id).unwrap();
             self.interested.remove(&random_id);
@@ -48,7 +49,7 @@ impl Choker {
         }
     }
 
-    pub fn remove_peer(&mut self, peer: &mut Peer, peers: &mut HashMap<usize, Peer>) -> Option<SwapRes> {
+    pub fn remove_peer<T: cio::CIO>(&mut self, peer: &mut Peer<T>, peers: &mut HashMap<usize, Peer<T>>) -> Option<SwapRes> {
         if let Some(idx) = self.unchoked.iter().position(|&id| id == peer.id()) {
             self.unchoked.remove(idx);
             peer.choke();
@@ -68,7 +69,7 @@ impl Choker {
         }
     }
 
-    pub fn update_upload(&mut self, peers: &mut HashMap<usize, Peer>) -> Option<SwapRes> {
+    pub fn update_upload<T: cio::CIO>(&mut self, peers: &mut HashMap<usize, Peer<T>>) -> Option<SwapRes> {
         if self.update_timer().is_err() {
             return None;
         }
@@ -86,7 +87,7 @@ impl Choker {
         Some(self.swap_peer(slowest, peers))
     }
 
-    pub fn update_download(&mut self, peers: &mut HashMap<usize, Peer>) -> Option<SwapRes> {
+    pub fn update_download<T: cio::CIO>(&mut self, peers: &mut HashMap<usize, Peer<T>>) -> Option<SwapRes> {
         if self.update_timer().is_err() {
             return None;
         }
@@ -102,7 +103,7 @@ impl Choker {
         Some(self.swap_peer(slowest, peers))
     }
 
-    fn swap_peer(&mut self, idx: usize, peers: &mut HashMap<usize, Peer>) -> SwapRes {
+    fn swap_peer<T: cio::CIO>(&mut self, idx: usize, peers: &mut HashMap<usize, Peer<T>>) -> SwapRes {
         let id = self.unchoked.remove(idx);
         {
             let peer = peers.get_mut(&id).unwrap();
