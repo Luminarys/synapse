@@ -25,6 +25,7 @@ extern crate c_ares;
 extern crate chrono;
 extern crate num;
 
+mod handle;
 mod bencode;
 mod torrent;
 mod util;
@@ -39,7 +40,7 @@ mod config;
 
 use std::{time, env, thread};
 use std::sync::atomic;
-use std::io::Read;
+use std::io::{self, Read};
 use slog::Drain;
 
 pub const DHT_EXT: (usize, u8) = (7, 1);
@@ -100,31 +101,6 @@ lazy_static! {
         control::start(log)
     };
 
-    pub static ref DISK: disk::Handle = {
-        TC.fetch_add(1, atomic::Ordering::SeqCst);
-        let log = LOG.new(o!("thread" => "disk"));
-        disk::start(log)
-    };
-
-
-    pub static ref TRACKER: tracker::Handle = {
-        TC.fetch_add(1, atomic::Ordering::SeqCst);
-        let log = LOG.new(o!("thread" => "tracker"));
-        tracker::start(log)
-    };
-
-    pub static ref LISTENER: listener::Handle = {
-        TC.fetch_add(1, atomic::Ordering::SeqCst);
-        let log = LOG.new(o!("thread" => "listener"));
-        listener::start(log)
-    };
-
-    pub static ref RPC: rpc::Handle = {
-        TC.fetch_add(1, atomic::Ordering::SeqCst);
-        let log = LOG.new(o!("thread" => "RPC"));
-        rpc::start(log)
-    };
-
     pub static ref LOG: slog::Logger = {
         let decorator = slog_term::TermDecorator::new().build();
         let drain = slog_term::FullFormat::new(decorator).build().fuse();
@@ -133,13 +109,22 @@ lazy_static! {
     };
 }
 
+fn init() -> io::Result<()> {
+    let mut cpoll = amy::Poller::new()?;
+    let mut creg = cpoll.get_registrar()?;
+    let dh = disk::start(&mut creg)?;
+    let lh = listener::start(&mut creg)?;
+    let rh = rpc::start(&mut creg)?;
+    let th = tracker::start(&mut creg)?;
+    Ok(())
+}
+
 fn main() {
     info!(LOG, "Initializing!");
-    CONFIG.port;
-    LISTENER.init();
-    RPC.init();
-    DISK.init();
-    TRACKER.init();
+    if let Err(e) = init() {
+        error!(LOG, "Couldn't initialize synapse: {:?}", e);
+        return;
+    }
 
     info!(LOG, "Initialized!");
     // Catch SIGINT, then shutdown

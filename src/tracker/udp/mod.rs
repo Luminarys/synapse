@@ -42,7 +42,7 @@ enum State {
 }
 
 impl Handler {
-    pub fn new(reg: &Arc<amy::Registrar>, l: Logger) -> io::Result<Handler> {
+    pub fn new(reg: &amy::Registrar, l: Logger) -> io::Result<Handler> {
         let port = CONFIG.port;
         let sock = UdpSocket::bind(("0.0.0.0", port))?;
         sock.set_nonblocking(true)?;

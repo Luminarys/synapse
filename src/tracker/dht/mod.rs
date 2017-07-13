@@ -29,7 +29,7 @@ pub struct Manager {
 }
 
 impl Manager {
-    pub fn new(reg: &sync::Arc<amy::Registrar>, l: Logger) -> io::Result<Manager> {
+    pub fn new(reg: &amy::Registrar, l: Logger) -> io::Result<Manager> {
         let sock = UdpSocket::bind(("0.0.0.0", CONFIG.dht_port))?;
         sock.set_nonblocking(true)?;
         let id = reg.register(&sock, amy::Event::Read)?;

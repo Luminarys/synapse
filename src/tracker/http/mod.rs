@@ -4,10 +4,10 @@ mod writer;
 use tracker::{self, Announce, Response, TrackerResponse, Result, ResultExt, Error, ErrorKind, dns};
 use std::time::{Instant, Duration};
 use std::mem;
-use std::sync::Arc;
 use {PEER_ID, bencode, amy};
 use self::writer::Writer;
 use self::reader::Reader;
+use std::io;
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use url::percent_encoding::{percent_encode_byte};
@@ -18,7 +18,7 @@ use socket::TSocket;
 const TIMEOUT_MS: u64 = 2500;
 
 pub struct Handler {
-    reg: Arc<amy::Registrar>,
+    reg: amy::Registrar,
     connections: HashMap<usize, Tracker>,
     l: Logger
 }
@@ -96,8 +96,8 @@ impl TrackerState {
 }
 
 impl Handler {
-    pub fn new(reg: Arc<amy::Registrar>, l: Logger) -> Handler {
-        Handler { reg, connections: HashMap::new(), l }
+    pub fn new(reg: &amy::Registrar, l: Logger) -> io::Result<Handler> {
+        Ok(Handler { reg: reg.try_clone()?, connections: HashMap::new(), l })
     }
 
     pub fn complete(&self) -> bool {
@@ -225,7 +225,7 @@ impl Handler {
         http_req.extend_from_slice(b"\r\n");
 
         // Setup actual connection and start DNS query
-        let (id, sock) = TSocket::new_v4(self.reg.clone()).chain_err(|| ErrorKind::IO)?;
+        let (id, sock) = TSocket::new_v4(&self.reg).chain_err(|| ErrorKind::IO)?;
         self.connections.insert(id, Tracker {
             last_updated: Instant::now(),
             torrent: req.id,

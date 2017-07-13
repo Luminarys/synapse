@@ -3,25 +3,15 @@ use std::{thread, time};
 use bencode::{self, BEncode};
 use slog::Logger;
 use torrent::Status;
+use std::io;
+use handle;
 use {amy, tiny_http, serde_json, control, CONTROL, torrent, CONFIG, TC};
 
-pub struct Handle {
-    pub tx: mpsc::Sender<Response>,
-    pub rtx: mpsc::Sender<Request>,
+#[derive(Debug)]
+pub enum CMessage {
+    Response(Response),
+    Shutdown,
 }
-
-impl Handle {
-    pub fn init(&self) { }
-
-    pub fn get(&self) -> mpsc::Sender<Response> {
-        self.tx.clone()
-    }
-}
-
-unsafe impl Sync for Handle {}
-
-// TODO: Convert to a less shitty interface for ctl comms
-pub struct Message;
 
 #[derive(Debug)]
 pub enum Request {
@@ -57,9 +47,9 @@ pub struct TorrentInfo {
 }
 
 pub struct RPC {
-    rx: mpsc::Receiver<Response>,
-    rrx: mpsc::Receiver<Request>,
-    tx: amy::Sender<control::Request>,
+    poll: amy::Poller,
+    reg: amy::Registrar,
+    ch: handle::Handle<CMessage, Request>,
     l: Logger,
 }
 
@@ -92,11 +82,11 @@ macro_rules! id_match {
 }
 
 impl RPC {
-    pub fn new(rx: mpsc::Receiver<Response>, rrx: mpsc::Receiver<Request>, l: Logger) -> RPC {
+    pub fn new(poll: amy::Poller, reg: amy::Registrar, ch: handle::Handle<CMessage, Request>, l: Logger) -> RPC {
         RPC {
-            rx,
-            rrx,
-            tx: CONTROL.ctrl_tx.lock().unwrap().try_clone().unwrap(),
+            poll,
+            reg,
+            ch,
             l,
         }
     }
@@ -107,9 +97,9 @@ impl RPC {
         while let Ok(pr) = server.recv_timeout(time::Duration::from_secs(1)) {
             if let Some(r) = pr {
                 if self.handle_request(r).is_err() {
-                    CONTROL.ctrl_tx.lock().unwrap().send(control::Request::Shutdown).unwrap();
+                    self.ch.send(Request::Shutdown).unwrap();
                 }
-            } else if let Ok(Request::Shutdown) = self.rrx.try_recv() {
+            } else if let Ok(CMessage::Shutdown) = self.ch.recv() {
                     return;
             }
         }
@@ -145,8 +135,22 @@ impl RPC {
         let resp = match resp {
             Ok(rpc) => {
                 debug!(self.l, "Request validated, sending to ctrl!");
-                if let Ok(()) = self.tx.send(control::Request::RPC(rpc)) {
-                    let resp = self.rx.recv().unwrap();
+                if let Ok(()) = self.ch.send(rpc) {
+                    let resp;
+                    loop {
+                        match self.ch.recv() {
+                            Ok(CMessage::Shutdown) => {
+                                return Err(());
+                            }
+                            Ok(CMessage::Response(r)) => {
+                                resp = r;
+                                break;
+                            }
+                            Err(_) => {
+                                // TODO: Sleep or use poll instead?
+                            }
+                        }
+                    }
                     serde_json::to_string(&resp).unwrap()
                 } else {
                     serde_json::to_string(&Response::Err("Shutting down!".to_owned())).unwrap()
@@ -167,16 +171,10 @@ impl RPC {
     }
 }
 
-pub fn start(l: Logger) -> Handle {
-    debug!(l, "Initializing!");
-    let (tx, rx) = mpsc::channel();
-    let (rtx, rrx) = mpsc::channel();
-    thread::spawn(move || {
-        let mut d = RPC::new(rx, rrx, l.clone());
-        d.run();
-        use std::sync::atomic;
-        TC.fetch_sub(1, atomic::Ordering::SeqCst);
-        debug!(l, "Shutdown!");
-    });
-    Handle { tx, rtx }
+pub fn start(creg: &mut amy::Registrar) -> io::Result<handle::Handle<Request, CMessage>> {
+    let mut poll = amy::Poller::new()?;
+    let mut reg = poll.get_registrar()?;
+    let (ch, dh) = handle::Handle::new(creg, &mut reg)?;
+    dh.run("rpc", move |h, l| RPC::new(poll, reg, h, l).run());
+    Ok(ch)
 }

@@ -1,12 +1,12 @@
-use std::thread;
-use std::io::ErrorKind;
+use std::{thread, fmt};
+use std::io::{self, ErrorKind};
 use std::net::{SocketAddrV4, Ipv4Addr, TcpListener};
 use amy::{self, Poller, Registrar};
 use std::collections::HashMap;
 use std::sync::mpsc;
 use slog::Logger;
 use torrent::peer::PeerConn;
-use {control, CONTROL, CONFIG, TC};
+use {control, handle, CONTROL, CONFIG, TC};
 
 pub struct Listener {
     listener: TcpListener,
@@ -14,36 +14,39 @@ pub struct Listener {
     incoming: HashMap<usize, PeerConn>,
     poll: Poller,
     reg: Registrar,
-    rx: mpsc::Receiver<Request>,
+    ch: handle::Handle<Request, Message>,
     l: Logger,
 }
 
-pub struct Message;
-
-pub struct Handle {
-    pub tx: mpsc::Sender<Request>,
+pub struct Message {
+    peer: PeerConn,
+    hash: [u8; 20],
 }
 
-impl Handle {
-    pub fn init(&self) { }
+impl fmt::Debug for Message {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "listener msg for torrent: ")?;
+        for &byte in self.hash.iter() {
+            write!(f, "{:X}", byte)?;
+        }
+        Ok(())
+    }
 }
 
-unsafe impl Sync for Handle {}
-
+#[derive(Debug)]
 pub enum Request {
     Shutdown,
 }
 
 impl Listener {
-    pub fn new(rx: mpsc::Receiver<Request>, l: Logger) -> Listener {
-        let ip = Ipv4Addr::new(0, 0, 0, 0);
-        let port = CONFIG.port;
-        debug!(l, "Binding to port {:?}!", port);
-        let listener = TcpListener::bind(SocketAddrV4::new(ip, port)).unwrap();
-        listener.set_nonblocking(true).unwrap();
-        let poll = Poller::new().unwrap();
-        let reg = poll.get_registrar().unwrap();
-        let lid = reg.register(&listener, amy::Event::Both).unwrap();
+    pub fn new(
+        poll: amy::Poller,
+        reg: amy::Registrar,
+        listener: TcpListener,
+        lid: usize,
+        ch: handle::Handle<Request, Message>,
+        l: Logger)
+        -> Listener {
 
         Listener {
             listener,
@@ -51,7 +54,7 @@ impl Listener {
             incoming: HashMap::new(),
             poll,
             reg,
-            rx,
+            ch,
             l,
         }
     }
@@ -65,7 +68,7 @@ impl Listener {
                     _ => self.handle_peer(not),
                 }
             }
-            if let Ok(Request::Shutdown) = self.rx.try_recv() {
+            if let Ok(Request::Shutdown) = self.ch.recv() {
                 break;
             }
         }
@@ -107,13 +110,16 @@ impl Listener {
     }
 }
 
-pub fn start(l: Logger) -> Handle {
-    debug!(l, "Initializing!");
-    let (tx, rx) = mpsc::channel();
-    thread::spawn(move || {
-        Listener::new(rx, l).run();
-        use std::sync::atomic;
-        TC.fetch_sub(1, atomic::Ordering::SeqCst);
-    });
-    Handle { tx }
+pub fn start(creg: &mut amy::Registrar) -> io::Result<handle::Handle<Message, Request>> {
+    let poll = Poller::new()?;
+    let reg = poll.get_registrar()?;
+    let ip = Ipv4Addr::new(0, 0, 0, 0);
+    let port = CONFIG.port;
+    let listener = TcpListener::bind(SocketAddrV4::new(ip, port))?;
+    listener.set_nonblocking(true)?;
+    let lid = reg.register(&listener, amy::Event::Both)?;
+
+    let (ch, dh) = handle::Handle::new(creg, &mut reg)?;
+    dh.run("listener", move |h, l| Listener::new(poll, reg, listener, lid, h, l).run());
+    Ok(ch)
 }

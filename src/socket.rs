@@ -114,11 +114,12 @@ impl io::Write for Socket {
 
 pub struct TSocket {
     pub conn: TcpStream,
-    reg: Arc<amy::Registrar>,
+    reg: amy::Registrar,
 }
 
 impl TSocket {
-    pub fn new_v4(reg: Arc<amy::Registrar>) -> io::Result<(usize, TSocket)> {
+    pub fn new_v4(r: &amy::Registrar) -> io::Result<(usize, TSocket)> {
+        let reg = r.try_clone()?;
         let conn = TcpBuilder::new_v4()?.to_tcp_stream()?;
         conn.set_nonblocking(true)?;
         let id = reg.register(&conn, amy::Event::Both)?;

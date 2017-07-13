@@ -6,20 +6,20 @@ mod dht;
 
 use byteorder::{BigEndian, ReadBytesExt};
 use std::net::{SocketAddr, SocketAddrV4, Ipv4Addr};
-use std::thread;
-use std::result;
+use std::{thread, result, io};
 use std::sync::Arc;
 use slog::Logger;
 use torrent::Torrent;
 use bencode::BEncode;
 use url::Url;
-use {CONTROL, CONFIG, TC};
+use {CONTROL, CONFIG, TC, LOG};
+use handle;
 use amy;
 pub use self::errors::{Result, ResultExt, Error, ErrorKind};
 
 pub struct Tracker {
     poll: amy::Poller,
-    queue: amy::Receiver<Request>,
+    ch: handle::Handle<Request, Response>,
     dns_res: amy::Receiver<dns::QueryResponse>,
     http: http::Handler,
     udp: udp::Handler,
@@ -30,21 +30,73 @@ pub struct Tracker {
     shutting_down: bool,
 }
 
+#[derive(Debug)]
+pub enum Request {
+    Announce(Announce),
+    GetPeers(GetPeers),
+    AddNode(SocketAddr),
+    DHTAnnounce([u8; 20]),
+    Shutdown,
+}
+
+#[derive(Debug)]
+pub struct Announce {
+    id: usize,
+    url: String,
+    hash: [u8; 20],
+    port: u16,
+    uploaded: u64,
+    downloaded: u64,
+    left: u64,
+    event: Option<Event>,
+}
+
+#[derive(Debug)]
+pub struct GetPeers {
+    id: usize,
+    hash: [u8; 20],
+}
+
+
+#[derive(Debug)]
+pub enum Event {
+    Started,
+    Stopped,
+    Completed,
+}
+
+pub type Response = (usize, Result<TrackerResponse>);
+
+#[derive(Debug)]
+pub struct TrackerResponse {
+    pub peers: Vec<SocketAddr>,
+    pub interval: u32,
+    pub leechers: u32,
+    pub seeders: u32,
+}
+
+
 impl Tracker {
-    pub fn new(poll: amy::Poller, mut reg: amy::Registrar, queue: amy::Receiver<Request>, l: Logger) -> Tracker {
-        let (dtx, drx) = reg.channel().unwrap();
-        let timer = reg.set_interval(150).unwrap();
-        let reg = Arc::new(reg);
-        let dns = dns::Resolver::new(reg.clone(), dtx);
+    pub fn new(
+        poll: amy::Poller,
+        ch: handle::Handle<Request, Response>,
+        udp: udp::Handler,
+        dht: dht::Manager,
+        http: http::Handler,
+        dns: dns::Resolver,
+        dns_res: amy::Receiver<dns::QueryResponse>,
+        timer: usize,
+        l: Logger)
+        -> Tracker {
         Tracker {
-            queue,
-            http: http::Handler::new(reg.clone(), l.new(o!("mod" => "http"))),
-            udp: udp::Handler::new(&reg, l.new(o!("mod" => "udp"))).unwrap(),
-            dht: dht::Manager::new(&reg, l.new(o!("mod" => "dht"))).unwrap(),
+            ch,
+            http,
+            udp,
+            dht,
             l,
             poll,
             dns,
-            dns_res: drx,
+            dns_res,
             timer,
             shutting_down: false,
         }
@@ -71,7 +123,6 @@ impl Tracker {
                 if self.handle_event(event).is_err() {
                 }
                 if self.http.complete() && self.udp.complete() {
-                    debug!(self.l, "All requests complete, shutdown finished");
                     return;
                 }
             }
@@ -79,7 +130,7 @@ impl Tracker {
     }
 
     fn handle_event(&mut self, event: amy::Notification)  -> result::Result<(), ()> {
-        if event.id == self.queue.get_id() {
+        if event.id == self.ch.tx.get_id() {
             return self.handle_request();
         } else if event.id == self.dns_res.get_id() {
             self.handle_dns_res();
@@ -92,7 +143,7 @@ impl Tracker {
     }
 
     fn handle_request(&mut self) -> result::Result<(), ()> {
-        while let Ok(r) = self.queue.try_recv() {
+        while let Ok(r) = self.ch.recv() {
             match r {
                 Request::Announce(req) => {
                     debug!(self.l, "Handling announce request!");
@@ -192,52 +243,9 @@ impl Tracker {
     fn send_response(&self, r: Response) {
         if !self.shutting_down {
             debug!(self.l, "Sending trk response to control!");
-            CONTROL.trk_tx.lock().unwrap().send(r).unwrap();
+            self.ch.send(r).unwrap();
         }
     }
-}
-
-
-pub struct Handle {
-    pub tx: amy::Sender<Request>,
-}
-
-impl Handle {
-    pub fn init(&self) { }
-
-    pub fn get(&self) -> amy::Sender<Request> {
-        self.tx.try_clone().unwrap()
-    }
-}
-
-unsafe impl Sync for Handle {}
-
-
-#[derive(Debug)]
-pub enum Request {
-    Announce(Announce),
-    GetPeers(GetPeers),
-    AddNode(SocketAddr),
-    DHTAnnounce([u8; 20]),
-    Shutdown,
-}
-
-#[derive(Debug)]
-pub struct Announce {
-    id: usize,
-    url: String,
-    hash: [u8; 20],
-    port: u16,
-    uploaded: u64,
-    downloaded: u64,
-    left: u64,
-    event: Option<Event>,
-}
-
-#[derive(Debug)]
-pub struct GetPeers {
-    id: usize,
-    hash: [u8; 20],
 }
 
 impl Announce {
@@ -278,23 +286,6 @@ impl Request {
     pub fn interval(torrent: &Torrent) -> Request {
         Request::new_announce(torrent, None)
     }
-}
-
-#[derive(Debug)]
-pub enum Event {
-    Started,
-    Stopped,
-    Completed,
-}
-
-pub type Response = (usize, Result<TrackerResponse>);
-
-#[derive(Debug)]
-pub struct TrackerResponse {
-    pub peers: Vec<SocketAddr>,
-    pub interval: u32,
-    pub leechers: u32,
-    pub seeders: u32,
 }
 
 impl TrackerResponse {
@@ -339,16 +330,16 @@ impl TrackerResponse {
     }
 }
 
-pub fn start(l: Logger) -> Handle {
-    debug!(l, "Initializing!");
-    let p = amy::Poller::new().unwrap();
-    let mut r = p.get_registrar().unwrap();
-    let (tx, rx) = r.channel().unwrap();
-    thread::spawn(move || {
-        let mut d = Tracker::new(p, r, rx, l);
-        d.run();
-        use std::sync::atomic;
-        TC.fetch_sub(1, atomic::Ordering::SeqCst);
-    });
-    Handle { tx }
+pub fn start(creg: &mut amy::Registrar) -> io::Result<handle::Handle<Response, Request>> {
+    let mut poll = amy::Poller::new()?;
+    let mut reg = poll.get_registrar()?;
+    let (ch, dh) = handle::Handle::new(creg, &mut reg)?;
+    let timer = reg.set_interval(150)?;
+    let (dtx, drx) = reg.channel()?;
+    let udp = udp::Handler::new(&reg, LOG.new(o!("trk" => "udp")))?;
+    let dht = dht::Manager::new(&reg, LOG.new(o!("trk" => "dht")))?;
+    let http = http::Handler::new(&reg, LOG.new(o!("trk" => "http")))?;
+    let dns = dns::Resolver::new(reg, dtx);
+    dh.run("trk", move |h, l| Tracker::new(poll, h, udp, dht, http, dns, drx, timer, l).run());
+    Ok(ch)
 }
