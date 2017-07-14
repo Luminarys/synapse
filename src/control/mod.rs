@@ -1,7 +1,8 @@
 use std::{fs, io, time};
 use slog::Logger;
 use std::io::Read;
-use {rpc, tracker, disk, listener, CONFIG};
+use std::sync::atomic;
+use {rpc, tracker, disk, listener, CONFIG, SHUTDOWN};
 use util::{io_err, io_err_val};
 use torrent::{self, peer, Torrent};
 use std::collections::HashMap;
@@ -72,6 +73,9 @@ impl<T: cio::CIO> Control<T> {
                     self.serialize();
                     return;
                 }
+            }
+            if SHUTDOWN.load(atomic::Ordering::SeqCst) == true {
+                break;
             }
         }
     }
@@ -323,6 +327,5 @@ impl<T: cio::CIO> Drop for Control<T> {
         self.cio.msg_rpc(rpc::CMessage::Shutdown);
         self.cio.msg_trk(tracker::Request::Shutdown);
         self.cio.msg_listener(listener::Request::Shutdown);
-        debug!(self.l, "Shutdown!");
     }
 }

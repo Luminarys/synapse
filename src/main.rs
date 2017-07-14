@@ -154,7 +154,8 @@ fn init() -> io::Result<()> {
 fn main() {
     info!(LOG, "Initializing!");
     if let Err(e) = init() {
-        error!(LOG, "Couldn't initialize synapse: {:?}", e);
+        error!(LOG, "Couldn't initialize synapse: {}", e);
+        thread::sleep(time::Duration::from_millis(50));
         return;
     }
 
@@ -166,8 +167,8 @@ fn main() {
         i += time::Duration::from_secs(1);
         if t.wait(i).is_some() {
             info!(LOG, "Shutting down!");
+            // TODO make this less hacky
             SHUTDOWN.store(true, atomic::Ordering::SeqCst);
-            // CONTROL.ctrl_tx.lock().unwrap().send(control::Request::Shutdown).unwrap();
             while TC.load(atomic::Ordering::SeqCst) != 0 {
                 thread::sleep(time::Duration::from_secs(1));
             }

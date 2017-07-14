@@ -130,7 +130,7 @@ impl Tracker {
     }
 
     fn handle_event(&mut self, event: amy::Notification)  -> result::Result<(), ()> {
-        if event.id == self.ch.tx.get_id() {
+        if event.id == self.ch.rx.get_id() {
             return self.handle_request();
         } else if event.id == self.dns_res.get_id() {
             self.handle_dns_res();
