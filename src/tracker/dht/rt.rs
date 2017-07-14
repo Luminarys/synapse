@@ -321,8 +321,8 @@ impl RoutingTable {
                 unreachable!();
             }
 
-            (TransactionKind::TSearch { .. }, _) => {
-                unreachable!();
+            (TransactionKind::TSearch { id, .. }, _) => {
+                self.remove_node(&id);
             }
         }
         Err(reqs)

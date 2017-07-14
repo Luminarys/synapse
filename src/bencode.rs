@@ -85,6 +85,7 @@ impl BEncode {
         }
     }
 
+    #[allow(dead_code)]
     pub fn as_int(&self) -> Option<&i64> {
         match *self {
             BEncode::Int(ref v) => Some(v),
@@ -92,6 +93,7 @@ impl BEncode {
         }
     }
 
+    #[allow(dead_code)]
     pub fn as_bytes(&self) -> Option<&Vec<u8>> {
         match *self {
             BEncode::String(ref v) => Some(v),
@@ -99,6 +101,7 @@ impl BEncode {
         }
     }
 
+    #[allow(dead_code)]
     pub fn as_str(&self) -> Option<&str> {
         match *self {
             BEncode::String(ref v) => str::from_utf8(v).ok(),
@@ -106,6 +109,7 @@ impl BEncode {
         }
     }
 
+    #[allow(dead_code)]
     pub fn as_list(&self) -> Option<&Vec<BEncode>> {
         match *self {
             BEncode::List(ref v) => Some(v),
@@ -113,6 +117,7 @@ impl BEncode {
         }
     }
 
+    #[allow(dead_code)]
     pub fn as_dict(&self) -> Option<&BTreeMap<String, BEncode>> {
         match *self {
             BEncode::Dict(ref v) => Some(v),

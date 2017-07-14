@@ -1,6 +1,7 @@
 use std::collections::HashSet;
 use std::cmp;
 use torrent::{Info, Peer, picker};
+use control::cio;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Picker {
@@ -18,7 +19,7 @@ impl Picker {
         }
     }
 
-    pub fn pick(&mut self, peer: &Peer) -> Option<(u32, u32)> {
+    pub fn pick<T: cio::CIO>(&mut self, peer: &Peer<T>) -> Option<(u32, u32)> {
         for idx in peer.pieces().iter_from(self.piece_idx) {
             let start = idx * self.c.scale;
             for i in 0..self.c.scale {

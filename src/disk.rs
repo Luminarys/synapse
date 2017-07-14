@@ -1,5 +1,5 @@
-use std::sync::{mpsc, Arc, atomic};
-use std::{fs, fmt, thread, path, time};
+use std::sync::Arc;
+use std::{fs, fmt, path, time};
 use std::io::{self, Seek, SeekFrom, Write, Read};
 use std::path::PathBuf;
 use torrent::Info;
@@ -7,31 +7,21 @@ use slog::Logger;
 use util::torrent_name;
 use threadpool::ThreadPool;
 use sha1::Sha1;
-use {CONTROL, CONFIG, TC};
+use amy;
+use {handle, CONFIG};
 
 const MAX_THREADS: usize = 10;
 const BACKOFF_MS: u64 = 50;
+const POLL_INT_MS: usize = 10;
 
 pub struct Disk {
-    queue: mpsc::Receiver<Request>,
+    poll: amy::Poller,
+    ch: handle::Handle<Request, Response>,
     l: Logger,
     pool: ThreadPool,
     threads: usize,
+    backoff: time::Instant,
 }
-
-pub struct Handle {
-    pub tx: mpsc::Sender<Request>,
-}
-
-impl Handle {
-    pub fn init(&self) { }
-
-    pub fn get(&self) -> mpsc::Sender<Request> {
-        self.tx.clone()
-    }
-}
-
-unsafe impl Sync for Handle {}
 
 pub enum Request {
     Write { tid: usize, data: Box<[u8; 16384]>, locations: Vec<Location> },
@@ -165,6 +155,12 @@ impl Request {
     }
 }
 
+impl fmt::Debug for Request {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "disk::Request")
+    }
+}
+
 pub struct Location {
     pub file: PathBuf,
     pub offset: u64,
@@ -213,63 +209,81 @@ impl fmt::Debug for Response {
 }
 
 impl Disk {
-    pub fn new(queue: mpsc::Receiver<Request>, l: Logger) -> Disk {
+    pub fn new(poll: amy::Poller, ch: handle::Handle<Request, Response>, l: Logger) -> Disk {
         let threads = 2;
         Disk {
-            queue, l,
+            poll,
+            ch,
+            l,
             pool: ThreadPool::new_with_name("disk_pool".into(), threads),
             threads,
+            backoff: time::Instant::now(),
         }
     }
 
     pub fn run(&mut self) {
         let sd = &CONFIG.session;
         fs::create_dir_all(sd).unwrap();
-        debug!(self.l, "Initialized!");
-        let mut backoff = time::Instant::now();
+
         loop {
-            match self.queue.recv() {
+            match self.poll.wait(POLL_INT_MS) {
+                Ok(_) => {
+                    if self.handle_events() {
+                        break;
+                    }
+                }
+                Err(e) => {
+                    warn!(self.l, "Failed to poll for events: {:?}", e);
+                }
+            }
+        }
+
+        self.pool.join();
+    }
+
+    pub fn handle_events(&mut self) -> bool {
+        loop {
+            match self.ch.recv() {
                 Ok(Request::Shutdown) => {
-                    break
+                    return true;
                 }
                 Ok(r) => {
                     // Adjust the pool size
                     if self.pool.active_count() == self.threads && self.pool.active_count() < MAX_THREADS {
                         debug!(self.l, "Increasing disk pool to {:?}", self.threads);
                         self.threads += 1;
-                    } else if self.pool.active_count() + 2 < self.threads && backoff.elapsed() > time::Duration::from_millis(BACKOFF_MS) {
-                        backoff = time::Instant::now();
+                    } else if self.pool.active_count() + 2 < self.threads && self.backoff.elapsed() > time::Duration::from_millis(BACKOFF_MS) {
+                        self.backoff = time::Instant::now();
                         debug!(self.l, "Decreasing disk pool to {:?}", self.threads);
                         self.threads -= 1;
                     }
                     self.pool.set_num_threads(self.threads);
                     trace!(self.l, "Handling disk job!");
+                    let tx = self.ch.tx.try_clone().unwrap();
                     self.pool.execute(move || {
                         let tid = r.tid();
                         match r.execute() {
                             Ok(Some(r)) => {
-                                CONTROL.disk_tx.lock().unwrap().send(r).unwrap();
+                                tx.send(r).unwrap();
                             }
                             Ok(None) => { }
                             Err(e) => {
-                                CONTROL.disk_tx.lock().unwrap().send(Response::error(tid, e)).unwrap();
+                                tx.send(Response::error(tid, e)).unwrap();
                             }
                         }
                     });
                 }
-                _ => break,
+                _ => { break },
             }
         }
+        false
     }
 }
 
-pub fn start(l: Logger) -> Handle {
-    debug!(l, "Initializing!");
-    let (tx, rx) = mpsc::channel();
-    thread::spawn(move || {
-        Disk::new(rx, l.clone()).run();
-        TC.fetch_sub(1, atomic::Ordering::SeqCst);
-        debug!(l, "Shutdown!");
-    });
-    Handle { tx }
+pub fn start(creg: &mut amy::Registrar) -> io::Result<handle::Handle<Response, Request>> {
+    let poll = amy::Poller::new()?;
+    let mut reg = poll.get_registrar()?;
+    let (ch, dh) = handle::Handle::new(creg, &mut reg)?;
+    dh.run("disk", move |h, l| Disk::new(poll, h, l).run());
+    Ok(ch)
 }

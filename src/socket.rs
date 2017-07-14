@@ -3,7 +3,6 @@ use std::os::unix::io::{RawFd, AsRawFd};
 use std::io::{self, ErrorKind};
 use throttle::Throttle;
 use net2::{TcpBuilder, TcpStreamExt};
-use std::sync::Arc;
 use amy;
 
 const EINPROGRESS: i32 = 115;
@@ -12,6 +11,7 @@ const EINPROGRESS: i32 = 115;
 /// rate limiting, etc.
 pub struct Socket {
     conn: TcpStream,
+    addr: SocketAddr,
     pub throttle: Option<Throttle>,
 }
 
@@ -31,21 +31,17 @@ impl Socket {
             }
             _ => { }
         }
-        Ok(Socket { conn, throttle: None })
+        Ok(Socket { conn, throttle: None, addr: addr.clone() })
     }
 
     pub fn addr(&self) -> SocketAddr {
-        self.conn.peer_addr().unwrap()
+        self.addr
     }
 
     pub fn from_stream(conn: TcpStream) -> io::Result<Socket> {
         conn.set_nonblocking(true)?;
-        Ok(Socket { conn, throttle: None })
-    }
-
-    pub fn empty() -> Socket {
-        let conn = TcpBuilder::new_v4().unwrap().to_tcp_stream().unwrap();
-        Socket { conn, throttle: None }
+        let addr = conn.peer_addr().unwrap();
+        Ok(Socket { conn, throttle: None, addr: addr })
     }
 }
 
@@ -114,11 +110,12 @@ impl io::Write for Socket {
 
 pub struct TSocket {
     pub conn: TcpStream,
-    reg: Arc<amy::Registrar>,
+    reg: amy::Registrar,
 }
 
 impl TSocket {
-    pub fn new_v4(reg: Arc<amy::Registrar>) -> io::Result<(usize, TSocket)> {
+    pub fn new_v4(r: &amy::Registrar) -> io::Result<(usize, TSocket)> {
+        let reg = r.try_clone()?;
         let conn = TcpBuilder::new_v4()?.to_tcp_stream()?;
         conn.set_nonblocking(true)?;
         let id = reg.register(&conn, amy::Event::Both)?;

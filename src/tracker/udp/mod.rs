@@ -4,7 +4,6 @@ use tracker::{Announce, Result, ResultExt, Response, TrackerResponse, Event, Err
 use std::collections::HashMap;
 use {CONFIG, PEER_ID, amy};
 use util::bytes_to_addr;
-use std::sync::Arc;
 use std::io::{self, Write, Read, Cursor};
 use byteorder::{ReadBytesExt, WriteBytesExt, BigEndian};
 use slog::Logger;
@@ -42,7 +41,7 @@ enum State {
 }
 
 impl Handler {
-    pub fn new(reg: &Arc<amy::Registrar>, l: Logger) -> io::Result<Handler> {
+    pub fn new(reg: &amy::Registrar, l: Logger) -> io::Result<Handler> {
         let port = CONFIG.port;
         let sock = UdpSocket::bind(("0.0.0.0", port))?;
         sock.set_nonblocking(true)?;

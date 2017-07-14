@@ -1,31 +1,32 @@
 use torrent::Torrent;
 use std::collections::HashMap;
 use std::time;
+use control::cio;
 
-pub trait Job {
-    fn update(&mut self, torrents: &mut HashMap<usize, Torrent>);
+pub trait Job<T: cio::CIO> {
+    fn update(&mut self, torrents: &mut HashMap<usize, Torrent<T>>);
 }
 
-pub struct JobManager {
-    jobs: Vec<JobData>,
+pub struct JobManager<T: cio::CIO> {
+    jobs: Vec<JobData<T>>,
 }
 
-struct JobData {
-    job: Box<Job>,
+struct JobData<T: cio::CIO> {
+    job: Box<Job<T>>,
     last_updated: time::Instant,
     interval: time::Duration,
 }
 
-impl JobManager {
-    pub fn new() -> JobManager {
+impl<T: cio::CIO> JobManager<T> {
+    pub fn new() -> JobManager<T> {
         JobManager { jobs: Vec::new() }
     }
 
-    pub fn add_job<T: Job + 'static>(&mut self, job: T, interval: time::Duration) {
+    pub fn add_job<J: Job<T> + 'static>(&mut self, job: J, interval: time::Duration) {
         self.jobs.push(JobData { job: Box::new(job), interval, last_updated: time::Instant::now()})
     }
 
-    pub fn update(&mut self, torrents: &mut HashMap<usize, Torrent>) {
+    pub fn update(&mut self, torrents: &mut HashMap<usize, Torrent<T>>) {
         for j in self.jobs.iter_mut() {
             if j.last_updated.elapsed() > j.interval {
                 j.job.update(torrents);
@@ -37,8 +38,8 @@ impl JobManager {
 
 pub struct TrackerUpdate;
 
-impl Job for TrackerUpdate {
-    fn update(&mut self, torrents: &mut HashMap<usize, Torrent>) {
+impl<T: cio::CIO> Job<T> for TrackerUpdate {
+    fn update(&mut self, torrents: &mut HashMap<usize, Torrent<T>>) {
         for (_, torrent) in torrents.iter_mut() {
             torrent.update_tracker();
         }
@@ -47,8 +48,8 @@ impl Job for TrackerUpdate {
 
 pub struct UnchokeUpdate;
 
-impl Job for UnchokeUpdate {
-    fn update(&mut self, torrents: &mut HashMap<usize, Torrent>) {
+impl<T: cio::CIO> Job<T> for UnchokeUpdate {
+    fn update(&mut self, torrents: &mut HashMap<usize, Torrent<T>>) {
         for (_, torrent) in torrents.iter_mut() {
             torrent.update_unchoked();
         }
@@ -57,22 +58,12 @@ impl Job for UnchokeUpdate {
 
 pub struct SessionUpdate;
 
-impl Job for SessionUpdate {
-    fn update(&mut self, torrents: &mut HashMap<usize, Torrent>) {
+impl<T: cio::CIO> Job<T> for SessionUpdate {
+    fn update(&mut self, torrents: &mut HashMap<usize, Torrent<T>>) {
         for (_, torrent) in torrents.iter_mut() {
             if torrent.dirty() {
                 torrent.serialize();
             }
-        }
-    }
-}
-
-pub struct ReapPeers;
-
-impl Job for ReapPeers {
-    fn update(&mut self, torrents: &mut HashMap<usize, Torrent>) {
-        for (_, torrent) in torrents.iter_mut() {
-            torrent.reap_peers();
         }
     }
 }

@@ -3,6 +3,7 @@
 use std::collections::{HashSet};
 use torrent::{Info, Peer, picker};
 use std::ops::IndexMut;
+use control::cio;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Picker {
@@ -39,7 +40,7 @@ impl Picker {
         }
     }
 
-    pub fn add_peer(&mut self, peer: &Peer) {
+    pub fn add_peer<T: cio::CIO>(&mut self, peer: &Peer<T>) {
         // Ignore seeders for availability calc
         if peer.pieces().complete() {
             self.seeders.insert(peer.id());
@@ -50,7 +51,7 @@ impl Picker {
         }
     }
 
-    pub fn remove_peer(&mut self, peer: &Peer) {
+    pub fn remove_peer<T: cio::CIO>(&mut self, peer: &Peer<T>) {
         if self.seeders.contains(&peer.id()) {
             self.seeders.remove(&peer.id());
             return;
@@ -107,7 +108,7 @@ impl Picker {
         self.pieces.swap(idx, swap_idx);
     }
 
-    pub fn pick(&mut self, peer: &Peer) -> Option<(u32, u32)> {
+    pub fn pick<T: cio::CIO>(&mut self, peer: &Peer<T>) -> Option<(u32, u32)> {
         for pidx in self.pieces.iter() {
             if peer.pieces().has_bit(*pidx as u64) {
                 for bidx in 0..self.c.scale {

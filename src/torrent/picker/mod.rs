@@ -1,6 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::mem;
 use torrent::{Info, Peer, Bitfield};
+use control::cio;
 
 mod rarest;
 mod sequential;
@@ -25,7 +26,7 @@ impl Picker {
         Picker::Sequential(picker)
     }
 
-    pub fn pick(&mut self, peer: &Peer) -> Option<(u32, u32)> {
+    pub fn pick<T: cio::CIO>(&mut self, peer: &Peer<T>) -> Option<(u32, u32)> {
         match *self {
             Picker::Sequential(ref mut p) => p.pick(peer),
             Picker::Rarest(ref mut p) => p.pick(peer),
@@ -53,13 +54,13 @@ impl Picker {
         }
     }
 
-    pub fn add_peer(&mut self, peer: &Peer) {
+    pub fn add_peer<T: cio::CIO>(&mut self, peer: &Peer<T>) {
         if let Picker::Rarest(ref mut p) = *self {
             p.add_peer(peer);
         }
     }
 
-    pub fn remove_peer(&mut self, peer: &Peer) {
+    pub fn remove_peer<T: cio::CIO>(&mut self, peer: &Peer<T>) {
         if let Picker::Rarest(ref mut p) = *self {
             p.remove_peer(peer);
         }

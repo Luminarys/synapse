@@ -31,7 +31,7 @@ pub fn random_sample<A, T>(iter: A) -> Option<T>
 pub fn torrent_name(hash: &[u8; 20]) -> String {
     let mut hash_str = String::new();
     for i in 0..20 {
-        write!(&mut hash_str, "{:X}", hash[i]).unwrap();
+        write!(&mut hash_str, "{:02X}", hash[i]).unwrap();
     }
     hash_str
 }

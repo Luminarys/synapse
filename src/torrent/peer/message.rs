@@ -111,10 +111,6 @@ impl Message {
         }
     }
 
-    pub fn piece(index: u32, begin: u32, length: u32, data: Box<[u8; 16384]>) -> Message {
-        Message::Piece { index, begin, data, length }
-    }
-
     pub fn s_piece(index: u32, begin: u32, length: u32, data: Arc<Box<[u8; 16384]>>) -> Message {
         Message::SharedPiece { index, begin, data, length }
     }
@@ -122,20 +118,6 @@ impl Message {
     pub fn is_piece(&self) -> bool {
         match *self {
             Message::Piece{ .. } | Message::SharedPiece { .. } => true,
-            _ => false,
-        }
-    }
-
-    pub fn is_bitfield(&self) -> bool {
-        match *self {
-            Message::Bitfield(_) => true,
-            _ => false,
-        }
-    }
-
-    pub fn is_handshake(&self) -> bool {
-        match *self {
-            Message::Handshake { .. } => true,
             _ => false,
         }
     }

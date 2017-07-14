@@ -12,7 +12,7 @@ pub struct QueryResponse {
 }
 
 pub struct Resolver {
-    reg: Arc<amy::Registrar>,
+    reg: amy::Registrar,
     socks: HashMap<usize, c_ares::Socket>,
     csocks: HashMap<c_ares::Socket, usize>,
     chan: c_ares::Channel,
@@ -28,7 +28,7 @@ impl AsRawFd for CSockWrapper {
 }
 
 impl Resolver {
-    pub fn new(reg: Arc<amy::Registrar>, send: amy::Sender<QueryResponse>) -> Resolver {
+    pub fn new(reg: amy::Registrar, send: amy::Sender<QueryResponse>) -> Resolver {
         let mut opts = c_ares::Options::new();
         opts.set_timeout(3000)
             .set_tries(4);
@@ -77,7 +77,7 @@ impl Resolver {
         marked: HashSet<usize>,
         socks: &mut HashMap<usize, c_ares::Socket>,
         csocks: &mut HashMap<c_ares::Socket, usize>,
-        reg: &Arc<amy::Registrar>)
+        reg: &amy::Registrar)
     {
         socks.retain(|id, fd| {
             if marked.contains(id) {

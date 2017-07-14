@@ -1,9 +1,11 @@
 use super::Picker;
 use std::collections::HashMap;
 use std::cell::UnsafeCell;
-use torrent::{Bitfield, Peer as TPeer, Info};
+use torrent::{Bitfield, Peer as TGPeer, Info};
 use rand::distributions::{IndependentSample, Range};
-use rand;
+use {rand, control};
+
+type TPeer = TGPeer<control::cio::test::TCIO>;
 
 struct Simulation {
     cfg: TestCfg,

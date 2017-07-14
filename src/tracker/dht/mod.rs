@@ -1,5 +1,5 @@
 use std::net::{SocketAddr, UdpSocket};
-use std::{io, sync};
+use std::io;
 use self::io::{Read, Write};
 use num::bigint::BigUint;
 use {amy, tracker, CONFIG};
@@ -22,14 +22,14 @@ const TX_TIMEOUT_SECS: i64 = 20;
 pub struct Manager {
     id: usize,
     table: rt::RoutingTable,
-    dht_flush: time::Instant, 
+    dht_flush: time::Instant,
     sock: UdpSocket,
     buf: Vec<u8>,
     l: Logger,
 }
 
 impl Manager {
-    pub fn new(reg: &sync::Arc<amy::Registrar>, l: Logger) -> io::Result<Manager> {
+    pub fn new(reg: &amy::Registrar, l: Logger) -> io::Result<Manager> {
         let sock = UdpSocket::bind(("0.0.0.0", CONFIG.dht_port))?;
         sock.set_nonblocking(true)?;
         let id = reg.register(&sock, amy::Event::Read)?;
@@ -64,6 +64,7 @@ impl Manager {
     }
 
     pub fn init(&mut self) {
+        debug!(self.l, "Initializing DHT nodes!");
         for (q, a) in self.table.init() {
             self.send_msg(&q.encode(), a);
         }
