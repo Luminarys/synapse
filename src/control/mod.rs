@@ -242,6 +242,7 @@ impl<T: cio::CIO> Control<T> {
     }
 
     fn handle_rpc_ev(&mut self, req: rpc::Request) -> bool {
+        debug!(self.l, "Handling rpc reqest!");
         match req {
             rpc::Request::ListTorrents => {
                 let mut resp = Vec::new();

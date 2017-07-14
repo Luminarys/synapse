@@ -106,6 +106,9 @@ impl ACIO {
 
 impl cio::CIO for ACIO {
     fn poll(&mut self, events: &mut Vec<cio::Event>) {
+        for event in self.d().events.drain(..) {
+            events.push(event);
+        }
         match self.d().poll.wait(POLL_INT_MS) {
             Ok(evs) => {
                 for event in evs {
@@ -115,9 +118,6 @@ impl cio::CIO for ACIO {
             Err(e) => {
                 warn!(self.d().l, "Failed to poll for events: {:?}", e);
             }
-        }
-        for event in self.d().events.drain(..) {
-            events.push(event);
         }
     }
 

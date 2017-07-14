@@ -11,6 +11,7 @@ const EINPROGRESS: i32 = 115;
 /// rate limiting, etc.
 pub struct Socket {
     conn: TcpStream,
+    addr: SocketAddr,
     pub throttle: Option<Throttle>,
 }
 
@@ -30,16 +31,17 @@ impl Socket {
             }
             _ => { }
         }
-        Ok(Socket { conn, throttle: None })
+        Ok(Socket { conn, throttle: None, addr: addr.clone() })
     }
 
     pub fn addr(&self) -> SocketAddr {
-        self.conn.peer_addr().unwrap()
+        self.addr
     }
 
     pub fn from_stream(conn: TcpStream) -> io::Result<Socket> {
         conn.set_nonblocking(true)?;
-        Ok(Socket { conn, throttle: None })
+        let addr = conn.peer_addr().unwrap();
+        Ok(Socket { conn, throttle: None, addr: addr })
     }
 }
 

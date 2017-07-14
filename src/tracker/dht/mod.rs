@@ -22,7 +22,7 @@ const TX_TIMEOUT_SECS: i64 = 20;
 pub struct Manager {
     id: usize,
     table: rt::RoutingTable,
-    dht_flush: time::Instant, 
+    dht_flush: time::Instant,
     sock: UdpSocket,
     buf: Vec<u8>,
     l: Logger,
@@ -64,6 +64,7 @@ impl Manager {
     }
 
     pub fn init(&mut self) {
+        debug!(self.l, "Initializing DHT nodes!");
         for (q, a) in self.table.init() {
             self.send_msg(&q.encode(), a);
         }
