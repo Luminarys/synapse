@@ -2,7 +2,7 @@ use bencode::BEncode;
 use std::path::PathBuf;
 use std::collections::BTreeMap;
 use std::{io, fs, fmt, cmp};
-use sha1::Sha1;
+use ring::digest;
 use util::torrent_name;
 use disk;
 
@@ -76,11 +76,13 @@ impl Info {
             )
             .ok_or("invalid info field")
             .and_then(|(mut d, mut i)| {
-                let mut m = Sha1::new();
                 let mut info_bytes = Vec::new();
                 BEncode::Dict(i.clone()).encode(&mut info_bytes).unwrap();
-                m.update(&info_bytes);
-                let hash = m.digest().bytes();
+                let mut ctx = digest::Context::new(&digest::SHA1);
+                ctx.update(&info_bytes[..]);
+                let digest = ctx.finish();
+                let mut hash = [0u8; 20];
+                hash.copy_from_slice(digest.as_ref());
 
                 let a = d.remove("announce")
                     .and_then(|a| a.to_string())

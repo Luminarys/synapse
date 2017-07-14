@@ -1,7 +1,7 @@
 extern crate amy;
 extern crate byteorder;
 extern crate rand;
-extern crate sha1;
+extern crate ring;
 extern crate url;
 #[macro_use]
 extern crate lazy_static;
@@ -18,7 +18,6 @@ extern crate signal;
 extern crate slog;
 extern crate slog_term;
 extern crate slog_async;
-extern crate threadpool;
 #[macro_use]
 extern crate error_chain;
 extern crate c_ares;

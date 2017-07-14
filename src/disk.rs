@@ -1,26 +1,27 @@
-use std::sync::Arc;
-use std::{fs, fmt, path, time};
+use std::sync::{Arc, Mutex};
+use std::collections::HashMap;
+use std::{fs, fmt, path};
 use std::io::{self, Seek, SeekFrom, Write, Read};
 use std::path::PathBuf;
 use torrent::Info;
 use slog::Logger;
 use util::torrent_name;
-use threadpool::ThreadPool;
-use sha1::Sha1;
+use ring::digest;
 use amy;
 use {handle, CONFIG};
 
-const MAX_THREADS: usize = 10;
-const BACKOFF_MS: u64 = 50;
 const POLL_INT_MS: usize = 10;
 
 pub struct Disk {
     poll: amy::Poller,
     ch: handle::Handle<Request, Response>,
     l: Logger,
-    pool: ThreadPool,
-    threads: usize,
-    backoff: time::Instant,
+    files: FileCache,
+}
+
+#[derive(Clone)]
+struct FileCache {
+    files: Arc<Mutex<HashMap<path::PathBuf, fs::File>>>,
 }
 
 pub enum Request {
@@ -43,6 +44,26 @@ pub struct Ctx {
 impl Ctx {
     pub fn new(pid: usize, tid: usize, idx: u32, begin: u32, length: u32) -> Ctx {
         Ctx { pid, tid, idx, begin, length }
+    }
+}
+
+impl FileCache {
+    pub fn new() -> FileCache {
+        FileCache {
+            files: Arc::new(Mutex::new(HashMap::new()))
+        }
+    }
+
+    pub fn get_file<F: FnOnce(&mut fs::File) -> io::Result<()>>(&self, path: &path::Path, f: F) -> io::Result<()> {
+        let mut d = self.files.lock().unwrap();
+        if d.contains_key(path) {
+            f(d.get_mut(path).unwrap())?;
+        } else {
+            let mut file = fs::OpenOptions::new().write(true).create(true).read(true).open(path)?;
+            f(&mut file)?;
+            d.insert(path.to_path_buf(), file);
+        }
+        Ok(())
     }
 }
 
@@ -71,7 +92,7 @@ impl Request {
         Request::Shutdown
     }
 
-    pub fn execute(self) -> io::Result<Option<Response>> {
+    fn execute(self, fc: FileCache) -> io::Result<Option<Response>> {
         let sd = &CONFIG.session;
         let dd = &CONFIG.directory;
         match self {
@@ -79,9 +100,11 @@ impl Request {
                 let mut pb = path::PathBuf::from(dd);
                 for loc in locations {
                     pb.push(&loc.file);
-                    let mut f = fs::OpenOptions::new().write(true).open(&pb)?;
-                    f.seek(SeekFrom::Start(loc.offset))?;
-                    f.write(&data[loc.start..loc.end])?;
+                    fc.get_file(&pb, |f| {
+                        f.seek(SeekFrom::Start(loc.offset))?;
+                        f.write(&data[loc.start..loc.end])?;
+                        Ok(())
+                    })?;
                     pb.pop();
                 }
             }
@@ -89,9 +112,11 @@ impl Request {
                 let mut pb = path::PathBuf::from(dd);
                 for loc in locations {
                     pb.push(&loc.file);
-                    let mut f = fs::OpenOptions::new().read(true).open(&pb)?;
-                    f.seek(SeekFrom::Start(loc.offset))?;
-                    f.read(&mut data[loc.start..loc.end])?;
+                    fc.get_file(&pb, |f| {
+                        f.seek(SeekFrom::Start(loc.offset))?;
+                        f.read(&mut data[loc.start..loc.end])?;
+                        Ok(())
+                    })?;
                     pb.pop();
                 }
                 let data = Arc::new(data);
@@ -119,7 +144,7 @@ impl Request {
                 let mut f = fs::OpenOptions::new().read(true).open(&pb)?;
 
                 for i in 0..info.pieces() {
-                    let mut hasher = Sha1::new();
+                    let mut ctx = digest::Context::new(&digest::SHA1);
                     let locs = info.piece_disk_locs(i);
                     for loc in locs {
                         if &loc.file != &cf {
@@ -129,10 +154,10 @@ impl Request {
                             cf = loc.file;
                         }
                         let amnt = f.read(&mut buf)?;
-                        hasher.update(&buf[0..amnt]);
+                        ctx.update(&buf[0..amnt]);
                     }
-                    let hash = hasher.digest().bytes();
-                    if &hash[..] != &info.hashes[i as usize][..] {
+                    let digest = ctx.finish();
+                    if digest.as_ref() != &info.hashes[i as usize][..] {
                         invalid.push(i);
                     }
                 }
@@ -210,14 +235,11 @@ impl fmt::Debug for Response {
 
 impl Disk {
     pub fn new(poll: amy::Poller, ch: handle::Handle<Request, Response>, l: Logger) -> Disk {
-        let threads = 2;
         Disk {
             poll,
             ch,
             l,
-            pool: ThreadPool::new_with_name("disk_pool".into(), threads),
-            threads,
-            backoff: time::Instant::now(),
+            files: FileCache::new(),
         }
     }
 
@@ -238,7 +260,6 @@ impl Disk {
             }
         }
 
-        self.pool.join();
     }
 
     pub fn handle_events(&mut self) -> bool {
@@ -248,30 +269,17 @@ impl Disk {
                     return true;
                 }
                 Ok(r) => {
-                    // Adjust the pool size
-                    if self.pool.active_count() == self.threads && self.pool.active_count() < MAX_THREADS {
-                        debug!(self.l, "Increasing disk pool to {:?}", self.threads);
-                        self.threads += 1;
-                    } else if self.pool.active_count() + 2 < self.threads && self.backoff.elapsed() > time::Duration::from_millis(BACKOFF_MS) {
-                        self.backoff = time::Instant::now();
-                        debug!(self.l, "Decreasing disk pool to {:?}", self.threads);
-                        self.threads -= 1;
-                    }
-                    self.pool.set_num_threads(self.threads);
                     trace!(self.l, "Handling disk job!");
-                    let tx = self.ch.tx.try_clone().unwrap();
-                    self.pool.execute(move || {
-                        let tid = r.tid();
-                        match r.execute() {
-                            Ok(Some(r)) => {
-                                tx.send(r).unwrap();
-                            }
-                            Ok(None) => { }
-                            Err(e) => {
-                                tx.send(Response::error(tid, e)).unwrap();
-                            }
+                    let tid = r.tid();
+                    match r.execute(self.files.clone()) {
+                        Ok(Some(r)) => {
+                            self.ch.send(r).unwrap();
                         }
-                    });
+                        Ok(None) => { }
+                        Err(e) => {
+                            self.ch.send(Response::error(tid, e)).unwrap();
+                        }
+                    }
                 }
                 _ => { break },
             }
