@@ -129,6 +129,15 @@ impl cio::CIO for ACIO {
        Ok(id)
     }
 
+    fn get_peer<T, F: FnOnce(&mut torrent::PeerConn) -> T>(&mut self, pid: cio::PID, f: F) -> Option<T> {
+        if let Some(p) = self.d().peers.get_mut(&pid) {
+            Some(f(p))
+        } else {
+            None
+        }
+    }
+
+
     fn remove_peer(&mut self, peer: cio::PID) {
         self.d().remove_peer(peer);
     }

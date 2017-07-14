@@ -36,6 +36,9 @@ pub trait CIO {
     /// Adds a peer to be polled on
     fn add_peer(&mut self, peer: torrent::PeerConn) -> Result<PID>;
 
+    /// Applies f to a peer if it exists
+    fn get_peer<T, F: FnOnce(&mut torrent::PeerConn) -> T>(&mut self, peer: PID, f: F) -> Option<T>;
+
     /// Removes a peer
     fn remove_peer(&mut self, peer: PID);
 
@@ -69,9 +72,14 @@ pub mod test {
     use super::{CIO, PID, TID, Event, Result};
     use {rpc, tracker, disk, listener, torrent};
     use std::collections::HashMap;
+    use std::sync::{Arc, Mutex, MutexGuard};
+
+    pub struct TCIO {
+        data: Arc<Mutex<TCIOD>>,
+    }
 
     /// A reference CIO implementation which serves as a test mock
-    pub struct TCIO {
+    pub struct TCIOD {
         pub peers: HashMap<PID, torrent::PeerConn>,
         pub peer_msgs: Vec<(PID, torrent::Message)>,
         pub flushed_peers: Vec<PID>,
@@ -85,7 +93,7 @@ pub mod test {
 
     impl TCIO {
         pub fn new() -> TCIO {
-            TCIO {
+            let d = TCIOD {
                 peers: HashMap::new(),
                 peer_msgs: Vec::new(),
                 flushed_peers: Vec::new(),
@@ -95,7 +103,14 @@ pub mod test {
                 listener_msgs: Vec::new(),
                 timers: 0,
                 peer_cnt: 0,
+            };
+            TCIO {
+                data: Arc::new(Mutex::new(d)),
             }
+        }
+
+        pub fn data(&self) -> MutexGuard<TCIOD> {
+            self.data.lock().unwrap()
         }
     }
 
@@ -105,49 +120,68 @@ pub mod test {
         }
 
         fn add_peer(&mut self, peer: torrent::PeerConn) -> Result<PID> {
-            let id = self.peer_cnt;
-            self.peers.insert(id, peer);
-            self.peer_cnt += 1;
+            let mut d = self.data.lock().unwrap();
+            let id = d.peer_cnt;
+            d.peers.insert(id, peer);
+            d.peer_cnt += 1;
             Ok(id)
         }
 
+        fn get_peer<T, F: FnOnce(&mut torrent::PeerConn) -> T>(&mut self, pid: PID, f: F) -> Option<T> {
+            let mut d = self.data.lock().unwrap();
+            if let Some(p) = d.peers.get_mut(&pid) {
+                Some(f(p))
+            } else {
+                None
+            }
+        }
+
         fn remove_peer(&mut self, peer: PID) {
-            self.peers.remove(&peer);
+            let mut d = self.data.lock().unwrap();
+            d.peers.remove(&peer);
         }
 
         fn flush_peers(&mut self, mut peers: Vec<PID>) {
-            self.flushed_peers.extend(peers.drain(..));
+            let mut d = self.data.lock().unwrap();
+            d.flushed_peers.extend(peers.drain(..));
         }
 
         fn msg_peer(&mut self, peer: PID, msg: torrent::Message) {
-            self.peer_msgs.push((peer, msg));
+            let mut d = self.data.lock().unwrap();
+            d.peer_msgs.push((peer, msg));
         }
 
         fn msg_rpc(&mut self, msg: rpc::CMessage) {
-            self.rpc_msgs.push(msg);
+            let mut d = self.data.lock().unwrap();
+            d.rpc_msgs.push(msg);
         }
 
         fn msg_trk(&mut self, msg: tracker::Request) {
-            self.trk_msgs.push(msg);
+            let mut d = self.data.lock().unwrap();
+            d.trk_msgs.push(msg);
         }
 
         fn msg_disk(&mut self, msg: disk::Request) {
-            self.disk_msgs.push(msg);
+            let mut d = self.data.lock().unwrap();
+            d.disk_msgs.push(msg);
         }
 
         fn msg_listener(&mut self, msg: listener::Request) {
-            self.listener_msgs.push(msg);
+            let mut d = self.data.lock().unwrap();
+            d.listener_msgs.push(msg);
         }
 
         fn set_timer(&mut self, _: usize) -> Result<TID> {
-            let timer = self.timers;
-            self.timers += 1;
+            let mut d = self.data.lock().unwrap();
+            let timer = d.timers;
+            d.timers += 1;
             Ok(timer)
         }
 
         fn new_handle(&self) -> Self {
-            TCIO::new()
+            TCIO {
+                data: self.data.clone(),
+            }
         }
     }
-
 }

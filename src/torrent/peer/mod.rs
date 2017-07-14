@@ -214,16 +214,15 @@ impl<T: cio::CIO> Peer<T> {
             Message::KeepAlive => {
                 // TODO: Keep track of some internal timer maybe?
             }
-            Message::Cancel { .. } => {
-                // TODO: Attempt to drain CIO write queue?
-                /*
-                self.conn.writer.write_queue.retain(|m| {
-                    if let Message::Piece { index: i, begin: b, .. } = *m {
-                        return !(i == index && b == begin);
-                    }
-                    return true;
+            Message::Cancel { index, begin, .. } => {
+                self.cio.get_peer(self.id, |conn| {
+                    conn.writer.write_queue.retain(|m| {
+                        if let Message::Piece { index: i, begin: b, .. } = *m {
+                            return !(i == index && b == begin);
+                        }
+                        return true;
+                    });
                 });
-                */
             }
             _ => { }
         }
