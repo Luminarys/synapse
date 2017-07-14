@@ -53,11 +53,6 @@ impl PeerConn {
         }
     }
 
-    #[cfg(test)]
-    pub fn test() -> PeerConn {
-        PeerConn::new(Socket::empty())
-    }
-
     pub fn sock(&self) -> &Socket {
         &self.sock
     }
@@ -107,6 +102,32 @@ impl Status {
     }
 }
 
+#[cfg(test)]
+impl Peer<cio::test::TCIO> {
+    pub fn test(id: usize, uploaded: usize, downloaded: usize, queued: u16, pieces: Bitfield) -> Peer<cio::test::TCIO> {
+        Peer {
+            id,
+            remote_status: Status::new(),
+            local_status: Status::new(),
+            uploaded,
+            downloaded,
+            addr: "127.0.0.1:0".parse().unwrap(),
+            cio: cio::test::TCIO::new(),
+            queued,
+            pieces,
+            tid: 0,
+        }
+    }
+
+    pub fn test_from_pieces(id: usize, pieces: Bitfield) -> Peer<cio::test::TCIO> {
+        Peer::test(id, 0, 0, 0, pieces)
+    }
+
+    pub fn test_from_stats(id: usize, ul: usize, dl: usize) -> Peer<cio::test::TCIO> {
+        Peer::test(id, ul, dl, 0, Bitfield::new(4))
+    }
+}
+
 impl<T: cio::CIO> Peer<T> {
     pub fn new(mut conn: PeerConn, t: &mut Torrent<T>) -> cio::Result<Peer<T>> {
         let addr = conn.sock().addr();
@@ -127,31 +148,6 @@ impl<T: cio::CIO> Peer<T> {
         p.send_message(Message::handshake(&t.info));
         p.send_message(Message::Bitfield(t.pieces.clone()));
         Ok(p)
-    }
-
-    #[cfg(test)]
-    pub fn test(id: usize, uploaded: usize, downloaded: usize, queued: u16, pieces: Bitfield) -> Peer {
-        Peer {
-            id,
-            remote_status: Status::new(),
-            local_status: Status::new(),
-            uploaded,
-            downloaded,
-            conn: PeerConn::test(),
-            queued,
-            pieces,
-            tid: 0,
-        }
-    }
-
-    #[cfg(test)]
-    pub fn test_from_pieces(id: usize, pieces: Bitfield) -> Peer {
-        Peer::test(id, 0, 0, 0, pieces)
-    }
-
-    #[cfg(test)]
-    pub fn test_from_stats(id: usize, ul: usize, dl: usize) -> Peer {
-        Peer::test(id, ul, dl, 0, Bitfield::new(4))
     }
 
     pub fn addr(&self) -> SocketAddr {

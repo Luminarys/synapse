@@ -41,12 +41,6 @@ impl Socket {
         conn.set_nonblocking(true)?;
         Ok(Socket { conn, throttle: None })
     }
-
-    #[cfg(test)]
-    pub fn empty() -> Socket {
-        let conn = TcpBuilder::new_v4().unwrap().to_tcp_stream().unwrap();
-        Socket { conn, throttle: None }
-    }
 }
 
 impl AsRawFd for Socket {

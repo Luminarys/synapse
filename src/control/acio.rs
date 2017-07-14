@@ -147,7 +147,7 @@ impl cio::CIO for ACIO {
         self.d().events.extend(events.drain(..));
     }
 
-    fn msg_peer(&self, pid: cio::PID, msg: torrent::Message) {
+    fn msg_peer(&mut self, pid: cio::PID, msg: torrent::Message) {
         let d = self.d();
         let err = if let Some(peer) = d.peers.get_mut(&pid) {
             peer.write_message(msg).chain_err(|| ErrorKind::IO).err()
@@ -162,7 +162,7 @@ impl cio::CIO for ACIO {
         }
     }
 
-    fn msg_rpc(&self, msg: rpc::CMessage) {
+    fn msg_rpc(&mut self, msg: rpc::CMessage) {
         if self.d().chans.rpc_tx.send(msg).is_err() {
             self.d().events.push(
                 cio::Event::RPC(Err(ErrorKind::Channel("Couldn't send to RPC chan").into()))
@@ -170,7 +170,7 @@ impl cio::CIO for ACIO {
         }
     }
 
-    fn msg_trk(&self, msg: tracker::Request) {
+    fn msg_trk(&mut self, msg: tracker::Request) {
         if self.d().chans.trk_tx.send(msg).is_err() {
             self.d().events.push(
                 cio::Event::Tracker(Err(ErrorKind::Channel("Couldn't send to trk chan").into()))
@@ -178,7 +178,7 @@ impl cio::CIO for ACIO {
         }
     }
 
-    fn msg_disk(&self, msg: disk::Request) {
+    fn msg_disk(&mut self, msg: disk::Request) {
         if self.d().chans.disk_tx.send(msg).is_err() {
             self.d().events.push(
                 cio::Event::Disk(Err(ErrorKind::Channel("Couldn't send to disk chan").into()))
@@ -186,7 +186,7 @@ impl cio::CIO for ACIO {
         }
     }
 
-    fn msg_listener(&self, msg: listener::Request) {
+    fn msg_listener(&mut self, msg: listener::Request) {
         if self.d().chans.lst_tx.send(msg).is_err() {
             self.d().events.push(
                 cio::Event::Listener(Err(ErrorKind::Channel("Couldn't send to disk chan").into()))
