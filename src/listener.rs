@@ -60,15 +60,17 @@ impl Listener {
 
     pub fn run(&mut self) {
         debug!(self.l, "Accepting connections!");
-        while let Ok(res) = self.poll.wait(15) {
+        'outer: while let Ok(res) = self.poll.wait(15) {
             for not in res {
                 match not.id {
                     id if id == self.lid => self.handle_conn(),
+                    id if id == self.ch.rx.get_id() => {
+                        if let Ok(Request::Shutdown) = self.ch.recv() {
+                            return;
+                        }
+                    }
                     _ => self.handle_peer(not),
                 }
-            }
-            if let Ok(Request::Shutdown) = self.ch.recv() {
-                break;
             }
         }
     }
