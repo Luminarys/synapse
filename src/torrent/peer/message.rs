@@ -82,10 +82,11 @@ impl PartialEq for Message {
             (&Message::Have(p), &Message::Have(p_)) => p == p_,
             (&Message::Port(p), &Message::Port(p_)) => p == p_,
             (&Message::Request { index, begin, length }, &Message::Request { index: i, begin: b, length: l })
+            | (&Message::Piece { index, begin, length, .. }, &Message::Piece { index: i, begin: b, length: l, .. })
             | (&Message::Cancel { index, begin, length }, &Message::Cancel { index: i, begin: b, length: l }) => {
                         index == i && begin == b && length == l
                     },
-                _ => false
+            _ => false
         }
     }
 }

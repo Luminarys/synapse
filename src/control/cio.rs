@@ -148,7 +148,10 @@ pub mod test {
 
         fn msg_peer(&mut self, peer: PID, msg: torrent::Message) {
             let mut d = self.data.lock().unwrap();
-            d.peer_msgs.push((peer, msg));
+            d.peer_msgs.push((peer, msg.clone()));
+            if let Some(p) = d.peers.get_mut(&peer) {
+                p.write_message(msg).unwrap();
+            }
         }
 
         fn msg_rpc(&mut self, msg: rpc::CMessage) {

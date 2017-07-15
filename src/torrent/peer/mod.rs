@@ -8,10 +8,12 @@ use self::writer::Writer;
 use std::net::TcpStream;
 use socket::Socket;
 use std::net::SocketAddr;
-use std::{io, fmt, mem};
+use std::{io, fmt, mem, time};
 use torrent::{Torrent, Bitfield};
 use throttle::Throttle;
 use control::cio;
+use tracker;
+use {DHT_EXT, CONFIG};
 
 error_chain! {
     errors {
@@ -34,6 +36,14 @@ pub struct Peer<T: cio::CIO> {
     downloaded: usize,
     uploaded: usize,
     addr: SocketAddr,
+    rsv: [u8; 8],
+    last_updated: time::Instant,
+}
+
+#[derive(Debug)]
+pub struct Status {
+    pub choked: bool,
+    pub interested: bool,
 }
 
 pub struct PeerConn {
@@ -43,11 +53,22 @@ pub struct PeerConn {
 }
 
 impl PeerConn {
-    pub fn new (sock: Socket) -> PeerConn {
+    pub fn new(sock: Socket) -> PeerConn {
         let writer = Writer::new();
         let reader = Reader::new();
         PeerConn {
             sock,
+            writer,
+            reader,
+        }
+    }
+
+    #[cfg(test)]
+    pub fn test() -> PeerConn {
+        let writer = Writer::new();
+        let reader = Reader::new();
+        PeerConn {
+            sock: Socket::empty(),
             writer,
             reader,
         }
@@ -90,12 +111,6 @@ impl PeerConn {
     }
 }
 
-#[derive(Debug)]
-pub struct Status {
-    pub choked: bool,
-    pub interested: bool,
-}
-
 impl Status {
     fn new() -> Status {
         Status { choked: true, interested: false }
@@ -116,6 +131,8 @@ impl Peer<cio::test::TCIO> {
             queued,
             pieces,
             tid: 0,
+            rsv: [0u8; 8],
+            last_updated: time::Instant::now(),
         }
     }
 
@@ -125,6 +142,16 @@ impl Peer<cio::test::TCIO> {
 
     pub fn test_from_stats(id: usize, ul: usize, dl: usize) -> Peer<cio::test::TCIO> {
         Peer::test(id, ul, dl, 0, Bitfield::new(4))
+    }
+
+    pub fn test_with_tcio(mut cio: cio::test::TCIO) -> Peer<cio::test::TCIO> {
+        use control::cio::CIO;
+
+        let conn = PeerConn::test();
+        let id = cio.add_peer(conn).unwrap();
+        let mut peer = Peer::test(id, 0, 0, 0, Bitfield::new(4));
+        peer.cio = cio;
+        peer
     }
 }
 
@@ -144,6 +171,8 @@ impl<T: cio::CIO> Peer<T> {
             queued: 0,
             pieces: Bitfield::new(t.info.hashes.len() as u64),
             tid: t.id,
+            rsv: [0u8; 8],
+            last_updated: time::Instant::now(),
         };
         p.send_message(Message::handshake(&t.info));
         p.send_message(Message::Bitfield(t.pieces.clone()));
@@ -180,24 +209,33 @@ impl<T: cio::CIO> Peer<T> {
     }
 
     pub fn handle_msg(&mut self, msg: &mut Message) -> Result<()> {
+        self.last_updated = time::Instant::now();
         match *msg {
+            Message::Handshake { rsv, .. } => {
+                if (rsv[DHT_EXT.0] & DHT_EXT.1) != 0 {
+                    self.send_message(Message::Port(CONFIG.dht_port));
+                }
+                self.rsv = rsv;
+            }
             Message::Piece { .. } => {
                 self.downloaded += 1;
                 self.queued -= 1;
             }
             Message::Request { .. } => {
-                return Err(ErrorKind::ProtocolError("Peer requested while choked!").into())
+                if self.local_status.choked {
+                    return Err(ErrorKind::ProtocolError("Peer requested while choked!").into())
+                }
             }
-            Message::Choke { .. } => {
+            Message::Choke => {
                 self.remote_status.choked = true;
             }
-            Message::Unchoke { .. } => {
+            Message::Unchoke => {
                 self.remote_status.choked = false;
             }
-            Message::Interested { .. } => {
+            Message::Interested => {
                 self.remote_status.interested = true;
             }
-            Message::Uninterested { .. } => {
+            Message::Uninterested => {
                 self.remote_status.interested = false;
             }
             Message::Have(idx) => {
@@ -211,9 +249,7 @@ impl<T: cio::CIO> Peer<T> {
                 pieces.cap(self.pieces.len());
                 mem::swap(pieces, &mut self.pieces);
             }
-            Message::KeepAlive => {
-                // TODO: Keep track of some internal timer maybe?
-            }
+            Message::KeepAlive => { }
             Message::Cancel { index, begin, .. } => {
                 self.cio.get_peer(self.id, |conn| {
                     conn.writer.write_queue.retain(|m| {
@@ -224,7 +260,14 @@ impl<T: cio::CIO> Peer<T> {
                     });
                 });
             }
-            _ => { }
+            Message::Port(p) => {
+                let mut s = self.addr();
+                s.set_port(p);
+                self.cio.msg_trk(tracker::Request::AddNode(s));
+            }
+            Message::SharedPiece { .. } => {
+                unreachable!()
+            }
         }
         Ok(())
     }
@@ -263,10 +306,6 @@ impl<T: cio::CIO> Peer<T> {
         }
     }
 
-    pub fn send_port(&mut self, port: u16) {
-        self.send_message(Message::Port(port));
-    }
-
     pub fn send_message(&mut self, msg: Message) {
         if msg.is_piece() {
             self.uploaded += 1;
@@ -285,5 +324,32 @@ impl<T: cio::CIO> fmt::Debug for Peer<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "Peer {{ id: {}, tid: {}, local_status: {:?}, remote_status: {:?} }}",
                self.id, self.tid, self.local_status, self.remote_status)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Peer;
+    use control::cio::{CIO, test};
+    use torrent::Message;
+
+    #[test]
+    fn test_cancel() {
+        let mut tcio = test::TCIO::new();
+        let mut peer = Peer::test_with_tcio(tcio.new_handle());
+        let p1 = Message::Piece { index: 0, begin: 0, data: Box::new([0u8; 16384]), length: 16384 };
+        let p2 = Message::Piece { index: 1, begin: 1, data: Box::new([0u8; 16384]), length: 16384 };
+        let p3 = Message::Piece { index: 2, begin: 2, data: Box::new([0u8; 16384]), length: 16384 };
+        peer.send_message(Message::KeepAlive);
+        peer.send_message(p1.clone());
+        peer.send_message(p2.clone());
+        peer.send_message(p3.clone());
+
+        let mut c = Message::Cancel { index: 1, begin: 1, length: 16384 };
+        peer.handle_msg(&mut c).unwrap();
+        let wq = tcio.get_peer(peer.id, |p| p.writer.write_queue.clone()).unwrap();
+        assert_eq!(wq.len(), 2);
+        assert_eq!(wq[0], p1);
+        assert_eq!(wq[1], p3);
     }
 }

@@ -34,6 +34,12 @@ impl Socket {
         Ok(Socket { conn, throttle: None, addr: addr.clone() })
     }
 
+    #[cfg(test)]
+    pub fn empty() -> Socket {
+        let conn = TcpBuilder::new_v4().unwrap().to_tcp_stream().unwrap();
+        Socket { conn, throttle: None, addr: "127.0.0.1:0".parse().unwrap() }
+    }
+
     pub fn addr(&self) -> SocketAddr {
         self.addr
     }

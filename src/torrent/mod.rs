@@ -12,7 +12,7 @@ pub use self::peer::Message;
 use self::picker::Picker;
 use std::fmt;
 use control::cio;
-use {bincode, rpc, disk, DHT_EXT, CONFIG, RAREST_PKR};
+use {bincode, rpc, disk, RAREST_PKR};
 use throttle::Throttle;
 use tracker::{self, TrackerResponse};
 use std::collections::{HashMap, HashSet};
@@ -82,7 +82,7 @@ impl<T: cio::CIO> Torrent<T> {
     pub fn new(id: usize, info: Info, throttle: Throttle, cio: T, l: Logger) -> Torrent<T> {
         debug!(l, "Creating {:?}", info);
         // Create empty initial files
-        info.create_files().unwrap();
+        let created = info.create_files().ok();
         let peers = HashMap::new();
         let pieces = Bitfield::new(info.pieces() as u64);
         let picker = if RAREST_PKR {
@@ -91,12 +91,17 @@ impl<T: cio::CIO> Torrent<T> {
             Picker::new_sequential(&info)
         };
         let leechers = HashSet::new();
+        let status = if created.is_some() {
+            Status::Pending
+        } else {
+            Status::DiskError
+        };
         let mut t = Torrent {
             id, info: Arc::new(info), peers, pieces, picker,
             uploaded: 0, downloaded: 0, cio, leechers, throttle,
             tracker: TrackerStatus::Updating,
             tracker_update: None, choker: choker::Choker::new(),
-            l: l.clone(), dirty: false, status: Status::Pending,
+            l: l.clone(), dirty: false, status,
         };
         t.start();
         t
@@ -245,11 +250,8 @@ impl<T: cio::CIO> Torrent<T> {
     pub fn handle_msg(&mut self, msg: Message, peer: &mut Peer<T>) -> Result<(), ()> {
         trace!(self.l, "Received {:?} from peer", msg);
         match msg {
-            Message::Handshake { rsv, .. } => {
+            Message::Handshake { .. } => {
                 debug!(self.l, "Connection established with peer {:?}", peer.id());
-                if (rsv[DHT_EXT.0] & DHT_EXT.1) != 0 {
-                    peer.send_port(CONFIG.dht_port);
-                }
             }
             Message::Bitfield(_) => {
                 if self.pieces.usable(peer.pieces()) {
@@ -268,11 +270,6 @@ impl<T: cio::CIO> Torrent<T> {
                     peer.interested();
                 }
                 self.picker.piece_available(idx);
-            }
-            Message::Port(p) => {
-                let mut s = peer.addr();
-                s.set_port(p);
-                self.cio.msg_trk(tracker::Request::AddNode(s));
             }
             Message::Unchoke => {
                 debug!(self.l, "Unchoked by: {:?}!", peer);
@@ -306,8 +303,9 @@ impl<T: cio::CIO> Torrent<T> {
                     self.downloaded += 1;
                     self.pieces.set_bit(index as u64);
 
-                    // Begin validation if the torrent is done
+                    // Begin validation, and save state if the torrent is done
                     if self.pieces.complete() {
+                        self.serialize();
                         self.cio.msg_disk(disk::Request::validate(self.id, self.info.clone()));
                         self.status = Status::Validating;
                     }
@@ -364,7 +362,12 @@ impl<T: cio::CIO> Torrent<T> {
             Message::Uninterested => {
                 self.choker.remove_peer(peer, &mut self.peers);
             }
-            _ => { }
+            Message::KeepAlive
+            | Message::Choke
+            | Message::Cancel { .. }
+            | Message::Port(_) => { }
+
+            Message::SharedPiece { .. } => { unreachable!() }
         }
         Ok(())
     }
