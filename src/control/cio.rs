@@ -150,7 +150,7 @@ pub mod test {
             let mut d = self.data.lock().unwrap();
             d.peer_msgs.push((peer, msg.clone()));
             if let Some(p) = d.peers.get_mut(&peer) {
-                p.write_message(msg).unwrap();
+                p.write_message(msg);
             }
         }
 

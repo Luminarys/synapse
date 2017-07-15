@@ -348,7 +348,7 @@ mod tests {
         let mut c = Message::Cancel { index: 1, begin: 1, length: 16384 };
         peer.handle_msg(&mut c).unwrap();
         let wq = tcio.get_peer(peer.id, |p| p.writer.write_queue.clone()).unwrap();
-        assert_eq!(wq.len(), 2);
+         assert_eq!(wq.len(), 2);
         assert_eq!(wq[0], p1);
         assert_eq!(wq[1], p3);
     }
