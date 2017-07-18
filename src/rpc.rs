@@ -1,9 +1,12 @@
 use std::{thread, time};
+use std::net::{TcpListener, TcpStream, Ipv4Addr, SocketAddrV4};
 use bencode::{self, BEncode};
 use slog::Logger;
 use torrent::Status;
 use std::io;
-use {amy, tiny_http, serde_json, torrent, handle, CONFIG};
+use {amy, serde_json, torrent, handle, CONFIG};
+// TODO: Allow customizing this
+use std::collections::HashMap;
 
 #[derive(Debug)]
 pub enum CMessage {
@@ -48,6 +51,9 @@ pub struct RPC {
     poll: amy::Poller,
     reg: amy::Registrar,
     ch: handle::Handle<CMessage, Request>,
+    listener: TcpListener,
+    lid: usize,
+    clients: HashMap<usize, TcpStream>,
     l: Logger,
 }
 
@@ -80,29 +86,67 @@ macro_rules! id_match {
 }
 
 impl RPC {
-    pub fn new(poll: amy::Poller, reg: amy::Registrar, ch: handle::Handle<CMessage, Request>, l: Logger) -> RPC {
-        RPC {
+    pub fn start(creg: &mut amy::Registrar) -> io::Result<handle::Handle<Request, CMessage>> {
+        let poll = amy::Poller::new()?;
+        let mut reg = poll.get_registrar()?;
+        let (ch, dh) = handle::Handle::new(creg, &mut reg)?;
+
+        let ip = Ipv4Addr::new(0, 0, 0, 0);
+        let port = CONFIG.rpc_port;
+        let listener = TcpListener::bind(SocketAddrV4::new(ip, port))?;
+        listener.set_nonblocking(true)?;
+        let lid = reg.register(&listener, amy::Event::Both)?;
+
+        dh.run("rpc", move |ch, l| RPC {
+            ch,
             poll,
             reg,
-            ch,
-            l,
-        }
+            listener,
+            lid,
+            clients: HashMap::new(),
+            l
+        }.run());
+        Ok(ch)
     }
 
     pub fn run(&mut self) {
-        debug!(self.l, "Awaiting requests");
-        let server = tiny_http::Server::http(("0.0.0.0", CONFIG.rpc_port)).unwrap();
-        while let Ok(pr) = server.recv_timeout(time::Duration::from_secs(1)) {
-            if let Some(r) = pr {
-                if self.handle_request(r).is_err() {
-                    self.ch.send(Request::Shutdown).unwrap();
+        debug!(self.l, "Running RPC!");
+        'outer: while let Ok(res) = self.poll.wait(15) {
+            for not in res {
+                match not.id {
+                    id if id == self.lid => self.handle_accept(),
+                    id if id == self.ch.rx.get_id() => {
+                        if let Ok(CMessage::Shutdown) = self.ch.recv() {
+                            return;
+                        }
+                    }
+                    _ => self.handle_conn(not),
                 }
-            } else if let Ok(CMessage::Shutdown) = self.ch.recv() {
-                    return;
+            }
+        }
+        loop { }
+    }
+
+    fn handle_accept(&mut self) {
+        loop {
+            match self.listener.accept() {
+                Ok((conn, ip)) => {
+                    debug!(self.l, "Accepted new connection from {:?}!", ip);
+                    let id = self.reg.register(&conn, amy::Event::Both).unwrap();
+                    self.clients.insert(id, conn);
+                }
+                Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
+                    break;
+                }
+                _ => { unimplemented!(); }
             }
         }
     }
 
+    pub fn handle_conn(&mut self, not: amy::Notification) {
+    }
+
+    /*
     fn handle_request(&mut self, mut request: tiny_http::Request) -> Result<(), ()> {
         debug!(self.l, "New Req {:?}, {:?}!", request.url(), request.method());
         let mut resp = Err("Invalid URL".to_owned());
@@ -167,12 +211,5 @@ impl RPC {
         request.respond(resp).unwrap();
         Ok(())
     }
-}
-
-pub fn start(creg: &mut amy::Registrar) -> io::Result<handle::Handle<Request, CMessage>> {
-    let poll = amy::Poller::new()?;
-    let mut reg = poll.get_registrar()?;
-    let (ch, dh) = handle::Handle::new(creg, &mut reg)?;
-    dh.run("rpc", move |h, l| RPC::new(poll, reg, h, l).run());
-    Ok(ch)
+    */
 }
