@@ -48,7 +48,7 @@ impl Manager {
             if let Some(addr) = CONFIG.dht_bootstrap_node {
                 info!(l, "Using bootstrap node!");
                 let (msg, _) = t.add_addr(addr.clone());
-                sock.send_to(&msg.encode(), addr).unwrap();
+                sock.send_to(&msg.encode(), addr)?;
             }
             t
         };
