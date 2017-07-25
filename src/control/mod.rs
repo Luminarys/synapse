@@ -174,8 +174,11 @@ impl<T: cio::CIO> Control<T> {
         let id = tr.0;
         let resp = tr.1;
         {
-            let torrent = self.torrents.get_mut(&id).unwrap();
-            torrent.set_tracker_response(&resp);
+            if let Some(torrent) = self.torrents.get_mut(&id) {
+                torrent.set_tracker_response(&resp);
+            } else {
+                return;
+            }
         }
         trace!(self.l, "Adding peers!");
         if let Ok(r) = resp {
@@ -196,8 +199,9 @@ impl<T: cio::CIO> Control<T> {
 
     fn handle_disk_ev(&mut self, resp: disk::Response) {
         trace!(self.l, "Got disk response {:?}!", resp);
-        let torrent = &mut self.torrents.get_mut(&resp.tid()).unwrap();
-        torrent.handle_disk_resp(resp);
+        if let Some(torrent) = self.torrents.get_mut(&resp.tid()) {
+            torrent.handle_disk_resp(resp);
+        }
     }
 
     fn handle_lst_ev(&mut self, msg: listener::Message) {
@@ -210,10 +214,16 @@ impl<T: cio::CIO> Control<T> {
     }
 
     fn handle_peer_ev(&mut self, peer: cio::PID, ev: cio::Result<torrent::Message>) {
-        let torrent = self.torrents.get_mut(&self.peers[&peer]).unwrap();
-        if torrent.peer_ev(peer, ev).is_err() {
-            self.peers.remove(&peer);
-        }
+        let ref mut p = self.peers;
+        let ref mut t = self.torrents;
+
+        p.get(&peer).cloned()
+            .and_then(|id| t.get_mut(&id))
+            .map(|torrent| {
+                if torrent.peer_ev(peer, ev).is_err() {
+                    p.remove(&peer);
+                }
+            });
     }
 
     fn flush_blocked_peers(&mut self) {
@@ -316,9 +326,10 @@ impl<T: cio::CIO> Control<T> {
 
     fn add_peer(&mut self, id: usize, peer: peer::PeerConn) {
         trace!(self.l, "Adding peer to torrent {:?}!", id);
-        let torrent = self.torrents.get_mut(&id).unwrap();
-        if let Some(pid) = torrent.add_peer(peer) {
-            self.peers.insert(pid, id);
+        if let Some(torrent) = self.torrents.get_mut(&id) {
+            if let Some(pid) = torrent.add_peer(peer) {
+                self.peers.insert(pid, id);
+            }
         }
     }
 }
