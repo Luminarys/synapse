@@ -8,6 +8,7 @@ dependencies = [
  "c-ares 2.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "chrono 0.4.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "error-chain 0.10.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "httparse 1.2.3 (registry+https://github.com/rust-lang/crates.io-index)",
  "lazy_static 0.2.8 (registry+https://github.com/rust-lang/crates.io-index)",
  "net2 0.2.30 (registry+https://github.com/rust-lang/crates.io-index)",
  "num 0.2.0-git (git+https://github.com/rust-num/num?branch=next)",

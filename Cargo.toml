@@ -21,6 +21,7 @@ slog-term = "2"
 slog-async = "2"
 error-chain = "0.10"
 c-ares = "2"
+httparse = "1.2.3"
 
 [dependencies.chrono]
 version = "0.4"

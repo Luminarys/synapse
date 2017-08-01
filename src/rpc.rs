@@ -7,6 +7,7 @@ use std::io;
 use {amy, serde_json, torrent, handle, CONFIG};
 // TODO: Allow customizing this
 use std::collections::HashMap;
+use websocket::client::sync::Client as WsClient;
 
 #[derive(Debug)]
 pub enum CMessage {
@@ -53,7 +54,8 @@ pub struct RPC {
     ch: handle::Handle<CMessage, Request>,
     listener: TcpListener,
     lid: usize,
-    clients: HashMap<usize, TcpStream>,
+    clients: HashMap<usize, WsClient<TcpStream>>,
+    incoming: HashMap<usize, TcpStream>,
     l: Logger,
 }
 
@@ -104,6 +106,7 @@ impl RPC {
             listener,
             lid,
             clients: HashMap::new(),
+            incoming: HashMap::new(),
             l
         }.run());
         Ok(ch)
@@ -120,6 +123,7 @@ impl RPC {
                             return;
                         }
                     }
+                    id if self.incoming.contains_key(&id) => self.handle_incoming(id),
                     _ => self.handle_conn(not),
                 }
             }
@@ -133,17 +137,20 @@ impl RPC {
                 Ok((conn, ip)) => {
                     debug!(self.l, "Accepted new connection from {:?}!", ip);
                     let id = self.reg.register(&conn, amy::Event::Both).unwrap();
-                    self.clients.insert(id, conn);
+                    self.incoming.insert(id, conn);
                 }
                 Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
                     break;
                 }
-                _ => { unimplemented!(); }
+                Err(e) => { error!(self.l, "Failed to accept conn: {}", e); }
             }
         }
     }
 
-    pub fn handle_conn(&mut self, not: amy::Notification) {
+    fn handle_incoming(&mut self, id: usize) {
+    }
+
+    fn handle_conn(&mut self, not: amy::Notification) {
     }
 
     /*
