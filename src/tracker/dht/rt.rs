@@ -306,7 +306,6 @@ impl RoutingTable {
                     return Err(reqs);
                 }
                 self.get_node_mut(&id).update();
-                println!("Node {:?} encountered error {:?}", id, e);
             }
 
             // Mismatched IDs
