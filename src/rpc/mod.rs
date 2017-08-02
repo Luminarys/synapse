@@ -7,7 +7,9 @@ use std::io;
 use {amy, serde_json, torrent, handle, CONFIG};
 // TODO: Allow customizing this
 use std::collections::HashMap;
-use websocket::client::sync::Client as WsClient;
+
+mod reader;
+mod writer;
 
 #[derive(Debug)]
 pub enum CMessage {
@@ -54,7 +56,7 @@ pub struct RPC {
     ch: handle::Handle<CMessage, Request>,
     listener: TcpListener,
     lid: usize,
-    clients: HashMap<usize, WsClient<TcpStream>>,
+    clients: HashMap<usize, TcpStream>,
     incoming: HashMap<usize, TcpStream>,
     l: Logger,
 }

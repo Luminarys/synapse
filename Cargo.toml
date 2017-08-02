@@ -39,11 +39,6 @@ version = "2"
 default-features = false
 features = ["max_level_debug"]
 
-[dependencies.websocket]
-version = "0.20"
-default-features = false
-features = ["sync"]
-
 [profile.bench]
 opt-level = 3
 debug = true

@@ -22,7 +22,6 @@ extern crate error_chain;
 extern crate c_ares;
 extern crate chrono;
 extern crate num;
-extern crate websocket;
 extern crate httparse;
 
 mod handle;
