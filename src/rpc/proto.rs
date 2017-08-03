@@ -1,4 +1,5 @@
 use bencode::{self, BEncode};
+use byteorder::{BigEndian, WriteBytesExt};
 use torrent;
 
 #[derive(Debug)]
@@ -101,5 +102,33 @@ impl Message {
 
     pub fn mask(&self) -> Option<[u8; 4]> {
         self.mask
+    }
+
+    pub fn serialize(mut self) -> Vec<u8> {
+        let mut prefix = Vec::new();
+        let hb2;
+        if self.len < 126 {
+            hb2 = self.len as u8;
+        } else if self.len < 65535 {
+            hb2 = 126;
+        } else {
+            hb2 = 127;
+        }
+        // Ignore masking, server -> client messages shouldn't be
+        prefix.push(self.header);
+        prefix.push(hb2);
+
+        if hb2 == 126 {
+            let mut buf = [0u8; 2];
+            (&mut buf[..]).write_u16::<BigEndian>(self.len as u16).unwrap();
+            prefix.extend(buf.iter());
+        } else if hb2 == 127 {
+            let mut buf = [0u8; 8];
+            (&mut buf[..]).write_u64::<BigEndian>(self.len).unwrap();
+            prefix.extend(buf.iter());
+        }
+        prefix.extend(self.data.iter());
+
+        prefix
     }
 }

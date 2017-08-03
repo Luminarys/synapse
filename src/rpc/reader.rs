@@ -1,6 +1,7 @@
 use std::{io, mem};
 use byteorder::{BigEndian, ReadBytesExt};
 use super::proto::Message;
+use util::{IOR, aread};
 
 pub struct Reader {
     msg: Message,
@@ -17,45 +18,37 @@ enum State {
     Payload(usize),
 }
 
-enum RR {
-    Complete,
-    Incomplete(usize),
-    Blocked,
-    EOF,
-    Err(io::Error),
-}
-
 impl Reader {
     pub fn read<R: io::Read>(&mut self, r: &mut R) -> io::Result<Option<Message>> {
         loop {
             let start = 0;
             let end = self.state.size();
 
-            match (do_read(&mut self.msg.data[self.pos..end], r), self.state) {
-                (RR::Blocked, _) => {
+            match (aread(&mut self.msg.data[self.pos..end], r), self.state) {
+                (IOR::Blocked, _) => {
                     return Ok(None);
                 }
 
-                (RR::EOF, _) => {
+                (IOR::EOF, _) => {
                     return Err(io::ErrorKind::UnexpectedEof.into());
                 }
 
-                (RR::Err(e), _) => {
+                (IOR::Err(e), _) => {
                     return Err(e);
                 }
 
-                (RR::Incomplete(a), State::Payload(_)) => {
+                (IOR::Incomplete(a), State::Payload(_)) => {
                     for i in self.pos..self.pos+a {
                         self.msg.data[i] ^= self.msg.mask.unwrap()[i % 4];
                     }
                     self.pos += a;
                 }
 
-                (RR::Incomplete(a), _) => {
+                (IOR::Incomplete(a), _) => {
                     self.pos += a;
                 }
 
-                (RR::Complete, State::Header) => {
+                (IOR::Complete, State::Header) => {
                     self.msg.header = self.msg.data[start];
                     if self.msg.data[start+1] & 0x80 != 0 {
                         self.msg.mask = Some([0; 4]);
@@ -82,7 +75,7 @@ impl Reader {
                     self.pos = 0;
                 }
 
-                (RR::Complete, State::PayloadLen2) | (RR::Complete, State::PayloadLen8) => {
+                (IOR::Complete, State::PayloadLen2) | (IOR::Complete, State::PayloadLen8) => {
                     {
                         let mut buf = &self.msg.data[start..end];
                         match self.state {
@@ -102,7 +95,7 @@ impl Reader {
                     self.pos = 0;
                 }
 
-                (RR::Complete, State::MaskingKey) => {
+                (IOR::Complete, State::MaskingKey) => {
                     let mut mask = [0; 4];
                     mask.copy_from_slice(&self.msg.data[start..end]);
                     self.msg.mask = Some(mask);
@@ -111,7 +104,7 @@ impl Reader {
                     self.pos = 0;
                 }
 
-                (RR::Complete, State::Payload(_)) => {
+                (IOR::Complete, State::Payload(_)) => {
                     for i in self.pos..end {
                         self.msg.data[i] ^= self.msg.mask.unwrap()[i % 4];
                     }
@@ -139,12 +132,12 @@ impl State {
     }
 }
 
-fn do_read<R: io::Read>(b: &mut [u8], r: &mut R) -> RR {
+fn do_read<R: io::Read>(b: &mut [u8], r: &mut R) -> IOR {
     match r.read(b) {
-        Ok(0) => RR::EOF,
-        Ok(a) if a == b.len() => RR::Complete,
-        Ok(a)  => RR::Incomplete(a),
-        Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => RR::Blocked,
-        Err(e) => RR::Err(e),
+        Ok(0) => IOR::EOF,
+        Ok(a) if a == b.len() => IOR::Complete,
+        Ok(a)  => IOR::Incomplete(a),
+        Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => IOR::Blocked,
+        Err(e) => IOR::Err(e),
     }
 }
