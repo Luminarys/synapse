@@ -44,6 +44,13 @@ impl Reader {
                     return Err(e);
                 }
 
+                (RR::Incomplete(a), State::Payload(_)) => {
+                    for i in self.pos..self.pos+a {
+                        self.msg.data[i] ^= self.msg.mask.unwrap()[i % 4];
+                    }
+                    self.pos += a;
+                }
+
                 (RR::Incomplete(a), _) => {
                     self.pos += a;
                 }
@@ -51,7 +58,7 @@ impl Reader {
                 (RR::Complete, State::Header) => {
                     self.msg.header = self.msg.data[start];
                     if self.msg.data[start+1] & 0x80 != 0 {
-                        self.msg.mask = Some(0);
+                        self.msg.mask = Some([0; 4]);
                     }
 
                     match self.msg.data[start+1] & 0x7f {
@@ -76,11 +83,13 @@ impl Reader {
                 }
 
                 (RR::Complete, State::PayloadLen2) | (RR::Complete, State::PayloadLen8) => {
-                    let mut buf = &self.msg.data[start..end];
-                    match self.state {
-                        State::PayloadLen2 => self.msg.len = buf.read_u16::<BigEndian>().unwrap() as u64,
-                        State::PayloadLen8 => self.msg.len = buf.read_u64::<BigEndian>().unwrap(),
-                        _ => unreachable!(),
+                    {
+                        let mut buf = &self.msg.data[start..end];
+                        match self.state {
+                            State::PayloadLen2 => self.msg.len = buf.read_u16::<BigEndian>().unwrap() as u64,
+                            State::PayloadLen8 => self.msg.len = buf.read_u64::<BigEndian>().unwrap(),
+                            _ => unreachable!(),
+                        }
                     }
                     self.msg.allocate();
 
@@ -94,13 +103,19 @@ impl Reader {
                 }
 
                 (RR::Complete, State::MaskingKey) => {
-                    self.msg.mask = Some((&self.msg.data[start..end]).read_u32::<BigEndian>().unwrap());
+                    let mut mask = [0; 4];
+                    mask.copy_from_slice(&self.msg.data[start..end]);
+                    self.msg.mask = Some(mask);
                     self.state = State::Payload(self.msg.len as usize);
 
                     self.pos = 0;
                 }
 
-                (RR::Complete, State::Payload(l)) => {
+                (RR::Complete, State::Payload(_)) => {
+                    for i in self.pos..end {
+                        self.msg.data[i] ^= self.msg.mask.unwrap()[i % 4];
+                    }
+
                     self.state = State::Header;
 
                     self.pos = 0;

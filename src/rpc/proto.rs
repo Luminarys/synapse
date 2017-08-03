@@ -38,7 +38,7 @@ pub struct TorrentInfo {
 pub struct Message {
     pub header: u8,
     pub len: u64,
-    pub mask: Option<u32>,
+    pub mask: Option<[u8; 4]>,
     pub data: Vec<u8>,
 }
 
@@ -99,7 +99,7 @@ impl Message {
         self.len
     }
 
-    pub fn mask(&self) -> Option<u32> {
+    pub fn mask(&self) -> Option<[u8; 4]> {
         self.mask
     }
 }
