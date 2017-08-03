@@ -1,6 +1,5 @@
 use std::{thread, time};
 use std::net::{TcpListener, TcpStream, Ipv4Addr, SocketAddrV4};
-use bencode::{self, BEncode};
 use slog::Logger;
 use torrent::Status;
 use std::io;
@@ -10,43 +9,16 @@ use std::collections::HashMap;
 
 mod reader;
 mod writer;
+mod errors;
+mod proto;
+
+pub use self::proto::{Request, Response, TorrentInfo};
+pub use self::errors::{Result, ErrorKind};
 
 #[derive(Debug)]
 pub enum CMessage {
     Response(Response),
     Shutdown,
-}
-
-#[derive(Debug)]
-pub enum Request {
-    ListTorrents,
-    TorrentInfo(usize),
-    AddTorrent(BEncode),
-    PauseTorrent(usize),
-    ResumeTorrent(usize),
-    RemoveTorrent(usize),
-    ThrottleUpload(usize),
-    ThrottleDownload(usize),
-    Shutdown,
-}
-
-#[derive(Serialize, Debug)]
-pub enum Response {
-    Torrents(Vec<usize>),
-    TorrentInfo(TorrentInfo),
-    Ack,
-    Err(String),
-}
-
-#[derive(Serialize, Debug)]
-pub struct TorrentInfo {
-    pub name: String,
-    pub status: Status,
-    pub size: u64,
-    pub downloaded: u64,
-    pub uploaded: u64,
-    pub tracker: String,
-    pub tracker_status: torrent::TrackerStatus,
 }
 
 #[allow(dead_code)]
