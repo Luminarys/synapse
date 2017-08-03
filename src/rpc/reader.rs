@@ -5,7 +5,6 @@ use super::proto::Message;
 pub struct Reader {
     msg: Message,
     pos: usize,
-    left: usize,
     state: State,
 }
 
@@ -29,8 +28,9 @@ enum RR {
 impl Reader {
     pub fn read<R: io::Read>(&mut self, r: &mut R) -> io::Result<Option<Message>> {
         loop {
-            let start = self.pos - (self.state.size() - self.left);
-            let end = self.pos + self.left;
+            let start = 0;
+            let end = self.state.size();
+
             match (do_read(&mut self.msg.data[self.pos..end], r), self.state) {
                 (RR::Blocked, _) => {
                     return Ok(None);
@@ -46,7 +46,6 @@ impl Reader {
 
                 (RR::Incomplete(a), _) => {
                     self.pos += a;
-                    self.left -= a;
                 }
 
                 (RR::Complete, State::Header) => {
@@ -68,12 +67,12 @@ impl Reader {
                                 self.state = State::MaskingKey;
                             } else {
                                 self.state = State::Payload(l as usize);
+                                self.msg.allocate();
                             }
                         }
                     }
 
                     self.pos = 0;
-                    self.left = self.state.size();
                 }
 
                 (RR::Complete, State::PayloadLen2) | (RR::Complete, State::PayloadLen8) => {
@@ -83,6 +82,7 @@ impl Reader {
                         State::PayloadLen8 => self.msg.len = buf.read_u64::<BigEndian>().unwrap(),
                         _ => unreachable!(),
                     }
+                    self.msg.allocate();
 
                     if self.msg.masked() {
                         self.state = State::MaskingKey;
@@ -91,7 +91,6 @@ impl Reader {
                     }
 
                     self.pos = 0;
-                    self.left = self.state.size();
                 }
 
                 (RR::Complete, State::MaskingKey) => {
@@ -99,21 +98,18 @@ impl Reader {
                     self.state = State::Payload(self.msg.len as usize);
 
                     self.pos = 0;
-                    self.left = self.state.size();
                 }
 
                 (RR::Complete, State::Payload(l)) => {
                     self.state = State::Header;
 
                     self.pos = 0;
-                    self.left = self.state.size();
 
-                    return Ok(Some(mem::replace(&mut self.msg, Default::default())));
+                    return Ok(Some(mem::replace(&mut self.msg, Message::new())));
                 }
             }
         }
     }
-
 }
 
 impl State {

@@ -54,6 +54,22 @@ pub enum Opcode {
 }
 
 impl Message {
+    pub fn new() -> Message {
+        Message {
+            data: vec![0u8; 1024],
+            ..Default::default()
+        }
+    }
+
+    pub fn allocate(&mut self) {
+        let cl = self.data.len();
+        let len = self.len as usize;
+        if len > cl {
+            self.data.reserve_exact(len - cl);
+            unsafe { self.data.set_len(len); }
+        }
+    }
+
     pub fn fin(&self) -> bool {
         self.header & 0x80 != 0
     }
