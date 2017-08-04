@@ -8,13 +8,10 @@ pub use self::proto::{Request, Response, TorrentInfo};
 pub use self::errors::{Result, ResultExt, ErrorKind, Error};
 use self::client::{Incoming, Client};
 
-use std::{io, time, result, str};
-use io::Write;
-use std::net::{TcpListener, TcpStream, Ipv4Addr, SocketAddrV4};
+use std::{io, str};
+use std::net::{TcpListener, Ipv4Addr, SocketAddrV4};
 use slog::Logger;
-use {amy, base64, httparse, handle, CONFIG};
-use ring::digest;
-use util::{aread, IOR};
+use {amy, handle, CONFIG};
 // TODO: Allow customizing this
 use std::collections::HashMap;
 

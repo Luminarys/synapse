@@ -35,7 +35,6 @@ impl Message {
     }
 
     pub fn close() -> Message {
-        // let header = 0x80 | Opcode::Close.into();
         Message {
             header: 0x80 | Opcode::Close.code(),
             len: 0,
@@ -99,15 +98,7 @@ impl Message {
         self.mask.is_some()
     }
 
-    pub fn len(&self) -> u64 {
-        self.len
-    }
-
-    pub fn mask(&self) -> Option<[u8; 4]> {
-        self.mask
-    }
-
-    pub fn serialize(mut self) -> Vec<u8> {
+    pub fn serialize(self) -> Vec<u8> {
         let mut prefix = Vec::new();
         let hb2;
         if self.len < 126 {
