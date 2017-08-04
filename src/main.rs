@@ -20,9 +20,12 @@ extern crate slog_async;
 #[macro_use]
 extern crate error_chain;
 extern crate c_ares;
+extern crate httparse;
+extern crate base64;
+
+// TODO: Get rid of these
 extern crate chrono;
 extern crate num;
-extern crate httparse;
 
 mod handle;
 mod bencode;

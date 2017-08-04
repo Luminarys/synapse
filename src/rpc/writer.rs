@@ -1,6 +1,6 @@
 use std::collections::VecDeque;
 use std::io;
-use super::proto::Message;
+use super::proto::ws::Message;
 use util::{IOR, awrite};
 
 // TODO: Consider how to handle larger streamed messages(maybe)
@@ -22,6 +22,13 @@ enum WR {
 }
 
 impl Writer {
+    pub fn new() -> Writer {
+        Writer {
+            queue: VecDeque::new(),
+            state: State::Idle,
+        }
+    }
+
     pub fn write<W: io::Write>(&mut self, w: &mut W) -> io::Result<()> {
         loop {
             match self.do_write(w)? {

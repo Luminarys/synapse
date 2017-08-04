@@ -1,6 +1,6 @@
 use std::{io, mem};
 use byteorder::{BigEndian, ReadBytesExt};
-use super::proto::Message;
+use super::proto::ws::Message;
 use util::{IOR, aread};
 
 pub struct Reader {
@@ -19,6 +19,14 @@ enum State {
 }
 
 impl Reader {
+    pub fn new() -> Reader {
+        Reader {
+            msg: Message::new(),
+            pos: 0,
+            state: State::Header,
+        }
+    }
+
     pub fn read<R: io::Read>(&mut self, r: &mut R) -> io::Result<Option<Message>> {
         loop {
             let start = 0;
