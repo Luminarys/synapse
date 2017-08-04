@@ -138,13 +138,3 @@ impl State {
         }
     }
 }
-
-fn do_read<R: io::Read>(b: &mut [u8], r: &mut R) -> IOR {
-    match r.read(b) {
-        Ok(0) => IOR::EOF,
-        Ok(a) if a == b.len() => IOR::Complete,
-        Ok(a)  => IOR::Incomplete(a),
-        Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => IOR::Blocked,
-        Err(e) => IOR::Err(e),
-    }
-}

@@ -2,11 +2,11 @@ pub mod proto;
 mod reader;
 mod writer;
 mod errors;
+mod client;
 
 pub use self::proto::{Request, Response, TorrentInfo};
-pub use self::errors::{Result, ErrorKind};
-use self::reader::Reader;
-use self::writer::Writer;
+pub use self::errors::{Result, ResultExt, ErrorKind, Error};
+use self::client::{Incoming, Client};
 
 use std::{io, time, result, str};
 use io::Write;
@@ -34,21 +34,6 @@ pub struct RPC {
     clients: HashMap<usize, Client>,
     incoming: HashMap<usize, Incoming>,
     l: Logger,
-}
-
-struct Client {
-    r: Reader,
-    w: Writer,
-    conn: TcpStream,
-    last_action: time::Instant,
-}
-
-struct Incoming {
-    key: Option<String>,
-    conn: TcpStream,
-    buf: [u8; 1024],
-    pos: usize,
-    last_action: time::Instant,
 }
 
 macro_rules! id_match {
@@ -161,132 +146,22 @@ impl RPC {
     fn handle_conn(&mut self, not: amy::Notification) {
         if let Some(mut c) = self.clients.remove(&not.id) {
             if not.event.readable() {
-                match c.r.read(&mut c.conn) {
-                    Ok(None) => { }
-                    Ok(Some(m)) => {
-                        debug!(self.l, "Got a message from the client: {:?}", m);
+                loop {
+                    match c.read() {
+                        Ok(None) => break,
+                        Ok(Some(m)) => {
+                            debug!(self.l, "Got a message from the client: {:?}", m);
+                        }
+                        Err(_) => return,
                     }
-                    Err(_) => return,
                 }
             }
-            if not.event.readable() {
-                if c.w.write(&mut c.conn).is_err() {
+            if not.event.writable() {
+                if c.write().is_err() {
                     return;
                 }
             }
             self.clients.insert(not.id, c);
         }
     }
-}
-
-impl Incoming {
-    pub fn new(conn: TcpStream) -> Incoming {
-        conn.set_nonblocking(true).unwrap();
-        Incoming {
-            conn,
-            buf: [0; 1024],
-            pos: 0,
-            last_action: time::Instant::now(),
-            key: None,
-        }
-    }
-
-    /// Result indicates if the Incoming connection is
-    /// valid to be upgraded into a Client
-    pub fn readable(&mut self) -> io::Result<bool> {
-        loop {
-            match aread(&mut self.buf[self.pos..], &mut self.conn) {
-                // TODO: Consider more
-                IOR::Complete => return Err(io::ErrorKind::InvalidData.into()),
-                IOR::Incomplete(a) => {
-                    self.pos += a;
-                    let mut headers = [httparse::EMPTY_HEADER; 24];
-                    let mut req = httparse::Request::new(&mut headers);
-                    match req.parse(&self.buf[..self.pos]) {
-                        Ok(httparse::Status::Partial) => continue,
-                        Ok(httparse::Status::Complete(_)) => {
-                            if let Ok(k) = validate_upgrade(req) {
-                                self.key = Some(k);
-                                return Ok(true);
-                            } else {
-                                return Err(io::ErrorKind::InvalidData.into());
-                            }
-                        }
-                        Err(_) => return Err(io::ErrorKind::InvalidData.into()),
-                    }
-                }
-                IOR::Blocked => return Ok(false),
-                IOR::EOF => return Err(io::ErrorKind::UnexpectedEof.into()),
-                IOR::Err(e) => return Err(e),
-            }
-        }
-    }
-}
-
-impl Into<Client> for Incoming {
-    fn into(mut self) -> Client {
-        let mut ctx = digest::Context::new(&digest::SHA1);
-        let magic = self.key.unwrap() + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
-        ctx.update(magic.as_bytes());
-        let digest = ctx.finish();
-        let accept = base64::encode(digest.as_ref());
-        let lines = vec![
-            format!("HTTP/1.1 101 Switching Protocols"),
-            format!("Connection: upgrade"),
-            format!("Upgrade: websocket"),
-            format!("Sec-WebSocket-Accept: {}", accept),
-        ];
-        let data = lines.join("\r\n") + "\r\n\r\n";
-        // Ignore error, it'll pop up again anyways
-        self.conn.write(data.as_bytes());
-
-        Client {
-            r: Reader::new(),
-            w: Writer::new(),
-            conn: self.conn,
-            last_action: time::Instant::now(),
-        }
-    }
-}
-
-fn validate_upgrade(req: httparse::Request) -> result::Result<String, ()> {
-    if !req.method.map(|m| m == "GET").unwrap_or(false) {
-        return Err(());
-    }
-
-    let mut conn = None;
-    let mut upgrade = None;
-    let mut key = None;
-    let mut version = None;
-
-    for header in req.headers.iter() {
-        if header.name == "Connection" {
-            conn = str::from_utf8(header.value).ok();
-        }
-        if header.name == "Upgrade" {
-            upgrade = str::from_utf8(header.value).ok();
-        }
-        if header.name == "Sec-WebSocket-Key" {
-            key = str::from_utf8(header.value).ok();
-        }
-        if header.name == "Sec-WebSocket-Version" {
-            version = str::from_utf8(header.value).ok();
-        }
-    }
-
-    if conn != Some("Upgrade") {
-        return Err(());
-    }
-    if upgrade != Some("websocket") {
-        return Err(());
-    }
-
-    if version != Some("13") {
-        return Err(());
-    }
-
-    if let Some(k) = key {
-        return Ok(k.to_owned());
-    }
-    return Err(());
 }

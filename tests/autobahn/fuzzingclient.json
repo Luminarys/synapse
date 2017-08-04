@@ -1,0 +1,13 @@
+
+{
+   "outdir": "./reports/",
+   "servers": [
+      {
+         "url": "ws://127.0.0.1:8412",
+	 "agent": "fuzzer"
+      }
+   ],
+   "cases": ["1.*", "2.*", "3.*", "4.*", "5.*", "6.*", "7.*", "9.*", "10.*"],
+   "exclude-cases": [],
+   "exclude-agent-cases": {}
+}

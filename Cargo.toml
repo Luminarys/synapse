@@ -60,3 +60,4 @@ panic = 'unwind'
 
 [features]
 default = []
+autobahn = []
