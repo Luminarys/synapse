@@ -1,6 +1,6 @@
 use byteorder::{BigEndian, WriteBytesExt};
 
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub struct Message {
     pub header: u8,
     pub len: u64,
@@ -22,7 +22,7 @@ pub enum Opcode {
 impl Message {
     pub fn new() -> Message {
         Message {
-            data: vec![0u8; 1024],
+            data: vec![0u8; 256],
             ..Default::default()
         }
     }
@@ -33,6 +33,8 @@ impl Message {
         if len > cl {
             self.data.reserve_exact(len - cl);
             unsafe { self.data.set_len(len); }
+        } else {
+            self.data.truncate(len);
         }
     }
 

@@ -8,12 +8,11 @@ pub use self::errors::{Result, ErrorKind};
 use self::reader::Reader;
 use self::writer::Writer;
 
-use std::{io, thread, time, result, str};
+use std::{io, time, result, str};
 use io::Write;
 use std::net::{TcpListener, TcpStream, Ipv4Addr, SocketAddrV4};
 use slog::Logger;
-use torrent::Status;
-use {amy, base64, serde_json, httparse, torrent, handle, CONFIG};
+use {amy, base64, httparse, handle, CONFIG};
 use ring::digest;
 use util::{aread, IOR};
 // TODO: Allow customizing this
@@ -47,7 +46,7 @@ struct Client {
 struct Incoming {
     key: Option<String>,
     conn: TcpStream,
-    buf: [u8; 256],
+    buf: [u8; 1024],
     pos: usize,
     last_action: time::Instant,
 }
@@ -144,9 +143,40 @@ impl RPC {
         }
     }
 
-    fn handle_incoming(&mut self, id: usize) {}
+    fn handle_incoming(&mut self, id: usize) {
+        if let Some(mut i) = self.incoming.remove(&id) {
+            match i.readable() {
+                Ok(true) => {
+                    debug!(self.l, "Succesfully upgraded conn");
+                    self.clients.insert(id, i.into());
+                }
+                Ok(false) => {
+                    self.incoming.insert(id, i);
+                }
+                Err(e) => debug!(self.l, "Incoming ws upgrade failed: {}", e),
+            }
+        }
+    }
 
-    fn handle_conn(&mut self, not: amy::Notification) {}
+    fn handle_conn(&mut self, not: amy::Notification) {
+        if let Some(mut c) = self.clients.remove(&not.id) {
+            if not.event.readable() {
+                match c.r.read(&mut c.conn) {
+                    Ok(None) => { }
+                    Ok(Some(m)) => {
+                        debug!(self.l, "Got a message from the client: {:?}", m);
+                    }
+                    Err(_) => return,
+                }
+            }
+            if not.event.readable() {
+                if c.w.write(&mut c.conn).is_err() {
+                    return;
+                }
+            }
+            self.clients.insert(not.id, c);
+        }
+    }
 }
 
 impl Incoming {
@@ -154,7 +184,7 @@ impl Incoming {
         conn.set_nonblocking(true).unwrap();
         Incoming {
             conn,
-            buf: [0; 256],
+            buf: [0; 1024],
             pos: 0,
             last_action: time::Instant::now(),
             key: None,
@@ -170,7 +200,7 @@ impl Incoming {
                 IOR::Complete => return Err(io::ErrorKind::InvalidData.into()),
                 IOR::Incomplete(a) => {
                     self.pos += a;
-                    let mut headers = [httparse::EMPTY_HEADER; 16];
+                    let mut headers = [httparse::EMPTY_HEADER; 24];
                     let mut req = httparse::Request::new(&mut headers);
                     match req.parse(&self.buf[..self.pos]) {
                         Ok(httparse::Status::Partial) => continue,
@@ -190,7 +220,6 @@ impl Incoming {
                 IOR::Err(e) => return Err(e),
             }
         }
-        Ok(false)
     }
 }
 
@@ -202,7 +231,7 @@ impl Into<Client> for Incoming {
         let digest = ctx.finish();
         let accept = base64::encode(digest.as_ref());
         let lines = vec![
-            format!("HTTP/1.1 100 Switching Protocols"),
+            format!("HTTP/1.1 101 Switching Protocols"),
             format!("Connection: upgrade"),
             format!("Upgrade: websocket"),
             format!("Sec-WebSocket-Accept: {}", accept),
@@ -235,7 +264,7 @@ fn validate_upgrade(req: httparse::Request) -> result::Result<String, ()> {
             conn = str::from_utf8(header.value).ok();
         }
         if header.name == "Upgrade" {
-            conn = str::from_utf8(header.value).ok();
+            upgrade = str::from_utf8(header.value).ok();
         }
         if header.name == "Sec-WebSocket-Key" {
             key = str::from_utf8(header.value).ok();

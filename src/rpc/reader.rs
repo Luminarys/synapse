@@ -31,7 +31,6 @@ impl Reader {
         loop {
             let start = 0;
             let end = self.state.size();
-
             match (aread(&mut self.msg.data[self.pos..end], r), self.state) {
                 (IOR::Blocked, _) => {
                     return Ok(None);
@@ -74,8 +73,8 @@ impl Reader {
                             if self.msg.masked() {
                                 self.state = State::MaskingKey;
                             } else {
-                                self.state = State::Payload(l as usize);
                                 self.msg.allocate();
+                                self.state = State::Payload(l as usize);
                             }
                         }
                     }
@@ -92,11 +91,10 @@ impl Reader {
                             _ => unreachable!(),
                         }
                     }
-                    self.msg.allocate();
-
                     if self.msg.masked() {
                         self.state = State::MaskingKey;
                     } else {
+                        self.msg.allocate();
                         self.state = State::Payload(self.msg.len as usize);
                     }
 
@@ -108,6 +106,7 @@ impl Reader {
                     mask.copy_from_slice(&self.msg.data[start..end]);
                     self.msg.mask = Some(mask);
                     self.state = State::Payload(self.msg.len as usize);
+                    self.msg.allocate();
 
                     self.pos = 0;
                 }
