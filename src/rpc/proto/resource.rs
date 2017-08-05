@@ -1,7 +1,7 @@
 use chrono::{DateTime, Utc};
 
 #[derive(Serialize, Deserialize)]
-#[serde(tag = "type")]
+#[serde(untagged)]
 pub enum Resource {
     Torrent(Torrent),
     Piece(Piece),
@@ -81,13 +81,5 @@ pub struct Tracker {
     id: u64,
     torrent_id: u64,
     url: String,
-    kind: TrackerKind,
     last_report: DateTime<Utc>,
-}
-
-#[derive(Serialize, Deserialize)]
-pub enum TrackerKind {
-    HTTPS,
-    HTTP,
-    UDP,
 }
