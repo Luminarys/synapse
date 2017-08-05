@@ -1,8 +1,13 @@
 error_chain! {
     errors {
-        EOF {
-            description("Unexpected socket EOF")
-            display("Unexpected socket EOF")
+        IO {
+            description("Unexpected socket IO error")
+            display("Unexpected socket IO error")
+        }
+
+        Complete {
+            description("Client connection completed")
+            display("Client connection completed")
         }
 
         Timeout {
