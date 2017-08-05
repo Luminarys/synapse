@@ -3,10 +3,12 @@ mod reader;
 mod writer;
 mod errors;
 mod client;
+mod processor;
 
 pub use self::proto::{Request, Response, TorrentInfo};
 pub use self::errors::{Result, ResultExt, ErrorKind, Error};
 use self::client::{Incoming, Client};
+use self::processor::Processor;
 
 use std::{io, str};
 use std::net::{TcpListener, Ipv4Addr, SocketAddrV4};
@@ -27,6 +29,7 @@ pub struct RPC {
     ch: handle::Handle<CMessage, Request>,
     listener: TcpListener,
     lid: usize,
+    processor: Processor,
     clients: HashMap<usize, Client>,
     incoming: HashMap<usize, Incoming>,
     l: Logger,
@@ -53,6 +56,7 @@ impl RPC {
                 lid,
                 clients: HashMap::new(),
                 incoming: HashMap::new(),
+                processor: Processor::new(),
                 l,
             }.run()
         });

@@ -1,11 +1,25 @@
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Criterion {
+    #[serde(default)]
+    kind: ResourceKind,
     field: String,
     op: Operation,
     value: Value,
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub enum ResourceKind {
+    Torrent,
+    Peer,
+    File,
+    Piece,
+    Tracker
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 pub enum Operation {
     #[serde(rename = "==")]
     Eq,
@@ -31,6 +45,7 @@ pub enum Operation {
 
 #[derive(Deserialize)]
 #[serde(untagged)]
+#[serde(deny_unknown_fields)]
 pub enum Value {
     S(String),
     N(i64),
@@ -38,4 +53,10 @@ pub enum Value {
     AS(Vec<String>),
     AN(Vec<i64>),
     AF(Vec<f64>),
+}
+
+impl Default for ResourceKind {
+    fn default() -> ResourceKind {
+        ResourceKind::Torrent
+    }
 }

@@ -1,6 +1,7 @@
 use chrono::{DateTime, Utc};
 
 #[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 #[serde(untagged)]
 pub enum Resource {
     Torrent(Torrent),
@@ -10,7 +11,43 @@ pub enum Resource {
     Tracker(Tracker),
 }
 
+/// To increase server->client update efficiency, we
+/// encode common partial updates to resources with
+/// this enum.
+#[derive(Serialize)]
+#[serde(deny_unknown_fields)]
+#[serde(untagged)]
+pub enum ResourceUpdate {
+    Resource(Resource),
+    TorrentStatus {
+        id: u64,
+        error: Option<String>,
+        status: Status,
+    },
+    TorrentTransfer {
+        id: u64,
+        rate_up: u32,
+        rate_down: u32,
+        transferred_up: u32,
+        transferred_down: u32,
+    },
+    TorrentPeers {
+        id: u64,
+        peers: u16,
+    },
+    PeerRate {
+        id: u64,
+        rate_up: u32,
+        rate_down: u32,
+    },
+    PieceDownloaded {
+        id: u64,
+        downloaded: bool,
+    }
+}
+
 #[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Torrent {
     id: u64,
     name: String,
@@ -25,8 +62,6 @@ pub struct Torrent {
     sequential: bool,
     rate_up: u32,
     rate_down: u32,
-    average_rate_up: f32,
-    average_rate_down: f32,
     throttle_up: u32,
     throttle_down: u32,
     transferred_up: u64,
@@ -34,10 +69,13 @@ pub struct Torrent {
     peers: u16,
     trackers: u8,
     pieces: u64,
+    piece_size: u32,
     files: u32,
 }
 
 #[derive(Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+#[serde(deny_unknown_fields)]
 pub enum Status {
     Pending,
     Leeching,
@@ -48,6 +86,7 @@ pub enum Status {
 }
 
 #[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Piece {
     id: u64,
     torrent_id: u64,
@@ -56,6 +95,7 @@ pub struct Piece {
 }
 
 #[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct File {
     id: u64,
     torrent_id: u64,
@@ -66,6 +106,7 @@ pub struct File {
 }
 
 #[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Peer {
     id: u64,
     torrent_id: u64,
@@ -77,9 +118,11 @@ pub struct Peer {
 }
 
 #[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Tracker {
     id: u64,
     torrent_id: u64,
     url: String,
     last_report: DateTime<Utc>,
+    error: Option<String>,
 }
