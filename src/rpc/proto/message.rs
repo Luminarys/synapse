@@ -1,10 +1,10 @@
 use chrono::{DateTime, Utc};
 
-use super::resource::{Resource, ResourceUpdate};
+use super::resource::{Resource, CResourceUpdate, SResourceUpdate};
 use super::criterion::Criterion;
 
 /// Client -> server messages, deserialize only
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 #[serde(tag = "type")]
 #[serde(deny_unknown_fields)]
@@ -13,7 +13,7 @@ pub enum CMessage {
     GetResources { serial: u64, ids: Vec<u64> },
     Subscribe { serial: u64, ids: Vec<u64> },
     Unsubscribe { serial: u64, ids: Vec<u64> },
-    UpdateResource { serial: u64, resource: Resource },
+    UpdateResource { serial: u64, resource: CResourceUpdate },
     FilterSubscribe {
         serial: u64,
         criteria: Vec<Criterion>,
@@ -36,7 +36,7 @@ pub enum SMessage {
     ResourcesRemoved { serial: u64, ids: Vec<u64> },
     UpdateResources {
         serial: u64,
-        resources: Vec<ResourceUpdate>,
+        resources: Vec<SResourceUpdate>,
     },
 
     // Special messages
@@ -48,11 +48,50 @@ pub enum SMessage {
     },
 
     // Error messages
-    UnknownResource { reason: String },
-    InvalidResource { reason: String },
-    InvalidMessage { reason: String },
-    InvalidSchema { reason: String },
-    InvalidRequest { reason: String },
-    PermissionDenied { reason: String },
-    ServerError { reason: String },
+    UnknownResource(Error),
+    InvalidResource(Error),
+    InvalidMessage(Error),
+    InvalidSchema(Error),
+    InvalidRequest(Error),
+    PermissionDenied(Error),
+    ServerError(Error),
+}
+
+#[derive(Serialize)]
+pub struct Error {
+    serial: Option<u64>,
+    reason: String,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use super::super::criterion;
+    use serde_json;
+
+    #[test]
+    fn test_json_repr() {
+        let data = r#"
+            {
+                "type": "FILTER_SUBSCRIBE",
+                "serial": 0,
+                "criteria": [
+                    { "field": "id", "op": "in", "value": [1,2,3] }
+                ]
+            }
+            "#;
+        let m = serde_json::from_str(data).unwrap();
+        if let CMessage::FilterSubscribe {
+            serial: 0,
+            criteria: c,
+        } = m
+        {
+            assert_eq!(c[0].field, "id");
+            assert_eq!(c[0].kind, criterion::ResourceKind::Torrent);
+            assert_eq!(c[0].op, criterion::Operation::In);
+            assert_eq!(c[0].value, criterion::Value::AN(vec![1,2,3]));
+        } else {
+            unreachable!();
+        }
+    }
 }

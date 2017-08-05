@@ -22,6 +22,7 @@ extern crate error_chain;
 extern crate c_ares;
 extern crate httparse;
 extern crate base64;
+extern crate regex;
 
 // TODO: Get rid of these
 extern crate chrono;

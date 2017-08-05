@@ -1,14 +1,16 @@
-#[derive(Deserialize)]
+use regex::{self, Regex};
+
+#[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Criterion {
     #[serde(default)]
-    kind: ResourceKind,
-    field: String,
-    op: Operation,
-    value: Value,
+    pub kind: ResourceKind,
+    pub field: String,
+    pub op: Operation,
+    pub value: Value,
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub enum ResourceKind {
     Torrent,
@@ -18,7 +20,7 @@ pub enum ResourceKind {
     Tracker
 }
 
-#[derive(Deserialize)]
+#[derive(Copy, Clone, Debug, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub enum Operation {
     #[serde(rename = "==")]
@@ -43,7 +45,7 @@ pub enum Operation {
     NotIn,
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize, PartialEq)]
 #[serde(untagged)]
 #[serde(deny_unknown_fields)]
 pub enum Value {
@@ -55,8 +57,191 @@ pub enum Value {
     AF(Vec<f64>),
 }
 
+pub trait Filter {
+    fn matches(&self, criterion: &Criterion) -> bool;
+}
+
 impl Default for ResourceKind {
     fn default() -> ResourceKind {
         ResourceKind::Torrent
+    }
+}
+
+pub fn match_n<T: PartialOrd<i64>>(t: &T, c: &Criterion) -> bool {
+    match c.op {
+        Operation::Eq => {
+            match c.value {
+                Value::N(v) => t.eq(&v),
+                _ => false,
+            }
+        }
+        Operation::Neq => {
+            match c.value {
+                Value::N(v) => t.ne(&v),
+                _ => false,
+            }
+        }
+        Operation::GT => {
+            match c.value {
+                Value::N(v) => t.gt(&v),
+                _ => false,
+            }
+        }
+        Operation::GTE => {
+            match c.value {
+                Value::N(v) => t.ge(&v),
+                _ => false,
+            }
+        }
+        Operation::LT => {
+            match c.value {
+                Value::N(v) => t.lt(&v),
+                _ => false,
+            }
+        }
+        Operation::LTE => {
+            match c.value {
+                Value::N(v) => t.le(&v),
+                _ => false,
+            }
+        }
+        Operation::In => {
+            match c.value {
+                Value::AN(ref a) => a.iter().any(|v| t.eq(v)),
+                _ => false,
+            }
+        }
+        Operation::NotIn => {
+            match c.value {
+                Value::AN(ref a) => a.iter().all(|v| t.ne(v)),
+                _ => false,
+            }
+        }
+        _ => false,
+    }
+}
+
+pub fn match_f<T: PartialOrd<f64>>(t: &T, c: &Criterion) -> bool {
+    match c.op {
+        Operation::Eq => {
+            match c.value {
+                Value::F(v) => t.eq(&v),
+                _ => false,
+            }
+        }
+        Operation::Neq => {
+            match c.value {
+                Value::F(v) => t.ne(&v),
+                _ => false,
+            }
+        }
+        Operation::GT => {
+            match c.value {
+                Value::F(v) => t.gt(&v),
+                _ => false,
+            }
+        }
+        Operation::GTE => {
+            match c.value {
+                Value::F(v) => t.ge(&v),
+                _ => false,
+            }
+        }
+        Operation::LT => {
+            match c.value {
+                Value::F(v) => t.lt(&v),
+                _ => false,
+            }
+        }
+        Operation::LTE => {
+            match c.value {
+                Value::F(v) => t.le(&v),
+                _ => false,
+            }
+        }
+        Operation::In => {
+            match c.value {
+                Value::AF(ref a) => a.iter().any(|v| t.eq(v)),
+                _ => false,
+            }
+        }
+        Operation::NotIn => {
+            match c.value {
+                Value::AF(ref a) => a.iter().all(|v| t.ne(v)),
+                _ => false,
+            }
+        }
+        _ => false,
+    }
+}
+
+pub fn match_s(t: &str, c: &Criterion) -> bool {
+    match c.op {
+        Operation::Eq => {
+            match c.value {
+                Value::S(ref v) => v.eq(t),
+                _ => false,
+            }
+        }
+        Operation::Neq => {
+            match c.value {
+                Value::S(ref v) => v.ne(t),
+                _ => false,
+            }
+        }
+        Operation::Like => {
+            match c.value {
+                Value::S(ref v) => match_like(v, t),
+                _ => false,
+            }
+        }
+        Operation::ILike => {
+            match c.value {
+                Value::S(ref v) => match_ilike(v, t),
+                _ => false,
+            }
+        }
+        Operation::In => {
+            match c.value {
+                Value::AS(ref a) => a.iter().any(|v| t.eq(v)),
+                _ => false,
+            }
+        }
+        Operation::NotIn => {
+            match c.value {
+                Value::AS(ref a) => a.iter().all(|v| t.ne(v)),
+                _ => false,
+            }
+        }
+        _ => false,
+    }
+}
+
+fn match_like(pat: &str, s: &str) -> bool {
+    let mut p = regex::escape(pat);
+    p = p.replace("%", ".*");
+    p = p.replace("_", ".");
+    if let Ok(re) = Regex::new(&p) {
+        re.is_match(s)
+    } else {
+        false
+    }
+}
+
+fn match_ilike(pat: &str, s: &str) -> bool {
+    match_like(&pat.to_lowercase(), &s.to_lowercase())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_like() {
+        assert!(match_like("hello", "hello"));
+        assert!(match_like("hello %", "hello world"));
+        assert!(match_like("%world", "hello world"));
+        assert!(!match_like("% world", "helloworld"));
+        assert!(match_like("%", "foo bar"));
     }
 }

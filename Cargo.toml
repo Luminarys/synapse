@@ -23,6 +23,7 @@ error-chain = "0.10"
 c-ares = "2"
 httparse = "1.2.3"
 base64 = "0.6.0"
+regex = "0.2"
 
 [dependencies.chrono]
 version = "0.4"
