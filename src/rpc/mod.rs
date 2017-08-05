@@ -5,16 +5,20 @@ mod errors;
 mod client;
 mod processor;
 
-pub use self::proto::{Request, Response, TorrentInfo};
+use std::{io, str};
+use std::net::{TcpListener, Ipv4Addr, SocketAddrV4};
+use std::collections::HashMap;
+
+use slog::Logger;
+use serde_json;
+use amy;
+
+pub use self::proto::{ws, message, Request, Response, TorrentInfo};
 pub use self::errors::{Result, ResultExt, ErrorKind, Error};
 use self::client::{Incoming, Client};
 use self::processor::Processor;
-
-use std::{io, str};
-use std::net::{TcpListener, Ipv4Addr, SocketAddrV4};
-use slog::Logger;
-use {amy, handle, CONFIG};
-use std::collections::HashMap;
+use handle;
+use CONFIG;
 
 #[derive(Debug)]
 pub enum CMessage {
@@ -121,9 +125,19 @@ impl RPC {
                 loop {
                     match c.read() {
                         Ok(None) => break,
-                        Ok(Some(m)) => {
-                            debug!(self.l, "Got a message from the client: {:?}", m);
+                        Ok(Some(ws::Frame::Text(data))) => {
+                            match serde_json::from_str(&data) {
+                                Ok(m) => {
+                                    trace!(self.l, "Got a message from the client: {:?}", m);
+                                    self.processor.handle_client(m);
+                                }
+                                Err(e) => {
+                                    info!(self.l, "Client sent an invalid message, disconnecting: {}", e);
+                                    return;
+                                }
+                            }
                         }
+                        Ok(Some(_)) => return,
                         Err(_) => return,
                     }
                 }
