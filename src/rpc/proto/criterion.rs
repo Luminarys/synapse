@@ -13,6 +13,7 @@ pub struct Criterion {
 #[derive(Debug, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub enum ResourceKind {
+    Server,
     Torrent,
     Peer,
     File,
@@ -49,12 +50,13 @@ pub enum Operation {
 #[serde(untagged)]
 #[serde(deny_unknown_fields)]
 pub enum Value {
+    B(bool),
     S(String),
-    N(i64),
-    F(f64),
+    N(u64),
+    F(f32),
     AS(Vec<String>),
-    AN(Vec<i64>),
-    AF(Vec<f64>),
+    AN(Vec<u64>),
+    AF(Vec<f32>),
 }
 
 pub trait Filter {
@@ -67,7 +69,7 @@ impl Default for ResourceKind {
     }
 }
 
-pub fn match_n<T: PartialOrd<i64>>(t: &T, c: &Criterion) -> bool {
+pub fn match_n<T: PartialOrd<u64>>(t: T, c: &Criterion) -> bool {
     match c.op {
         Operation::Eq => {
             match c.value {
@@ -121,7 +123,7 @@ pub fn match_n<T: PartialOrd<i64>>(t: &T, c: &Criterion) -> bool {
     }
 }
 
-pub fn match_f<T: PartialOrd<f64>>(t: &T, c: &Criterion) -> bool {
+pub fn match_f<T: PartialOrd<f32>>(t: T, c: &Criterion) -> bool {
     match c.op {
         Operation::Eq => {
             match c.value {
@@ -171,6 +173,24 @@ pub fn match_f<T: PartialOrd<f64>>(t: &T, c: &Criterion) -> bool {
                 _ => false,
             }
         }
+        _ => false,
+    }
+}
+
+pub fn match_b(t: bool, c: &Criterion) -> bool {
+    match c.op {
+        Operation::Eq => {
+            match c.value {
+                Value::B(b) => t == b,
+                _ => false,
+            }
+        },
+        Operation::Neq => {
+            match c.value {
+                Value::B(b) => t != b,
+                _ => false,
+            }
+        },
         _ => false,
     }
 }
