@@ -48,7 +48,7 @@ impl Manager {
             if let Some(addr) = CONFIG.dht_bootstrap_node {
                 info!(l, "Using bootstrap node!");
                 let (msg, _) = t.add_addr(addr.clone());
-                sock.send_to(&msg.encode(), addr).unwrap();
+                sock.send_to(&msg.encode(), addr)?;
             }
             t
         };
@@ -79,7 +79,7 @@ impl Manager {
         loop {
             match self.sock.recv_from(&mut self.buf[..]) {
                 Ok((v, addr)) => {
-                    debug!(self.l, "Processing msg from {:?}!", addr);
+                    trace!(self.l, "Processing msg from {:?}!", addr);
                     if let Ok(req) = proto::Request::decode(&self.buf[..v]) {
                         let resp = self.table.handle_req(req, addr).encode();
                         self.send_msg(&resp, addr);
@@ -93,7 +93,7 @@ impl Manager {
                             }
                         }
                     } else {
-                        debug!(self.l, "Received invalid message from {:?}!", addr);
+                        trace!(self.l, "Received invalid message from {:?}!", addr);
                     }
                 }
                 Err(e) => {

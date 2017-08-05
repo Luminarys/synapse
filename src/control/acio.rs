@@ -84,15 +84,16 @@ impl ACIO {
 
     fn process_peer_ev(&mut self, not: amy::Notification, events: &mut Vec<cio::Event>) -> Result<()> {
         let d = self.d();
-        let peer = d.peers.get_mut(&not.id).unwrap();
-        let ev = not.event;
-        if ev.readable() {
-            while let Some(msg) = peer.readable().chain_err(|| ErrorKind::IO)? {
-                events.push(cio::Event::Peer { peer: not.id, event: Ok(msg) });
+        if let Some(peer) = d.peers.get_mut(&not.id) {
+            let ev = not.event;
+            if ev.readable() {
+                while let Some(msg) = peer.readable().chain_err(|| ErrorKind::IO)? {
+                    events.push(cio::Event::Peer { peer: not.id, event: Ok(msg) });
+                }
             }
-        }
-        if ev.writable() {
-            peer.writable().chain_err(|| ErrorKind::IO)?;
+            if ev.writable() {
+                peer.writable().chain_err(|| ErrorKind::IO)?;
+            }
         }
         Ok(())
     }

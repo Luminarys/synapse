@@ -136,7 +136,7 @@ impl<T: cio::CIO> Torrent<T> {
             picker: self.picker.clone(),
             status: self.status,
         };
-        let data = bincode::serialize(&d, bincode::Infinite).unwrap();
+        let data = bincode::serialize(&d, bincode::Infinite).expect("Serialization failed!");
         debug!(self.l, "Sending serialization request!");
         self.cio.msg_disk(disk::Request::serialize(self.id, data, self.info.hash));
         self.dirty = false;
@@ -236,7 +236,7 @@ impl<T: cio::CIO> Torrent<T> {
     }
 
     pub fn peer_ev(&mut self, pid: cio::PID, evt: cio::Result<Message>) -> Result<(), ()> {
-        let mut peer = self.peers.remove(&pid).unwrap();
+        let mut peer = self.peers.remove(&pid).ok_or(())?;
         if let Ok(mut msg) = evt {
             if peer.handle_msg(&mut msg).is_ok() && self.handle_msg(msg, &mut peer).is_ok() {
                 self.peers.insert(pid, peer);
@@ -313,9 +313,12 @@ impl<T: cio::CIO> Torrent<T> {
                     // Tell all relevant peers we got the piece
                     let m = Message::Have(index);
                     for pid in self.leechers.iter() {
-                        let peer = self.peers.get_mut(pid).expect("Seeder IDs should be in peers");
-                        if !peer.pieces().has_bit(index as u64) {
-                            peer.send_message(m.clone());
+                        if let Some(peer) = self.peers.get_mut(pid) {
+                            if !peer.pieces().has_bit(index as u64) {
+                                peer.send_message(m.clone());
+                            }
+                        } else {
+                            warn!(self.l, "PID {} in leechers not found in peers.", pid);
                         }
                     }
 
@@ -416,7 +419,7 @@ impl<T: cio::CIO> Torrent<T> {
     }
 
     fn make_requests_pid(&mut self, pid: usize) {
-        let peer = self.peers.get_mut(&pid).unwrap();
+        let peer = self.peers.get_mut(&pid).expect("Expected peer id not present");
         if self.status.stopped() {
             return;
         }
