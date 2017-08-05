@@ -12,7 +12,6 @@ use std::{io, str};
 use std::net::{TcpListener, Ipv4Addr, SocketAddrV4};
 use slog::Logger;
 use {amy, handle, CONFIG};
-// TODO: Allow customizing this
 use std::collections::HashMap;
 
 #[derive(Debug)]
@@ -31,34 +30,6 @@ pub struct RPC {
     clients: HashMap<usize, Client>,
     incoming: HashMap<usize, Incoming>,
     l: Logger,
-}
-
-macro_rules! id_match {
-    ($req:expr, $resp:expr, $s:expr, $body:expr) => (
-        {
-            lazy_static! {
-                static ref M: (String, String, usize) = {
-                    let mut s = $s.to_owned();
-                    let idx = s.find("{}").unwrap();
-                    let mut remaining = s.split_off(idx);
-                    let end = remaining.split_off(2);
-                    (s, end, idx)
-                };
-            };
-            let start = &M.0;
-            let end = &M.1;
-            let idx = M.2;
-            if $req.url().starts_with(start) && $req.url().ends_with(end) {
-                let len = $req.url().len();
-                let val = &$req.url()[idx..(len - end.len())];
-                if let Ok(i) = val.parse::<usize>() {
-                    $resp = Ok($body(i));
-                } else {
-                    $resp = Err(format!("{} is not a valid integer!", val));
-                }
-            }
-        }
-    );
 }
 
 impl RPC {
