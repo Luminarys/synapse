@@ -247,11 +247,7 @@ impl<T: cio::CIO> Control<T> {
         self.torrents.insert(tid, t);
     }
 
-    fn send_rpc_msg(&mut self, resp: rpc::Response) {
-        self.cio.msg_rpc(rpc::CMessage::Response(resp));
-    }
-
-    fn handle_rpc_ev(&mut self, req: rpc::Request) -> bool {
+    fn handle_rpc_ev(&mut self, req: rpc::Message) -> bool {
         debug!(self.l, "Handling rpc reqest!");
         /*
         match req {

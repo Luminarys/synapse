@@ -445,16 +445,8 @@ impl<T: cio::CIO> Torrent<T> {
         }
     }
 
-    pub fn rpc_info(&self) -> rpc::TorrentInfo {
-        rpc::TorrentInfo {
-            name: self.info.name.clone(),
-            size: self.info.total_len,
-            downloaded: self.downloaded as u64 * self.info.piece_len as u64,
-            uploaded: self.uploaded as u64 * self.info.piece_len as u64,
-            tracker: self.info.announce.clone(),
-            tracker_status: self.tracker.clone(),
-            status: self.status,
-        }
+    pub fn rpc_info(&self) -> rpc::resource::SResourceUpdate {
+        unimplemented!();
     }
 
     pub fn add_peer(&mut self, conn: PeerConn) -> Option<usize> {

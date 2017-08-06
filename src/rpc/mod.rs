@@ -13,24 +13,32 @@ use slog::Logger;
 use serde_json;
 use amy;
 
-pub use self::proto::{ws, message, Request, Response, TorrentInfo};
+pub use self::proto::resource;
 pub use self::errors::{Result, ResultExt, ErrorKind, Error};
+use self::proto::{ws, message};
 use self::client::{Incoming, Client};
 use self::processor::Processor;
 use handle;
+use torrent;
 use CONFIG;
 
 #[derive(Debug)]
 pub enum CMessage {
-    Response(Response),
+    Update(resource::SResourceUpdate<'static>),
     Shutdown,
+}
+
+#[derive(Debug)]
+pub enum Message {
+    Update(resource::CResourceUpdate),
+    Torrent(torrent::Info),
 }
 
 #[allow(dead_code)]
 pub struct RPC {
     poll: amy::Poller,
     reg: amy::Registrar,
-    ch: handle::Handle<CMessage, Request>,
+    ch: handle::Handle<CMessage, Message>,
     listener: TcpListener,
     lid: usize,
     processor: Processor,
@@ -40,7 +48,7 @@ pub struct RPC {
 }
 
 impl RPC {
-    pub fn start(creg: &mut amy::Registrar) -> io::Result<handle::Handle<Request, CMessage>> {
+    pub fn start(creg: &mut amy::Registrar) -> io::Result<handle::Handle<Message, CMessage>> {
         let poll = amy::Poller::new()?;
         let mut reg = poll.get_registrar()?;
         let (ch, dh) = handle::Handle::new(creg, &mut reg)?;

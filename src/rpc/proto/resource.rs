@@ -18,11 +18,12 @@ pub enum Resource {
 /// To increase server->client update efficiency, we
 /// encode common partial updates to resources with
 /// this enum.
-#[derive(Clone, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 #[serde(deny_unknown_fields)]
 #[serde(untagged)]
 pub enum SResourceUpdate<'a> {
     Resource(&'a Resource),
+    OResource(Resource),
     Throttle {
         id: u64,
         throttle_up: u32,

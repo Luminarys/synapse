@@ -4,7 +4,7 @@ use chrono::{DateTime, Utc, Duration};
 
 use super::proto::message::{CMessage, SMessage, Error};
 use super::proto::criterion::{Criterion, Operation, Value, ResourceKind};
-use super::proto::resource::{Resource, Torrent, SResourceUpdate};
+use super::proto::resource::{Resource, Torrent, CResourceUpdate, SResourceUpdate};
 use util::random_string;
 
 pub struct Processor {
@@ -26,8 +26,8 @@ struct BearerToken {
 
 enum TransferKind {
     UploadTorrent { size: u64, path: Option<String> },
-    UploadFiles { size: u64,  path: String },
-    DownloadFile { path: String, }
+    UploadFiles { size: u64, path: String },
+    DownloadFile { path: String },
 }
 
 impl Processor {
@@ -77,7 +77,16 @@ impl Processor {
                     self.subs.get_mut(&id).map(|s| s.remove(&client));
                 }
             }
-            CMessage::UpdateResource { serial, resource } => {}
+            CMessage::UpdateResource { serial, resource } => {
+                if let Some(r) = self.resources.get_mut(&resource.id) {
+                    // TODO: Contact the server
+                } else {
+                    resp.push(SMessage::UnknownResource(Error {
+                        serial: Some(serial),
+                        reason: format!("unknown resource id {}", resource.id),
+                    }));
+                }
+            }
             CMessage::FilterSubscribe { serial, criteria } => {
                 self.filter_subs.insert(serial, Filter { criteria, client });
             }
@@ -89,12 +98,17 @@ impl Processor {
             }
 
             CMessage::UploadTorrent { serial, size, path } => {
-                resp.push(self.new_transfer(serial, TransferKind::UploadTorrent { size, path }));
+                resp.push(self.new_transfer(
+                    serial,
+                    TransferKind::UploadTorrent { size, path },
+                ));
             }
-            CMessage::UploadMagnet { serial, uri, path } => {
-            }
+            CMessage::UploadMagnet { serial, uri, path } => {}
             CMessage::UploadFiles { serial, size, path } => {
-                resp.push(self.new_transfer(serial, TransferKind::UploadFiles { size, path }));
+                resp.push(self.new_transfer(
+                    serial,
+                    TransferKind::UploadFiles { size, path },
+                ));
             }
             CMessage::DownloadFile { serial, id } => {
                 let path = match self.resources.get(&id) {
@@ -107,7 +121,10 @@ impl Processor {
                         return resp;
                     }
                 };
-                resp.push(self.new_transfer(serial, TransferKind::DownloadFile { path }));
+                resp.push(self.new_transfer(
+                    serial,
+                    TransferKind::DownloadFile { path },
+                ));
             }
         }
         resp
@@ -116,10 +133,10 @@ impl Processor {
     fn new_transfer(&mut self, serial: u64, kind: TransferKind) -> SMessage {
         let expiration = Utc::now() + Duration::minutes(2);
         let tok = random_string(15);
-        self.tokens.insert(tok.clone(), BearerToken {
-            expiration,
-            kind,
-        });
+        self.tokens.insert(
+            tok.clone(),
+            BearerToken { expiration, kind },
+        );
         SMessage::TransferOffer {
             serial,
             expires: expiration,

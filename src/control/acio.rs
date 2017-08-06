@@ -20,7 +20,7 @@ pub struct ACChans {
     pub disk_rx: amy::Receiver<disk::Response>,
 
     pub rpc_tx: amy::Sender<rpc::CMessage>,
-    pub rpc_rx: amy::Receiver<rpc::Request>,
+    pub rpc_rx: amy::Receiver<rpc::Message>,
 
     pub trk_tx: amy::Sender<tracker::Request>,
     pub trk_rx: amy::Receiver<tracker::Response>,
