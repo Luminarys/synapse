@@ -21,22 +21,23 @@ pub enum CMessage {
     FilterUnsubscribe { serial: u64, filter_serial: u64 },
 
     // Special messages
-    UploadTorrent { size: u64, path: Option<String> },
-    UploadMagnet { uri: String, path: Option<String> },
-    UploadFiles { size: u64, gzip: bool, path: String },
+    UploadTorrent { serial: u64, size: u64, path: Option<String> },
+    UploadMagnet { serial: u64, uri: String, path: Option<String> },
+    UploadFiles { serial: u64, size: u64, path: String },
+    DownloadFile { serial: u64, id: u64 },
 }
 
 /// Server -> client message, serialize only
 #[derive(Serialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 #[serde(tag = "type")]
-pub enum SMessage {
+pub enum SMessage<'a> {
     // Standard messages
     ResourcesExtant { serial: u64, ids: Vec<u64> },
     ResourcesRemoved { serial: u64, ids: Vec<u64> },
     UpdateResources {
         serial: u64,
-        resources: Vec<SResourceUpdate>,
+        resources: Vec<SResourceUpdate<'a>>,
     },
 
     // Special messages
@@ -59,8 +60,8 @@ pub enum SMessage {
 
 #[derive(Serialize)]
 pub struct Error {
-    serial: Option<u64>,
-    reason: String,
+    pub serial: Option<u64>,
+    pub reason: String,
 }
 
 #[cfg(test)]

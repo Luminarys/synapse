@@ -3,7 +3,7 @@ use chrono::{DateTime, Utc};
 use super::criterion::{Criterion, Operation, Value, ResourceKind, Filter, match_n, match_f,
                        match_s, match_b};
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 #[serde(untagged)]
 pub enum Resource {
@@ -18,11 +18,11 @@ pub enum Resource {
 /// To increase server->client update efficiency, we
 /// encode common partial updates to resources with
 /// this enum.
-#[derive(Serialize)]
+#[derive(Clone, Serialize)]
 #[serde(deny_unknown_fields)]
 #[serde(untagged)]
-pub enum SResourceUpdate {
-    Resource(Resource),
+pub enum SResourceUpdate<'a> {
+    Resource(&'a Resource),
     Throttle {
         id: u64,
         throttle_up: u32,
@@ -63,7 +63,7 @@ pub enum SResourceUpdate {
 
 /// Collection of mutable fields that clients
 /// can modify. Due to shared field names, all fields are aggregated
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CResourceUpdate {
     pub id: u64,
@@ -75,7 +75,7 @@ pub struct CResourceUpdate {
     pub throttle_down: Option<u32>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Server {
     pub id: u64,
@@ -86,7 +86,7 @@ pub struct Server {
     pub started: DateTime<Utc>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Torrent {
     pub id: u64,
@@ -113,7 +113,7 @@ pub struct Torrent {
     pub files: u32,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 #[serde(deny_unknown_fields)]
 pub enum Status {
@@ -126,7 +126,7 @@ pub enum Status {
     Error,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Piece {
     pub id: u64,
@@ -135,7 +135,7 @@ pub struct Piece {
     pub downloaded: bool,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct File {
     pub id: u64,
@@ -146,7 +146,7 @@ pub struct File {
     pub priority: u8,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Peer {
     pub id: u64,
@@ -158,7 +158,7 @@ pub struct Peer {
     pub availability: f32,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Tracker {
     pub id: u64,
