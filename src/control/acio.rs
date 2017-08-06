@@ -19,7 +19,7 @@ pub struct ACChans {
     pub disk_tx: amy::Sender<disk::Request>,
     pub disk_rx: amy::Receiver<disk::Response>,
 
-    pub rpc_tx: amy::Sender<rpc::CMessage>,
+    pub rpc_tx: amy::Sender<rpc::CtlMessage>,
     pub rpc_rx: amy::Receiver<rpc::Message>,
 
     pub trk_tx: amy::Sender<tracker::Request>,
@@ -172,7 +172,7 @@ impl cio::CIO for ACIO {
         }
     }
 
-    fn msg_rpc(&mut self, msg: rpc::CMessage) {
+    fn msg_rpc(&mut self, msg: rpc::CtlMessage) {
         if self.d().chans.rpc_tx.send(msg).is_err() {
             self.d().events.push(
                 cio::Event::RPC(Err(ErrorKind::Channel("Couldn't send to RPC chan").into()))

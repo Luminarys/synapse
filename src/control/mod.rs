@@ -193,7 +193,7 @@ impl<T: cio::CIO> Control<T> {
     }
 
     fn update_jobs(&mut self) {
-        debug!(self.l, "Handling job timer");
+        trace!(self.l, "Handling job timer");
         self.jobs.update(&mut self.torrents);
     }
 
@@ -334,7 +334,7 @@ impl<T: cio::CIO> Drop for Control<T> {
     fn drop(&mut self) {
         debug!(self.l, "Triggering thread shutdown sequence!");
         self.cio.msg_disk(disk::Request::shutdown());
-        self.cio.msg_rpc(rpc::CMessage::Shutdown);
+        self.cio.msg_rpc(rpc::CtlMessage::Shutdown);
         self.cio.msg_trk(tracker::Request::Shutdown);
         self.cio.msg_listener(listener::Request::Shutdown);
     }

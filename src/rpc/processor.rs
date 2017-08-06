@@ -5,7 +5,7 @@ use chrono::{DateTime, Utc, Duration};
 use super::proto::message::{CMessage, SMessage, Error};
 use super::proto::criterion::{Criterion, Operation, Value, ResourceKind, Filter as FTrait};
 use super::proto::resource::{Resource, Torrent, CResourceUpdate, SResourceUpdate};
-use super::Message;
+use super::{CtlMessage, Message};
 use util::random_string;
 
 pub struct Processor {
@@ -41,7 +41,11 @@ impl Processor {
         }
     }
 
-    pub fn handle_client(&mut self, client: usize, msg: CMessage) -> (Vec<SMessage>, Option<Message>) {
+    pub fn handle_client(
+        &mut self,
+        client: usize,
+        msg: CMessage,
+    ) -> (Vec<SMessage>, Option<Message>) {
         let mut resp = Vec::new();
         let mut rmsg = None;
         match msg {
@@ -57,7 +61,7 @@ impl Processor {
                         }));
                     }
                 }
-                resp.push(SMessage::UpdateResources { serial, resources });
+                resp.push(SMessage::UpdateResources { resources });
             }
             CMessage::Subscribe { serial, ids } => {
                 let mut resources = Vec::new();
@@ -72,7 +76,7 @@ impl Processor {
                         }));
                     }
                 }
-                resp.push(SMessage::UpdateResources { serial, resources });
+                resp.push(SMessage::UpdateResources { resources });
             }
             CMessage::Unsubscribe { serial, ids } => {
                 for id in ids {
@@ -87,7 +91,11 @@ impl Processor {
                     Some(&Resource::File(ref f)) => {
                         // TODO: Validate other fields(make sure they're not present)
                         if let Some(p) = resource.priority {
-                            rmsg = Some(Message::UpdateFile { id: resource.id, torrent_id: f.torrent_id, priority: p });
+                            rmsg = Some(Message::UpdateFile {
+                                id: resource.id,
+                                torrent_id: f.torrent_id,
+                                priority: p,
+                            });
                         }
                     }
                     Some(_) => {
@@ -110,10 +118,16 @@ impl Processor {
                         rmsg = Some(Message::RemoveTorrent(id));
                     }
                     Some(&Resource::Tracker(ref t)) => {
-                        rmsg = Some(Message::RemoveTracker { id, torrent_id: t.id});
+                        rmsg = Some(Message::RemoveTracker {
+                            id,
+                            torrent_id: t.id,
+                        });
                     }
                     Some(&Resource::Peer(ref p)) => {
-                        rmsg = Some(Message::RemovePeer { id, torrent_id: p.id});
+                        rmsg = Some(Message::RemovePeer {
+                            id,
+                            torrent_id: p.id,
+                        });
                     }
                     Some(_) => {
                         resp.push(SMessage::InvalidResource(Error {
@@ -178,6 +192,79 @@ impl Processor {
             }
         }
         (resp, rmsg)
+    }
+
+    pub fn handle_ctl(&mut self, msg: CtlMessage) -> Vec<(usize, SMessage)> {
+        let mut msgs = Vec::new();
+        match msg {
+            CtlMessage::Extant(e) => {
+                for (c, filters) in self.get_matching_filters(&vec![e.id()]) {
+                    for (serial, ids) in filters {
+                        msgs.push((c, SMessage::ResourcesExtant { serial, ids }));
+                    }
+                }
+                self.resources.insert(e.id(), e);
+            }
+            CtlMessage::Update(updates) => {
+                let mut clients = HashMap::new();
+                for update in updates {
+                    for c in self.subs.get(&update.id()).unwrap().iter() {
+                        if !clients.contains_key(c) {
+                            clients.insert(*c, Vec::new());
+                        }
+                        clients.get_mut(c).unwrap().push(update.clone());
+                    }
+                    self.resources.get_mut(&update.id()).expect("Bad resource updated by a CtlMessage").update(update);
+                }
+                for (c, resources) in clients {
+                    msgs.push((c, SMessage::UpdateResources { resources }));
+                }
+            }
+            CtlMessage::Removed(r) => {
+                for (c, filters) in self.get_matching_filters(&r) {
+                    for (serial, ids) in filters {
+                        msgs.push((c, SMessage::ResourcesRemoved { serial, ids }));
+                    }
+                }
+
+                for id in r {
+                    self.resources.remove(&id);
+                }
+            }
+            CtlMessage::Shutdown => unreachable!(),
+        }
+        msgs
+    }
+
+    pub fn remove_client(&mut self, client: usize) {
+        for (_, sub) in self.subs.iter_mut() {
+            sub.remove(&client);
+        }
+        self.filter_subs.retain(|_, f| f.client != client);
+    }
+
+    /// Produces a map of the form Map<ClientId, Map<FilterSerial, Vec<ID>>>.
+    fn get_matching_filters(&self, ids: &Vec<u64>) -> HashMap<usize, HashMap<u64, Vec<u64>>> {
+        let mut matched = HashMap::new();
+        for id in ids.iter() {
+            let res = self.resources.get(id).expect(
+                "Bad resource requested from a CtlMessage",
+            );
+            for (s, f) in self.filter_subs.iter() {
+                let c = f.client;
+                if f.matches(&res) {
+                    if !matched.contains_key(&c) {
+                        matched.insert(c, HashMap::new());
+                    }
+                    let filters = matched.get_mut(&c).unwrap();
+                    if !filters.contains_key(s) {
+                        filters.insert(*s, Vec::new());
+                    }
+                    filters.get_mut(s).unwrap().push(*id);
+                }
+            }
+        }
+        matched
     }
 
     fn new_transfer(&mut self, serial: u64, kind: TransferKind) -> SMessage {

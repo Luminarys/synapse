@@ -6,7 +6,7 @@ mod client;
 mod processor;
 
 use std::{io, str};
-use std::net::{TcpListener, Ipv4Addr, SocketAddrV4};
+use std::net::{TcpListener, TcpStream, Ipv4Addr, SocketAddrV4};
 use std::collections::HashMap;
 
 use slog::Logger;
@@ -15,7 +15,7 @@ use amy;
 
 pub use self::proto::resource;
 pub use self::errors::{Result, ResultExt, ErrorKind, Error};
-use self::proto::{ws, message};
+use self::proto::ws;
 use self::client::{Incoming, Client};
 use self::processor::Processor;
 use handle;
@@ -23,8 +23,10 @@ use torrent;
 use CONFIG;
 
 #[derive(Debug)]
-pub enum CMessage {
-    Update(resource::SResourceUpdate<'static>),
+pub enum CtlMessage {
+    Extant(resource::Resource),
+    Update(Vec<resource::SResourceUpdate<'static>>),
+    Removed(Vec<u64>),
     Shutdown,
 }
 
@@ -46,7 +48,7 @@ pub enum Message {
 pub struct RPC {
     poll: amy::Poller,
     reg: amy::Registrar,
-    ch: handle::Handle<CMessage, Message>,
+    ch: handle::Handle<CtlMessage, Message>,
     listener: TcpListener,
     lid: usize,
     processor: Processor,
@@ -56,7 +58,7 @@ pub struct RPC {
 }
 
 impl RPC {
-    pub fn start(creg: &mut amy::Registrar) -> io::Result<handle::Handle<Message, CMessage>> {
+    pub fn start(creg: &mut amy::Registrar) -> io::Result<handle::Handle<Message, CtlMessage>> {
         let poll = amy::Poller::new()?;
         let mut reg = poll.get_registrar()?;
         let (ch, dh) = handle::Handle::new(creg, &mut reg)?;
@@ -90,7 +92,7 @@ impl RPC {
                 match not.id {
                     id if id == self.lid => self.handle_accept(),
                     id if id == self.ch.rx.get_id() => {
-                        if let Ok(CMessage::Shutdown) = self.ch.recv() {
+                        if self.handle_ctl() {
                             return;
                         }
                     }
@@ -100,6 +102,30 @@ impl RPC {
             }
         }
         loop {}
+    }
+
+    fn handle_ctl(&mut self) -> bool {
+        while let Ok(m) = self.ch.recv() {
+            match m {
+                CtlMessage::Shutdown => return true,
+                m => {
+                    let msgs: Vec<_> = {
+                        self.processor.handle_ctl(m).into_iter().map(|(c, m)| (c, serde_json::to_string(&m).unwrap())).collect()
+                    };
+                    for (c, m) in msgs {
+                        let res = match self.clients.get_mut(&c) {
+                            Some(client) => client.send(ws::Frame::Text(m)),
+                            None => { warn!(self.l, "Processor requested a message transfer to a nonexistent client!"); Ok(()) },
+                        };
+                        if res.is_err() {
+                            let client = self.clients.remove(&c).unwrap();
+                            self.remove_client(c, client);
+                        }
+                    }
+                }
+            }
+        }
+        false
     }
 
     fn handle_accept(&mut self) {
@@ -130,7 +156,10 @@ impl RPC {
                 Ok(false) => {
                     self.incoming.insert(id, i);
                 }
-                Err(e) => debug!(self.l, "Incoming ws upgrade failed: {}", e),
+                Err(e) => {
+                    debug!(self.l, "Incoming ws upgrade failed: {}", e);
+                    self.reg.deregister::<TcpStream>(&i.into()).unwrap();
+                }
             }
         }
     }
@@ -138,9 +167,9 @@ impl RPC {
     fn handle_conn(&mut self, not: amy::Notification) {
         if let Some(mut c) = self.clients.remove(&not.id) {
             if not.event.readable() {
-                loop {
+                let res = 'outer: loop {
                     match c.read() {
-                        Ok(None) => break,
+                        Ok(None) => break true,
                         Ok(Some(ws::Frame::Text(data))) => {
                             match serde_json::from_str(&data) {
                                 Ok(m) => {
@@ -152,9 +181,9 @@ impl RPC {
                                     for msg in msgs {
                                         if c.send(
                                             ws::Frame::Text(serde_json::to_string(&msg).unwrap()),
-                                        ).is_err()
+                                            ).is_err()
                                         {
-                                            return;
+                                            break 'outer false;
                                         }
                                     }
                                 }
@@ -163,22 +192,32 @@ impl RPC {
                                         self.l,
                                         "Client sent an invalid message, disconnecting: {}",
                                         e
-                                    );
-                                    return;
+                                        );
+                                    break false;
                                 }
                             }
                         }
-                        Ok(Some(_)) => return,
-                        Err(_) => return,
+                        Ok(Some(_)) => break false,
+                        Err(_) => break false,
                     }
+                };
+                if !res {
+                    self.remove_client(not.id, c);
+                    return;
                 }
             }
             if not.event.writable() {
                 if c.write().is_err() {
+                    self.remove_client(not.id, c);
                     return;
                 }
             }
             self.clients.insert(not.id, c);
         }
+    }
+
+    fn remove_client(&mut self, id: usize, client: Client) {
+        self.processor.remove_client(id);
+        self.reg.deregister::<TcpStream>(&client.into()).unwrap();
     }
 }

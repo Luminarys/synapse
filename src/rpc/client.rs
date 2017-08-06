@@ -13,16 +13,16 @@ use super::{Result, ResultExt, ErrorKind};
 use util::{IOR, aread};
 
 pub struct Client {
+    conn: TcpStream,
     r: Reader,
     w: Writer,
-    conn: TcpStream,
     buf: FragBuf,
     last_action: time::Instant,
 }
 
 pub struct Incoming {
-    key: Option<String>,
     conn: TcpStream,
+    key: Option<String>,
     buf: [u8; 1024],
     pos: usize,
     last_action: time::Instant,
@@ -99,6 +99,12 @@ impl Client {
     }
 }
 
+impl Into<TcpStream> for Client {
+    fn into(self) -> TcpStream {
+        self.conn
+    }
+}
+
 impl Into<Client> for Incoming {
     fn into(mut self) -> Client {
         let mut ctx = digest::Context::new(&digest::SHA1);
@@ -123,6 +129,12 @@ impl Into<Client> for Incoming {
             conn: self.conn,
             last_action: time::Instant::now(),
         }
+    }
+}
+
+impl Into<TcpStream> for Incoming {
+    fn into(self) -> TcpStream {
+        self.conn
     }
 }
 
