@@ -14,6 +14,7 @@ pub enum CMessage {
     Subscribe { serial: u64, ids: Vec<u64> },
     Unsubscribe { serial: u64, ids: Vec<u64> },
     UpdateResource { serial: u64, resource: CResourceUpdate },
+    RemoveResource { serial: u64, id: u64 },
     FilterSubscribe {
         serial: u64,
         criteria: Vec<Criterion>,

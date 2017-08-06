@@ -3,8 +3,9 @@ use std::collections::{HashMap, HashSet};
 use chrono::{DateTime, Utc, Duration};
 
 use super::proto::message::{CMessage, SMessage, Error};
-use super::proto::criterion::{Criterion, Operation, Value, ResourceKind};
+use super::proto::criterion::{Criterion, Operation, Value, ResourceKind, Filter as FTrait};
 use super::proto::resource::{Resource, Torrent, CResourceUpdate, SResourceUpdate};
+use super::Message;
 use util::random_string;
 
 pub struct Processor {
@@ -40,8 +41,9 @@ impl Processor {
         }
     }
 
-    pub fn handle_client(&mut self, client: usize, msg: CMessage) -> Vec<SMessage> {
+    pub fn handle_client(&mut self, client: usize, msg: CMessage) -> (Vec<SMessage>, Option<Message>) {
         let mut resp = Vec::new();
+        let mut rmsg = None;
         match msg {
             CMessage::GetResources { serial, ids } => {
                 let mut resources = Vec::new();
@@ -78,17 +80,65 @@ impl Processor {
                 }
             }
             CMessage::UpdateResource { serial, resource } => {
-                if let Some(r) = self.resources.get_mut(&resource.id) {
-                    // TODO: Contact the server
-                } else {
-                    resp.push(SMessage::UnknownResource(Error {
-                        serial: Some(serial),
-                        reason: format!("unknown resource id {}", resource.id),
-                    }));
+                match self.resources.get(&resource.id) {
+                    Some(&Resource::Torrent(ref t)) => {
+                        rmsg = Some(Message::UpdateTorrent(resource));
+                    }
+                    Some(&Resource::File(ref f)) => {
+                        // TODO: Validate other fields(make sure they're not present)
+                        if let Some(p) = resource.priority {
+                            rmsg = Some(Message::UpdateFile { id: resource.id, torrent_id: f.torrent_id, priority: p });
+                        }
+                    }
+                    Some(_) => {
+                        resp.push(SMessage::PermissionDenied(Error {
+                            serial: Some(serial),
+                            reason: format!("Only torrents and files have mutable fields"),
+                        }));
+                    }
+                    None => {
+                        resp.push(SMessage::UnknownResource(Error {
+                            serial: Some(serial),
+                            reason: format!("unknown resource id {}", resource.id),
+                        }));
+                    }
+                }
+            }
+            CMessage::RemoveResource { serial, id } => {
+                match self.resources.get(&id) {
+                    Some(&Resource::Torrent(_)) => {
+                        rmsg = Some(Message::RemoveTorrent(id));
+                    }
+                    Some(&Resource::Tracker(ref t)) => {
+                        rmsg = Some(Message::RemoveTracker { id, torrent_id: t.id});
+                    }
+                    Some(&Resource::Peer(ref p)) => {
+                        rmsg = Some(Message::RemovePeer { id, torrent_id: p.id});
+                    }
+                    Some(_) => {
+                        resp.push(SMessage::InvalidResource(Error {
+                            serial: Some(serial),
+                            reason: format!("Only torrents, trackers, and peers may be removed"),
+                        }));
+                    }
+                    None => {
+                        resp.push(SMessage::UnknownResource(Error {
+                            serial: Some(serial),
+                            reason: format!("unknown resource id {}", id),
+                        }));
+                    }
                 }
             }
             CMessage::FilterSubscribe { serial, criteria } => {
-                self.filter_subs.insert(serial, Filter { criteria, client });
+                let f = Filter { criteria, client };
+                let mut ids = Vec::new();
+                for (_, r) in self.resources.iter() {
+                    if f.matches(r) {
+                        ids.push(r.id());
+                    }
+                }
+                resp.push(SMessage::ResourcesExtant { serial, ids });
+                self.filter_subs.insert(serial, f);
             }
             CMessage::FilterUnsubscribe {
                 serial,
@@ -118,7 +168,7 @@ impl Processor {
                             serial: Some(serial),
                             reason: format!("unknown file id {}", id),
                         }));
-                        return resp;
+                        return (resp, rmsg);
                     }
                 };
                 resp.push(self.new_transfer(
@@ -127,7 +177,7 @@ impl Processor {
                 ));
             }
         }
-        resp
+        (resp, rmsg)
     }
 
     fn new_transfer(&mut self, serial: u64, kind: TransferKind) -> SMessage {
@@ -144,5 +194,11 @@ impl Processor {
             // TODO: Get this
             size: 0,
         }
+    }
+}
+
+impl Filter {
+    pub fn matches(&self, r: &Resource) -> bool {
+        self.criteria.iter().all(|c| r.matches(c))
     }
 }

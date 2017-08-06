@@ -30,7 +30,15 @@ pub enum CMessage {
 
 #[derive(Debug)]
 pub enum Message {
-    Update(resource::CResourceUpdate),
+    UpdateTorrent(resource::CResourceUpdate),
+    UpdateFile {
+        id: u64,
+        torrent_id: u64,
+        priority: u8,
+    },
+    RemoveTorrent(u64),
+    RemovePeer { id: u64, torrent_id: u64 },
+    RemoveTracker { id: u64, torrent_id: u64 },
     Torrent(torrent::Info),
 }
 
@@ -137,14 +145,25 @@ impl RPC {
                             match serde_json::from_str(&data) {
                                 Ok(m) => {
                                     trace!(self.l, "Got a message from the client: {:?}", m);
-                                    for msg in self.processor.handle_client(not.id, m) {
-                                        if c.send(ws::Frame::Text(serde_json::to_string(&msg).unwrap())).is_err() {
+                                    let (msgs, rm) = self.processor.handle_client(not.id, m);
+                                    if let Some(m) = rm {
+                                        self.ch.send(m).unwrap();
+                                    }
+                                    for msg in msgs {
+                                        if c.send(
+                                            ws::Frame::Text(serde_json::to_string(&msg).unwrap()),
+                                        ).is_err()
+                                        {
                                             return;
                                         }
                                     }
                                 }
                                 Err(e) => {
-                                    info!(self.l, "Client sent an invalid message, disconnecting: {}", e);
+                                    info!(
+                                        self.l,
+                                        "Client sent an invalid message, disconnecting: {}",
+                                        e
+                                    );
                                     return;
                                 }
                             }
