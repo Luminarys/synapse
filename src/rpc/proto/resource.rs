@@ -19,7 +19,6 @@ pub enum Resource {
 /// encode common partial updates to resources with
 /// this enum.
 #[derive(Debug, Clone, Serialize)]
-#[serde(deny_unknown_fields)]
 #[serde(untagged)]
 pub enum SResourceUpdate<'a> {
     Resource(&'a Resource),
@@ -167,6 +166,19 @@ pub struct Tracker {
     pub url: String,
     pub last_report: DateTime<Utc>,
     pub error: Option<String>
+}
+
+impl Resource {
+    pub fn id(&self) -> u64 {
+        match self {
+            &Resource::Server(ref t) => t.id,
+            &Resource::Torrent(ref t) => t.id,
+            &Resource::File(ref t) => t.id,
+            &Resource::Piece(ref t) => t.id,
+            &Resource::Peer(ref t) => t.id,
+            &Resource::Tracker(ref t) => t.id,
+        }
+    }
 }
 
 // TODO: Consider how to handle datetime matching
