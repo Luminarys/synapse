@@ -193,7 +193,7 @@ impl<T: cio::CIO> Control<T> {
     }
 
     fn update_jobs(&mut self) {
-        debug!(self.l, "Handling job timer");
+        trace!(self.l, "Handling job timer");
         self.jobs.update(&mut self.torrents);
     }
 
