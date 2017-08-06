@@ -20,7 +20,7 @@ pub type TID = usize;
 pub enum Event {
     Timer(TID),
     Peer { peer: PID, event: Result<torrent::Message> },
-    RPC(Result<rpc::Request>),
+    RPC(Result<rpc::Message>),
     Tracker(Result<tracker::Response>),
     Disk(Result<disk::Response>),
     Listener(Result<listener::Message>),
