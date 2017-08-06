@@ -129,7 +129,11 @@ impl RPC {
                             match serde_json::from_str(&data) {
                                 Ok(m) => {
                                     trace!(self.l, "Got a message from the client: {:?}", m);
-                                    self.processor.handle_client(m);
+                                    for msg in self.processor.handle_client(not.id, m) {
+                                        if c.send(ws::Frame::Text(serde_json::to_string(&msg).unwrap())).is_err() {
+                                            return;
+                                        }
+                                    }
                                 }
                                 Err(e) => {
                                     info!(self.l, "Client sent an invalid message, disconnecting: {}", e);
