@@ -13,7 +13,10 @@ pub enum CMessage {
     GetResources { serial: u64, ids: Vec<u64> },
     Subscribe { serial: u64, ids: Vec<u64> },
     Unsubscribe { serial: u64, ids: Vec<u64> },
-    UpdateResource { serial: u64, resource: CResourceUpdate },
+    UpdateResource {
+        serial: u64,
+        resource: CResourceUpdate,
+    },
     RemoveResource { serial: u64, id: u64 },
     FilterSubscribe {
         serial: u64,
@@ -22,9 +25,21 @@ pub enum CMessage {
     FilterUnsubscribe { serial: u64, filter_serial: u64 },
 
     // Special messages
-    UploadTorrent { serial: u64, size: u64, path: Option<String> },
-    UploadMagnet { serial: u64, uri: String, path: Option<String> },
-    UploadFiles { serial: u64, size: u64, path: String },
+    UploadTorrent {
+        serial: u64,
+        size: u64,
+        path: Option<String>,
+    },
+    UploadMagnet {
+        serial: u64,
+        uri: String,
+        path: Option<String>,
+    },
+    UploadFiles {
+        serial: u64,
+        size: u64,
+        path: String,
+    },
     DownloadFile { serial: u64, id: u64 },
 }
 
@@ -36,10 +51,7 @@ pub enum SMessage<'a> {
     // Standard messages
     ResourcesExtant { serial: u64, ids: Vec<u64> },
     ResourcesRemoved { serial: u64, ids: Vec<u64> },
-    UpdateResources {
-        serial: u64,
-        resources: Vec<SResourceUpdate<'a>>,
-    },
+    UpdateResources { resources: Vec<SResourceUpdate<'a>> },
 
     // Special messages
     TransferOffer {
@@ -91,7 +103,7 @@ mod tests {
             assert_eq!(c[0].field, "id");
             assert_eq!(c[0].kind, criterion::ResourceKind::Torrent);
             assert_eq!(c[0].op, criterion::Operation::In);
-            assert_eq!(c[0].value, criterion::Value::AN(vec![1,2,3]));
+            assert_eq!(c[0].value, criterion::Value::AN(vec![1, 2, 3]));
         } else {
             unreachable!();
         }

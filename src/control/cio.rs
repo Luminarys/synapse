@@ -49,7 +49,7 @@ pub trait CIO {
     fn msg_peer(&mut self, peer: PID, msg: torrent::Message);
 
     /// Sends a message over RPC
-    fn msg_rpc(&mut self, msg: rpc::CMessage);
+    fn msg_rpc(&mut self, msg: rpc::CtlMessage);
 
     /// Sends a message over RPC
     fn msg_trk(&mut self, msg: tracker::Request);
@@ -83,7 +83,7 @@ pub mod test {
         pub peers: HashMap<PID, torrent::PeerConn>,
         pub peer_msgs: Vec<(PID, torrent::Message)>,
         pub flushed_peers: Vec<PID>,
-        pub rpc_msgs: Vec<rpc::CMessage>,
+        pub rpc_msgs: Vec<rpc::CtlMessage>,
         pub trk_msgs: Vec<tracker::Request>,
         pub disk_msgs: Vec<disk::Request>,
         pub listener_msgs: Vec<listener::Request>,

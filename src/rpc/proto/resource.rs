@@ -1,3 +1,5 @@
+use std::mem;
+
 use chrono::{DateTime, Utc};
 
 use super::criterion::{Criterion, Operation, Value, ResourceKind, Filter, match_n, match_f,
@@ -22,7 +24,6 @@ pub enum Resource {
 #[serde(untagged)]
 pub enum SResourceUpdate<'a> {
     Resource(&'a Resource),
-    OResource(Resource),
     Throttle {
         id: u64,
         throttle_up: u32,
@@ -42,8 +43,8 @@ pub enum SResourceUpdate<'a> {
         id: u64,
         rate_up: u32,
         rate_down: u32,
-        transferred_up: u32,
-        transferred_down: u32,
+        transferred_up: u64,
+        transferred_down: u64,
         progress: f32,
     },
     TorrentPeers {
@@ -113,7 +114,7 @@ pub struct Torrent {
     pub files: u32,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Copy, Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 #[serde(deny_unknown_fields)]
 pub enum Status {
@@ -165,7 +166,24 @@ pub struct Tracker {
     pub torrent_id: u64,
     pub url: String,
     pub last_report: DateTime<Utc>,
-    pub error: Option<String>
+    pub error: Option<String>,
+}
+
+impl<'a> SResourceUpdate<'a> {
+    pub fn id(&self) -> u64 {
+        match self {
+            &SResourceUpdate::Resource(ref r) => r.id(),
+            &SResourceUpdate::Throttle { id, .. } |
+            &SResourceUpdate::ServerTransfer { id, .. } |
+            &SResourceUpdate::TorrentStatus { id, .. } |
+            &SResourceUpdate::TorrentTransfer { id, .. } |
+            &SResourceUpdate::TorrentPeers { id, .. } |
+            &SResourceUpdate::TorrentPicker { id, .. } |
+            &SResourceUpdate::PeerRate { id, .. } |
+            &SResourceUpdate::PieceAvailable { id, .. } |
+            &SResourceUpdate::PieceDownloaded { id, .. } => id,
+        }
+    }
 }
 
 impl Resource {
@@ -177,6 +195,84 @@ impl Resource {
             &Resource::Piece(ref t) => t.id,
             &Resource::Peer(ref t) => t.id,
             &Resource::Tracker(ref t) => t.id,
+        }
+    }
+
+    pub fn update(&mut self, update: SResourceUpdate) {
+        match (self, update) {
+            (&mut Resource::Torrent(ref mut t),
+             SResourceUpdate::Throttle {
+                 throttle_up,
+                 throttle_down,
+                 ..
+             }) => {
+                t.throttle_up = throttle_up;
+                t.throttle_down = throttle_up;
+            }
+            (&mut Resource::Server(ref mut s),
+             SResourceUpdate::Throttle {
+                 throttle_up,
+                 throttle_down,
+                 ..
+             }) => {
+                s.throttle_up = throttle_up;
+                s.throttle_down = throttle_up;
+            }
+            (&mut Resource::Server(ref mut s),
+             SResourceUpdate::ServerTransfer { rate_up, rate_down, .. }) => {
+                s.rate_up = rate_up;
+                s.rate_down = rate_down;
+            }
+            (&mut Resource::Torrent(ref mut t),
+             SResourceUpdate::TorrentStatus {
+                 ref mut error,
+                 status,
+                 ..
+             }) => {
+                mem::swap(&mut t.error, error);
+                t.status = status;
+            }
+            (&mut Resource::Torrent(ref mut t),
+             SResourceUpdate::TorrentTransfer {
+                 rate_up,
+                 rate_down,
+                 transferred_up,
+                 transferred_down,
+                 progress,
+                 ..
+             }) => {
+                t.rate_up = rate_up;
+                t.rate_down = rate_down;
+                t.transferred_up = transferred_up;
+                t.transferred_down = transferred_down;
+                t.progress = progress;
+            }
+            (&mut Resource::Torrent(ref mut t),
+             SResourceUpdate::TorrentPeers {
+                 peers,
+                 availability,
+                 ..
+             }) => {
+                t.peers = peers;
+                t.availability = availability;
+            }
+            (&mut Resource::Torrent(ref mut t),
+             SResourceUpdate::TorrentPicker { sequential, .. }) => {
+                t.sequential = sequential;
+            }
+            (&mut Resource::Torrent(ref mut t),
+             SResourceUpdate::PeerRate { rate_up, rate_down, .. }) => {
+                t.rate_up = rate_up;
+            }
+            (&mut Resource::Piece(ref mut p),
+             SResourceUpdate::PieceAvailable { available, .. }) => {
+                p.available = available;
+            }
+            (&mut Resource::Piece(ref mut p),
+             SResourceUpdate::PieceDownloaded { downloaded, .. }) => {
+                p.downloaded = downloaded;
+            }
+            _ => unreachable!(),
         }
     }
 }
