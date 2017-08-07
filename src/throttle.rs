@@ -19,7 +19,7 @@ impl Throttler {
     /// one for updating the tokens, the other for flushing out
     /// blocked peers.
     pub fn new(dl_rate: usize, ul_rate: usize, max_tokens: usize, reg: &Registrar) -> Throttler {
-        let id = reg.set_interval(5).unwrap();
+        let id = reg.set_interval(10).unwrap();
         let fid = reg.set_interval(50).unwrap();
         let ut = ThrottleData::new(ul_rate, max_tokens);
         let dt = ThrottleData::new(dl_rate, max_tokens);

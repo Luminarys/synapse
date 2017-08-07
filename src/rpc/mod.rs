@@ -199,11 +199,14 @@ impl RPC {
                     self.incoming.insert(id, i);
                 }
                 Ok(IncomingStatus::Transfer { data, token }) => {
+                    warn!(self.l, "Attempting to initiate transfer");
                     match self.processor.get_transfer(token) {
                         Some((client, serial, TransferKind::UploadTorrent { path, size })) => {
                             self.transfers.add_torrent(id, client, serial, i.into(), data, path, size);
                         }
-                        _ => {
+                        Some(_) => warn!(self.l, "Unimplemented transfer type ignored"),
+                        None => {
+                            warn!(self.l, "Transfer used invalid token");
                             // TODO: Handle downloads and other uploads
                         }
                     }

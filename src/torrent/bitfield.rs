@@ -166,6 +166,15 @@ mod tests {
     use super::Bitfield;
 
     #[test]
+    fn test_count() {
+        let mut pf = Bitfield::new(100);
+        for i in 0..100 {
+            pf.set_bit(i);
+        }
+        assert_eq!(pf.iter().count() as u64, pf.len);
+    }
+
+    #[test]
     fn test_create() {
         let pf = Bitfield::new(10);
         assert!(pf.len == 10);
