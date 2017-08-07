@@ -99,12 +99,12 @@ mod tests {
             "#;
         let m = serde_json::from_str(data).unwrap();
         if let CMessage::FilterSubscribe {
+            kind: criterion::ResourceKind::Torrent,
             serial: 0,
             criteria: c,
         } = m
         {
             assert_eq!(c[0].field, "id");
-            assert_eq!(c[0].kind, criterion::ResourceKind::Torrent);
             assert_eq!(c[0].op, criterion::Operation::In);
             assert_eq!(c[0].value, criterion::Value::AN(vec![1, 2, 3]));
         } else {
