@@ -4,7 +4,7 @@ pub mod bitfield;
 mod picker;
 mod choker;
 
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 
 pub use self::bitfield::Bitfield;
 pub use self::info::Info;
@@ -15,6 +15,7 @@ use self::picker::Picker;
 use std::fmt;
 use control::cio;
 use {bincode, rpc, disk, RAREST_PKR};
+use rpc::resource::{self, Resource, SResourceUpdate};
 use throttle::Throttle;
 use tracker::{self, TrackerResponse};
 use std::collections::{HashMap, HashSet};
@@ -55,7 +56,7 @@ pub struct Torrent<T: cio::CIO> {
     downloaded: u64,
     last_ul: u32,
     last_dl: u32,
-    last_clear: Instant,
+    last_clear: DateTime<Utc>,
     throttle: Throttle,
     tracker: TrackerStatus,
     tracker_update: Option<Instant>,
@@ -117,7 +118,7 @@ impl<T: cio::CIO> Torrent<T> {
             downloaded: 0,
             last_ul: 0,
             last_dl: 0,
-            last_clear: Instant::now(),
+            last_clear: Utc::now(),
             cio,
             leechers,
             throttle,
@@ -156,7 +157,7 @@ impl<T: cio::CIO> Torrent<T> {
             downloaded: d.downloaded,
             last_ul: 0,
             last_dl: 0,
-            last_clear: Instant::now(),
+            last_clear: Utc::now(),
             cio,
             leechers,
             throttle,
@@ -491,7 +492,7 @@ impl<T: cio::CIO> Torrent<T> {
 
     fn rpc_info(&self) -> Vec<rpc::resource::Resource> {
         let mut r = Vec::new();
-        r.push(rpc::resource::Resource::Torrent(rpc::resource::Torrent {
+        r.push(Resource::Torrent(resource::Torrent {
             id: self.rpc_id,
             name: self.info.name.clone(),
             // TODO: Properly add this
@@ -521,9 +522,9 @@ impl<T: cio::CIO> Torrent<T> {
 
         for i in 0..self.info.pieces() {
             // TODO: Formalize these high bit ids
-            let id = (0xF << 60) | ((i as u64) << 32) | self.rpc_id;
+            let id = (0xA << 60) | ((i as u64) << 32) | self.rpc_id;
             if self.pieces.has_bit(i as u64) {
-                r.push(rpc::resource::Resource::Piece(rpc::resource::Piece {
+                r.push(Resource::Piece(resource::Piece {
                     // TODO: Formalize these high bit ids
                     id,
                     torrent_id: self.rpc_id,
@@ -531,13 +532,25 @@ impl<T: cio::CIO> Torrent<T> {
                     downloaded: true,
                 }))
             } else {
-                r.push(rpc::resource::Resource::Piece(rpc::resource::Piece {
+                r.push(Resource::Piece(resource::Piece {
                     id,
                     torrent_id: self.rpc_id,
                     available: true,
                     downloaded: false,
                 }))
             }
+        }
+
+        for (i, f) in self.info.files.iter().enumerate() {
+            let id = (0xB << 60) | ((i as u64) << 32) | self.rpc_id;
+            r.push(resource::Resource::File(resource::File {
+                id,
+                torrent_id: self.rpc_id,
+                availability: 0.,
+                progress: 0.,
+                priority: 3,
+                path: f.path.as_path().to_string_lossy().into_owned(),
+            }))
         }
 
         // TODO: Send files too
@@ -568,14 +581,19 @@ impl<T: cio::CIO> Torrent<T> {
         0.
     }
 
-    // TODO: Implement Exp Moving Avg Somewhere
-    fn get_last_tx_rate(&mut self) -> (u32, u32) {
-        let secs = self.last_clear.elapsed().as_secs() as u32;
-        let ul = self.last_ul / secs;
-        let dl = self.last_dl / secs;
-        self.last_clear = Instant::now();
+    pub fn reset_last_tx_rate(&mut self) -> (u32, u32) {
+        let res = self.get_last_tx_rate();
+        self.last_clear = Utc::now();
         self.last_ul = 0;
         self.last_dl = 0;
+        res
+    }
+
+    // TODO: Implement Exp Moving Avg Somewhere
+    fn get_last_tx_rate(&self) -> (u32, u32) {
+        let dur = Utc::now().signed_duration_since(self.last_clear).num_milliseconds() as u32;
+        let ul = 1000 * (self.last_ul / dur);
+        let dl = 1000 * (self.last_dl / dur);
         (ul, dl)
     }
 
@@ -634,6 +652,38 @@ impl<T: cio::CIO> Torrent<T> {
         } else {
             None
         }
+    }
+
+    pub fn update_rpc_peers(&mut self) {
+        let availability = self.availability();
+        self.cio.msg_rpc(rpc::CtlMessage::Update(vec![
+            SResourceUpdate::TorrentPeers {
+                id: self.rpc_id,
+                peers: self.peers.len() as u16,
+                availability,
+            },
+        ]));
+    }
+
+    pub fn update_rpc_transfer(&mut self) {
+        match &self.status {
+            &Status::Seeding | &Status::Leeching => { }
+            _ => { return; }
+        }
+        let availability = self.availability();
+        let progress = self.progress();
+        let (rate_up, rate_down) = self.get_last_tx_rate();
+
+        self.cio.msg_rpc(rpc::CtlMessage::Update(vec![
+            SResourceUpdate::TorrentTransfer {
+                id: self.rpc_id,
+                rate_up,
+                rate_down,
+                transferred_up: self.uploaded,
+                transferred_down: self.downloaded,
+                progress,
+            },
+        ]));
     }
 
     fn cleanup_peer(&mut self, peer: &mut Peer<T>) {

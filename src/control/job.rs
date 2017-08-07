@@ -67,3 +67,15 @@ impl<T: cio::CIO> Job<T> for SessionUpdate {
         }
     }
 }
+
+pub struct TorrentTxUpdate;
+
+impl<T: cio::CIO> Job<T> for TorrentTxUpdate {
+    fn update(&mut self, torrents: &mut HashMap<usize, Torrent<T>>) {
+        for (_, torrent) in torrents.iter_mut() {
+            torrent.update_rpc_transfer();
+            // TODO: Use this result to get a better estimate
+            torrent.reset_last_tx_rate();
+        }
+    }
+}
