@@ -154,7 +154,7 @@ pub mod test {
             }
         }
 
-        fn msg_rpc(&mut self, msg: rpc::CMessage) {
+        fn msg_rpc(&mut self, msg: rpc::CtlMessage) {
             let mut d = self.data.lock().unwrap();
             d.rpc_msgs.push(msg);
         }
