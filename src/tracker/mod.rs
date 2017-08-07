@@ -255,9 +255,9 @@ impl Request {
             url: torrent.info().announce.clone(),
             hash: torrent.info().hash,
             port: CONFIG.port,
-            uploaded: torrent.uploaded() as u64 * torrent.info().piece_len as u64,
-            downloaded: torrent.downloaded() as u64 * torrent.info().piece_len as u64,
-            left: torrent.info().total_len - torrent.downloaded() as u64 * torrent.info().piece_len as u64,
+            uploaded: torrent.uploaded(),
+            downloaded: torrent.downloaded(),
+            left: torrent.info().total_len - torrent.downloaded(),
             event,
         })
     }

@@ -1,7 +1,8 @@
 use bencode::BEncode;
 use std::path::PathBuf;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::{io, fs, fmt, cmp};
+use url::Url;
 use ring::digest;
 use util::torrent_name;
 use disk;
@@ -68,6 +69,19 @@ impl File {
 }
 
 impl Info {
+    pub fn from_magnet(data: &str) -> Result<Info, &'static str> {
+        let url = match Url::parse(data) {
+            Ok(u) => u,
+            Err(_) => return Err("Failed to parse magnet URL!"),
+        };
+
+        if url.scheme() != "magnet" {
+            return Err("magnet URL must use magnet scheme");
+        };
+        // TODO: Actually implmeent this
+        unimplemented!();
+    }
+
     pub fn from_bencode(data: BEncode) -> Result<Info, &'static str> {
         data.to_dict()
             .and_then(|mut d| d.remove("info")

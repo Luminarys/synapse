@@ -249,6 +249,10 @@ impl<T: cio::CIO> Control<T> {
 
     fn handle_rpc_ev(&mut self, req: rpc::Message) -> bool {
         debug!(self.l, "Handling rpc reqest!");
+        match req {
+            rpc::Message::Torrent(i) => self.add_torrent(i),
+            _ => {}
+        }
         /*
         match req {
             rpc::Request::ListTorrents => {
@@ -269,7 +273,6 @@ impl<T: cio::CIO> Control<T> {
             rpc::Request::AddTorrent(data) => {
                 let resp = match torrent::Info::from_bencode(data) {
                     Ok(i) => {
-                        self.add_torrent(i);
                         rpc::Response::Ack
                     }
                     Err(e) => {

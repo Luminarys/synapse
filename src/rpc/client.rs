@@ -28,6 +28,12 @@ pub struct Incoming {
     last_action: time::Instant,
 }
 
+pub enum IncomingStatus {
+    Incomplete,
+    Upgrade,
+    Transfer { data: Vec<u8>, token: String },
+}
+
 enum FragBuf {
     None,
     Text(Vec<u8>),
@@ -68,15 +74,15 @@ impl Client {
                 return Err(ErrorKind::Complete.into());
             }
             Opcode::Text
-            | Opcode::Binary
-            | Opcode::Continuation => {
-                if let Some(f) = self.buf.process(m)? {
-                    #[cfg(feature = "autobahn")]
-                    self.send(f)?;
-                    #[cfg(not(feature = "autobahn"))]
-                    return Ok(Ok(f));
+                | Opcode::Binary
+                | Opcode::Continuation => {
+                    if let Some(f) = self.buf.process(m)? {
+                        #[cfg(feature = "autobahn")]
+                        self.send(f)?;
+                        #[cfg(not(feature = "autobahn"))]
+                        return Ok(Ok(f));
+                    }
                 }
-            }
             Opcode::Ping => {
                 self.send_msg(Message::pong(m.data))?;
             }
@@ -152,7 +158,7 @@ impl Incoming {
 
     /// Result indicates if the Incoming connection is
     /// valid to be upgraded into a Client
-    pub fn readable(&mut self) -> io::Result<bool> {
+    pub fn readable(&mut self) -> io::Result<IncomingStatus> {
         loop {
             match aread(&mut self.buf[self.pos..], &mut self.conn) {
                 // TODO: Consider more
@@ -163,18 +169,33 @@ impl Incoming {
                     let mut req = httparse::Request::new(&mut headers);
                     match req.parse(&self.buf[..self.pos]) {
                         Ok(httparse::Status::Partial) => continue,
-                        Ok(httparse::Status::Complete(_)) => {
-                            if let Ok(k) = validate_upgrade(req) {
+                        Ok(httparse::Status::Complete(idx)) => {
+                            if let Ok(k) = validate_upgrade(&req) {
                                 self.key = Some(k);
-                                return Ok(true);
+                                return Ok(IncomingStatus::Upgrade);
+                            } else if let Some(token) = validate_tx(&req) {
+                                return Ok(IncomingStatus::Transfer { data: self.buf[idx..self.pos].to_owned(), token });
                             } else {
+                                // Probably some dumb CORS OPTION shit, just tell the client
+                                // everyting's cool and close up
+
+                                let lines = vec![
+                                    format!("HTTP/1.1 200 OK"),
+                                    format!("Connection: Closed"),
+                                    format!("Access-Control-Allow-Origin: {}", "*"),
+                                    format!("Access-Control-Allow-Methods: {}", "OPTIONS, POST, GET"),
+                                    format!("Access-Control-Allow-Headers: {}", "Access-Control-Allow-Headers, Origin, Accept, X-Requested-With, Content-Type, Access-Control-Request-Method, Access-Control-Request-Headers, Authorization"),
+                                ];
+                                let data = lines.join("\r\n") + "\r\n\r\n";
+                                // Ignore error, it'll pop up again anyways
+                                self.conn.write(data.as_bytes());
                                 return Err(io::ErrorKind::InvalidData.into());
                             }
                         }
                         Err(_) => return Err(io::ErrorKind::InvalidData.into()),
                     }
                 }
-                IOR::Blocked => return Ok(false),
+                IOR::Blocked => return Ok(IncomingStatus::Incomplete),
                 IOR::EOF => return Err(io::ErrorKind::UnexpectedEof.into()),
                 IOR::Err(e) => return Err(e),
             }
@@ -205,11 +226,11 @@ impl FragBuf {
                 FragBuf::Binary(b)
             }
             (FragBuf::Text(_), Opcode::Text)
-            | (FragBuf::Text(_), Opcode::Binary)
-            | (FragBuf::Binary(_), Opcode::Text)
-            | (FragBuf::Binary(_), Opcode::Binary) => {
-                return Err(ErrorKind::BadPayload("Expected continuation of data frame").into());
-            }
+                | (FragBuf::Text(_), Opcode::Binary)
+                | (FragBuf::Binary(_), Opcode::Text)
+                | (FragBuf::Binary(_), Opcode::Binary) => {
+                    return Err(ErrorKind::BadPayload("Expected continuation of data frame").into());
+                }
             _ => return Ok(None),
         };
         if fin {
@@ -227,7 +248,27 @@ impl FragBuf {
     }
 }
 
-fn validate_upgrade(req: httparse::Request) -> result::Result<String, ()> {
+// TODO: We're not really checking HTTP semantics here, might be worth
+// considering.
+fn validate_tx(req: &httparse::Request) -> Option<String> {
+    for header in req.headers.iter() {
+        if header.name.to_lowercase() == "authorization" {
+            return str::from_utf8(header.value)
+                .ok()
+                .and_then(|v| {
+                    if v.starts_with("Bearer ") {
+                        let (_, tok) = v.split_at(7);
+                        Some(tok.to_owned())
+                    } else {
+                        None
+                    }
+                });
+        }
+    }
+    None
+}
+
+fn validate_upgrade(req: &httparse::Request) -> result::Result<String, ()> {
     if !req.method.map(|m| m == "GET").unwrap_or(false) {
         return Err(());
     }

@@ -1,7 +1,7 @@
 use chrono::{DateTime, Utc};
 
 use super::resource::{Resource, CResourceUpdate, SResourceUpdate};
-use super::criterion::Criterion;
+use super::criterion::{ResourceKind, Criterion};
 
 /// Client -> server messages, deserialize only
 #[derive(Debug, Deserialize)]
@@ -20,6 +20,8 @@ pub enum CMessage {
     RemoveResource { serial: u64, id: u64 },
     FilterSubscribe {
         serial: u64,
+        #[serde(default)]
+        kind: ResourceKind,
         criteria: Vec<Criterion>,
     },
     FilterUnsubscribe { serial: u64, filter_serial: u64 },
@@ -68,6 +70,7 @@ pub enum SMessage<'a> {
     InvalidSchema(Error),
     InvalidRequest(Error),
     PermissionDenied(Error),
+    TransferFailed(Error),
     ServerError(Error),
 }
 
