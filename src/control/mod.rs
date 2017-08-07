@@ -257,6 +257,11 @@ impl<T: cio::CIO> Control<T> {
     fn handle_rpc_ev(&mut self, req: rpc::Message) -> bool {
         debug!(self.l, "Handling rpc reqest!");
         match req {
+            rpc::Message::UpdateTorrent(u) => {
+                // if let Some(t) = self.torrents.get_mut(&u.id) {
+                //     t.rpc_update(u);
+                // }
+            }
             rpc::Message::Torrent(i) => self.add_torrent(i),
             _ => {}
         }

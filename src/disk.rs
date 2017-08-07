@@ -5,7 +5,7 @@ use std::io::{self, Seek, SeekFrom, Write, Read};
 use std::path::PathBuf;
 use torrent::Info;
 use slog::Logger;
-use util::torrent_name;
+use util::hash_to_id;
 use ring::digest;
 use amy;
 use {handle, CONFIG};
@@ -124,13 +124,13 @@ impl Request {
             }
             Request::Serialize { data, hash, .. } => {
                 let mut pb = path::PathBuf::from(sd);
-                pb.push(torrent_name(&hash));
+                pb.push(hash_to_id(&hash));
                 let mut f = fs::OpenOptions::new().write(true).create(true).open(&pb)?;
                 f.write(&data)?;
             }
             Request::Delete { hash, .. } => {
                 let mut pb = path::PathBuf::from(sd);
-                pb.push(torrent_name(&hash));
+                pb.push(hash_to_id(&hash));
                 fs::remove_file(pb)?;
             }
             Request::Validate { tid, info } => {

@@ -21,7 +21,7 @@ use tracker::{self, TrackerResponse};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use util::torrent_name;
+use util::hash_to_id;
 use slog::Logger;
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -799,7 +799,7 @@ impl<T: cio::CIO> fmt::Debug for Torrent<T> {
 
 impl<T: cio::CIO> fmt::Display for Torrent<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "Torrent {}", torrent_name(&self.info.hash))
+        write!(f, "Torrent {}", hash_to_id(&self.info.hash))
     }
 }
 

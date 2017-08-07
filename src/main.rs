@@ -25,8 +25,8 @@ extern crate base64;
 extern crate base32;
 extern crate regex;
 
-// TODO: Get rid of these
 extern crate chrono;
+// TODO: Get rid of this
 extern crate num;
 
 mod handle;
