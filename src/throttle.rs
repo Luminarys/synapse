@@ -118,6 +118,14 @@ impl Throttle {
         res
     }
 
+    pub fn ul_rate(&self) -> usize {
+        self.ul_data().rate
+    }
+
+    pub fn dl_rate(&self) -> usize {
+        self.dl_data().rate
+    }
+
     pub fn restore_bytes_dl(&mut self, amnt: usize) {
         self.dl_data().restore_tokens(amnt);
     }

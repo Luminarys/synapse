@@ -16,16 +16,20 @@ pub struct Processor {
 }
 
 struct Filter {
+    kind: ResourceKind,
     criteria: Vec<Criterion>,
     client: usize,
 }
 
 struct BearerToken {
     expiration: DateTime<Utc>,
+    client: usize,
+    serial: u64,
     kind: TransferKind,
 }
 
-enum TransferKind {
+#[derive(Clone)]
+pub enum TransferKind {
     UploadTorrent { size: u64, path: Option<String> },
     UploadFiles { size: u64, path: String },
     DownloadFile { path: String },
@@ -41,11 +45,35 @@ impl Processor {
         }
     }
 
+    pub fn get_transfer(&mut self, tok: String) -> Option<(usize, u64, TransferKind)> {
+        let mut res = None;
+        let rem = match self.tokens.get(&tok) {
+            Some(bt) => {
+                match &bt.kind {
+                    s @ &TransferKind::UploadTorrent { .. } => {
+                        res = Some((bt.client, bt.serial, s.clone()));
+                        false
+                    }
+                    s => true,
+                }
+            }
+            None => {
+                res = None;
+                false
+            }
+        };
+        if rem {
+            let tok = self.tokens.remove(&tok).unwrap();
+            res = Some((tok.client, tok.serial, tok.kind));
+        }
+        res
+    }
+
     pub fn handle_client(
         &mut self,
         client: usize,
         msg: CMessage,
-    ) -> (Vec<SMessage>, Option<Message>) {
+        ) -> (Vec<SMessage>, Option<Message>) {
         let mut resp = Vec::new();
         let mut rmsg = None;
         match msg {
@@ -143,11 +171,11 @@ impl Processor {
                     }
                 }
             }
-            CMessage::FilterSubscribe { serial, criteria } => {
-                let f = Filter { criteria, client };
+            CMessage::FilterSubscribe { serial, kind, criteria } => {
+                let f = Filter { criteria, kind, client };
                 let mut ids = Vec::new();
                 for (_, r) in self.resources.iter() {
-                    if f.matches(r) {
+                    if r.kind() == kind && f.matches(r) {
                         ids.push(r.id());
                     }
                 }
@@ -163,16 +191,19 @@ impl Processor {
 
             CMessage::UploadTorrent { serial, size, path } => {
                 resp.push(self.new_transfer(
-                    serial,
-                    TransferKind::UploadTorrent { size, path },
-                ));
+                        client,
+                        serial,
+                        TransferKind::UploadTorrent { size, path },
+                        ));
             }
-            CMessage::UploadMagnet { serial, uri, path } => {}
+            CMessage::UploadMagnet { serial, uri, path } => {
+            }
             CMessage::UploadFiles { serial, size, path } => {
                 resp.push(self.new_transfer(
-                    serial,
-                    TransferKind::UploadFiles { size, path },
-                ));
+                        client,
+                        serial,
+                        TransferKind::UploadFiles { size, path },
+                        ));
             }
             CMessage::DownloadFile { serial, id } => {
                 let path = match self.resources.get(&id) {
@@ -186,9 +217,10 @@ impl Processor {
                     }
                 };
                 resp.push(self.new_transfer(
-                    serial,
-                    TransferKind::DownloadFile { path },
-                ));
+                        client,
+                        serial,
+                        TransferKind::DownloadFile { path },
+                        ));
             }
         }
         (resp, rmsg)
@@ -198,12 +230,18 @@ impl Processor {
         let mut msgs = Vec::new();
         match msg {
             CtlMessage::Extant(e) => {
-                for (c, filters) in self.get_matching_filters(&vec![e.id()]) {
+                let ids: Vec<_> = e.iter().map(|r| r.id()).collect();
+
+                for r in e {
+                    self.subs.insert(r.id(), HashSet::new());
+                    self.resources.insert(r.id(), r);
+                }
+
+                for (c, filters) in self.get_matching_filters(ids.into_iter()) {
                     for (serial, ids) in filters {
                         msgs.push((c, SMessage::ResourcesExtant { serial, ids }));
                     }
                 }
-                self.resources.insert(e.id(), e);
             }
             CtlMessage::Update(updates) => {
                 let mut clients = HashMap::new();
@@ -221,7 +259,7 @@ impl Processor {
                 }
             }
             CtlMessage::Removed(r) => {
-                for (c, filters) in self.get_matching_filters(&r) {
+                for (c, filters) in self.get_matching_filters(r.iter().cloned()) {
                     for (serial, ids) in filters {
                         msgs.push((c, SMessage::ResourcesRemoved { serial, ids }));
                     }
@@ -244,15 +282,15 @@ impl Processor {
     }
 
     /// Produces a map of the form Map<ClientId, Map<FilterSerial, Vec<ID>>>.
-    fn get_matching_filters(&self, ids: &Vec<u64>) -> HashMap<usize, HashMap<u64, Vec<u64>>> {
+    fn get_matching_filters<'a, I: Iterator<Item=u64>>(&self, ids: I) -> HashMap<usize, HashMap<u64, Vec<u64>>> {
         let mut matched = HashMap::new();
-        for id in ids.iter() {
-            let res = self.resources.get(id).expect(
+        for id in ids {
+            let res = self.resources.get(&id).expect(
                 "Bad resource requested from a CtlMessage",
-            );
+                );
             for (s, f) in self.filter_subs.iter() {
                 let c = f.client;
-                if f.matches(&res) {
+                if f.kind == res.kind() && f.matches(&res) {
                     if !matched.contains_key(&c) {
                         matched.insert(c, HashMap::new());
                     }
@@ -260,20 +298,20 @@ impl Processor {
                     if !filters.contains_key(s) {
                         filters.insert(*s, Vec::new());
                     }
-                    filters.get_mut(s).unwrap().push(*id);
+                    filters.get_mut(s).unwrap().push(id);
                 }
             }
         }
         matched
     }
 
-    fn new_transfer(&mut self, serial: u64, kind: TransferKind) -> SMessage {
+    fn new_transfer(&mut self, client: usize, serial: u64, kind: TransferKind) -> SMessage {
         let expiration = Utc::now() + Duration::minutes(2);
         let tok = random_string(15);
         self.tokens.insert(
             tok.clone(),
-            BearerToken { expiration, kind },
-        );
+            BearerToken { expiration, kind, serial, client },
+            );
         SMessage::TransferOffer {
             serial,
             expires: expiration,
@@ -286,6 +324,8 @@ impl Processor {
 
 impl Filter {
     pub fn matches(&self, r: &Resource) -> bool {
+        if self.criteria.is_empty() {
+        }
         self.criteria.iter().all(|c| r.matches(c))
     }
 }

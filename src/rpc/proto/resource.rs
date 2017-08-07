@@ -198,6 +198,17 @@ impl Resource {
         }
     }
 
+    pub fn kind(&self) -> ResourceKind {
+        match self {
+            &Resource::Server(_) => ResourceKind::Server,
+            &Resource::Torrent(_) => ResourceKind::Torrent,
+            &Resource::File(_) => ResourceKind::File,
+            &Resource::Piece(_) => ResourceKind::Piece,
+            &Resource::Peer(_) => ResourceKind::Peer,
+            &Resource::Tracker(_) => ResourceKind::Tracker,
+        }
+    }
+
     pub fn update(&mut self, update: SResourceUpdate) {
         match (self, update) {
             (&mut Resource::Torrent(ref mut t),
@@ -282,13 +293,13 @@ impl Resource {
 
 impl Filter for Resource {
     fn matches(&self, c: &Criterion) -> bool {
-        match (self, &c.kind) {
-            (&Resource::Server(ref t), &ResourceKind::Server) => t.matches(c),
-            (&Resource::Torrent(ref t), &ResourceKind::Torrent) => t.matches(c),
-            (&Resource::File(ref t), &ResourceKind::File) => t.matches(c),
-            (&Resource::Piece(ref t), &ResourceKind::Piece) => t.matches(c),
-            (&Resource::Peer(ref t), &ResourceKind::Peer) => t.matches(c),
-            (&Resource::Tracker(ref t), &ResourceKind::Tracker) => t.matches(c),
+        match self {
+            &Resource::Server(ref t) => t.matches(c),
+            &Resource::Torrent(ref t) => t.matches(c),
+            &Resource::File(ref t) => t.matches(c),
+            &Resource::Piece(ref t) => t.matches(c),
+            &Resource::Peer(ref t) => t.matches(c),
+            &Resource::Tracker(ref t) => t.matches(c),
             _ => false,
         }
     }

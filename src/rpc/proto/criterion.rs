@@ -3,14 +3,12 @@ use regex::{self, Regex};
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Criterion {
-    #[serde(default)]
-    pub kind: ResourceKind,
     pub field: String,
     pub op: Operation,
     pub value: Value,
 }
 
-#[derive(Debug, Deserialize, PartialEq)]
+#[derive(Copy, Clone, Debug, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub enum ResourceKind {
     Server,

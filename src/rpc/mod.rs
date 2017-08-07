@@ -4,6 +4,7 @@ mod writer;
 mod errors;
 mod client;
 mod processor;
+mod transfer;
 
 use std::{io, str};
 use std::net::{TcpListener, TcpStream, Ipv4Addr, SocketAddrV4};
@@ -14,17 +15,20 @@ use serde_json;
 use amy;
 
 pub use self::proto::resource;
+use self::proto::message::SMessage;
 pub use self::errors::{Result, ResultExt, ErrorKind, Error};
 use self::proto::ws;
-use self::client::{Incoming, Client};
-use self::processor::Processor;
+use self::client::{Incoming, IncomingStatus, Client};
+use self::processor::{Processor, TransferKind};
+use self::transfer::{Transfers, TransferResult};
+use bencode;
 use handle;
 use torrent;
 use CONFIG;
 
 #[derive(Debug)]
 pub enum CtlMessage {
-    Extant(resource::Resource),
+    Extant(Vec<resource::Resource>),
     Update(Vec<resource::SResourceUpdate<'static>>),
     Removed(Vec<u64>),
     Shutdown,
@@ -52,6 +56,7 @@ pub struct RPC {
     listener: TcpListener,
     lid: usize,
     processor: Processor,
+    transfers: Transfers,
     clients: HashMap<usize, Client>,
     incoming: HashMap<usize, Incoming>,
     l: Logger,
@@ -79,6 +84,7 @@ impl RPC {
                 clients: HashMap::new(),
                 incoming: HashMap::new(),
                 processor: Processor::new(),
+                transfers: Transfers::new(),
                 l,
             }.run()
         });
@@ -97,11 +103,11 @@ impl RPC {
                         }
                     }
                     id if self.incoming.contains_key(&id) => self.handle_incoming(id),
+                    id if self.transfers.contains(id) => self.handle_transfer(not),
                     _ => self.handle_conn(not),
                 }
             }
         }
-        loop {}
     }
 
     fn handle_ctl(&mut self) -> bool {
@@ -128,6 +134,42 @@ impl RPC {
         false
     }
 
+    fn handle_transfer(&mut self, not: amy::Notification) {
+        if not.event.readable() {
+            match self.transfers.readable(not.id) {
+                TransferResult::Incomplete => { }
+                TransferResult::Torrent { conn, data, path } => {
+                    debug!(self.l, "Got torrent via HTTP transfer!");
+                    self.reg.deregister(&conn);
+                    // TODO: Send this to the client in an error msg
+                    match bencode::decode_buf(&data) {
+                        Ok(b) => {
+                            if let Ok(i) = torrent::info::Info::from_bencode(b) {
+                                self.ch.send(Message::Torrent(i));
+                            } else {
+                                warn!(self.l, "Failed to parse torrent!");
+                            }
+                        }
+                        Err(e) => {
+                            warn!(self.l, "Failed to decode BE data: {}!", e);
+                        }
+                    }
+                }
+                TransferResult::Error { conn, err, client: id } => {
+                    self.reg.deregister(&conn);
+                    let res = self.clients.get_mut(&id).map(|c| c.send(
+                            ws::Frame::Text(serde_json::to_string(&SMessage::TransferFailed(err)).unwrap())
+                    )).unwrap_or(Ok(()));
+                    if res.is_err() {
+                        let client = self.clients.remove(&id).unwrap();
+                        self.remove_client(id, client);
+                    }
+                }
+            }
+        } else {
+        }
+    }
+
     fn handle_accept(&mut self) {
         loop {
             match self.listener.accept() {
@@ -149,12 +191,22 @@ impl RPC {
     fn handle_incoming(&mut self, id: usize) {
         if let Some(mut i) = self.incoming.remove(&id) {
             match i.readable() {
-                Ok(true) => {
+                Ok(IncomingStatus::Upgrade) => {
                     debug!(self.l, "Succesfully upgraded conn");
                     self.clients.insert(id, i.into());
                 }
-                Ok(false) => {
+                Ok(IncomingStatus::Incomplete) => {
                     self.incoming.insert(id, i);
+                }
+                Ok(IncomingStatus::Transfer { data, token }) => {
+                    match self.processor.get_transfer(token) {
+                        Some((client, serial, TransferKind::UploadTorrent { path, size })) => {
+                            self.transfers.add_torrent(id, client, serial, i.into(), data, path, size);
+                        }
+                        _ => {
+                            // TODO: Handle downloads and other uploads
+                        }
+                    }
                 }
                 Err(e) => {
                     debug!(self.l, "Incoming ws upgrade failed: {}", e);
