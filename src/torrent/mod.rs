@@ -24,7 +24,7 @@ use std::time::{Duration, Instant};
 use util::torrent_name;
 use slog::Logger;
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, PartialEq, Serialize)]
 pub enum TrackerStatus {
     Updating,
     Ok {
@@ -69,7 +69,7 @@ pub struct Torrent<T: cio::CIO> {
     dirty: bool,
 }
 
-#[derive(Copy, Clone, Debug, Serialize, Deserialize)]
+#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum Status {
     Pending,
     Paused,
@@ -81,6 +81,13 @@ pub enum Status {
 }
 
 impl Status {
+    pub fn leeching(&self) -> bool {
+        match *self {
+            Status::Leeching => true,
+            _ => false,
+        }
+    }
+
     pub fn stopped(&self) -> bool {
         match *self {
             Status::Paused | Status::DiskError => true,
@@ -168,11 +175,21 @@ impl<T: cio::CIO> Torrent<T> {
             dirty: false,
             status: d.status,
         };
-        if let Status::Validating = d.status {
-            t.cio.msg_disk(
-                disk::Request::validate(t.id, t.info.clone()),
-            );
-        }
+        match t.status {
+            Status::DiskError | Status::Seeding | Status::Leeching => {
+                if t.pieces.complete() {
+                    t.status = Status::Idle;
+                } else {
+                    t.status = Status::Pending;
+                }
+            }
+            Status::Validating => {
+                t.cio.msg_disk(
+                    disk::Request::validate(t.id, t.info.clone()),
+                );
+            }
+            _ => {}
+        };
         t.start();
         Ok(t)
     }
@@ -278,7 +295,7 @@ impl<T: cio::CIO> Torrent<T> {
                 debug!(self.l, "Validation completed!");
                 if invalid.is_empty() {
                     info!(self.l, "Torrent succesfully downloaded!");
-                    self.status = Status::Idle;
+                    self.set_status(Status::Idle);
                     let req = tracker::Request::completed(self);
                     self.cio.msg_trk(req);
                 } else {
@@ -295,7 +312,7 @@ impl<T: cio::CIO> Torrent<T> {
             }
             disk::Response::Error { err, .. } => {
                 warn!(self.l, "Disk error: {:?}", err);
-                self.status = Status::DiskError;
+                self.set_status(Status::DiskError);
             }
         }
     }
@@ -354,7 +371,7 @@ impl<T: cio::CIO> Torrent<T> {
                 // Even though we have the data, if we are stopped we shouldn't use the disk
                 // regardless.
                 if !self.status.stopped() {
-                    self.status = Status::Leeching;
+                    self.set_status(Status::Leeching);
                 } else {
                     return Ok(());
                 }
@@ -376,11 +393,14 @@ impl<T: cio::CIO> Torrent<T> {
 
                     // Begin validation, and save state if the torrent is done
                     if self.pieces.complete() {
+
+                        debug!(self.l, "Beginning validation");
                         self.serialize();
                         self.cio.msg_disk(
                             disk::Request::validate(self.id, self.info.clone()),
                         );
-                        self.status = Status::Validating;
+                        self.update_rpc_transfer();
+                        self.set_status(Status::Validating);
                     }
 
                     // Tell all relevant peers we got the piece
@@ -428,8 +448,8 @@ impl<T: cio::CIO> Torrent<T> {
                 begin,
                 length,
             } => {
-                if !self.status.stopped() {
-                    self.status = Status::Seeding;
+                if !self.status.stopped() && !self.status.leeching() {
+                    self.set_status(Status::Seeding);
                     // TODO get this from some sort of allocator.
                     if length != self.info.block_len(index, begin) {
                         return Err(());
@@ -553,7 +573,7 @@ impl<T: cio::CIO> Torrent<T> {
             }))
         }
 
-        // TODO: Send files too
+        // TODO: Send trackers too
 
         r
     }
@@ -590,8 +610,10 @@ impl<T: cio::CIO> Torrent<T> {
     }
 
     // TODO: Implement Exp Moving Avg Somewhere
-    fn get_last_tx_rate(&self) -> (u32, u32) {
-        let dur = Utc::now().signed_duration_since(self.last_clear).num_milliseconds() as u32;
+    pub fn get_last_tx_rate(&self) -> (u32, u32) {
+        let dur = Utc::now()
+            .signed_duration_since(self.last_clear)
+            .num_milliseconds() as u32;
         let ul = 1000 * (self.last_ul / dur);
         let dl = 1000 * (self.last_dl / dur);
         (ul, dl)
@@ -654,6 +676,23 @@ impl<T: cio::CIO> Torrent<T> {
         }
     }
 
+    fn set_status(&mut self, status: Status) {
+        if self.status == status {
+            return;
+        }
+        self.status = status;
+        self.cio.msg_rpc(rpc::CtlMessage::Update(vec![
+            SResourceUpdate::TorrentStatus {
+                id: self.rpc_id,
+                error: match status {
+                    Status::DiskError => Some("Disk error".to_owned()),
+                    _ => None,
+                },
+                status: status.into(),
+            },
+        ]));
+    }
+
     pub fn update_rpc_peers(&mut self) {
         let availability = self.availability();
         self.cio.msg_rpc(rpc::CtlMessage::Update(vec![
@@ -666,10 +705,6 @@ impl<T: cio::CIO> Torrent<T> {
     }
 
     pub fn update_rpc_transfer(&mut self) {
-        match &self.status {
-            &Status::Seeding | &Status::Leeching => { }
-            _ => { return; }
-        }
         let availability = self.availability();
         let progress = self.progress();
         let (rate_up, rate_down) = self.get_last_tx_rate();
@@ -703,7 +738,7 @@ impl<T: cio::CIO> Torrent<T> {
                 self.cio.msg_trk(req);
             }
         }
-        self.status = Status::Paused;
+        self.set_status(Status::Paused);
     }
 
     pub fn resume(&mut self) {
@@ -720,18 +755,18 @@ impl<T: cio::CIO> Torrent<T> {
                     self.cio.msg_disk(
                         disk::Request::validate(self.id, self.info.clone()),
                     );
-                    self.status = Status::Validating;
+                    self.set_status(Status::Validating);
                 } else {
                     self.request_all();
-                    self.status = Status::Idle;
+                    self.set_status(Status::Idle);
                 }
             }
             _ => {}
         }
         if self.pieces.complete() {
-            self.status = Status::Idle;
+            self.set_status(Status::Idle);
         } else {
-            self.status = Status::Pending;
+            self.set_status(Status::Pending);
         }
     }
 

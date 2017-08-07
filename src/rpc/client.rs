@@ -180,7 +180,7 @@ impl Incoming {
                                 // everyting's cool and close up
 
                                 let lines = vec![
-                                    format!("HTTP/1.1 200 OK"),
+                                    format!("HTTP/1.1 204 NO CONTENT"),
                                     format!("Connection: Closed"),
                                     format!("Access-Control-Allow-Origin: {}", "*"),
                                     format!("Access-Control-Allow-Methods: {}", "OPTIONS, POST, GET"),
