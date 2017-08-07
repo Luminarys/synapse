@@ -62,6 +62,8 @@ pub struct RPC {
     l: Logger,
 }
 
+const POLL_INT_MS: usize = 1000;
+
 impl RPC {
     pub fn start(creg: &mut amy::Registrar) -> io::Result<handle::Handle<Message, CtlMessage>> {
         let poll = amy::Poller::new()?;
@@ -93,7 +95,7 @@ impl RPC {
 
     pub fn run(&mut self) {
         debug!(self.l, "Running RPC!");
-        'outer: while let Ok(res) = self.poll.wait(15) {
+        'outer: while let Ok(res) = self.poll.wait(POLL_INT_MS) {
             for not in res {
                 match not.id {
                     id if id == self.lid => self.handle_accept(),

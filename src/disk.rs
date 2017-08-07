@@ -10,7 +10,7 @@ use ring::digest;
 use amy;
 use {handle, CONFIG};
 
-const POLL_INT_MS: usize = 10;
+const POLL_INT_MS: usize = 1000;
 
 pub struct Disk {
     poll: amy::Poller,

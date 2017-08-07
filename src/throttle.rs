@@ -14,12 +14,14 @@ pub struct Throttler {
     ul_data: Rc<UnsafeCell<ThrottleData>>,
 }
 
+const URATE: usize = 15;
+
 impl Throttler {
     /// Creates a new throttler and sets two timers on reg,
     /// one for updating the tokens, the other for flushing out
     /// blocked peers.
     pub fn new(dl_rate: usize, ul_rate: usize, max_tokens: usize, reg: &Registrar) -> Throttler {
-        let id = reg.set_interval(10).unwrap();
+        let id = reg.set_interval(URATE).unwrap();
         let fid = reg.set_interval(50).unwrap();
         let ut = ThrottleData::new(ul_rate, max_tokens);
         let dt = ThrottleData::new(dl_rate, max_tokens);
@@ -166,9 +168,9 @@ impl ThrottleData {
         self.tokens += amnt;
     }
 
-    /// This method must be called every 5 milliseconds.
+    /// This method must be called every URATE milliseconds.
     fn add_tokens(&mut self) {
-        self.tokens += self.rate * 5;
+        self.tokens += self.rate * URATE;
         if self.tokens >= self.max_tokens {
             self.tokens = self.max_tokens;
         }

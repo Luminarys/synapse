@@ -75,6 +75,7 @@ pub struct TrackerResponse {
     pub seeders: u32,
 }
 
+const POLL_INT_MS: usize = 1000;
 
 impl Tracker {
     pub fn new(
@@ -107,7 +108,7 @@ impl Tracker {
 
         debug!(self.l, "Initialized!");
         'outer: loop {
-            for event in self.poll.wait(10).unwrap() {
+            for event in self.poll.wait(POLL_INT_MS).unwrap() {
                 if self.handle_event(event).is_err() {
                     break 'outer;
                 }
@@ -119,7 +120,7 @@ impl Tracker {
 
         // Shutdown loop - wait for all requests to complete
         loop {
-            for event in self.poll.wait(50).unwrap() {
+            for event in self.poll.wait(POLL_INT_MS).unwrap() {
                 if self.handle_event(event).is_err() {
                 }
                 if self.http.complete() && self.udp.complete() {

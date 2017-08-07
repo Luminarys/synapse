@@ -8,7 +8,7 @@ use amy;
 use {rpc, tracker, disk, listener, torrent};
 use control::cio::{self, Result, ResultExt, ErrorKind};
 
-const POLL_INT_MS: usize = 3;
+const POLL_INT_MS: usize = 1000;
 
 /// Amy based CIO implementation. Currently the default one used.
 pub struct ACIO {

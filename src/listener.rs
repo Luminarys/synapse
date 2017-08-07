@@ -37,6 +37,8 @@ pub enum Request {
     Shutdown,
 }
 
+const POLL_INT_MS: usize = 1000;
+
 impl Listener {
     pub fn new(
         poll: amy::Poller,
@@ -60,7 +62,7 @@ impl Listener {
 
     pub fn run(&mut self) {
         debug!(self.l, "Accepting connections!");
-        'outer: while let Ok(res) = self.poll.wait(15) {
+        'outer: while let Ok(res) = self.poll.wait(POLL_INT_MS) {
             for not in res {
                 match not.id {
                     id if id == self.lid => self.handle_conn(),
