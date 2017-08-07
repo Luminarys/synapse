@@ -257,7 +257,8 @@ impl Request {
             port: CONFIG.port,
             uploaded: torrent.uploaded(),
             downloaded: torrent.downloaded(),
-            left: torrent.info().total_len - torrent.downloaded(),
+            // This is naive, TODO: REconsider
+            left: torrent.info().total_len.saturating_sub(torrent.downloaded()),
             event,
         })
     }

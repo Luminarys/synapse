@@ -18,6 +18,9 @@ const TRK_JOB_SECS: u64 = 60;
 const UNCHK_JOB_SECS: u64 = 30;
 /// Session serialization job interval
 const SES_JOB_SECS: u64 = 10;
+/// Interval to update RPC of transfer stats
+const TX_JOB_MS: u64 = 250;
+
 /// Interval to requery all jobs and execute if needed
 const JOB_INT_MS: usize = 1000;
 
@@ -45,6 +48,7 @@ impl<T: cio::CIO> Control<T> {
         jobs.add_job(job::TrackerUpdate, time::Duration::from_secs(TRK_JOB_SECS));
         jobs.add_job(job::UnchokeUpdate, time::Duration::from_secs(UNCHK_JOB_SECS));
         jobs.add_job(job::SessionUpdate, time::Duration::from_secs(SES_JOB_SECS));
+        jobs.add_job(job::TorrentTxUpdate, time::Duration::from_millis(TX_JOB_MS));
         let job_timer = cio.set_timer(JOB_INT_MS).map_err(|_| io_err_val("timer failure!"))?;
         // 5 MiB max bucket
         Ok(Control {
@@ -188,6 +192,9 @@ impl<T: cio::CIO> Control<T> {
                     trace!(self.l, "Added peer({:?})!", ip);
                     self.add_peer(id, peer);
                 }
+            }
+            if let Some(torrent) = self.torrents.get_mut(&id) {
+                torrent.update_rpc_peers();
             }
         }
     }

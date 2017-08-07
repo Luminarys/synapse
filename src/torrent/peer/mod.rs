@@ -12,6 +12,7 @@ use std::{io, fmt, mem, time};
 use torrent::{Torrent, Bitfield};
 use throttle::Throttle;
 use control::cio;
+use rpc::resource;
 use tracker;
 use {DHT_EXT, CONFIG};
 
@@ -72,6 +73,11 @@ impl PeerConn {
             writer,
             reader,
         }
+    }
+
+    pub fn rpc_info(&self) -> resource::Resource {
+        // TODO: Figure this out. Maybe do it in torrent.
+        unimplemented!();
     }
 
     pub fn sock(&self) -> &Socket {
