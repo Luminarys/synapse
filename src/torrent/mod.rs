@@ -48,6 +48,7 @@ struct TorrentData {
 
 pub struct Torrent<T: cio::CIO> {
     id: usize,
+    rpc_id: u64,
     pieces: Bitfield,
     info: Arc<Info>,
     cio: T,
