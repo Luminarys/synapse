@@ -26,6 +26,13 @@ impl Picker {
         Picker::Sequential(picker)
     }
 
+    pub fn is_sequential(&self) -> bool {
+        match self {
+            &Picker::Sequential(_) => true,
+            _ => false,
+        }
+    }
+
     pub fn pick<T: cio::CIO>(&mut self, peer: &Peer<T>) -> Option<(u32, u32)> {
         match *self {
             Picker::Sequential(ref mut p) => p.pick(peer),

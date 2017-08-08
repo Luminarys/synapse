@@ -4,6 +4,8 @@ pub mod bitfield;
 mod picker;
 mod choker;
 
+use chrono::{DateTime, Utc};
+
 pub use self::bitfield::Bitfield;
 pub use self::info::Info;
 pub use self::peer::{Peer, PeerConn};
@@ -13,18 +15,23 @@ use self::picker::Picker;
 use std::fmt;
 use control::cio;
 use {bincode, rpc, disk, RAREST_PKR};
+use rpc::resource::{self, Resource, SResourceUpdate};
 use throttle::Throttle;
 use tracker::{self, TrackerResponse};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use util::torrent_name;
+use util;
 use slog::Logger;
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, PartialEq, Serialize)]
 pub enum TrackerStatus {
     Updating,
-    Ok { seeders: u32, leechers: u32, interval: u32 },
+    Ok {
+        seeders: u32,
+        leechers: u32,
+        interval: u32,
+    },
     Failure(String),
     Error,
 }
@@ -33,8 +40,8 @@ pub enum TrackerStatus {
 struct TorrentData {
     info: Info,
     pieces: Bitfield,
-    uploaded: usize,
-    downloaded: usize,
+    uploaded: u64,
+    downloaded: u64,
     picker: Picker,
     status: Status,
 }
@@ -44,8 +51,12 @@ pub struct Torrent<T: cio::CIO> {
     pieces: Bitfield,
     info: Arc<Info>,
     cio: T,
-    downloaded: usize,
-    uploaded: usize,
+    uploaded: u64,
+    downloaded: u64,
+    last_ul: u64,
+    last_dl: u64,
+    priority: u8,
+    last_clear: DateTime<Utc>,
     throttle: Throttle,
     tracker: TrackerStatus,
     tracker_update: Option<Instant>,
@@ -58,7 +69,7 @@ pub struct Torrent<T: cio::CIO> {
     dirty: bool,
 }
 
-#[derive(Copy, Clone, Debug, Serialize, Deserialize)]
+#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum Status {
     Pending,
     Paused,
@@ -70,10 +81,17 @@ pub enum Status {
 }
 
 impl Status {
+    pub fn leeching(&self) -> bool {
+        match *self {
+            Status::Leeching => true,
+            _ => false,
+        }
+    }
+
     pub fn stopped(&self) -> bool {
         match *self {
             Status::Paused | Status::DiskError => true,
-            _ => false
+            _ => false,
         }
     }
 }
@@ -97,32 +115,79 @@ impl<T: cio::CIO> Torrent<T> {
             Status::DiskError
         };
         let mut t = Torrent {
-            id, info: Arc::new(info), peers, pieces, picker,
-            uploaded: 0, downloaded: 0, cio, leechers, throttle,
+            id,
+            info: Arc::new(info),
+            peers,
+            pieces,
+            picker,
+            priority: 3,
+            uploaded: 0,
+            downloaded: 0,
+            last_ul: 0,
+            last_dl: 0,
+            last_clear: Utc::now(),
+            cio,
+            leechers,
+            throttle,
             tracker: TrackerStatus::Updating,
-            tracker_update: None, choker: choker::Choker::new(),
-            l: l.clone(), dirty: false, status,
+            tracker_update: None,
+            choker: choker::Choker::new(),
+            l: l.clone(),
+            dirty: false,
+            status,
         };
         t.start();
+
         t
     }
 
-    pub fn deserialize(id: usize, data: &[u8], throttle: Throttle, cio: T, l: Logger) -> Result<Torrent<T>, bincode::Error> {
+    pub fn deserialize(
+        id: usize,
+        data: &[u8],
+        throttle: Throttle,
+        cio: T,
+        l: Logger,
+        ) -> Result<Torrent<T>, bincode::Error> {
         let mut d: TorrentData = bincode::deserialize(data)?;
         debug!(l, "Torrent data deserialized!");
         d.picker.unset_waiting();
         let peers = HashMap::new();
         let leechers = HashSet::new();
         let mut t = Torrent {
-            id, info: Arc::new(d.info), peers, pieces: d.pieces, picker: d.picker,
-            uploaded: d.uploaded, downloaded: d.downloaded, cio, leechers, throttle,
+            id,
+            info: Arc::new(d.info),
+            peers,
+            pieces: d.pieces,
+            picker: d.picker,
+            uploaded: d.uploaded,
+            downloaded: d.downloaded,
+            last_ul: 0,
+            last_dl: 0,
+            priority: 3,
+            last_clear: Utc::now(),
+            cio,
+            leechers,
+            throttle,
             tracker: TrackerStatus::Updating,
-            tracker_update: None, choker: choker::Choker::new(),
-            l: l.clone(), dirty: false, status: d.status
+            tracker_update: None,
+            choker: choker::Choker::new(),
+            l: l.clone(),
+            dirty: false,
+            status: d.status,
         };
-        if let Status::Validating = d.status {
-            t.cio.msg_disk(disk::Request::validate(t.id, t.info.clone()));
-        }
+        match t.status {
+            Status::DiskError | Status::Seeding | Status::Leeching => {
+                if t.pieces.complete() {
+                    t.status = Status::Idle;
+                } else {
+                    t.status = Status::Pending;
+                }
+            }
+            Status::Validating => {
+                t.validate();
+            }
+            _ => {}
+        };
         t.start();
         Ok(t)
     }
@@ -138,13 +203,23 @@ impl<T: cio::CIO> Torrent<T> {
         };
         let data = bincode::serialize(&d, bincode::Infinite).expect("Serialization failed!");
         debug!(self.l, "Sending serialization request!");
-        self.cio.msg_disk(disk::Request::serialize(self.id, data, self.info.hash));
+        self.cio.msg_disk(disk::Request::serialize(
+                self.id,
+                data,
+                self.info.hash,
+                ));
         self.dirty = false;
+    }
+
+    pub fn rpc_id(&self) -> String {
+        util::hash_to_id(&self.info.hash[..])
     }
 
     pub fn delete(&mut self) {
         debug!(self.l, "Sending file deletion request!");
-        self.cio.msg_disk(disk::Request::delete(self.id, self.info.hash));
+        self.cio.msg_disk(
+            disk::Request::delete(self.id, self.info.hash),
+            );
     }
 
     pub fn set_tracker_response(&mut self, resp: &tracker::Result<TrackerResponse>) {
@@ -153,7 +228,11 @@ impl<T: cio::CIO> Torrent<T> {
             Ok(ref r) => {
                 let mut time = Instant::now();
                 time += Duration::from_secs(r.interval as u64);
-                self.tracker = TrackerStatus::Ok { seeders: r.seeders, leechers: r.leechers, interval: r.interval };
+                self.tracker = TrackerStatus::Ok {
+                    seeders: r.seeders,
+                    leechers: r.leechers,
+                    interval: r.interval,
+                };
                 self.tracker_update = Some(time);
             }
             Err(tracker::Error(tracker::ErrorKind::TrackerError(ref s), _)) => {
@@ -164,6 +243,7 @@ impl<T: cio::CIO> Torrent<T> {
                 self.tracker = TrackerStatus::Error;
             }
         }
+        self.update_rpc_tracker();
     }
 
     pub fn update_tracker(&mut self) {
@@ -175,6 +255,15 @@ impl<T: cio::CIO> Torrent<T> {
                 self.cio.msg_trk(req);
             }
         }
+    }
+
+    pub fn remove_peer(&mut self, rpc_id: &str) {
+        let ih = &self.info.hash;
+        self.peers.retain(|id, _| util::peer_rpc_id(ih, *id as u64) != rpc_id);
+    }
+
+    // TODO: Implement once mutlitracker support is in
+    pub fn remove_tracker(&mut self, rpc_id: &str) {
     }
 
     pub fn get_throttle(&self, id: usize) -> Throttle {
@@ -189,11 +278,11 @@ impl<T: cio::CIO> Torrent<T> {
         self.dirty
     }
 
-    pub fn uploaded(&self) -> usize {
+    pub fn uploaded(&self) -> u64 {
         self.uploaded
     }
 
-    pub fn downloaded(&self) -> usize {
+    pub fn downloaded(&self) -> u64 {
         self.downloaded
     }
 
@@ -208,7 +297,8 @@ impl<T: cio::CIO> Torrent<T> {
                 if let Some(peer) = self.peers.get_mut(&context.pid) {
                     let p = Message::s_piece(context.idx, context.begin, context.length, data);
                     // This may not be 100% accurate, but close enough for now.
-                    self.uploaded += 1;
+                    self.uploaded += context.length as u64;
+                    self.last_ul += context.length as u64;
                     self.dirty = true;
                     peer.send_message(p);
                 }
@@ -217,11 +307,18 @@ impl<T: cio::CIO> Torrent<T> {
                 debug!(self.l, "Validation completed!");
                 if invalid.is_empty() {
                     info!(self.l, "Torrent succesfully downloaded!");
-                    self.status = Status::Idle;
+                    // TOOD: Consider if we should cache this
+                    if !self.status.stopped() {
+                        self.set_status(Status::Idle);
+                    }
                     let req = tracker::Request::completed(self);
                     self.cio.msg_trk(req);
                 } else {
-                    warn!(self.l, "Torrent has incorrect pieces {:?}, redownloading", invalid);
+                    warn!(
+                        self.l,
+                        "Torrent has incorrect pieces {:?}, redownloading",
+                        invalid
+                        );
                     for piece in invalid {
                         self.picker.invalidate_piece(piece);
                     }
@@ -230,7 +327,7 @@ impl<T: cio::CIO> Torrent<T> {
             }
             disk::Response::Error { err, .. } => {
                 warn!(self.l, "Disk error: {:?}", err);
-                self.status = Status::DiskError;
+                self.set_status(Status::DiskError);
             }
         }
     }
@@ -275,7 +372,12 @@ impl<T: cio::CIO> Torrent<T> {
                 debug!(self.l, "Unchoked by: {:?}!", peer);
                 self.make_requests(peer);
             }
-            Message::Piece { index, begin, data, length } => {
+            Message::Piece {
+                index,
+                begin,
+                data,
+                length,
+            } => {
                 // Ignore a piece we already have, this could happen from endgame
                 if self.pieces.has_bit(index as u64) {
                     return Ok(());
@@ -284,7 +386,7 @@ impl<T: cio::CIO> Torrent<T> {
                 // Even though we have the data, if we are stopped we shouldn't use the disk
                 // regardless.
                 if !self.status.stopped() {
-                    self.status = Status::Leeching;
+                    self.set_status(Status::Leeching);
                 } else {
                     return Ok(());
                 }
@@ -298,16 +400,22 @@ impl<T: cio::CIO> Torrent<T> {
                 self.dirty = true;
                 self.write_piece(index, begin, data);
 
+                self.downloaded += length as u64;
+                self.last_dl += length as u64;
                 let (piece_done, mut peers) = self.picker.completed(index, begin);
                 if piece_done {
-                    self.downloaded += 1;
                     self.pieces.set_bit(index as u64);
+                    self.cio.msg_rpc(rpc::CtlMessage::Update(vec![resource::SResourceUpdate::PieceDownloaded {
+                        id: util::piece_rpc_id(&self.info.hash, index as u64),
+                        downloaded: true,
+                    }]));
 
                     // Begin validation, and save state if the torrent is done
                     if self.pieces.complete() {
+
+                        debug!(self.l, "Beginning validation");
                         self.serialize();
-                        self.cio.msg_disk(disk::Request::validate(self.id, self.info.clone()));
-                        self.status = Status::Validating;
+                        self.validate();
                     }
 
                     // Tell all relevant peers we got the piece
@@ -334,7 +442,11 @@ impl<T: cio::CIO> Torrent<T> {
                 // cancel it, though we should still assume they'll probably send it anyways
                 if peers.len() > 1 {
                     peers.remove(&peer.id());
-                    let m = Message::Cancel { index, begin, length };
+                    let m = Message::Cancel {
+                        index,
+                        begin,
+                        length,
+                    };
                     for pid in peers {
                         if let Some(peer) = self.peers.get_mut(&pid) {
                             peer.send_message(m.clone());
@@ -346,9 +458,13 @@ impl<T: cio::CIO> Torrent<T> {
                     self.make_requests(peer);
                 }
             }
-            Message::Request { index, begin, length } => {
-                if !self.status.stopped() {
-                    self.status = Status::Seeding;
+            Message::Request {
+                index,
+                begin,
+                length,
+            } => {
+                if !self.status.stopped() && !self.status.leeching() {
+                    self.set_status(Status::Seeding);
                     // TODO get this from some sort of allocator.
                     if length != self.info.block_len(index, begin) {
                         return Err(());
@@ -356,7 +472,7 @@ impl<T: cio::CIO> Torrent<T> {
                         self.request_read(peer.id(), index, begin, Box::new([0u8; 16384]));
                     }
                 } else {
-                // TODO: add this to a queue to fulfill later
+                    // TODO: add this to a queue to fulfill later
                 }
             }
             Message::Interested => {
@@ -365,12 +481,12 @@ impl<T: cio::CIO> Torrent<T> {
             Message::Uninterested => {
                 self.choker.remove_peer(peer, &mut self.peers);
             }
-            Message::KeepAlive
-            | Message::Choke
-            | Message::Cancel { .. }
-            | Message::Port(_) => { }
+            Message::KeepAlive |
+                Message::Choke |
+                Message::Cancel { .. } |
+                Message::Port(_) => {}
 
-            Message::SharedPiece { .. } => { unreachable!() }
+            Message::SharedPiece { .. } => unreachable!(),
         }
         Ok(())
     }
@@ -385,6 +501,53 @@ impl<T: cio::CIO> Torrent<T> {
         };
     }
 
+    pub fn rpc_update(&mut self, u: rpc::proto::resource::CResourceUpdate) {
+        if let Some(status) = u.status {
+            match (status, self.status) {
+                (resource::Status::Paused, Status::Paused) => {
+                    self.resume();
+                }
+                (resource::Status::Paused, _) => {
+                    self.pause();
+                }
+                (resource::Status::Hashing, Status::Validating) => { }
+                (resource::Status::Hashing, _) => {
+                    self.validate();
+                }
+                // The rpc module should handle invalid status requests.
+                _ => { }
+            }
+        }
+
+        if u.throttle_up.is_some() || u.throttle_down.is_some() {
+            let tu = u.throttle_up.unwrap_or(self.throttle.ul_rate() as u32);
+            let td = u.throttle_down.unwrap_or(self.throttle.dl_rate() as u32);
+            self.set_throttle(tu, td);
+        }
+
+        if let Some(p) = u.path {
+            self.set_path(p);
+        }
+
+        if let Some(p) = u.priority {
+            self.set_priority(p);
+        }
+
+        if let Some(s) = u.sequential {
+            if s {
+                let p = Picker::new_sequential(&self.info);
+                self.change_picker(p);
+            } else {
+                let p = Picker::new_rarest(&self.info);
+                self.change_picker(p);
+            }
+        }
+    }
+
+    pub fn rpc_update_file(&mut self, id: String, priority: u8) {
+        self.set_file_priority(id, priority);
+    }
+
     fn start(&mut self) {
         debug!(self.l, "Sending start request");
         let req = tracker::Request::started(self);
@@ -393,13 +556,184 @@ impl<T: cio::CIO> Torrent<T> {
         if !self.info.private {
             let mut req = tracker::Request::DHTAnnounce(self.info.hash);
             self.cio.msg_trk(req);
-            req = tracker::Request::GetPeers(tracker::GetPeers { id: self.id, hash: self.info.hash });
+            req = tracker::Request::GetPeers(tracker::GetPeers {
+                id: self.id,
+                hash: self.info.hash,
+            });
             self.cio.msg_trk(req);
         }
+
+        // Update RPC of the torrent, tracker, files, and peers
+        let resources = self.rpc_info();
+        self.cio.msg_rpc(rpc::CtlMessage::Extant(resources));
     }
 
     fn complete(&self) -> bool {
         self.pieces.complete()
+    }
+
+    fn set_throttle(&mut self, ul: u32, dl: u32) {
+        self.throttle.set_ul_rate(ul as usize);
+        self.throttle.set_dl_rate(dl as usize);
+        let id = self.rpc_id();
+        self.cio.msg_rpc(rpc::CtlMessage::Update(vec![resource::SResourceUpdate::Throttle {
+            id,
+            throttle_up: ul,
+            throttle_down: dl,
+        }]));
+    }
+
+    fn set_path(&mut self, path: String) {
+        // TODO: IMplement
+    }
+
+    fn set_priority(&mut self, priority: u8) {
+        // TODO: Implement priority somewhere(throttle or ctrl)
+        self.priority = priority;
+        let id = self.rpc_id();
+        self.cio.msg_rpc(rpc::CtlMessage::Update(vec![resource::SResourceUpdate::TorrentPriority {
+            id,
+            priority,
+        }]));
+    }
+
+    fn set_file_priority(&mut self, id: String, priority: u8) {
+        // TODO: Implement file priority in picker
+        self.cio.msg_rpc(rpc::CtlMessage::Update(vec![resource::SResourceUpdate::FilePriority {
+            id,
+            priority,
+        }]));
+    }
+
+    fn rpc_info(&self) -> Vec<resource::Resource> {
+        let mut r = Vec::new();
+        r.push(Resource::Torrent(resource::Torrent {
+            id: self.rpc_id(),
+            name: self.info.name.clone(),
+            // TODO: Properly add this
+            path: "./".to_owned(),
+            created: Utc::now(),
+            modified: Utc::now(),
+            status: self.status.into(),
+            error: self.error(),
+            priority: 3,
+            progress: self.progress(),
+            availability: self.availability(),
+            sequential: self.sequential(),
+            rate_up: 0,
+            rate_down: 0,
+            // TODO: COnsider the overflow potential here
+            throttle_up: self.throttle.ul_rate() as u32,
+            throttle_down: self.throttle.dl_rate() as u32,
+            transferred_up: self.uploaded,
+            transferred_down: self.downloaded,
+            peers: 0,
+            // TODO: Alter when mutlitracker support hits
+            trackers: 1,
+            pieces: self.info.pieces() as u64,
+            piece_size: self.info.piece_len,
+            files: self.info.files.len() as u32,
+        }));
+
+        for i in 0..self.info.pieces() {
+            let id = util::piece_rpc_id(&self.info.hash, i as u64);
+            // TODO: Formalize these high bit ids
+            if self.pieces.has_bit(i as u64) {
+                r.push(Resource::Piece(resource::Piece {
+                    // TODO: Formalize these high bit ids
+                    id,
+                    torrent_id: self.rpc_id(),
+                    available: true,
+                    downloaded: true,
+                }))
+            } else {
+                r.push(Resource::Piece(resource::Piece {
+                    id,
+                    torrent_id: self.rpc_id(),
+                    available: true,
+                    downloaded: false,
+                }))
+            }
+        }
+
+        for f in self.info.files.iter() {
+            let id = util::file_rpc_id(&self.info.hash, f.path.as_path().to_string_lossy().as_ref());
+            r.push(resource::Resource::File(resource::File {
+                id,
+                torrent_id: self.rpc_id(),
+                availability: 0.,
+                progress: 0.,
+                priority: 3,
+                path: f.path.as_path().to_string_lossy().into_owned(),
+            }))
+        }
+
+        r.push(resource::Resource::Tracker(resource::Tracker {
+            id: util::trk_rpc_id(&self.info.hash, &self.info.announce),
+            torrent_id: self.rpc_id(),
+            url: self.info.announce.clone(),
+            last_report: Utc::now(),
+            error: None,
+        }));
+
+        r
+    }
+
+    pub fn send_rpc_removal(&mut self) {
+        let mut r = Vec::new();
+        r.push(self.rpc_id());
+        for i in 0..self.info.pieces() {
+            let id = util::piece_rpc_id(&self.info.hash, i as u64);
+            r.push(id)
+        }
+        for f in self.info.files.iter() {
+            let id = util::file_rpc_id(&self.info.hash, f.path.as_path().to_string_lossy().as_ref());
+            r.push(id)
+        }
+        r.push(util::trk_rpc_id(&self.info.hash, &self.info.announce));
+        // TOOD: Tracker removal too
+        self.cio.msg_rpc(rpc::CtlMessage::Removed(r));
+    }
+
+    fn error(&self) -> Option<String> {
+        match self.status {
+            Status::DiskError => Some("Disk error!".to_owned()),
+            _ => None,
+        }
+    }
+
+    fn sequential(&self) -> bool {
+        match &self.picker {
+            &Picker::Sequential(_) => true,
+            _ => false,
+        }
+    }
+
+    fn progress(&self) -> f32 {
+        self.pieces.iter().count() as f32 / self.info.pieces() as f32
+    }
+
+    fn availability(&self) -> f32 {
+        // TODO: ??
+        0.
+    }
+
+    pub fn reset_last_tx_rate(&mut self) -> (u64, u64) {
+        let res = self.get_last_tx_rate();
+        self.last_clear = Utc::now();
+        self.last_ul = 0;
+        self.last_dl = 0;
+        res
+    }
+
+    // TODO: Implement Exp Moving Avg Somewhere
+    pub fn get_last_tx_rate(&self) -> (u64, u64) {
+        let dur = Utc::now()
+            .signed_duration_since(self.last_clear)
+            .num_milliseconds() as u64;
+        let ul = (1000 * self.last_ul) / dur;
+        let dl = (1000 * self.last_dl) / dur;
+        (ul, dl)
     }
 
     /// Writes a piece of torrent info, with piece index idx,
@@ -419,7 +753,9 @@ impl<T: cio::CIO> Torrent<T> {
     }
 
     fn make_requests_pid(&mut self, pid: usize) {
-        let peer = self.peers.get_mut(&pid).expect("Expected peer id not present");
+        let peer = self.peers.get_mut(&pid).expect(
+            "Expected peer id not present",
+            );
         if self.status.stopped() {
             return;
         }
@@ -445,20 +781,8 @@ impl<T: cio::CIO> Torrent<T> {
         }
     }
 
-    pub fn rpc_info(&self) -> rpc::TorrentInfo {
-        rpc::TorrentInfo {
-            name: self.info.name.clone(),
-            size: self.info.total_len,
-            downloaded: self.downloaded as u64 * self.info.piece_len as u64,
-            uploaded: self.uploaded as u64 * self.info.piece_len as u64,
-            tracker: self.info.announce.clone(),
-            tracker_status: self.tracker.clone(),
-            status: self.status,
-        }
-    }
-
     pub fn add_peer(&mut self, conn: PeerConn) -> Option<usize> {
-        if let Ok(p) = Peer::new(conn, self) {
+        if let Ok(p) = Peer::new(conn, self, None, None) {
             let pid = p.id();
             debug!(self.l, "Adding peer {:?}!", pid);
             self.picker.add_peer(&p);
@@ -467,6 +791,104 @@ impl<T: cio::CIO> Torrent<T> {
         } else {
             None
         }
+    }
+
+    pub fn add_inc_peer(&mut self, conn: PeerConn, id: [u8; 20], rsv: [u8; 8]) -> Option<usize> {
+        if let Ok(p) = Peer::new(conn, self, Some(id), Some(rsv)) {
+            let pid = p.id();
+            debug!(self.l, "Adding peer {:?}!", pid);
+            self.picker.add_peer(&p);
+            self.peers.insert(pid, p);
+            Some(pid)
+        } else {
+            None
+        }
+    }
+
+    fn set_status(&mut self, status: Status) {
+        if self.status == status {
+            return;
+        }
+        self.status = status;
+        let id = self.rpc_id();
+        self.cio.msg_rpc(rpc::CtlMessage::Update(vec![
+                                                 SResourceUpdate::TorrentStatus {
+                                                     id,
+                                                     error: match status {
+                                                         Status::DiskError => Some("Disk error".to_owned()),
+                                                         _ => None,
+                                                     },
+                                                     status: status.into(),
+                                                 },
+        ]));
+    }
+
+    pub fn update_rpc_peers(&mut self) {
+        let availability = self.availability();
+        let id = self.rpc_id();
+        self.cio.msg_rpc(rpc::CtlMessage::Update(vec![
+                                                 SResourceUpdate::TorrentPeers {
+                                                     id,
+                                                     peers: self.peers.len() as u16,
+                                                     availability,
+                                                 },
+        ]));
+    }
+
+    pub fn update_rpc_tracker(&mut self) {
+        let id = util::trk_rpc_id(&self.info.hash, &self.info.announce);
+        let error = match &self.tracker {
+            &TrackerStatus::Failure(ref r) => Some(r.clone()),
+            &TrackerStatus::Error => Some("Failed to query tracker for an unknown reason.".to_owned()),
+            _ => None
+        };
+        self.cio.msg_rpc(rpc::CtlMessage::Update(vec![
+                                                 SResourceUpdate::TrackerStatus {
+                                                    id,
+                                                    last_report: Utc::now(),
+                                                    error,
+                                                 },
+        ]));
+    }
+
+    pub fn update_rpc_transfer(&mut self) {
+        let progress = self.progress();
+        let (rate_up, rate_down) = self.get_last_tx_rate();
+        let id = self.rpc_id();
+        let mut updates = Vec::new();
+        updates.push(SResourceUpdate::TorrentTransfer {
+                                                     id,
+                                                     rate_up,
+                                                     rate_down,
+                                                     transferred_up: self.uploaded,
+                                                     transferred_down: self.downloaded,
+                                                     progress,
+                                                 });
+        if !self.status.leeching() {
+            for pid in self.choker.unchoked().iter() {
+                if let Some(p) = self.peers.get(pid) {
+                    let (rate_up, rate_down) = p.get_tx_rates();
+                    updates.push(SResourceUpdate::Rate {
+                                                         id: util::peer_rpc_id(&self.info.hash, *pid as u64),
+                                                         rate_up,
+                                                         rate_down,
+                                                     });
+                }
+            }
+        } else {
+            for (pid, p) in self.peers.iter() {
+                if p.remote_status().choked {
+                    continue;
+                }
+                let (rate_up, rate_down) = p.get_tx_rates();
+                updates.push(SResourceUpdate::Rate {
+                                                    id: util::peer_rpc_id(&self.info.hash, *pid as u64),
+                                                    rate_up,
+                                                    rate_down,
+                                                });
+            }
+        }
+        self.cio.msg_rpc(rpc::CtlMessage::Update(updates));
     }
 
     fn cleanup_peer(&mut self, peer: &mut Peer<T>) {
@@ -479,14 +901,14 @@ impl<T: cio::CIO> Torrent<T> {
     pub fn pause(&mut self) {
         debug!(self.l, "Pausing torrent!");
         match self.status {
-            Status::Paused => { }
+            Status::Paused => {}
             _ => {
                 debug!(self.l, "Sending stopped request to trk");
                 let req = tracker::Request::stopped(self);
                 self.cio.msg_trk(req);
             }
         }
-        self.status = Status::Paused;
+        self.set_status(Status::Paused);
     }
 
     pub fn resume(&mut self) {
@@ -500,20 +922,26 @@ impl<T: cio::CIO> Torrent<T> {
             }
             Status::DiskError => {
                 if self.pieces.complete() {
-                    self.cio.msg_disk(disk::Request::validate(self.id, self.info.clone()));
-                    self.status = Status::Validating;
+                    self.validate();
                 } else {
                     self.request_all();
-                    self.status = Status::Idle;
+                    self.set_status(Status::Idle);
                 }
             }
-            _ => { }
+            _ => {}
         }
         if self.pieces.complete() {
-            self.status = Status::Idle;
+            self.set_status(Status::Idle);
         } else {
-            self.status = Status::Pending;
+            self.set_status(Status::Pending);
         }
+    }
+
+    fn validate(&mut self) {
+        self.cio.msg_disk(
+            disk::Request::validate(self.id, self.info.clone()),
+            );
+        self.set_status(Status::Validating);
     }
 
     fn request_all(&mut self) {
@@ -526,14 +954,20 @@ impl<T: cio::CIO> Torrent<T> {
         self.peers.keys().cloned().collect()
     }
 
-    // TODO: use this over RPC
-    #[allow(dead_code)]
     pub fn change_picker(&mut self, mut picker: Picker) {
         debug!(self.l, "Swapping pickers!");
         for (_, peer) in self.peers.iter() {
             picker.add_peer(peer);
         }
         self.picker.change_picker(picker);
+        let id = self.rpc_id();
+        let sequential = self.picker.is_sequential();
+        self.cio.msg_rpc(rpc::CtlMessage::Update(vec![
+                                                 SResourceUpdate::TorrentPicker {
+                                                     id,
+                                                     sequential,
+                                                 }
+        ]));
     }
 }
 
@@ -545,7 +979,7 @@ impl<T: cio::CIO> fmt::Debug for Torrent<T> {
 
 impl<T: cio::CIO> fmt::Display for Torrent<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "Torrent {}", torrent_name(&self.info.hash))
+        write!(f, "Torrent {}", util::hash_to_id(&self.info.hash[..]))
     }
 }
 
@@ -558,11 +992,26 @@ impl<T: cio::CIO> Drop for Torrent<T> {
             self.leechers.remove(&id);
         }
         match self.status {
-            Status::Paused => { }
+            Status::Paused => {}
             _ => {
                 let req = tracker::Request::stopped(self);
                 self.cio.msg_trk(req);
             }
+        }
+        self.send_rpc_removal();
+    }
+}
+
+impl Into<rpc::resource::Status> for Status {
+    fn into(self) -> rpc::resource::Status {
+        match self {
+            Status::Pending => rpc::resource::Status::Pending,
+            Status::Paused => rpc::resource::Status::Paused,
+            Status::Idle => rpc::resource::Status::Idle,
+            Status::Leeching => rpc::resource::Status::Leeching,
+            Status::Seeding => rpc::resource::Status::Seeding,
+            Status::Validating => rpc::resource::Status::Hashing,
+            Status::DiskError => rpc::resource::Status::Error,
         }
     }
 }

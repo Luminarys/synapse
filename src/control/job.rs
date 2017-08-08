@@ -67,3 +67,38 @@ impl<T: cio::CIO> Job<T> for SessionUpdate {
         }
     }
 }
+
+pub struct TorrentTxUpdate {
+    speeds: HashMap<usize, Speed>
+}
+
+impl TorrentTxUpdate {
+    pub fn new() -> TorrentTxUpdate {
+        TorrentTxUpdate { speeds: HashMap::new() }
+    }
+}
+
+struct Speed {
+    ul: u64,
+    dl: u64,
+}
+
+impl<T: cio::CIO> Job<T> for TorrentTxUpdate {
+    fn update(&mut self, torrents: &mut HashMap<usize, Torrent<T>>) {
+        for (id, torrent) in torrents.iter_mut() {
+            let (ul, dl) = torrent.get_last_tx_rate();
+            if !self.speeds.contains_key(id) {
+                self.speeds.insert(*id, Speed { dl: 0, ul: 0 });
+            }
+            let ls = self.speeds.get_mut(id).unwrap();
+            // TODO: Use this result to get a better estimate
+            if ls.ul != ul || ls.dl != dl {
+                torrent.update_rpc_transfer();
+                torrent.reset_last_tx_rate();
+                ls.ul = ul;
+                ls.dl = dl;
+            }
+        }
+        self.speeds.retain(|id, _| torrents.contains_key(id));
+    }
+}

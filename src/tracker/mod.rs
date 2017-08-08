@@ -75,6 +75,7 @@ pub struct TrackerResponse {
     pub seeders: u32,
 }
 
+const POLL_INT_MS: usize = 1000;
 
 impl Tracker {
     pub fn new(
@@ -107,7 +108,7 @@ impl Tracker {
 
         debug!(self.l, "Initialized!");
         'outer: loop {
-            for event in self.poll.wait(10).unwrap() {
+            for event in self.poll.wait(POLL_INT_MS).unwrap() {
                 if self.handle_event(event).is_err() {
                     break 'outer;
                 }
@@ -119,7 +120,7 @@ impl Tracker {
 
         // Shutdown loop - wait for all requests to complete
         loop {
-            for event in self.poll.wait(50).unwrap() {
+            for event in self.poll.wait(POLL_INT_MS).unwrap() {
                 if self.handle_event(event).is_err() {
                 }
                 if self.http.complete() && self.udp.complete() {
@@ -255,9 +256,10 @@ impl Request {
             url: torrent.info().announce.clone(),
             hash: torrent.info().hash,
             port: CONFIG.port,
-            uploaded: torrent.uploaded() as u64 * torrent.info().piece_len as u64,
-            downloaded: torrent.downloaded() as u64 * torrent.info().piece_len as u64,
-            left: torrent.info().total_len - torrent.downloaded() as u64 * torrent.info().piece_len as u64,
+            uploaded: torrent.uploaded(),
+            downloaded: torrent.downloaded(),
+            // This is naive, TODO: REconsider
+            left: torrent.info().total_len.saturating_sub(torrent.downloaded()),
             event,
         })
     }

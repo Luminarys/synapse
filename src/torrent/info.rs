@@ -2,8 +2,9 @@ use bencode::BEncode;
 use std::path::PathBuf;
 use std::collections::BTreeMap;
 use std::{io, fs, fmt, cmp};
+use url::Url;
 use ring::digest;
-use util::torrent_name;
+use util::hash_to_id;
 use disk;
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -21,7 +22,7 @@ pub struct Info {
 impl fmt::Debug for Info {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "Torrent Info {{ name: {:?}, announce: {:?}, piece_len: {:?}, total_len: {:?}, hash: {:?}, files: {:?} }}",
-               self.name, self.announce, self.piece_len, self.total_len, torrent_name(&self.hash), self.files)
+               self.name, self.announce, self.piece_len, self.total_len, hash_to_id(&self.hash), self.files)
     }
 }
 
@@ -68,6 +69,19 @@ impl File {
 }
 
 impl Info {
+    pub fn from_magnet(data: &str) -> Result<Info, &'static str> {
+        let url = match Url::parse(data) {
+            Ok(u) => u,
+            Err(_) => return Err("Failed to parse magnet URL!"),
+        };
+
+        if url.scheme() != "magnet" {
+            return Err("magnet URL must use magnet scheme");
+        };
+        // TODO: Actually implmeent this
+        unimplemented!();
+    }
+
     pub fn from_bencode(data: BEncode) -> Result<Info, &'static str> {
         data.to_dict()
             .and_then(|mut d| d.remove("info")

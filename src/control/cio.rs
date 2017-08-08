@@ -20,7 +20,7 @@ pub type TID = usize;
 pub enum Event {
     Timer(TID),
     Peer { peer: PID, event: Result<torrent::Message> },
-    RPC(Result<rpc::Request>),
+    RPC(Result<rpc::Message>),
     Tracker(Result<tracker::Response>),
     Disk(Result<disk::Response>),
     Listener(Result<listener::Message>),
@@ -49,7 +49,7 @@ pub trait CIO {
     fn msg_peer(&mut self, peer: PID, msg: torrent::Message);
 
     /// Sends a message over RPC
-    fn msg_rpc(&mut self, msg: rpc::CMessage);
+    fn msg_rpc(&mut self, msg: rpc::CtlMessage);
 
     /// Sends a message over RPC
     fn msg_trk(&mut self, msg: tracker::Request);
@@ -83,7 +83,7 @@ pub mod test {
         pub peers: HashMap<PID, torrent::PeerConn>,
         pub peer_msgs: Vec<(PID, torrent::Message)>,
         pub flushed_peers: Vec<PID>,
-        pub rpc_msgs: Vec<rpc::CMessage>,
+        pub rpc_msgs: Vec<rpc::CtlMessage>,
         pub trk_msgs: Vec<tracker::Request>,
         pub disk_msgs: Vec<disk::Request>,
         pub listener_msgs: Vec<listener::Request>,
@@ -154,7 +154,7 @@ pub mod test {
             }
         }
 
-        fn msg_rpc(&mut self, msg: rpc::CMessage) {
+        fn msg_rpc(&mut self, msg: rpc::CtlMessage) {
             let mut d = self.data.lock().unwrap();
             d.rpc_msgs.push(msg);
         }

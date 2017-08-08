@@ -8,7 +8,6 @@ extern crate lazy_static;
 extern crate net2;
 extern crate serde;
 extern crate serde_json;
-extern crate tiny_http;
 #[macro_use]
 extern crate serde_derive;
 extern crate bincode;
@@ -21,7 +20,13 @@ extern crate slog_async;
 #[macro_use]
 extern crate error_chain;
 extern crate c_ares;
+extern crate httparse;
+extern crate base64;
+extern crate base32;
+extern crate regex;
+
 extern crate chrono;
+// TODO: Get rid of this
 extern crate num;
 
 mod handle;
@@ -117,7 +122,7 @@ fn init() -> io::Result<()> {
     let mut creg = cpoll.get_registrar()?;
     let dh = disk::start(&mut creg)?;
     let lh = listener::start(&mut creg)?;
-    let rh = rpc::start(&mut creg)?;
+    let rh = rpc::RPC::start(&mut creg)?;
     let th = tracker::start(&mut creg)?;
     let chans = acio::ACChans {
         disk_tx: dh.tx,

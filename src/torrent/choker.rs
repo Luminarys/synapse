@@ -30,12 +30,15 @@ impl Choker {
     pub fn add_peer<T: cio::CIO>(&mut self, peer: &mut Peer<T>) {
         if self.unchoked.len() < 5 {
             self.unchoked.push(peer.id());
-            peer.flush_dl();
-            peer.flush_ul();
+            peer.flush();
             peer.unchoke();
         } else {
             self.interested.insert(peer.id());
         }
+    }
+
+    pub fn unchoked(&self) -> &Vec<usize> {
+        &self.unchoked
     }
 
     fn unchoke_random<T: cio::CIO>(&mut self, peers: &mut HashMap<usize, Peer<T>>) -> Option<usize> {
@@ -76,8 +79,8 @@ impl Choker {
         if self.interested.is_empty() {
             return None;
         }
-        let (slowest, _) = self.unchoked.iter().enumerate().fold((0, std::usize::MAX), |(slowest, min), (idx, id)| {
-            let ul = peers.get_mut(id).unwrap().flush_ul();
+        let (slowest, _) = self.unchoked.iter().enumerate().fold((0, std::u64::MAX), |(slowest, min), (idx, id)| {
+            let (ul, _) = peers.get_mut(id).unwrap().flush();
             if ul < min {
                 (idx, ul)
             } else {
@@ -92,8 +95,8 @@ impl Choker {
             return None;
         }
 
-        let (slowest, _) = self.unchoked.iter().enumerate().fold((0, std::usize::MAX), |(slowest, min), (idx, id)| {
-            let dl = peers.get_mut(id).unwrap().flush_dl();
+        let (slowest, _) = self.unchoked.iter().enumerate().fold((0, std::u64::MAX), |(slowest, min), (idx, id)| {
+            let (_, dl) = peers.get_mut(id).unwrap().flush();
             if dl < min {
                 (idx, dl)
             } else {
@@ -160,7 +163,7 @@ mod tests {
         let mut h = HashMap::new();
         assert_eq!(c.update_upload(&mut h).is_none(), true);
         for i in 0..6 {
-            let mut p = Peer::test_from_stats(i, i, 6 - i);
+            let mut p = Peer::test_from_stats(i, i as u64, 6 - i as u64);
             c.add_peer(&mut p);
             h.insert(i, p);
         }
@@ -177,7 +180,7 @@ mod tests {
         let mut h = HashMap::new();
         assert_eq!(c.update_download(&mut h).is_none(), true);
         for i in 0..6 {
-            let mut p = Peer::test_from_stats(i, 6 - i, i);
+            let mut p = Peer::test_from_stats(i, 6 - i as u64, i as u64);
             c.add_peer(&mut p);
             h.insert(i, p);
         }
