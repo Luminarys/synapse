@@ -25,9 +25,21 @@ struct FileCache {
 }
 
 pub enum Request {
-    Write { tid: usize, data: Box<[u8; 16384]>, locations: Vec<Location> },
-    Read { data: Box<[u8; 16384]>, locations: Vec<Location>, context: Ctx },
-    Serialize { tid: usize, data: Vec<u8>, hash: [u8; 20] },
+    Write {
+        tid: usize,
+        data: Box<[u8; 16384]>,
+        locations: Vec<Location>,
+    },
+    Read {
+        data: Box<[u8; 16384]>,
+        locations: Vec<Location>,
+        context: Ctx,
+    },
+    Serialize {
+        tid: usize,
+        data: Vec<u8>,
+        hash: [u8; 20],
+    },
     Delete { tid: usize, hash: [u8; 20] },
     Validate { tid: usize, info: Arc<Info> },
     Shutdown,
@@ -43,23 +55,35 @@ pub struct Ctx {
 
 impl Ctx {
     pub fn new(pid: usize, tid: usize, idx: u32, begin: u32, length: u32) -> Ctx {
-        Ctx { pid, tid, idx, begin, length }
+        Ctx {
+            pid,
+            tid,
+            idx,
+            begin,
+            length,
+        }
     }
 }
 
 impl FileCache {
     pub fn new() -> FileCache {
-        FileCache {
-            files: Arc::new(Mutex::new(HashMap::new()))
-        }
+        FileCache { files: Arc::new(Mutex::new(HashMap::new())) }
     }
 
-    pub fn get_file<F: FnOnce(&mut fs::File) -> io::Result<()>>(&self, path: &path::Path, f: F) -> io::Result<()> {
+    pub fn get_file<F: FnOnce(&mut fs::File) -> io::Result<()>>(
+        &self,
+        path: &path::Path,
+        f: F,
+    ) -> io::Result<()> {
         let mut d = self.files.lock().unwrap();
         if d.contains_key(path) {
             f(d.get_mut(path).unwrap())?;
         } else {
-            let mut file = fs::OpenOptions::new().write(true).create(true).read(true).open(path)?;
+            let mut file = fs::OpenOptions::new()
+                .write(true)
+                .create(true)
+                .read(true)
+                .open(path)?;
             f(&mut file)?;
             d.insert(path.to_path_buf(), file);
         }
@@ -69,11 +93,19 @@ impl FileCache {
 
 impl Request {
     pub fn write(tid: usize, data: Box<[u8; 16384]>, locations: Vec<Location>) -> Request {
-        Request::Write { tid, data, locations }
+        Request::Write {
+            tid,
+            data,
+            locations,
+        }
     }
 
     pub fn read(context: Ctx, data: Box<[u8; 16384]>, locations: Vec<Location>) -> Request {
-        Request::Read { context, data, locations }
+        Request::Read {
+            context,
+            data,
+            locations,
+        }
     }
 
     pub fn serialize(tid: usize, data: Vec<u8>, hash: [u8; 20]) -> Request {
@@ -108,7 +140,12 @@ impl Request {
                     pb.pop();
                 }
             }
-            Request::Read { context, mut data, locations, .. } =>  {
+            Request::Read {
+                context,
+                mut data,
+                locations,
+                ..
+            } => {
                 let mut pb = path::PathBuf::from(dd);
                 for loc in locations {
                     pb.push(&loc.file);
@@ -120,7 +157,7 @@ impl Request {
                     pb.pop();
                 }
                 let data = Arc::new(data);
-                return Ok(Some(Response::read(context, data)))
+                return Ok(Some(Response::read(context, data)));
             }
             Request::Serialize { data, hash, .. } => {
                 let mut pb = path::PathBuf::from(sd);
@@ -170,10 +207,10 @@ impl Request {
 
     pub fn tid(&self) -> usize {
         match *self {
-            Request::Serialize { tid, .. }
-            | Request::Validate { tid, .. }
-            | Request::Delete { tid, .. }
-            | Request::Write { tid, .. } => tid,
+            Request::Serialize { tid, .. } |
+            Request::Validate { tid, .. } |
+            Request::Delete { tid, .. } |
+            Request::Write { tid, .. } => tid,
             Request::Read { ref context, .. } => context.tid,
             Request::Shutdown => unreachable!(),
         }
@@ -195,14 +232,22 @@ pub struct Location {
 
 impl Location {
     pub fn new(file: PathBuf, offset: u64, start: usize, end: usize) -> Location {
-        Location { file, offset, start, end }
+        Location {
+            file,
+            offset,
+            start,
+            end,
+        }
     }
 }
 
 pub enum Response {
-    Read { context: Ctx, data: Arc<Box<[u8; 16384]>> },
-    ValidationComplete { tid: usize, invalid: Vec<u32>, },
-    Error { tid: usize, err: io::Error, }
+    Read {
+        context: Ctx,
+        data: Arc<Box<[u8; 16384]>>,
+    },
+    ValidationComplete { tid: usize, invalid: Vec<u32> },
+    Error { tid: usize, err: io::Error },
 }
 
 impl Response {
@@ -221,8 +266,8 @@ impl Response {
     pub fn tid(&self) -> usize {
         match *self {
             Response::Read { ref context, .. } => context.tid,
-            Response::ValidationComplete { tid, .. }
-            | Response::Error { tid, .. } => tid
+            Response::ValidationComplete { tid, .. } |
+            Response::Error { tid, .. } => tid,
         }
     }
 }
@@ -275,13 +320,13 @@ impl Disk {
                         Ok(Some(r)) => {
                             self.ch.send(r).unwrap();
                         }
-                        Ok(None) => { }
+                        Ok(None) => {}
                         Err(e) => {
                             self.ch.send(Response::error(tid, e)).unwrap();
                         }
                     }
                 }
-                _ => { break },
+                _ => break,
             }
         }
         false

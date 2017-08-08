@@ -23,7 +23,11 @@ impl<T: cio::CIO> JobManager<T> {
     }
 
     pub fn add_job<J: Job<T> + 'static>(&mut self, job: J, interval: time::Duration) {
-        self.jobs.push(JobData { job: Box::new(job), interval, last_updated: time::Instant::now()})
+        self.jobs.push(JobData {
+            job: Box::new(job),
+            interval,
+            last_updated: time::Instant::now(),
+        })
     }
 
     pub fn update(&mut self, torrents: &mut HashMap<usize, Torrent<T>>) {
@@ -69,7 +73,7 @@ impl<T: cio::CIO> Job<T> for SessionUpdate {
 }
 
 pub struct TorrentTxUpdate {
-    speeds: HashMap<usize, Speed>
+    speeds: HashMap<usize, Speed>,
 }
 
 impl TorrentTxUpdate {

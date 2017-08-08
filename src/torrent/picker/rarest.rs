@@ -1,6 +1,6 @@
 // Implementation based off of http://blog.libtorrent.org/2011/11/writing-a-fast-piece-picker/
 
-use std::collections::{HashSet};
+use std::collections::HashSet;
 use torrent::{Info, Peer, picker};
 use std::ops::IndexMut;
 use control::cio;
@@ -29,7 +29,10 @@ impl Picker {
     pub fn new(info: &Info) -> Picker {
         let mut piece_idx = Vec::new();
         for i in 0..info.pieces() {
-            piece_idx.push(PieceInfo { idx: i as usize, availability: 0});
+            piece_idx.push(PieceInfo {
+                idx: i as usize,
+                availability: 0,
+            });
         }
         Picker {
             c: picker::Common::new(info),
@@ -132,14 +135,17 @@ impl Picker {
         if self.c.endgame_cnt == 0 {
             let mut idx = None;
             for piece in self.c.waiting.iter() {
-                if peer.pieces().has_bit(*piece/self.c.scale) {
+                if peer.pieces().has_bit(*piece / self.c.scale) {
                     idx = Some(*piece);
                     break;
                 }
             }
             if let Some(i) = idx {
                 self.c.waiting_peers.get_mut(&i).unwrap();
-                return Some(((i/self.c.scale) as u32, ((i % self.c.scale) * 16384) as u32));
+                return Some((
+                    (i / self.c.scale) as u32,
+                    ((i % self.c.scale) * 16384) as u32,
+                ));
             }
         }
         None
@@ -147,12 +153,16 @@ impl Picker {
 
     pub fn completed(&mut self, oidx: u32, offset: u32) -> (bool, HashSet<usize>) {
         let idx: u64 = oidx as u64 * self.c.scale;
-        let offset: u64 = offset as u64/16384;
+        let offset: u64 = offset as u64 / 16384;
         let block = idx + offset;
         self.c.waiting.remove(&block);
-        let peers = self.c.waiting_peers.remove(&block).unwrap_or_else(|| HashSet::with_capacity(0));
+        let peers = self.c.waiting_peers.remove(&block).unwrap_or_else(|| {
+            HashSet::with_capacity(0)
+        });
         for i in 0..self.c.scale {
-            if (idx + i < self.c.blocks.len() && !self.c.blocks.has_bit(idx + i)) || self.c.waiting.contains(&(idx + i)) {
+            if (idx + i < self.c.blocks.len() && !self.c.blocks.has_bit(idx + i)) ||
+                self.c.waiting.contains(&(idx + i))
+            {
                 return (false, peers);
             }
         }
@@ -193,7 +203,11 @@ mod tests {
 
         let mut picker = Picker::new(&info);
         let b = Bitfield::new(3);
-        let mut peers = vec![Peer::test_from_pieces(0, b.clone()), Peer::test_from_pieces(0, b.clone()), Peer::test_from_pieces(0, b.clone())];
+        let mut peers = vec![
+            Peer::test_from_pieces(0, b.clone()),
+            Peer::test_from_pieces(0, b.clone()),
+            Peer::test_from_pieces(0, b.clone()),
+        ];
         assert_eq!(picker.pick(&peers[0]), None);
 
         peers[0].pieces_mut().set_bit(0);
@@ -217,7 +231,11 @@ mod tests {
 
         let mut picker = Picker::new(&info);
         let b = Bitfield::new(3);
-        let mut peers = vec![Peer::test_from_pieces(0, b.clone()), Peer::test_from_pieces(0, b.clone()), Peer::test_from_pieces(0, b.clone())];
+        let mut peers = vec![
+            Peer::test_from_pieces(0, b.clone()),
+            Peer::test_from_pieces(0, b.clone()),
+            Peer::test_from_pieces(0, b.clone()),
+        ];
         assert_eq!(picker.pick(&peers[0]), None);
 
         peers[0].pieces_mut().set_bit(0);
@@ -244,4 +262,3 @@ mod tests {
         assert_eq!(picker.pick(&peers[1]), Some((1, 0)));
     }
 }
-

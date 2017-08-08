@@ -10,7 +10,10 @@ pub struct Handle<I, O> {
 }
 
 impl<I: Debug + Send + 'static, O: Debug + Send + 'static> Handle<I, O> {
-    pub fn new(creg: &mut amy::Registrar, hreg: &mut amy::Registrar) -> io::Result<(Handle<I, O>, Handle<O, I>)> {
+    pub fn new(
+        creg: &mut amy::Registrar,
+        hreg: &mut amy::Registrar,
+    ) -> io::Result<(Handle<I, O>, Handle<O, I>)> {
         let (htx, crx) = hreg.channel::<O>()?;
         let (ctx, hrx) = creg.channel::<I>()?;
         let ch = Handle { tx: htx, rx: hrx };
@@ -18,7 +21,11 @@ impl<I: Debug + Send + 'static, O: Debug + Send + 'static> Handle<I, O> {
         Ok((ch, hh))
     }
 
-    pub fn run<F: FnOnce(Handle<I, O>, slog::Logger) + Send + 'static>(self, thread: &'static str, f: F) {
+    pub fn run<F: FnOnce(Handle<I, O>, slog::Logger) + Send + 'static>(
+        self,
+        thread: &'static str,
+        f: F,
+    ) {
         thread::spawn(move || {
             let log = LOG.new(o!("thread" => thread));
             TC.fetch_add(1, atomic::Ordering::SeqCst);

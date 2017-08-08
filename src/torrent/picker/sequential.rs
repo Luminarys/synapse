@@ -48,7 +48,10 @@ impl Picker {
             }
             if let Some(i) = idx {
                 self.c.waiting_peers.get_mut(&i).unwrap().insert(peer.id());
-                return Some(((i / self.c.scale) as u32, ((i % self.c.scale) * 16384) as u32));
+                return Some((
+                    (i / self.c.scale) as u32,
+                    ((i % self.c.scale) * 16384) as u32,
+                ));
             }
         }
         None
@@ -61,13 +64,14 @@ impl Picker {
         offset /= 16384;
         idx *= self.c.scale;
         self.c.waiting.remove(&(idx + offset));
-        let peers =
-            self.c.waiting_peers
-                .remove(&(idx + offset))
-                .unwrap_or_else(|| HashSet::with_capacity(0));
+        let peers = self.c
+            .waiting_peers
+            .remove(&(idx + offset))
+            .unwrap_or_else(|| HashSet::with_capacity(0));
         for i in 0..self.c.scale {
             if (idx + i < self.c.blocks.len() && !self.c.blocks.has_bit(idx + i)) ||
-               self.c.waiting.contains(&(idx + i)) {
+                self.c.waiting.contains(&(idx + i))
+            {
                 return (false, peers);
             }
         }

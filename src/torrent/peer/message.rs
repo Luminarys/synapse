@@ -7,7 +7,11 @@ use std::fmt;
 use std::clone::Clone;
 
 pub enum Message {
-    Handshake { rsv: [u8; 8], hash: [u8; 20], id: [u8; 20] },
+    Handshake {
+        rsv: [u8; 8],
+        hash: [u8; 20],
+        id: [u8; 20],
+    },
     KeepAlive,
     Choke,
     Unchoke,
@@ -16,8 +20,18 @@ pub enum Message {
     Have(u32),
     Bitfield(Bitfield),
     Request { index: u32, begin: u32, length: u32 },
-    Piece { index: u32, begin: u32, length: u32, data: Box<[u8; 16384]> },
-    SharedPiece { index: u32, begin: u32, length: u32, data: Arc<Box<[u8; 16384]>> },
+    Piece {
+        index: u32,
+        begin: u32,
+        length: u32,
+        data: Box<[u8; 16384]>,
+    },
+    SharedPiece {
+        index: u32,
+        begin: u32,
+        length: u32,
+        data: Arc<Box<[u8; 16384]>>,
+    },
     Cancel { index: u32, begin: u32, length: u32 },
     Port(u16),
 }
@@ -25,7 +39,9 @@ pub enum Message {
 impl fmt::Debug for Message {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
-            Message::Handshake { rsv, .. } => write!(f, "Message::Handshake {{ extensions: {:?} }}", &rsv[..]),
+            Message::Handshake { rsv, .. } => {
+                write!(f, "Message::Handshake {{ extensions: {:?} }}", &rsv[..])
+            }
             Message::KeepAlive => write!(f, "Message::KeepAlive"),
             Message::Choke => write!(f, "Message::Choke"),
             Message::Unchoke => write!(f, "Message::Unchoke"),
@@ -33,10 +49,38 @@ impl fmt::Debug for Message {
             Message::Uninterested => write!(f, "Message::Uninterested"),
             Message::Have(p) => write!(f, "Message::Have({})", p),
             Message::Bitfield(_) => write!(f, "Message::Bitfield"),
-            Message::Request{ index, begin, length } => write!(f, "Message::Request {{ idx: {}, begin: {}, len: {} }}", index, begin, length),
-            Message::Piece{ index, begin, .. } => write!(f, "Message::Piece {{ idx: {}, begin: {} }}", index, begin),
-            Message::SharedPiece{ index, begin, .. } => write!(f, "Message::SPiece {{ idx: {}, begin: {} }}", index, begin),
-            Message::Cancel { index, begin, length } => write!(f, "Message::Cancel {{ idx: {}, begin: {}, len: {} }}", index, begin, length),
+            Message::Request {
+                index,
+                begin,
+                length,
+            } => {
+                write!(
+                    f,
+                    "Message::Request {{ idx: {}, begin: {}, len: {} }}",
+                    index,
+                    begin,
+                    length
+                )
+            }
+            Message::Piece { index, begin, .. } => {
+                write!(f, "Message::Piece {{ idx: {}, begin: {} }}", index, begin)
+            }
+            Message::SharedPiece { index, begin, .. } => {
+                write!(f, "Message::SPiece {{ idx: {}, begin: {} }}", index, begin)
+            }
+            Message::Cancel {
+                index,
+                begin,
+                length,
+            } => {
+                write!(
+                    f,
+                    "Message::Cancel {{ idx: {}, begin: {}, len: {} }}",
+                    index,
+                    begin,
+                    length
+                )
+            }
             Message::Port(port) => write!(f, "Message::Port({:?})", port),
         }
     }
@@ -45,7 +89,7 @@ impl fmt::Debug for Message {
 impl Clone for Message {
     fn clone(&self) -> Message {
         match *self {
-            Message::Handshake { rsv, hash, id } => Message::Handshake { rsv, hash, id},
+            Message::Handshake { rsv, hash, id } => Message::Handshake { rsv, hash, id },
             Message::KeepAlive => Message::KeepAlive,
             Message::Choke => Message::Choke,
             Message::Unchoke => Message::Unchoke,
@@ -53,16 +97,52 @@ impl Clone for Message {
             Message::Uninterested => Message::Uninterested,
             Message::Have(p) => Message::Have(p),
             Message::Bitfield(ref b) => Message::Bitfield(b.clone()),
-            Message::Request{ index, begin, length } => Message::Request { index, begin, length },
-            Message::Piece { index, begin, length, ref data } => {
+            Message::Request {
+                index,
+                begin,
+                length,
+            } => Message::Request {
+                index,
+                begin,
+                length,
+            },
+            Message::Piece {
+                index,
+                begin,
+                length,
+                ref data,
+            } => {
                 let mut nd = Box::new([0u8; 16384]);
                 for i in 0..length {
                     nd[i as usize] = data[i as usize];
                 }
-                Message::Piece { index, begin, length, data: nd }
+                Message::Piece {
+                    index,
+                    begin,
+                    length,
+                    data: nd,
+                }
             }
-            Message::SharedPiece { index, begin, length, ref data } => Message::SharedPiece { index, begin, length, data: data.clone() },
-            Message::Cancel { index, begin, length } => Message::Cancel { index, begin, length },
+            Message::SharedPiece {
+                index,
+                begin,
+                length,
+                ref data,
+            } => Message::SharedPiece {
+                index,
+                begin,
+                length,
+                data: data.clone(),
+            },
+            Message::Cancel {
+                index,
+                begin,
+                length,
+            } => Message::Cancel {
+                index,
+                begin,
+                length,
+            },
             Message::Port(port) => Message::Port(port),
         }
     }
@@ -71,36 +151,66 @@ impl Clone for Message {
 impl PartialEq for Message {
     fn eq(&self, other: &Message) -> bool {
         match (self, other) {
-            (&Message::Handshake { rsv, hash, id }, &Message::Handshake { rsv: rsv_, hash: hash_, id: id_ }) => {
-                rsv == rsv_ && hash == hash_ && id == id_
-            },
-            (&Message::KeepAlive, &Message::KeepAlive)
-            | (&Message::Choke, &Message::Choke)
-            | (&Message::Unchoke, &Message::Unchoke)
-            | (&Message::Interested, &Message::Interested)
-            | (&Message::Uninterested, &Message::Uninterested) => true,
+            (&Message::Handshake { rsv, hash, id },
+             &Message::Handshake {
+                 rsv: rsv_,
+                 hash: hash_,
+                 id: id_,
+             }) => rsv == rsv_ && hash == hash_ && id == id_,
+            (&Message::KeepAlive, &Message::KeepAlive) |
+            (&Message::Choke, &Message::Choke) |
+            (&Message::Unchoke, &Message::Unchoke) |
+            (&Message::Interested, &Message::Interested) |
+            (&Message::Uninterested, &Message::Uninterested) => true,
             (&Message::Have(p), &Message::Have(p_)) => p == p_,
             (&Message::Port(p), &Message::Port(p_)) => p == p_,
-            (&Message::Request { index, begin, length }, &Message::Request { index: i, begin: b, length: l })
-            | (&Message::Piece { index, begin, length, .. }, &Message::Piece { index: i, begin: b, length: l, .. })
-            | (&Message::Cancel { index, begin, length }, &Message::Cancel { index: i, begin: b, length: l }) => {
-                        index == i && begin == b && length == l
-                    },
-            _ => false
+            (&Message::Request {
+                 index,
+                 begin,
+                 length,
+             },
+             &Message::Request {
+                 index: i,
+                 begin: b,
+                 length: l,
+             }) |
+            (&Message::Piece {
+                 index,
+                 begin,
+                 length,
+                 ..
+             },
+             &Message::Piece {
+                 index: i,
+                 begin: b,
+                 length: l,
+                 ..
+             }) |
+            (&Message::Cancel {
+                 index,
+                 begin,
+                 length,
+             },
+             &Message::Cancel {
+                 index: i,
+                 begin: b,
+                 length: l,
+             }) => index == i && begin == b && length == l,
+            _ => false,
         }
     }
 }
 
 impl Message {
     pub fn handshake(torrent: &TorrentInfo) -> Message {
-        use ::{PEER_ID, DHT_EXT};
+        use {PEER_ID, DHT_EXT};
         let mut rsv = [0u8; 8];
         rsv[DHT_EXT.0] |= DHT_EXT.1;
         // Indicate DHT support
         Message::Handshake {
             rsv,
             hash: torrent.hash,
-            id: *PEER_ID
+            id: *PEER_ID,
         }
     }
 
@@ -113,12 +223,18 @@ impl Message {
     }
 
     pub fn s_piece(index: u32, begin: u32, length: u32, data: Arc<Box<[u8; 16384]>>) -> Message {
-        Message::SharedPiece { index, begin, data, length }
+        Message::SharedPiece {
+            index,
+            begin,
+            data,
+            length,
+        }
     }
 
     pub fn is_piece(&self) -> bool {
         match *self {
-            Message::Piece{ .. } | Message::SharedPiece { .. } => true,
+            Message::Piece { .. } |
+            Message::SharedPiece { .. } => true,
             _ => false,
         }
     }
@@ -132,7 +248,8 @@ impl Message {
 
     pub fn is_special(&self) -> bool {
         match *self {
-            Message::Handshake { .. } | Message::Bitfield(_) => true,
+            Message::Handshake { .. } |
+            Message::Bitfield(_) => true,
             _ => false,
         }
     }
@@ -141,16 +258,14 @@ impl Message {
         match *self {
             Message::Handshake { .. } => 68,
             Message::KeepAlive => 4,
-            Message::Choke
-            | Message::Unchoke
-            | Message::Interested
-            | Message::Uninterested => 5,
+            Message::Choke | Message::Unchoke | Message::Interested | Message::Uninterested => 5,
             Message::Port(_) => 7,
             Message::Have(_) => 9,
             Message::Bitfield(ref pf) => 5 + pf.bytes(),
-            Message::Request{ .. } | Message::Cancel { .. } => 17,
-            Message::Piece{ ref data, .. } => 13 + data.len(),
-            Message::SharedPiece{ ref data, .. } => 13 + data.len(),
+            Message::Request { .. } |
+            Message::Cancel { .. } => 17,
+            Message::Piece { ref data, .. } => 13 + data.len(),
+            Message::SharedPiece { ref data, .. } => 13 + data.len(),
         }
     }
 
@@ -158,7 +273,10 @@ impl Message {
         match *self {
             Message::Handshake { rsv, hash, id } => {
                 if id.len() != 20 {
-                    return Err(io::Error::new(io::ErrorKind::InvalidData, "Invalid Peer ID"));
+                    return Err(io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        "Invalid Peer ID",
+                    ));
                 }
                 buf.write_u8(19)?;
                 buf.write_all("BitTorrent protocol".as_ref())?;
@@ -202,20 +320,39 @@ impl Message {
                     buf.write_u8(pf.byte_at(i as u64))?;
                 }
             }
-            Message::Request{ index, begin, length } => {
+            Message::Request {
+                index,
+                begin,
+                length,
+            } => {
                 buf.write_u32::<BigEndian>(13)?;
                 buf.write_u8(6)?;
                 buf.write_u32::<BigEndian>(index)?;
                 buf.write_u32::<BigEndian>(begin)?;
                 buf.write_u32::<BigEndian>(length)?;
             }
-            Message::Piece{ index, begin, length, .. } | Message::SharedPiece{ index, begin, length, .. } => {
+            Message::Piece {
+                index,
+                begin,
+                length,
+                ..
+            } |
+            Message::SharedPiece {
+                index,
+                begin,
+                length,
+                ..
+            } => {
                 buf.write_u32::<BigEndian>(9 + length)?;
                 buf.write_u8(7)?;
                 buf.write_u32::<BigEndian>(index)?;
                 buf.write_u32::<BigEndian>(begin)?;
             }
-            Message::Cancel{ index, begin, length } => {
+            Message::Cancel {
+                index,
+                begin,
+                length,
+            } => {
                 buf.write_u32::<BigEndian>(13)?;
                 buf.write_u8(8)?;
                 buf.write_u32::<BigEndian>(index)?;

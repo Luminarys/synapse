@@ -1,4 +1,4 @@
-use std::net::{TcpStream};
+use std::net::TcpStream;
 use std::{time, str, result, mem};
 use std::io::{self, Write};
 
@@ -59,36 +59,38 @@ impl Client {
             None => return Ok(Err(true)),
         };
         if m.opcode().is_control() && m.len > 125 {
-            return Err(ErrorKind::BadPayload("Control frame too long!").into())
+            return Err(ErrorKind::BadPayload("Control frame too long!").into());
         }
         if m.opcode().is_control() && !m.fin() {
-            return Err(ErrorKind::BadPayload("Control frame must not be fragmented!").into())
+            return Err(
+                ErrorKind::BadPayload("Control frame must not be fragmented!").into(),
+            );
         }
         if m.opcode().is_other() {
-            return Err(ErrorKind::BadPayload("Non standard opcodes unsupported!").into())
+            return Err(
+                ErrorKind::BadPayload("Non standard opcodes unsupported!").into(),
+            );
         }
         if m.extensions() {
-            return Err(ErrorKind::BadPayload("Connection should not contain RSV bits!").into())
+            return Err(
+                ErrorKind::BadPayload("Connection should not contain RSV bits!").into(),
+            );
         }
         match m.opcode() {
             Opcode::Close => {
                 self.send_msg(Message::close())?;
                 return Err(ErrorKind::Complete.into());
             }
-            Opcode::Text
-                | Opcode::Binary
-                | Opcode::Continuation => {
-                    if let Some(f) = self.buf.process(m)? {
-                        #[cfg(feature = "autobahn")]
-                        self.send(f)?;
-                        #[cfg(not(feature = "autobahn"))]
-                        return Ok(Ok(f));
-                    }
+            Opcode::Text | Opcode::Binary | Opcode::Continuation => {
+                if let Some(f) = self.buf.process(m)? {
+                    #[cfg(feature = "autobahn")] self.send(f)?;
+                    #[cfg(not(feature = "autobahn"))] return Ok(Ok(f));
                 }
+            }
             Opcode::Ping => {
                 self.send_msg(Message::pong(m.data))?;
             }
-            _ => { }
+            _ => {}
         }
         Ok(Err(false))
     }
@@ -131,7 +133,7 @@ impl Into<Client> for Incoming {
         ];
         let data = lines.join("\r\n") + "\r\n\r\n";
         // Ignore error, it'll pop up again anyways
-        if self.conn.write(data.as_bytes()).is_err() { };
+        if self.conn.write(data.as_bytes()).is_err() {};
 
         Client {
             r: Reader::new(),
@@ -175,7 +177,7 @@ impl Incoming {
                     } else {
                         return Err(io::ErrorKind::UnexpectedEof.into());
                     }
-                },
+                }
                 IOR::Incomplete(a) => {
                     self.pos += a;
                     if let Some(r) = self.process_incoming()? {
@@ -203,17 +205,24 @@ impl Incoming {
                     self.key = Some(k);
                     return Ok(Some(IncomingStatus::Upgrade));
                 } else if let Some(token) = validate_tx(&req) {
-                    return Ok(Some(IncomingStatus::Transfer { data: self.buf[idx..self.pos].to_owned(), token }));
+                    return Ok(Some(IncomingStatus::Transfer {
+                        data: self.buf[idx..self.pos].to_owned(),
+                        token,
+                    }));
                 } else {
                     // Probably some dumb CORS OPTION shit, just tell the client
                     // everyting's cool and close up
-                    let lines = vec![
-                        format!("HTTP/1.1 204 NO CONTENT"),
-                        format!("Connection: Closed"),
-                        format!("Access-Control-Allow-Origin: {}", "*"),
-                        format!("Access-Control-Allow-Methods: {}", "OPTIONS, POST, GET"),
-                        format!("Access-Control-Allow-Headers: {}", "Access-Control-Allow-Headers, Origin, Accept, X-Requested-With, Content-Type, Access-Control-Request-Method, Access-Control-Request-Headers, Authorization"),
-                    ];
+                    let lines =
+                        vec![
+                            format!("HTTP/1.1 204 NO CONTENT"),
+                            format!("Connection: Closed"),
+                            format!("Access-Control-Allow-Origin: {}", "*"),
+                            format!("Access-Control-Allow-Methods: {}", "OPTIONS, POST, GET"),
+                            format!(
+                                "Access-Control-Allow-Headers: {}",
+                                "Access-Control-Allow-Headers, Origin, Accept, X-Requested-With, Content-Type, Access-Control-Request-Method, Access-Control-Request-Headers, Authorization"
+                            ),
+                        ];
                     let data = lines.join("\r\n") + "\r\n\r\n";
                     if self.conn.write(data.as_bytes()).is_err() {
                         // Ignore error, we're DCing anyways
@@ -231,12 +240,8 @@ impl FragBuf {
         let fin = msg.fin();
         let s = mem::replace(self, FragBuf::None);
         *self = match (s, msg.opcode()) {
-            (FragBuf::None, Opcode::Text) => {
-                FragBuf::Text(msg.data)
-            }
-            (FragBuf::None, Opcode::Binary) => {
-                FragBuf::Binary(msg.data)
-            }
+            (FragBuf::None, Opcode::Text) => FragBuf::Text(msg.data),
+            (FragBuf::None, Opcode::Binary) => FragBuf::Binary(msg.data),
             (FragBuf::None, Opcode::Continuation) => {
                 return Err(ErrorKind::BadPayload("Invalid continuation frame").into());
             }
@@ -248,18 +253,22 @@ impl FragBuf {
                 b.extend(msg.data.into_iter());
                 FragBuf::Binary(b)
             }
-            (FragBuf::Text(_), Opcode::Text)
-                | (FragBuf::Text(_), Opcode::Binary)
-                | (FragBuf::Binary(_), Opcode::Text)
-                | (FragBuf::Binary(_), Opcode::Binary) => {
-                    return Err(ErrorKind::BadPayload("Expected continuation of data frame").into());
-                }
+            (FragBuf::Text(_), Opcode::Text) |
+            (FragBuf::Text(_), Opcode::Binary) |
+            (FragBuf::Binary(_), Opcode::Text) |
+            (FragBuf::Binary(_), Opcode::Binary) => {
+                return Err(
+                    ErrorKind::BadPayload("Expected continuation of data frame").into(),
+                );
+            }
             _ => return Ok(None),
         };
         if fin {
             match mem::replace(self, FragBuf::None) {
                 FragBuf::Text(b) => {
-                    let t = String::from_utf8(b).chain_err(|| ErrorKind::BadPayload("Invalid Utf8 in text!"))?;
+                    let t = String::from_utf8(b).chain_err(|| {
+                        ErrorKind::BadPayload("Invalid Utf8 in text!")
+                    })?;
                     Ok(Some(Frame::Text(t)))
                 }
                 FragBuf::Binary(b) => Ok(Some(Frame::Binary(b))),
@@ -276,16 +285,17 @@ impl FragBuf {
 fn validate_tx(req: &httparse::Request) -> Option<String> {
     for header in req.headers.iter() {
         if header.name.to_lowercase() == "authorization" {
-            return str::from_utf8(header.value)
-                .ok()
-                .and_then(|v| {
-                    if v.starts_with("Bearer ") {
-                        let (_, tok) = v.split_at(7);
-                        Some(tok.to_owned())
-                    } else {
-                        None
-                    }
-                });
+            return str::from_utf8(header.value).ok().and_then(
+                |v| if v.starts_with(
+                    "Bearer ",
+                )
+                {
+                    let (_, tok) = v.split_at(7);
+                    Some(tok.to_owned())
+                } else {
+                    None
+                },
+            );
         }
     }
     None

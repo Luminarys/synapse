@@ -18,8 +18,13 @@ impl Simulation {
         let mut rng = rand::thread_rng();
         let mut peers = Vec::new();
         for i in 0..cfg.peers {
-            let connected = rand::sample(&mut rng, 0..cfg.peers as usize, cfg.connect_limit as usize);
-            let unchoked = rand::sample(&mut rng, connected.iter().map(|v| *v), cfg.unchoke_limit as usize);
+            let connected =
+                rand::sample(&mut rng, 0..cfg.peers as usize, cfg.connect_limit as usize);
+            let unchoked = rand::sample(
+                &mut rng,
+                connected.iter().map(|v| *v),
+                cfg.unchoke_limit as usize,
+            );
             let peer = Peer {
                 picker: picker.clone(),
                 connected,
@@ -30,7 +35,7 @@ impl Simulation {
                 compl: None,
                 data: {
                     TPeer::test(i as usize, 0, 0, 0, Bitfield::new(cfg.pieces as u64))
-                }
+                },
             };
             peers.push(peer);
         }
@@ -69,7 +74,7 @@ impl Simulation {
         for peer in self.peers().iter().skip(1) {
             total += peer.compl.unwrap() as f64;
         }
-        return (self.ticks, total/(self.cfg.peers as f64 - 1.));
+        return (self.ticks, total / (self.cfg.peers as f64 - 1.));
     }
 
     fn tick(&mut self) -> Result<(), ()> {
@@ -89,7 +94,9 @@ impl Simulation {
                     if received.data.pieces().complete() {
                         received.compl = Some(self.ticks);
                         for p in self.peers().iter_mut() {
-                            if !p.data.pieces().complete() && !p.unchoked_by.contains(&peer.data.id()) {
+                            if !p.data.pieces().complete() &&
+                                !p.unchoked_by.contains(&peer.data.id())
+                            {
                                 p.unchoked_by.push(peer.data.id());
                             }
                         }
@@ -107,7 +114,10 @@ impl Simulation {
                 if peer.data.pieces().usable(ucp.data.pieces()) {
                     while *cnt < self.cfg.req_queue_len {
                         if let Some((piece, _)) = peer.picker.pick(&ucp.data) {
-                            ucp.requests.push(Request { peer: peer.data.id(), piece });
+                            ucp.requests.push(Request {
+                                peer: peer.data.id(),
+                                piece,
+                            });
                             *cnt += 1;
                         } else {
                             break;
@@ -116,18 +126,16 @@ impl Simulation {
                 }
             }
         }
-        let inc = self.peers().iter().filter(|p| !p.data.pieces().complete()).map(|p| p.data.id()).collect::<Vec<_>>();
-        if inc.is_empty() {
-            Ok(())
-        } else {
-            Err(())
-        }
+        let inc = self.peers()
+            .iter()
+            .filter(|p| !p.data.pieces().complete())
+            .map(|p| p.data.id())
+            .collect::<Vec<_>>();
+        if inc.is_empty() { Ok(()) } else { Err(()) }
     }
 
     fn peers<'f>(&self) -> &'f mut Vec<Peer> {
-        unsafe {
-            self.peers.get().as_mut().unwrap()
-        }
+        unsafe { self.peers.get().as_mut().unwrap() }
     }
 }
 
@@ -185,9 +193,9 @@ fn test_efficiency(cfg: TestCfg, picker: Picker) {
         total += t;
         pat += a;
     }
-    let ta = total/num_runs;
+    let ta = total / num_runs;
     println!("Avg: {:?}", ta);
-    println!("Avg peer ticks: {:?}", pat/num_runs as f64);
+    println!("Avg peer ticks: {:?}", pat / num_runs as f64);
     assert!((ta as u32) < (((cfg.pieces + cfg.peers as u32) as f32 * 1.5) as u32));
 }
 

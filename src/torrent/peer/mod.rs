@@ -121,13 +121,22 @@ impl PeerConn {
 
 impl Status {
     fn new() -> Status {
-        Status { choked: true, interested: false }
+        Status {
+            choked: true,
+            interested: false,
+        }
     }
 }
 
 #[cfg(test)]
 impl Peer<cio::test::TCIO> {
-    pub fn test(id: usize, uploaded: u64, downloaded: u64, queued: u16, pieces: Bitfield) -> Peer<cio::test::TCIO> {
+    pub fn test(
+        id: usize,
+        uploaded: u64,
+        downloaded: u64,
+        queued: u16,
+        pieces: Bitfield,
+    ) -> Peer<cio::test::TCIO> {
         Peer {
             id,
             remote_status: Status::new(),
@@ -167,7 +176,12 @@ impl Peer<cio::test::TCIO> {
 }
 
 impl<T: cio::CIO> Peer<T> {
-    pub fn new(mut conn: PeerConn, t: &mut Torrent<T>, cid: Option<[u8; 20]>, rsv: Option<[u8; 8]>) -> cio::Result<Peer<T>> {
+    pub fn new(
+        mut conn: PeerConn,
+        t: &mut Torrent<T>,
+        cid: Option<[u8; 20]>,
+        rsv: Option<[u8; 8]>,
+    ) -> cio::Result<Peer<T>> {
         let addr = conn.sock().addr();
         conn.set_throttle(t.get_throttle(0));
         let id = t.cio.add_peer(conn)?;
@@ -213,7 +227,10 @@ impl<T: cio::CIO> Peer<T> {
 
     pub fn flush(&mut self) -> (u64, u64) {
         self.last_flush = Utc::now();
-        (mem::replace(&mut self.uploaded, 0), mem::replace(&mut self.downloaded, 0))
+        (
+            mem::replace(&mut self.uploaded, 0),
+            mem::replace(&mut self.downloaded, 0),
+        )
     }
 
     pub fn remote_status(&self) -> &Status {
@@ -244,13 +261,16 @@ impl<T: cio::CIO> Peer<T> {
                 self.cid = Some(id);
                 self.send_rpc_info();
             }
-            Message::Piece { length, .. } | Message::SharedPiece { length, .. } => {
+            Message::Piece { length, .. } |
+            Message::SharedPiece { length, .. } => {
                 self.downloaded += length as u64;
                 self.queued -= 1;
             }
             Message::Request { .. } => {
                 if self.local_status.choked {
-                    return Err(ErrorKind::ProtocolError("Peer requested while choked!").into())
+                    return Err(
+                        ErrorKind::ProtocolError("Peer requested while choked!").into(),
+                    );
                 }
             }
             Message::Choke => {
@@ -267,7 +287,9 @@ impl<T: cio::CIO> Peer<T> {
             }
             Message::Have(idx) => {
                 if idx >= self.pieces.len() as u32 {
-                    return Err(ErrorKind::ProtocolError("Invalid piece provided in HAVE!").into())
+                    return Err(
+                        ErrorKind::ProtocolError("Invalid piece provided in HAVE!").into(),
+                    );
                 }
                 self.pieces.set_bit(idx as u64);
             }
@@ -276,7 +298,7 @@ impl<T: cio::CIO> Peer<T> {
                 pieces.cap(self.pieces.len());
                 mem::swap(pieces, &mut self.pieces);
             }
-            Message::KeepAlive => { }
+            Message::KeepAlive => {}
             Message::Cancel { index, begin, .. } => {
                 self.cio.get_peer(self.id, |conn| {
                     conn.writer.write_queue.retain(|m| {
@@ -332,9 +354,9 @@ impl<T: cio::CIO> Peer<T> {
 
     pub fn send_message(&mut self, msg: Message) {
         match &msg {
-            &Message::SharedPiece { length, .. }
-            | &Message::Piece { length, .. } => self.uploaded += length as u64,
-            _ => { }
+            &Message::SharedPiece { length, .. } |
+            &Message::Piece { length, .. } => self.uploaded += length as u64,
+            _ => {}
         }
         self.cio.msg_peer(self.id, msg);
     }
@@ -350,15 +372,15 @@ impl<T: cio::CIO> Peer<T> {
                     rate_up: 0,
                     rate_down: 0,
                     availability: 0.,
-                })
+                }),
             ]));
         }
     }
 
     pub fn send_rpc_removal(&mut self) {
-        self.cio.msg_rpc(rpc::CtlMessage::Removed(vec![
-            util::peer_rpc_id(&self.t_hash, self.id as u64)
-        ]));
+        self.cio.msg_rpc(rpc::CtlMessage::Removed(
+            vec![util::peer_rpc_id(&self.t_hash, self.id as u64)],
+        ));
     }
 }
 
@@ -371,8 +393,14 @@ impl<T: cio::CIO> Drop for Peer<T> {
 
 impl<T: cio::CIO> fmt::Debug for Peer<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "Peer {{ id: {}, tid: {}, local_status: {:?}, remote_status: {:?} }}",
-               self.id, self.tid, self.local_status, self.remote_status)
+        write!(
+            f,
+            "Peer {{ id: {}, tid: {}, local_status: {:?}, remote_status: {:?} }}",
+            self.id,
+            self.tid,
+            self.local_status,
+            self.remote_status
+        )
     }
 }
 
@@ -386,18 +414,38 @@ mod tests {
     fn test_cancel() {
         let mut tcio = test::TCIO::new();
         let mut peer = Peer::test_with_tcio(tcio.new_handle());
-        let p1 = Message::Piece { index: 0, begin: 0, data: Box::new([0u8; 16384]), length: 16384 };
-        let p2 = Message::Piece { index: 1, begin: 1, data: Box::new([0u8; 16384]), length: 16384 };
-        let p3 = Message::Piece { index: 2, begin: 2, data: Box::new([0u8; 16384]), length: 16384 };
+        let p1 = Message::Piece {
+            index: 0,
+            begin: 0,
+            data: Box::new([0u8; 16384]),
+            length: 16384,
+        };
+        let p2 = Message::Piece {
+            index: 1,
+            begin: 1,
+            data: Box::new([0u8; 16384]),
+            length: 16384,
+        };
+        let p3 = Message::Piece {
+            index: 2,
+            begin: 2,
+            data: Box::new([0u8; 16384]),
+            length: 16384,
+        };
         peer.send_message(Message::KeepAlive);
         peer.send_message(p1.clone());
         peer.send_message(p2.clone());
         peer.send_message(p3.clone());
 
-        let mut c = Message::Cancel { index: 1, begin: 1, length: 16384 };
+        let mut c = Message::Cancel {
+            index: 1,
+            begin: 1,
+            length: 16384,
+        };
         peer.handle_msg(&mut c).unwrap();
-        let wq = tcio.get_peer(peer.id, |p| p.writer.write_queue.clone()).unwrap();
-         assert_eq!(wq.len(), 2);
+        let wq = tcio.get_peer(peer.id, |p| p.writer.write_queue.clone())
+            .unwrap();
+        assert_eq!(wq.len(), 2);
         assert_eq!(wq[0], p1);
         assert_eq!(wq[1], p3);
     }

@@ -48,9 +48,7 @@ impl ACIO {
             peers: HashMap::new(),
             events: Vec::new(),
         };
-        Ok(ACIO {
-            data: Rc::new(UnsafeCell::new(data)),
-        })
+        Ok(ACIO { data: Rc::new(UnsafeCell::new(data)) })
     }
 
     fn process_event(&mut self, not: amy::Notification, events: &mut Vec<cio::Event>) {
@@ -74,7 +72,10 @@ impl ACIO {
         } else if self.d().peers.contains_key(&id) {
             if let Err(e) = self.process_peer_ev(not, events) {
                 self.d().remove_peer(id);
-                events.push(cio::Event::Peer { peer: id, event: Err(e) });
+                events.push(cio::Event::Peer {
+                    peer: id,
+                    event: Err(e),
+                });
             }
         } else {
             // Timer event
@@ -82,13 +83,20 @@ impl ACIO {
         }
     }
 
-    fn process_peer_ev(&mut self, not: amy::Notification, events: &mut Vec<cio::Event>) -> Result<()> {
+    fn process_peer_ev(
+        &mut self,
+        not: amy::Notification,
+        events: &mut Vec<cio::Event>,
+    ) -> Result<()> {
         let d = self.d();
         if let Some(peer) = d.peers.get_mut(&not.id) {
             let ev = not.event;
             if ev.readable() {
                 while let Some(msg) = peer.readable().chain_err(|| ErrorKind::IO)? {
-                    events.push(cio::Event::Peer { peer: not.id, event: Ok(msg) });
+                    events.push(cio::Event::Peer {
+                        peer: not.id,
+                        event: Ok(msg),
+                    });
                 }
             }
             if ev.writable() {
@@ -99,9 +107,7 @@ impl ACIO {
     }
 
     fn d(&self) -> &'static mut ACIOData {
-        unsafe {
-            self.data.get().as_mut().unwrap()
-        }
+        unsafe { self.data.get().as_mut().unwrap() }
     }
 }
 
@@ -123,14 +129,20 @@ impl cio::CIO for ACIO {
     }
 
     fn add_peer(&mut self, mut peer: torrent::PeerConn) -> Result<cio::PID> {
-       let id = self.d().reg.register(peer.sock(), amy::Event::Both)
+        let id = self.d()
+            .reg
+            .register(peer.sock(), amy::Event::Both)
             .chain_err(|| ErrorKind::IO)?;
-       peer.sock_mut().throttle.as_mut().map(|t| t.id = id);
-       self.d().peers.insert(id, peer);
-       Ok(id)
+        peer.sock_mut().throttle.as_mut().map(|t| t.id = id);
+        self.d().peers.insert(id, peer);
+        Ok(id)
     }
 
-    fn get_peer<T, F: FnOnce(&mut torrent::PeerConn) -> T>(&mut self, pid: cio::PID, f: F) -> Option<T> {
+    fn get_peer<T, F: FnOnce(&mut torrent::PeerConn) -> T>(
+        &mut self,
+        pid: cio::PID,
+        f: F,
+    ) -> Option<T> {
         if let Some(p) = self.d().peers.get_mut(&pid) {
             Some(f(p))
         } else {
@@ -147,10 +159,16 @@ impl cio::CIO for ACIO {
         let mut events = Vec::new();
 
         for peer in peers {
-            let not = amy::Notification { id: peer, event: amy::Event::Both };
+            let not = amy::Notification {
+                id: peer,
+                event: amy::Event::Both,
+            };
             if let Err(e) = self.process_peer_ev(not, &mut events) {
                 self.d().remove_peer(peer);
-                events.push(cio::Event::Peer { peer, event: Err(e) });
+                events.push(cio::Event::Peer {
+                    peer,
+                    event: Err(e),
+                });
             }
         }
 
@@ -168,51 +186,53 @@ impl cio::CIO for ACIO {
         };
         if let Some(e) = err {
             d.remove_peer(pid);
-            d.events.push(cio::Event::Peer { peer: pid, event: Err(e) });
+            d.events.push(cio::Event::Peer {
+                peer: pid,
+                event: Err(e),
+            });
         }
     }
 
     fn msg_rpc(&mut self, msg: rpc::CtlMessage) {
         if self.d().chans.rpc_tx.send(msg).is_err() {
-            self.d().events.push(
-                cio::Event::RPC(Err(ErrorKind::Channel("Couldn't send to RPC chan").into()))
-            );
+            self.d().events.push(cio::Event::RPC(
+                Err(ErrorKind::Channel("Couldn't send to RPC chan").into()),
+            ));
         }
     }
 
     fn msg_trk(&mut self, msg: tracker::Request) {
         if self.d().chans.trk_tx.send(msg).is_err() {
-            self.d().events.push(
-                cio::Event::Tracker(Err(ErrorKind::Channel("Couldn't send to trk chan").into()))
-            );
+            self.d().events.push(cio::Event::Tracker(
+                Err(ErrorKind::Channel("Couldn't send to trk chan").into()),
+            ));
         }
     }
 
     fn msg_disk(&mut self, msg: disk::Request) {
         if self.d().chans.disk_tx.send(msg).is_err() {
-            self.d().events.push(
-                cio::Event::Disk(Err(ErrorKind::Channel("Couldn't send to disk chan").into()))
-            );
+            self.d().events.push(cio::Event::Disk(
+                Err(ErrorKind::Channel("Couldn't send to disk chan").into()),
+            ));
         }
     }
 
     fn msg_listener(&mut self, msg: listener::Request) {
         if self.d().chans.lst_tx.send(msg).is_err() {
-            self.d().events.push(
-                cio::Event::Listener(Err(ErrorKind::Channel("Couldn't send to disk chan").into()))
-            );
+            self.d().events.push(cio::Event::Listener(
+                Err(ErrorKind::Channel("Couldn't send to disk chan").into()),
+            ));
         }
     }
 
     fn set_timer(&mut self, interval: usize) -> Result<cio::TID> {
-        self.d().reg.set_interval(interval)
-            .chain_err(|| ErrorKind::IO)
+        self.d().reg.set_interval(interval).chain_err(
+            || ErrorKind::IO,
+        )
     }
 
     fn new_handle(&self) -> Self {
-        ACIO {
-            data: self.data.clone(),
-        }
+        ACIO { data: self.data.clone() }
     }
 }
 

@@ -8,9 +8,7 @@ pub(super) struct Writer {
 
 impl Writer {
     pub fn new(data: Vec<u8>) -> Writer {
-        Writer {
-            data, idx: 0
-        }
+        Writer { data, idx: 0 }
     }
 
     pub fn writable<W: io::Write>(&mut self, conn: &mut W) -> Result<Option<()>> {

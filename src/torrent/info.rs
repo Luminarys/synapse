@@ -21,8 +21,16 @@ pub struct Info {
 
 impl fmt::Debug for Info {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "Torrent Info {{ name: {:?}, announce: {:?}, piece_len: {:?}, total_len: {:?}, hash: {:?}, files: {:?} }}",
-               self.name, self.announce, self.piece_len, self.total_len, hash_to_id(&self.hash), self.files)
+        write!(
+            f,
+            "Torrent Info {{ name: {:?}, announce: {:?}, piece_len: {:?}, total_len: {:?}, hash: {:?}, files: {:?} }}",
+            self.name,
+            self.announce,
+            self.piece_len,
+            self.total_len,
+            hash_to_id(&self.hash),
+            self.files
+        )
     }
 }
 
@@ -62,7 +70,9 @@ impl File {
         if let Some(parent) = self.path.parent() {
             fs::create_dir_all(parent)?;
         }
-        let f = fs::OpenOptions::new().write(true).create(true).open(&self.path)?;
+        let f = fs::OpenOptions::new().write(true).create(true).open(
+            &self.path,
+        )?;
         f.set_len(self.length as u64)?;
         Ok(())
     }
@@ -84,10 +94,9 @@ impl Info {
 
     pub fn from_bencode(data: BEncode) -> Result<Info, &'static str> {
         data.to_dict()
-            .and_then(|mut d| d.remove("info")
-                                .and_then(|i| i.to_dict())
-                                .map(|i| (d, i))
-            )
+            .and_then(|mut d| {
+                d.remove("info").and_then(|i| i.to_dict()).map(|i| (d, i))
+            })
             .ok_or("invalid info field")
             .and_then(|(mut d, mut i)| {
                 let mut info_bytes = Vec::new();
@@ -98,12 +107,12 @@ impl Info {
                 let mut hash = [0u8; 20];
                 hash.copy_from_slice(digest.as_ref());
 
-                let a = d.remove("announce")
-                    .and_then(|a| a.to_string())
-                    .ok_or("Info must have announce url")?;
-                let pl = i.remove("piece length")
-                    .and_then(|i| i.to_int())
-                    .ok_or("Info must specify piece length")?;
+                let a = d.remove("announce").and_then(|a| a.to_string()).ok_or(
+                    "Info must have announce url",
+                )?;
+                let pl = i.remove("piece length").and_then(|i| i.to_int()).ok_or(
+                    "Info must specify piece length",
+                )?;
                 let hashes = i.remove("pieces")
                     .and_then(|p| p.to_bytes())
                     .map(|mut p| {
@@ -115,7 +124,7 @@ impl Info {
                         }
                         v
                     })
-                .ok_or("Info must provide valid hashes")?;
+                    .ok_or("Info must provide valid hashes")?;
 
                 let private = i.remove("private")
                     .and_then(|v| v.to_int())
@@ -124,10 +133,21 @@ impl Info {
 
                 let files = parse_bencode_files(i)?;
                 let name = if files.is_empty() {
-                    files[0].path.clone().into_os_string().into_string().unwrap()
+                    files[0]
+                        .path
+                        .clone()
+                        .into_os_string()
+                        .into_string()
+                        .unwrap()
                 } else if !files[0].path.has_root() {
                     let mut piter = files[0].path.components();
-                    piter.next().unwrap().as_os_str().to_os_string().into_string().unwrap()
+                    piter
+                        .next()
+                        .unwrap()
+                        .as_os_str()
+                        .to_os_string()
+                        .into_string()
+                        .unwrap()
                 } else {
                     unreachable!();
                 };
@@ -170,7 +190,8 @@ impl Info {
         if idx != self.pieces() - 1 {
             16384
         } else {
-            let last_piece_len = (self.total_len - self.piece_len as u64 * (self.pieces() as u64 - 1)) as u32;
+            let last_piece_len =
+                (self.total_len - self.piece_len as u64 * (self.pieces() as u64 - 1)) as u32;
             // Note this is not the real last block len, just what it will be IF the offset really
             // is for the last block
             let last_block_len = last_piece_len - offset;
@@ -226,11 +247,21 @@ impl Info {
                 if file_write_len == len as usize {
                     // The file is longer than our len, just write to it,
                     // exit loop
-                    locs.push(disk::Location::new(f.path.clone(), offset, data_start, data_start + file_write_len));
+                    locs.push(disk::Location::new(
+                        f.path.clone(),
+                        offset,
+                        data_start,
+                        data_start + file_write_len,
+                    ));
                     break;
                 } else {
                     // Write to the end of file, continue
-                    locs.push(disk::Location::new(f.path.clone(), offset, data_start, data_start + file_write_len as usize));
+                    locs.push(disk::Location::new(
+                        f.path.clone(),
+                        offset,
+                        data_start,
+                        data_start + file_write_len as usize,
+                    ));
                     len -= file_write_len as u32;
                     cur_start += file_write_len as u32;
                     data_start += file_write_len;
@@ -245,9 +276,9 @@ fn parse_bencode_files(mut data: BTreeMap<String, BEncode>) -> Result<Vec<File>,
     match data.remove("files").and_then(|l| l.to_list()) {
         Some(fs) => {
             let mut path = PathBuf::new();
-            path.push(data.remove("name")
-                      .and_then(|v| v.to_string())
-                      .ok_or("Multifile mode must have a name field")?);
+            path.push(data.remove("name").and_then(|v| v.to_string()).ok_or(
+                "Multifile mode must have a name field",
+            )?);
             let mut files = Vec::new();
             for f in fs {
                 let mut file = File::from_bencode(f)?;

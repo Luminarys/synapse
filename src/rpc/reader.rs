@@ -45,7 +45,7 @@ impl Reader {
                 }
 
                 (IOR::Incomplete(a), State::Payload(_)) => {
-                    for i in self.pos..self.pos+a {
+                    for i in self.pos..self.pos + a {
                         self.msg.data[i] ^= self.msg.mask.unwrap()[i % 4];
                     }
                     self.pos += a;
@@ -57,11 +57,11 @@ impl Reader {
 
                 (IOR::Complete, State::Header) => {
                     self.msg.header = self.msg.data[start];
-                    if self.msg.data[start+1] & 0x80 != 0 {
+                    if self.msg.data[start + 1] & 0x80 != 0 {
                         self.msg.mask = Some([0; 4]);
                     }
 
-                    match self.msg.data[start+1] & 0x7f {
+                    match self.msg.data[start + 1] & 0x7f {
                         126 => {
                             self.state = State::PayloadLen2;
                         }
@@ -82,12 +82,17 @@ impl Reader {
                     self.pos = 0;
                 }
 
-                (IOR::Complete, State::PayloadLen2) | (IOR::Complete, State::PayloadLen8) => {
+                (IOR::Complete, State::PayloadLen2) |
+                (IOR::Complete, State::PayloadLen8) => {
                     {
                         let mut buf = &self.msg.data[start..end];
                         match self.state {
-                            State::PayloadLen2 => self.msg.len = buf.read_u16::<BigEndian>().unwrap() as u64,
-                            State::PayloadLen8 => self.msg.len = buf.read_u64::<BigEndian>().unwrap(),
+                            State::PayloadLen2 => {
+                                self.msg.len = buf.read_u16::<BigEndian>().unwrap() as u64
+                            }
+                            State::PayloadLen8 => {
+                                self.msg.len = buf.read_u64::<BigEndian>().unwrap()
+                            }
                             _ => unreachable!(),
                         }
                     }

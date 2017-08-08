@@ -16,15 +16,8 @@ pub(super) struct Writer {
 
 enum WriteState {
     Idle,
-    WritingMsg {
-        data: [u8; 17],
-        len: u8,
-        idx: u8,
-    },
-    WritingOther {
-        data: Vec<u8>,
-        idx: u16,
-    },
+    WritingMsg { data: [u8; 17], len: u8, idx: u8 },
+    WritingOther { data: Vec<u8>, idx: u16 },
     WritingPiece {
         prefix: [u8; 17],
         data: Arc<Box<[u8; 16384]>>,
@@ -87,10 +80,7 @@ impl Writer {
             let mut buf = vec![0; msg.len()];
             // Should never go wrong
             msg.encode(&mut buf).unwrap();
-            WriteState::WritingOther {
-                data: buf,
-                idx: 0,
-            }
+            WriteState::WritingOther { data: buf, idx: 0 }
         };
     }
 
@@ -124,7 +114,11 @@ impl Writer {
     fn write_<W: Write>(&mut self, conn: &mut W) -> io::Result<bool> {
         match self.state {
             WriteState::Idle => Ok(false),
-            WriteState::WritingMsg { ref data, ref len, ref mut idx } => {
+            WriteState::WritingMsg {
+                ref data,
+                ref len,
+                ref mut idx,
+            } => {
                 let amnt = conn.write(&data[(*idx as usize)..(*len as usize)])?;
                 if amnt == 0 {
                     return io_err("EOF");
@@ -137,7 +131,11 @@ impl Writer {
                     Ok(false)
                 }
             }
-            WriteState::WritingPiece { ref prefix, ref data, ref mut idx } => {
+            WriteState::WritingPiece {
+                ref prefix,
+                ref data,
+                ref mut idx,
+            } => {
                 if *idx < 13 as u16 {
                     let amnt = conn.write(&prefix[(*idx as usize)..13])? as u16;
                     if amnt == 0 {
@@ -164,7 +162,10 @@ impl Writer {
                     Ok(false)
                 }
             }
-            WriteState::WritingOther { ref data, ref mut idx } => {
+            WriteState::WritingOther {
+                ref data,
+                ref mut idx,
+            } => {
                 let amnt = conn.write(&data[(*idx as usize)..])?;
                 if amnt == 0 {
                     return io_err("EOF");
@@ -306,7 +307,7 @@ mod tests {
 
     #[test]
     fn test_write_handshake() {
-        use ::PEER_ID;
+        use PEER_ID;
         let mut w = Writer::new();
         let m = Message::Handshake {
             rsv: [0; 8],

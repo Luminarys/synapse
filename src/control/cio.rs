@@ -19,7 +19,10 @@ pub type TID = usize;
 
 pub enum Event {
     Timer(TID),
-    Peer { peer: PID, event: Result<torrent::Message> },
+    Peer {
+        peer: PID,
+        event: Result<torrent::Message>,
+    },
     RPC(Result<rpc::Message>),
     Tracker(Result<tracker::Response>),
     Disk(Result<disk::Response>),
@@ -37,7 +40,8 @@ pub trait CIO {
     fn add_peer(&mut self, peer: torrent::PeerConn) -> Result<PID>;
 
     /// Applies f to a peer if it exists
-    fn get_peer<T, F: FnOnce(&mut torrent::PeerConn) -> T>(&mut self, peer: PID, f: F) -> Option<T>;
+    fn get_peer<T, F: FnOnce(&mut torrent::PeerConn) -> T>(&mut self, peer: PID, f: F)
+        -> Option<T>;
 
     /// Removes a peer
     fn remove_peer(&mut self, peer: PID);
@@ -104,9 +108,7 @@ pub mod test {
                 timers: 0,
                 peer_cnt: 0,
             };
-            TCIO {
-                data: Arc::new(Mutex::new(d)),
-            }
+            TCIO { data: Arc::new(Mutex::new(d)) }
         }
 
         pub fn data(&self) -> MutexGuard<TCIOD> {
@@ -127,7 +129,11 @@ pub mod test {
             Ok(id)
         }
 
-        fn get_peer<T, F: FnOnce(&mut torrent::PeerConn) -> T>(&mut self, pid: PID, f: F) -> Option<T> {
+        fn get_peer<T, F: FnOnce(&mut torrent::PeerConn) -> T>(
+            &mut self,
+            pid: PID,
+            f: F,
+        ) -> Option<T> {
             let mut d = self.data.lock().unwrap();
             if let Some(p) = d.peers.get_mut(&pid) {
                 Some(f(p))
@@ -182,9 +188,7 @@ pub mod test {
         }
 
         fn new_handle(&self) -> Self {
-            TCIO {
-                data: self.data.clone(),
-            }
+            TCIO { data: self.data.clone() }
         }
     }
 }

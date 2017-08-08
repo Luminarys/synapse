@@ -69,23 +69,35 @@ impl Handler {
         self.connections.contains_key(&id)
     }
 
-    pub fn new_announce(&mut self, req: Announce, url: &Url, dns: &mut dns::Resolver) -> Result<()> {
+    pub fn new_announce(
+        &mut self,
+        req: Announce,
+        url: &Url,
+        dns: &mut dns::Resolver,
+    ) -> Result<()> {
         debug!(self.l, "Received a new announce req for {:?}", url);
         let host = url.host_str().ok_or::<Error>(
-            ErrorKind::InvalidRequest(format!("Tracker announce url has no host!")).into()
+            ErrorKind::InvalidRequest(
+                format!("Tracker announce url has no host!"),
+            ).into(),
         )?;
         let port = url.port().ok_or::<Error>(
-            ErrorKind::InvalidRequest(format!("Tracker announce url has no port!")).into()
+            ErrorKind::InvalidRequest(
+                format!("Tracker announce url has no port!"),
+            ).into(),
         )?;
 
         let id = self.new_conn();
-        self.connections.insert(id, Connection {
-            torrent: req.id,
-            last_updated: time::Instant::now(),
-            last_retrans: time::Instant::now(),
-            state: State::ResolvingDNS { port },
-            announce: req,
-        });
+        self.connections.insert(
+            id,
+            Connection {
+                torrent: req.id,
+                last_updated: time::Instant::now(),
+                last_retrans: time::Instant::now(),
+                state: State::ResolvingDNS { port },
+                announce: req,
+            },
+        );
         debug!(self.l, "Dispatching DNS req for {:?}, url: {:?}", id, host);
         dns.new_query(id, host);
         Ok(())
@@ -110,7 +122,10 @@ impl Handler {
                     match resp.res {
                         Ok(ip) => {
                             success = true;
-                            conn.state = State::Connecting { addr: SocketAddr::new(ip, port), data };
+                            conn.state = State::Connecting {
+                                addr: SocketAddr::new(ip, port),
+                                data,
+                            };
                             self.transactions.insert(tid, id);
                             None
                         }
@@ -154,7 +169,7 @@ impl Handler {
                                 resps.push(r);
                             }
                         }
-                        _ => { debug!(self.l, "Received invalid response from tracker!") }
+                        _ => debug!(self.l, "Received invalid response from tracker!"),
                     }
                 }
                 Err(e) => {
@@ -176,19 +191,23 @@ impl Handler {
         {
             let ref l = self.l;
 
-            self.connections.retain(|id, conn| {
-                if conn.last_updated.elapsed() > time::Duration::from_millis(TIMEOUT_MS) {
+            self.connections.retain(
+                |id, conn| if conn.last_updated.elapsed() >
+                    time::Duration::from_millis(
+                        TIMEOUT_MS,
+                    )
+                {
                     resps.push((conn.torrent, Err(ErrorKind::Timeout.into())));
                     debug!(l, "Announce {:?} timed out", id);
                     false
-                } else{
+                } else {
                     if conn.last_retrans.elapsed() > time::Duration::from_millis(RETRANS_MS) {
                         debug!(l, "Retransmiting req {:?}", id);
                         retrans.push(*id);
                     }
                     true
-                }
-            });
+                },
+            );
 
             let c = &self.connections;
             self.transactions.retain(|_, id| c.contains_key(id));
@@ -206,7 +225,7 @@ impl Handler {
         let (transaction_id, connection_id) = {
             let mut connect_resp = Cursor::new(&self.buf[4..16]);
             let tid = connect_resp.read_u32::<BigEndian>().unwrap();
-            let cid  = connect_resp.read_u64::<BigEndian>().unwrap();
+            let cid = connect_resp.read_u64::<BigEndian>().unwrap();
             (tid, cid)
         };
 
@@ -237,9 +256,15 @@ impl Handler {
 
                 announce_req.write_all(&conn.announce.hash).unwrap();
                 announce_req.write_all(&PEER_ID[..]).unwrap();
-                announce_req.write_u64::<BigEndian>(conn.announce.downloaded as u64).unwrap();
-                announce_req.write_u64::<BigEndian>(conn.announce.left as u64).unwrap();
-                announce_req.write_u64::<BigEndian>(conn.announce.uploaded as u64).unwrap();
+                announce_req
+                    .write_u64::<BigEndian>(conn.announce.downloaded as u64)
+                    .unwrap();
+                announce_req
+                    .write_u64::<BigEndian>(conn.announce.left as u64)
+                    .unwrap();
+                announce_req
+                    .write_u64::<BigEndian>(conn.announce.uploaded as u64)
+                    .unwrap();
                 match conn.announce.event {
                     Some(Event::Started) => {
                         announce_req.write_u32::<BigEndian>(2).unwrap();
@@ -303,7 +328,14 @@ impl Handler {
         };
 
         if connect_resp.read_to_string(&mut s).is_err() {
-            Some((conn.torrent, Err(ErrorKind::InvalidResponse("Tracker error response was invalid UTF8").into())))
+            Some((
+                conn.torrent,
+                Err(
+                    ErrorKind::InvalidResponse(
+                        "Tracker error response was invalid UTF8",
+                    ).into(),
+                ),
+            ))
         } else {
             Some((conn.torrent, Err(ErrorKind::TrackerError(s).into())))
         }
@@ -331,7 +363,7 @@ impl Handler {
                     conn.last_retrans = time::Instant::now();
                     self.sock.send_to(data, addr).chain_err(|| ErrorKind::IO)
                 }
-                _ => Ok(0)
+                _ => Ok(0),
             }
         };
 

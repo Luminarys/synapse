@@ -131,14 +131,14 @@ impl BEncode {
         buf.into_inner()
     }
 
-    pub fn encode<W: io::Write> (&self, w: &mut W) -> io::Result<()> {
+    pub fn encode<W: io::Write>(&self, w: &mut W) -> io::Result<()> {
         // TODO: Make this either procedural or add recursion limit.
         match *self {
             BEncode::Int(i) => write!(w, "i{}e", i)?,
             BEncode::String(ref s) => {
                 write!(w, "{}:", s.len())?;
                 w.write_all(s)?;
-            },
+            }
             BEncode::List(ref v) => {
                 write!(w, "l")?;
                 for b in v.iter() {
@@ -190,7 +190,7 @@ pub fn decode<R: io::Read>(bytes: &mut R) -> Result<BEncode, BError> {
                     Err(e) => return Err(e),
                 };
                 d.insert(key, decode(bytes)?);
-            };
+            }
             Ok(BEncode::Dict(d))
         }
         Err(BError::EOF) | Ok(b'e') => Err(BError::EOF),
@@ -229,9 +229,9 @@ fn read_until<R: io::Read>(r: &mut R, b: u8) -> Result<Vec<u8>, BError> {
 }
 
 fn decode_int(v: Vec<u8>) -> Result<i64, BError> {
-    String::from_utf8(v).map_err(|_| BError::UTF8Decode).and_then(|i| {
-        i.parse().map_err(|_| BError::ParseInt)
-    })
+    String::from_utf8(v)
+        .map_err(|_| BError::UTF8Decode)
+        .and_then(|i| i.parse().map_err(|_| BError::ParseInt))
 }
 
 #[cfg(test)]
@@ -251,7 +251,7 @@ mod tests {
         s.encode(&mut v).unwrap();
         assert_eq!(v, b"4:asdf");
 
-        let s2r = [1u8,2,3,4];
+        let s2r = [1u8, 2, 3, 4];
         let s2e = [52u8, 58, 1, 2, 3, 4];
         let s2 = BEncode::String(Vec::from(&s2r[..]));
         v = Vec::new();
@@ -292,4 +292,3 @@ mod tests {
         assert_eq!(d, &v[..]);
     }
 }
-

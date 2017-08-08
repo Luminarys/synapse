@@ -1,4 +1,4 @@
-use std::{fmt};
+use std::fmt;
 use std::io::{self, ErrorKind};
 use std::net::{SocketAddrV4, Ipv4Addr, TcpListener};
 use amy::{self, Poller, Registrar};
@@ -48,8 +48,8 @@ impl Listener {
         listener: TcpListener,
         lid: usize,
         ch: handle::Handle<Request, Message>,
-        l: Logger)
-        -> Listener {
+        l: Logger,
+    ) -> Listener {
 
         Listener {
             listener,
@@ -91,7 +91,9 @@ impl Listener {
                 Err(ref e) if e.kind() == ErrorKind::WouldBlock => {
                     break;
                 }
-                _ => { unimplemented!(); }
+                _ => {
+                    unimplemented!();
+                }
             }
         }
     }
@@ -100,20 +102,27 @@ impl Listener {
         let pid = not.id;
         match self.incoming.get_mut(&pid).unwrap().readable() {
             Ok(Some(hs)) => {
-                debug!(self.l, "Completed handshake({:?}) with peer, transferring!", hs);
+                debug!(
+                    self.l,
+                    "Completed handshake({:?}) with peer, transferring!",
+                    hs
+                );
                 let peer = self.incoming.remove(&pid).unwrap();
                 self.reg.deregister(peer.sock()).unwrap();
                 let hsd = hs.get_handshake_data();
-                if self.ch.send(Message {
-                    peer,
-                    hash: hsd.0,
-                    id: hsd.1,
-                    rsv: hsd.2,
-                }).is_err() {
+                if self.ch
+                    .send(Message {
+                        peer,
+                        hash: hsd.0,
+                        id: hsd.1,
+                        rsv: hsd.2,
+                    })
+                    .is_err()
+                {
                     error!(self.l, "failed to send peer to ctrl");
                 }
             }
-            Ok(None) => { }
+            Ok(None) => {}
             Err(_) => {
                 debug!(self.l, "Peer connection failed!");
                 self.incoming.remove(&pid);
@@ -132,6 +141,8 @@ pub fn start(creg: &mut amy::Registrar) -> io::Result<handle::Handle<Message, Re
     let lid = reg.register(&listener, amy::Event::Both)?;
 
     let (ch, dh) = handle::Handle::new(creg, &mut reg)?;
-    dh.run("listener", move |h, l| Listener::new(poll, reg, listener, lid, h, l).run());
+    dh.run("listener", move |h, l| {
+        Listener::new(poll, reg, listener, lid, h, l).run()
+    });
     Ok(ch)
 }

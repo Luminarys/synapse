@@ -36,4 +36,3 @@ error_chain! {
         }
     }
 }
-

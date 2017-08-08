@@ -50,7 +50,11 @@ impl Throttler {
     }
 
     pub fn get_throttle(&self, id: usize) -> Throttle {
-        Throttle { ul_data: self.ul_data.clone(), dl_data: self.dl_data.clone(), id }
+        Throttle {
+            ul_data: self.ul_data.clone(),
+            dl_data: self.dl_data.clone(),
+            id,
+        }
     }
 
     pub fn ul_rate(&mut self) -> usize {
@@ -86,15 +90,11 @@ impl Throttler {
     }
 
     fn ul_data<'f>(&self) -> &'f mut ThrottleData {
-        unsafe {
-            self.ul_data.get().as_mut().unwrap()
-        }
+        unsafe { self.ul_data.get().as_mut().unwrap() }
     }
 
     fn dl_data<'f>(&self) -> &'f mut ThrottleData {
-        unsafe {
-            self.dl_data.get().as_mut().unwrap()
-        }
+        unsafe { self.dl_data.get().as_mut().unwrap() }
     }
 }
 
@@ -116,11 +116,15 @@ pub struct Throttle {
     dl_data: Rc<UnsafeCell<ThrottleData>>,
 }
 
-unsafe impl Send for Throttle { }
+unsafe impl Send for Throttle {}
 
 impl Throttle {
     pub fn new_sibling(&self, id: usize) -> Throttle {
-        Throttle { ul_data: self.ul_data.clone(), dl_data: self.dl_data.clone(), id }
+        Throttle {
+            ul_data: self.ul_data.clone(),
+            dl_data: self.dl_data.clone(),
+            id,
+        }
     }
 
     pub fn get_bytes_dl(&mut self, amnt: usize) -> Result<(), ()> {
@@ -166,15 +170,11 @@ impl Throttle {
     }
 
     fn ul_data(&self) -> &'static mut ThrottleData {
-        unsafe {
-            self.ul_data.get().as_mut().unwrap()
-        }
+        unsafe { self.ul_data.get().as_mut().unwrap() }
     }
 
     fn dl_data(&self) -> &'static mut ThrottleData {
-        unsafe {
-            self.dl_data.get().as_mut().unwrap()
-        }
+        unsafe { self.dl_data.get().as_mut().unwrap() }
     }
 }
 
@@ -188,7 +188,13 @@ impl Drop for Throttle {
 impl ThrottleData {
     /// Creates a new Throttle with the given rate and max token amount.
     fn new(rate: usize, max_tokens: usize) -> ThrottleData {
-        ThrottleData { tokens: 0, rate, max_tokens, throttled: HashSet::new(), last_used: 0 }
+        ThrottleData {
+            tokens: 0,
+            rate,
+            max_tokens,
+            throttled: HashSet::new(),
+            last_used: 0,
+        }
     }
 
     /// Adds some amount of tokens back.
@@ -200,20 +206,20 @@ impl ThrottleData {
     /// This method must be called every URATE milliseconds and returns
     /// (self.last_used) * 1000/URATE - the bits/s, clearing self.last_used
     fn add_tokens(&mut self) -> u64 {
-        let drained = self.last_used as u64; 
+        let drained = self.last_used as u64;
         self.last_used = 0;
         self.tokens += self.rate * URATE;
         if self.tokens >= self.max_tokens {
             self.tokens = self.max_tokens;
         }
-        return drained/URATE as u64 * 1000
+        return drained / URATE as u64 * 1000;
     }
 
     /// Attempt to extract amnt tokens from the throttler.
     fn get_tokens(&mut self, amnt: usize) -> Result<(), ()> {
         if self.rate == 0 {
             self.last_used += amnt as u64;
-            return Ok(())
+            return Ok(());
         }
         if amnt > self.tokens {
             Err(())

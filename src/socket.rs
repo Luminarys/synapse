@@ -18,9 +18,9 @@ pub struct Socket {
 impl Socket {
     pub fn new(addr: &SocketAddr) -> io::Result<Socket> {
         let sock = (match *addr {
-            SocketAddr::V4(..) => TcpBuilder::new_v4(),
-            SocketAddr::V6(..) => TcpBuilder::new_v6(),
-        })?;
+                        SocketAddr::V4(..) => TcpBuilder::new_v4(),
+                        SocketAddr::V6(..) => TcpBuilder::new_v6(),
+                    })?;
         let conn = sock.to_tcp_stream()?;
         conn.set_nonblocking(true)?;
         match conn.connect(addr) {
@@ -29,15 +29,23 @@ impl Socket {
                     return Err(e);
                 }
             }
-            _ => { }
+            _ => {}
         }
-        Ok(Socket { conn, throttle: None, addr: addr.clone() })
+        Ok(Socket {
+            conn,
+            throttle: None,
+            addr: addr.clone(),
+        })
     }
 
     #[cfg(test)]
     pub fn empty() -> Socket {
         let conn = TcpBuilder::new_v4().unwrap().to_tcp_stream().unwrap();
-        Socket { conn, throttle: None, addr: "127.0.0.1:0".parse().unwrap() }
+        Socket {
+            conn,
+            throttle: None,
+            addr: "127.0.0.1:0".parse().unwrap(),
+        }
     }
 
     pub fn addr(&self) -> SocketAddr {
@@ -47,7 +55,11 @@ impl Socket {
     pub fn from_stream(conn: TcpStream) -> io::Result<Socket> {
         conn.set_nonblocking(true)?;
         let addr = conn.peer_addr().unwrap();
-        Ok(Socket { conn, throttle: None, addr: addr })
+        Ok(Socket {
+            conn,
+            throttle: None,
+            addr: addr,
+        })
     }
 }
 
@@ -55,7 +67,7 @@ impl AsRawFd for Socket {
     fn as_raw_fd(&self) -> RawFd {
         self.conn.as_raw_fd()
     }
- }
+}
 
 impl io::Read for Socket {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
@@ -135,7 +147,7 @@ impl TSocket {
                     return Err(e);
                 }
             }
-            _ => { }
+            _ => {}
         }
         Ok(())
     }

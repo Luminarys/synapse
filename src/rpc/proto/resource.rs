@@ -2,8 +2,7 @@ use std::mem;
 
 use chrono::{DateTime, Utc};
 
-use super::criterion::{Criterion, ResourceKind, Filter, match_n, match_f,
-                       match_s, match_b};
+use super::criterion::{Criterion, ResourceKind, Filter, match_n, match_f, match_s, match_b};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -54,10 +53,7 @@ pub enum SResourceUpdate<'a> {
         availability: f32,
     },
     TorrentPicker { id: String, sequential: bool },
-    TorrentPriority {
-        id: String,
-        priority: u8,
-    },
+    TorrentPriority { id: String, priority: u8 },
 
     TrackerStatus {
         id: String,
@@ -65,10 +61,7 @@ pub enum SResourceUpdate<'a> {
         error: Option<String>,
     },
 
-    FilePriority {
-        id: String,
-        priority: u8,
-    },
+    FilePriority { id: String, priority: u8 },
 
     PieceAvailable { id: String, available: bool },
     PieceDownloaded { id: String, downloaded: bool },
@@ -285,8 +278,7 @@ impl Resource {
              SResourceUpdate::TorrentPicker { sequential, .. }) => {
                 t.sequential = sequential;
             }
-            (&mut Resource::Peer(ref mut p),
-             SResourceUpdate::Rate { rate_up, rate_down, .. }) => {
+            (&mut Resource::Peer(ref mut p), SResourceUpdate::Rate { rate_up, rate_down, .. }) => {
                 p.rate_up = rate_up;
                 p.rate_down = rate_down;
             }
@@ -299,7 +291,11 @@ impl Resource {
                 p.downloaded = downloaded;
             }
             (&mut Resource::Tracker(ref mut t),
-             SResourceUpdate::TrackerStatus { ref mut last_report, ref mut error, .. }) => {
+             SResourceUpdate::TrackerStatus {
+                 ref mut last_report,
+                 ref mut error,
+                 ..
+             }) => {
                 mem::swap(&mut t.last_report, last_report);
                 mem::swap(&mut t.error, error);
             }
@@ -396,7 +392,6 @@ impl Filter for File {
 
             "progress" => match_f(self.progress, c),
 
-
             _ => false,
         }
     }
@@ -413,7 +408,6 @@ impl Filter for Peer {
             "rate_down" => match_n(self.rate_down as u64, c),
 
             "availability" => match_f(self.availability, c),
-
 
             // TODO: Come up with a way to match this
             "client_id" => false,

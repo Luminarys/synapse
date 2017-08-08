@@ -11,7 +11,11 @@ pub struct Transfers {
 }
 
 pub enum TransferResult {
-    Torrent { conn: TcpStream, data: Vec<u8>, path: Option<String> },
+    Torrent {
+        conn: TcpStream,
+        data: Vec<u8>,
+        path: Option<String>,
+    },
     Error {
         conn: TcpStream,
         client: usize,
@@ -46,7 +50,7 @@ impl Transfers {
         mut data: Vec<u8>,
         path: Option<String>,
         size: u64,
-        ) {
+    ) {
         let pos = data.len();
         data.reserve(size as usize);
         unsafe { data.set_len(size as usize) };
@@ -61,7 +65,7 @@ impl Transfers {
                 path,
                 last_action: time::Instant::now(),
             },
-            );
+        );
     }
 
     pub fn contains(&self, id: usize) -> bool {
@@ -77,7 +81,10 @@ impl Transfers {
                     format!("HTTP/1.1 204 NO CONTENT"),
                     format!("Access-Control-Allow-Origin: {}", "*"),
                     format!("Access-Control-Allow-Methods: {}", "OPTIONS, POST, GET"),
-                    format!("Access-Control-Allow-Headers: {}", "Access-Control-Allow-Headers, Origin, Accept, X-Requested-With, Content-Type, Access-Control-Request-Method, Access-Control-Request-Headers, Authorization"),
+                    format!(
+                        "Access-Control-Allow-Headers: {}",
+                        "Access-Control-Allow-Headers, Origin, Accept, X-Requested-With, Content-Type, Access-Control-Request-Method, Access-Control-Request-Headers, Authorization"
+                    ),
                     format!("Connection: Closed"),
                 ];
                 let data = lines.join("\r\n") + "\r\n\r\n";
@@ -116,7 +123,14 @@ impl Transfers {
             .collect();
         for id in ids {
             let tx = self.torrents.remove(&id).unwrap();
-            res.push((tx.conn, id, Error { serial: Some(tx.serial), reason: "Timeout".to_owned() }));
+            res.push((
+                tx.conn,
+                id,
+                Error {
+                    serial: Some(tx.serial),
+                    reason: "Timeout".to_owned(),
+                },
+            ));
         }
         res
     }

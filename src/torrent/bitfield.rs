@@ -20,10 +20,7 @@ impl Bitfield {
     }
 
     pub fn from(b: Box<[u8]>, len: u64) -> Bitfield {
-        Bitfield {
-            len: len,
-            data: b,
-        }
+        Bitfield { len: len, data: b }
     }
 
     pub fn len(&self) -> u64 {

@@ -137,7 +137,7 @@ pub fn id_to_hash(s: &str) -> Option<[u8; 20]> {
         if let (Some(a), Some(b)) = (hex_to_bit(c.next().unwrap()), hex_to_bit(c.next().unwrap())) {
             data[i] = a << 4 | b
         } else {
-            return None
+            return None;
         }
     }
     Some(data)

@@ -31,7 +31,11 @@ struct Transaction {
 enum TransactionKind {
     Initialization,
     Query(ID),
-    TSearch { id: ID, torrent: usize, hash: [u8; 20] },
+    TSearch {
+        id: ID,
+        torrent: usize,
+        hash: [u8; 20],
+    },
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -100,7 +104,11 @@ impl RoutingTable {
         ((proto::Request::ping(tx, self.id.clone()), addr))
     }
 
-    pub fn get_peers(&mut self, torrent: usize, hash: [u8; 20]) -> Vec<(proto::Request, SocketAddr)> {
+    pub fn get_peers(
+        &mut self,
+        torrent: usize,
+        hash: [u8; 20],
+    ) -> Vec<(proto::Request, SocketAddr)> {
         let tid = BigUint::from_bytes_be(&hash[..]);
         let idx = self.bucket_idx(&tid);
         let mut nodes: Vec<proto::Node> = Vec::new();
@@ -161,20 +169,32 @@ impl RoutingTable {
                     }
                 }
                 proto::Response::find_node(req.transaction, self.id.clone(), nodes)
-            },
-            proto::RequestKind::AnnouncePeer { id, implied_port, hash, port, token } => {
+            }
+            proto::RequestKind::AnnouncePeer {
+                id,
+                implied_port,
+                hash,
+                port,
+                token,
+            } => {
                 if !self.contains_id(&id) {
-                    return proto::Response::error(req.transaction, proto::ErrorKind::Protocol("Unregistered peer!".to_owned()))
+                    return proto::Response::error(
+                        req.transaction,
+                        proto::ErrorKind::Protocol("Unregistered peer!".to_owned()),
+                    );
                 }
                 {
                     let node = self.get_node_mut(&id);
                     if !node.token_valid(&token) {
-                        return proto::Response::error(req.transaction, proto::ErrorKind::Protocol("Bad token!".to_owned()))
+                        return proto::Response::error(
+                            req.transaction,
+                            proto::ErrorKind::Protocol("Bad token!".to_owned()),
+                        );
                     }
                     node.update();
                 }
                 if !self.torrents.contains_key(&hash) {
-                    self.torrents.insert(hash, Torrent { peers: Vec::new(), });
+                    self.torrents.insert(hash, Torrent { peers: Vec::new() });
                 }
                 if !implied_port {
                     addr.set_port(port);
@@ -182,9 +202,12 @@ impl RoutingTable {
                 self.torrents.get_mut(&hash).unwrap().peers.push(addr);
                 proto::Response::id(req.transaction, self.id.clone())
             }
-            proto::RequestKind::GetPeers { id, hash }  => {
+            proto::RequestKind::GetPeers { id, hash } => {
                 let token = if !self.contains_id(&id) {
-                    return proto::Response::error(req.transaction, proto::ErrorKind::Protocol("Unregistered peer!".to_owned()))
+                    return proto::Response::error(
+                        req.transaction,
+                        proto::ErrorKind::Protocol("Unregistered peer!".to_owned()),
+                    );
                 } else {
                     self.get_node(&id).token.clone()
                 };
@@ -202,12 +225,15 @@ impl RoutingTable {
         }
     }
 
-    pub fn handle_resp(&mut self, resp: proto::Response, addr: SocketAddr)
-        -> Result<tracker::Response, Vec<(proto::Request, SocketAddr)>> {
+    pub fn handle_resp(
+        &mut self,
+        resp: proto::Response,
+        addr: SocketAddr,
+    ) -> Result<tracker::Response, Vec<(proto::Request, SocketAddr)>> {
         self.last_resp_recvd = Utc::now();
         let mut reqs = Vec::new();
         if resp.transaction.len() < 4 {
-            return Err(reqs)
+            return Err(reqs);
         }
         let tid = (&resp.transaction[..]).read_u32::<BigEndian>().unwrap();
         let tx = if let Some(tx) = self.transactions.remove(&tid) {
@@ -222,7 +248,14 @@ impl RoutingTable {
                 n.update();
                 if self.add_node(n).is_ok() && self.bootstrapping {
                     let tx = self.new_query_tx(id);
-                    reqs.push((proto::Request::find_node(tx, self.id.clone(), self.id.clone()), addr));
+                    reqs.push((
+                        proto::Request::find_node(
+                            tx,
+                            self.id.clone(),
+                            self.id.clone(),
+                        ),
+                        addr,
+                    ));
                 }
             }
 
@@ -233,11 +266,22 @@ impl RoutingTable {
                 self.get_node_mut(id1).update();
                 if self.bootstrapping {
                     let tx = self.new_query_tx(id1.clone());
-                    reqs.push((proto::Request::find_node(tx, self.id.clone(), self.id.clone()), addr));
+                    reqs.push((
+                        proto::Request::find_node(
+                            tx,
+                            self.id.clone(),
+                            self.id.clone(),
+                        ),
+                        addr,
+                    ));
                 }
             }
 
-            (TransactionKind::Query(ref id1), proto::ResponseKind::FindNode { id: ref id2, ref mut nodes }) if id1 == id2 => {
+            (TransactionKind::Query(ref id1),
+             proto::ResponseKind::FindNode {
+                 id: ref id2,
+                 ref mut nodes,
+             }) if id1 == id2 => {
                 if !self.contains_id(id1) {
                     return Err(reqs);
                 }
@@ -255,7 +299,12 @@ impl RoutingTable {
             }
 
             // Token refresh query
-            (TransactionKind::Query(ref id1), proto::ResponseKind::GetPeers { id: ref id2, ref mut token, .. }) if id1 == id2 => {
+            (TransactionKind::Query(ref id1),
+             proto::ResponseKind::GetPeers {
+                 id: ref id2,
+                 ref mut token,
+                 ..
+             }) if id1 == id2 => {
                 if !self.contains_id(id1) {
                     return Err(reqs);
                 }
@@ -268,8 +317,16 @@ impl RoutingTable {
                 }
             }
 
-            (TransactionKind::TSearch { id: ref id1, torrent, hash },
-             proto::ResponseKind::GetPeers { id: ref id2, resp: ref mut pr, ref mut token }) if id1 == id2 => {
+            (TransactionKind::TSearch {
+                 id: ref id1,
+                 torrent,
+                 hash,
+             },
+             proto::ResponseKind::GetPeers {
+                 id: ref id2,
+                 resp: ref mut pr,
+                 ref mut token,
+             }) if id1 == id2 => {
                 if !self.contains_id(id1) {
                     return Err(reqs);
                 }
@@ -309,10 +366,10 @@ impl RoutingTable {
             }
 
             // Mismatched IDs
-            (TransactionKind::Query(id), proto::ResponseKind::ID(_))
-            | (TransactionKind::Query(id), proto::ResponseKind::FindNode{ .. })
-            | (TransactionKind::Query(id), proto::ResponseKind::GetPeers { .. })
-            | (TransactionKind::TSearch { id, ..  }, proto::ResponseKind::GetPeers { .. }) => {
+            (TransactionKind::Query(id), proto::ResponseKind::ID(_)) |
+            (TransactionKind::Query(id), proto::ResponseKind::FindNode { .. }) |
+            (TransactionKind::Query(id), proto::ResponseKind::GetPeers { .. }) |
+            (TransactionKind::TSearch { id, .. }, proto::ResponseKind::GetPeers { .. }) => {
                 self.remove_node(&id);
             }
 
@@ -340,16 +397,18 @@ impl RoutingTable {
             self.bootstrapping = false;
         }
 
-        self.transactions.retain(|_, tx| tx.created.signed_duration_since(Utc::now()).num_seconds() < TX_TIMEOUT_SECS);
+        self.transactions.retain(|_, tx| {
+            tx.created.signed_duration_since(Utc::now()).num_seconds() < TX_TIMEOUT_SECS
+        });
 
         let dur = self.last_token_refresh.signed_duration_since(Utc::now());
         let tok_refresh = dur.num_minutes() > 5;
 
         for bucket in self.buckets.iter_mut() {
             for node in bucket.nodes.iter_mut() {
-                    if tok_refresh {
-                        node.new_token();
-                    }
+                if tok_refresh {
+                    node.new_token();
+                }
                 let dur = node.last_updated.signed_duration_since(Utc::now());
                 if dur.num_minutes() > 15 {
                     if node.good() {
@@ -419,10 +478,13 @@ impl RoutingTable {
         let mut tb = Vec::new();
         let tid = rand::random::<u32>();
         tb.write_u32::<BigEndian>(tid).unwrap();
-        self.transactions.insert(tid, Transaction {
-            created: Utc::now(),
-            kind: TransactionKind::Initialization,
-        });
+        self.transactions.insert(
+            tid,
+            Transaction {
+                created: Utc::now(),
+                kind: TransactionKind::Initialization,
+            },
+        );
         tb
     }
 
@@ -430,10 +492,13 @@ impl RoutingTable {
         let mut tb = Vec::new();
         let tid = rand::random::<u32>();
         tb.write_u32::<BigEndian>(tid).unwrap();
-        self.transactions.insert(tid, Transaction {
-            created: Utc::now(),
-            kind: TransactionKind::Query(id),
-        });
+        self.transactions.insert(
+            tid,
+            Transaction {
+                created: Utc::now(),
+                kind: TransactionKind::Query(id),
+            },
+        );
         tb
     }
 
@@ -441,10 +506,13 @@ impl RoutingTable {
         let mut tb = Vec::new();
         let tid = rand::random::<u32>();
         tb.write_u32::<BigEndian>(tid).unwrap();
-        self.transactions.insert(tid, Transaction {
-            created: Utc::now(),
-            kind: TransactionKind::TSearch { id, torrent, hash },
-        });
+        self.transactions.insert(
+            tid,
+            Transaction {
+                created: Utc::now(),
+                kind: TransactionKind::TSearch { id, torrent, hash },
+            },
+        );
         tb
     }
 
@@ -491,13 +559,13 @@ impl RoutingTable {
     }
 
     fn bucket_idx(&self, id: &ID) -> usize {
-        self.buckets.binary_search_by(|bucket| {
-            if bucket.could_hold(id) {
+        self.buckets
+            .binary_search_by(|bucket| if bucket.could_hold(id) {
                 cmp::Ordering::Equal
             } else {
                 bucket.start.cmp(id)
-            }
-        }).unwrap()
+            })
+            .unwrap()
     }
 }
 
@@ -529,12 +597,11 @@ impl Bucket {
     }
 
     fn full(&self) -> bool {
-        self.nodes.len() == BUCKET_MAX &&
-            self.nodes.iter().all(|n| n.good())
+        self.nodes.len() == BUCKET_MAX && self.nodes.iter().all(|n| n.good())
     }
 
     fn midpoint(&self) -> ID {
-        self.start.clone() + ((&self.end - &self.start))/BigUint::from(2u8)
+        self.start.clone() + ((&self.end - &self.start)) / BigUint::from(2u8)
     }
 
     fn contains(&self, id: &ID) -> bool {
@@ -615,7 +682,7 @@ impl<'a> Into<proto::Node> for &'a Node {
 /// creates an ID of value 2^(pow)
 fn id_from_pow(pow: usize) -> ID {
     let mut id = [0u8; 21];
-    let idx = 20 - pow/8;
+    let idx = 20 - pow / 8;
     let offset = pow % 8;
     let block = id[idx];
     id[idx] = block | (1 << offset);

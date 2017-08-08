@@ -79,7 +79,7 @@ impl Processor {
         &mut self,
         client: usize,
         msg: CMessage,
-        ) -> (Vec<SMessage>, Option<Message>) {
+    ) -> (Vec<SMessage>, Option<Message>) {
         let mut resp = Vec::new();
         let mut rmsg = None;
         match msg {
@@ -133,11 +133,11 @@ impl Processor {
                         }
                     }
                     Some(&Resource::Server(_)) => {
-                            rmsg = Some(Message::UpdateServer {
-                                id: resource.id,
-                                throttle_up: resource.throttle_up,
-                                throttle_down: resource.throttle_down,
-                            });
+                        rmsg = Some(Message::UpdateServer {
+                            id: resource.id,
+                            throttle_up: resource.throttle_up,
+                            throttle_down: resource.throttle_down,
+                        });
                     }
                     Some(_) => {
                         resp.push(SMessage::PermissionDenied(Error {
@@ -184,8 +184,16 @@ impl Processor {
                     }
                 }
             }
-            CMessage::FilterSubscribe { serial, kind, criteria } => {
-                let f = Filter { criteria, kind, client };
+            CMessage::FilterSubscribe {
+                serial,
+                kind,
+                criteria,
+            } => {
+                let f = Filter {
+                    criteria,
+                    kind,
+                    client,
+                };
                 let mut ids = Vec::new();
                 for (_, r) in self.resources.iter() {
                     if r.kind() == kind && f.matches(r) {
@@ -201,19 +209,18 @@ impl Processor {
 
             CMessage::UploadTorrent { serial, size, path } => {
                 resp.push(self.new_transfer(
-                        client,
-                        serial,
-                        TransferKind::UploadTorrent { size, path },
-                        ));
+                    client,
+                    serial,
+                    TransferKind::UploadTorrent { size, path },
+                ));
             }
-            CMessage::UploadMagnet { serial, uri, path } => {
-            }
+            CMessage::UploadMagnet { serial, uri, path } => {}
             CMessage::UploadFiles { serial, size, path } => {
                 resp.push(self.new_transfer(
-                        client,
-                        serial,
-                        TransferKind::UploadFiles { size, path },
-                        ));
+                    client,
+                    serial,
+                    TransferKind::UploadFiles { size, path },
+                ));
             }
             CMessage::DownloadFile { serial, id } => {
                 let path = match self.resources.get(&id) {
@@ -227,10 +234,10 @@ impl Processor {
                     }
                 };
                 resp.push(self.new_transfer(
-                        client,
-                        serial,
-                        TransferKind::DownloadFile { path },
-                        ));
+                    client,
+                    serial,
+                    TransferKind::DownloadFile { path },
+                ));
             }
         }
         (resp, rmsg)
@@ -269,7 +276,10 @@ impl Processor {
                         }
                         clients.get_mut(c).unwrap().push(update.clone());
                     }
-                    self.resources.get_mut(update.id()).expect("Bad resource updated by a CtlMessage").update(update);
+                    self.resources
+                        .get_mut(update.id())
+                        .expect("Bad resource updated by a CtlMessage")
+                        .update(update);
                 }
                 for (c, resources) in clients {
                     msgs.push((c, SMessage::UpdateResources { resources }));
@@ -278,7 +288,13 @@ impl Processor {
             CtlMessage::Removed(r) => {
                 for (c, filters) in self.get_matching_filters(r.iter().map(|s| s.as_str())) {
                     for (serial, ids) in filters {
-                        msgs.push((c, SMessage::ResourcesRemoved { serial, ids: ids.into_iter().map(|s| s.to_owned()).collect() }));
+                        msgs.push((
+                            c,
+                            SMessage::ResourcesRemoved {
+                                serial,
+                                ids: ids.into_iter().map(|s| s.to_owned()).collect(),
+                            },
+                        ));
                     }
                 }
 
@@ -299,12 +315,15 @@ impl Processor {
     }
 
     /// Produces a map of the form Map<ClientId, Map<FilterSerial, Vec<ID>>>.
-    fn get_matching_filters<'a, I: Iterator<Item=&'a str>>(&'a self, ids: I) -> HashMap<usize, HashMap<u64, Vec<&'a str>>> {
+    fn get_matching_filters<'a, I: Iterator<Item = &'a str>>(
+        &'a self,
+        ids: I,
+    ) -> HashMap<usize, HashMap<u64, Vec<&'a str>>> {
         let mut matched = HashMap::new();
         for id in ids {
             let res = self.resources.get(id).expect(
                 "Bad resource requested from a CtlMessage",
-                );
+            );
             for (s, f) in self.filter_subs.iter() {
                 let c = f.client;
                 if f.kind == res.kind() && f.matches(&res) {
@@ -327,8 +346,13 @@ impl Processor {
         let tok = random_string(15);
         self.tokens.insert(
             tok.clone(),
-            BearerToken { expiration, kind, serial, client },
-            );
+            BearerToken {
+                expiration,
+                kind,
+                serial,
+                client,
+            },
+        );
         SMessage::TransferOffer {
             serial,
             expires: expiration,
@@ -341,8 +365,7 @@ impl Processor {
 
 impl Filter {
     pub fn matches(&self, r: &Resource) -> bool {
-        if self.criteria.is_empty() {
-        }
+        if self.criteria.is_empty() {}
         self.criteria.iter().all(|c| r.matches(c))
     }
 }

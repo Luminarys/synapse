@@ -47,7 +47,7 @@ impl Message {
         let d = s.into_bytes();
         Message {
             header: 0x80 | Opcode::Text.code(),
-            len: d.len()as u64,
+            len: d.len() as u64,
             mask: None,
             data: d,
         }
@@ -76,7 +76,9 @@ impl Message {
         let len = self.len as usize;
         if len > cl {
             self.data.reserve_exact(len - cl);
-            unsafe { self.data.set_len(len); }
+            unsafe {
+                self.data.set_len(len);
+            }
         } else {
             self.data.truncate(len);
         }
@@ -114,7 +116,9 @@ impl Message {
 
         if hb2 == 126 {
             let mut buf = [0u8; 2];
-            (&mut buf[..]).write_u16::<BigEndian>(self.len as u16).unwrap();
+            (&mut buf[..])
+                .write_u16::<BigEndian>(self.len as u16)
+                .unwrap();
             prefix.extend(buf.iter());
         } else if hb2 == 127 {
             let mut buf = [0u8; 8];
@@ -131,7 +135,7 @@ impl Into<Message> for Frame {
     fn into(self) -> Message {
         match self {
             Frame::Text(t) => Message::text(t),
-            Frame::Binary(b) => Message::binary(b)
+            Frame::Binary(b) => Message::binary(b),
         }
     }
 }
@@ -139,21 +143,19 @@ impl Into<Message> for Frame {
 impl Opcode {
     pub fn is_control(&self) -> bool {
         match *self {
-            Opcode::Continuation
-            | Opcode::Text
-            | Opcode::Binary
-            | Opcode::Other(_) => false,
+            Opcode::Continuation | Opcode::Text | Opcode::Binary | Opcode::Other(_) => false,
 
-            Opcode::Close
-            | Opcode::Ping
-            | Opcode::Pong
-            | Opcode::OtherControl(_) => true,
+            Opcode::Close |
+            Opcode::Ping |
+            Opcode::Pong |
+            Opcode::OtherControl(_) => true,
         }
     }
 
     pub fn is_other(&self) -> bool {
         match *self {
-            Opcode::OtherControl(_) | Opcode::Other(_) => true,
+            Opcode::OtherControl(_) |
+            Opcode::Other(_) => true,
             _ => false,
         }
     }
@@ -163,7 +165,8 @@ impl Opcode {
             Opcode::Continuation => 0,
             Opcode::Text => 1,
             Opcode::Binary => 2,
-            Opcode::Other(o) | Opcode::OtherControl(o) => o,
+            Opcode::Other(o) |
+            Opcode::OtherControl(o) => o,
             Opcode::Close => 8,
             Opcode::Ping => 9,
             Opcode::Pong => 10,

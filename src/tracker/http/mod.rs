@@ -10,7 +10,7 @@ use self::reader::Reader;
 use std::io;
 use std::collections::HashMap;
 use std::net::SocketAddr;
-use url::percent_encoding::{percent_encode_byte};
+use url::percent_encoding::percent_encode_byte;
 use url::Url;
 use slog::Logger;
 use socket::TSocket;
@@ -20,7 +20,7 @@ const TIMEOUT_MS: u64 = 2500;
 pub struct Handler {
     reg: amy::Registrar,
     connections: HashMap<usize, Tracker>,
-    l: Logger
+    l: Logger,
 }
 
 enum Event {
@@ -37,14 +37,18 @@ struct Tracker {
 
 enum TrackerState {
     Error,
-    ResolvingDNS { sock: TSocket, req: Vec<u8>, port: u16 },
+    ResolvingDNS {
+        sock: TSocket,
+        req: Vec<u8>,
+        port: u16,
+    },
     Writing { sock: TSocket, writer: Writer },
     Reading { sock: TSocket, reader: Reader },
     Complete(TrackerResponse),
 }
 
 impl TrackerState {
-    fn new(sock: TSocket, req: Vec<u8>, port: u16 ) -> TrackerState {
+    fn new(sock: TSocket, req: Vec<u8>, port: u16) -> TrackerState {
         TrackerState::ResolvingDNS { sock, req, port }
     }
 
@@ -64,23 +68,34 @@ impl TrackerState {
             (TrackerState::ResolvingDNS { sock, req, port }, Event::DNSResolved(r)) => {
                 let addr = SocketAddr::new(r.res?, port);
                 sock.connect(addr).chain_err(|| ErrorKind::IO)?;
-                Ok(TrackerState::Writing { sock, writer: Writer::new(req) }.next(Event::Writable)?)
+                Ok(TrackerState::Writing {
+                    sock,
+                    writer: Writer::new(req),
+                }.next(Event::Writable)?)
             }
-            (TrackerState::Writing { mut sock, mut writer }, Event::Writable) => {
+            (TrackerState::Writing {
+                 mut sock,
+                 mut writer,
+             },
+             Event::Writable) => {
                 match writer.writable(&mut sock.conn)? {
                     Some(()) => {
                         let r = Reader::new();
                         Ok(TrackerState::Reading { sock, reader: r }.next(Event::Readable)?)
                     }
-                    None => {
-                        Ok(TrackerState::Writing { sock, writer })
-                    }
+                    None => Ok(TrackerState::Writing { sock, writer }),
                 }
             }
-            (TrackerState::Reading { mut sock, mut reader }, Event::Readable) => {
+            (TrackerState::Reading {
+                 mut sock,
+                 mut reader,
+             },
+             Event::Readable) => {
                 if reader.readable(&mut sock.conn)? {
                     let data = reader.consume();
-                    let content = bencode::decode_buf(&data).chain_err(|| ErrorKind::InvalidResponse("Invalid BEncoded response!"))?;
+                    let content = bencode::decode_buf(&data).chain_err(|| {
+                        ErrorKind::InvalidResponse("Invalid BEncoded response!")
+                    })?;
                     let resp = TrackerResponse::from_bencode(content)?;
                     Ok(TrackerState::Complete(resp))
                 } else {
@@ -90,14 +105,18 @@ impl TrackerState {
             (s @ TrackerState::Writing { .. }, _) => Ok(s),
             (s @ TrackerState::Reading { .. }, _) => Ok(s),
             (s @ TrackerState::ResolvingDNS { .. }, _) => Ok(s),
-            _ => bail!("Unknown state transition encountered!")
+            _ => bail!("Unknown state transition encountered!"),
         }
     }
 }
 
 impl Handler {
     pub fn new(reg: &amy::Registrar, l: Logger) -> io::Result<Handler> {
-        Ok(Handler { reg: reg.try_clone()?, connections: HashMap::new(), l })
+        Ok(Handler {
+            reg: reg.try_clone()?,
+            connections: HashMap::new(),
+            l,
+        })
     }
 
     pub fn complete(&self) -> bool {
@@ -147,11 +166,15 @@ impl Handler {
             trk.last_updated = Instant::now();
             match trk.state.handle(Event::Readable) {
                 Ok(Some(r)) => {
-                    debug!(self.l, "Announce response received for {:?} succesfully", id);
+                    debug!(
+                        self.l,
+                        "Announce response received for {:?} succesfully",
+                        id
+                    );
                     Some(((trk.torrent, Ok(r))))
                 }
                 Ok(None) => None,
-                Err(e) => Some((trk.torrent, Err(e)))
+                Err(e) => Some((trk.torrent, Err(e))),
             }
         } else {
             None
@@ -165,20 +188,27 @@ impl Handler {
     pub fn tick(&mut self) -> Vec<Response> {
         let mut resps = Vec::new();
         let ref l = self.l;
-        self.connections.retain(|id, trk| {
-            if trk.last_updated.elapsed() > Duration::from_millis(TIMEOUT_MS) {
+        self.connections.retain(
+            |id, trk| if trk.last_updated.elapsed() >
+                Duration::from_millis(TIMEOUT_MS)
+            {
                 resps.push((trk.torrent, Err(ErrorKind::Timeout.into())));
                 debug!(l, "Announce {:?} timed out", id);
                 false
             } else {
                 true
-            }
-        });
+            },
+        );
         resps
     }
 
 
-    pub fn new_announce(&mut self, req: Announce, url: &Url, dns: &mut dns::Resolver) -> Result<()> {
+    pub fn new_announce(
+        &mut self,
+        req: Announce,
+        url: &Url,
+        dns: &mut dns::Resolver,
+    ) -> Result<()> {
         debug!(self.l, "Received a new announce req for {:?}", url);
         let mut http_req = Vec::with_capacity(50);
         // Encode GET req
@@ -216,7 +246,9 @@ impl Handler {
         // Encode host header
         http_req.extend_from_slice(b"Host: ");
         let host = url.host_str().ok_or::<Error>(
-            ErrorKind::InvalidRequest(format!("Tracker announce url has no host!")).into()
+            ErrorKind::InvalidRequest(
+                format!("Tracker announce url has no host!"),
+            ).into(),
         )?;
         let port = url.port().unwrap_or(80);
         http_req.extend_from_slice(host.as_bytes());
@@ -226,11 +258,14 @@ impl Handler {
 
         // Setup actual connection and start DNS query
         let (id, sock) = TSocket::new_v4(&self.reg).chain_err(|| ErrorKind::IO)?;
-        self.connections.insert(id, Tracker {
-            last_updated: Instant::now(),
-            torrent: req.id,
-            state: TrackerState::new(sock, http_req, port),
-        });
+        self.connections.insert(
+            id,
+            Tracker {
+                last_updated: Instant::now(),
+                torrent: req.id,
+                state: TrackerState::new(sock, http_req, port),
+            },
+        );
 
         debug!(self.l, "Dispatching DNS req, id {:?}", id);
         dns.new_query(id, host);

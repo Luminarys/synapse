@@ -13,7 +13,10 @@ pub(super) struct Reader {
 impl Reader {
     pub fn new() -> Reader {
         Reader {
-            state: ReadState::ReadingHandshake { data: [0u8; 68] , idx: 0 },
+            state: ReadState::ReadingHandshake {
+                data: [0u8; 68],
+                idx: 0,
+            },
             blocks_read: 0,
         }
     }
@@ -25,10 +28,15 @@ impl Reader {
         match state.next_state(conn) {
             ReadRes::Message(msg) => {
                 self.state = ReadState::Idle;
-                if msg.is_piece() { self.blocks_read += 1 }
+                if msg.is_piece() {
+                    self.blocks_read += 1
+                }
                 Ok(Some(msg))
             }
-            ReadRes::Incomplete(state) => { self.state = state; Ok(None) },
+            ReadRes::Incomplete(state) => {
+                self.state = state;
+                Ok(None)
+            }
             ReadRes::EOF => io_err("EOF"),
             ReadRes::Err(e) => Err(e),
         }
@@ -41,7 +49,12 @@ enum ReadState {
     ReadingLen { data: [u8; 17], idx: u8 },
     ReadingId { data: [u8; 17], len: u32 },
     ReadingMsg { data: [u8; 17], idx: u8, len: u32 },
-    ReadingPiece { prefix: [u8; 17], data: Box<[u8; 16384]>, len: u32, idx: usize },
+    ReadingPiece {
+        prefix: [u8; 17],
+        data: Box<[u8; 16384]>,
+        len: u32,
+        idx: usize,
+    },
     ReadingBitfield { data: Vec<u8>, idx: usize },
 }
 
@@ -71,7 +84,9 @@ impl ReadState {
                         idx += amnt as u8;
                         if idx == data.len() as u8 {
                             if &data[1..20] != b"BitTorrent protocol" {
-                                return ReadRes::Err(io_err_val("Invalid protocol used in handshake"));
+                                return ReadRes::Err(
+                                    io_err_val("Invalid protocol used in handshake"),
+                                );
                             }
                             let mut rsv = [0; 8];
                             rsv.clone_from_slice(&data[20..28]);
@@ -79,13 +94,23 @@ impl ReadState {
                             hash.clone_from_slice(&data[28..48]);
                             let mut pid = [0; 20];
                             pid.clone_from_slice(&data[48..68]);
-                            ReadRes::Message(Message::Handshake{ rsv: rsv, hash: hash, id: pid })
+                            ReadRes::Message(Message::Handshake {
+                                rsv: rsv,
+                                hash: hash,
+                                id: pid,
+                            })
                         } else {
-                            ReadState::ReadingHandshake { data: data, idx: idx }.next_state(conn)
+                            ReadState::ReadingHandshake {
+                                data: data,
+                                idx: idx,
+                            }.next_state(conn)
                         }
                     }
                     Err(ref e) if e.kind() == ErrorKind::WouldBlock => {
-                        ReadRes::Incomplete(ReadState::ReadingHandshake { data: data, idx: idx })
+                        ReadRes::Incomplete(ReadState::ReadingHandshake {
+                            data: data,
+                            idx: idx,
+                        })
                     }
                     Err(e) => ReadRes::Err(e),
                 }
@@ -96,7 +121,10 @@ impl ReadState {
                     Ok(0) => ReadRes::EOF,
                     Ok(4) => ReadState::process_len(data, conn),
                     Ok(idx) => {
-                        ReadState::ReadingLen { data, idx: idx as u8 }.next_state(conn)
+                        ReadState::ReadingLen {
+                            data,
+                            idx: idx as u8,
+                        }.next_state(conn)
                     }
                     Err(ref e) if e.kind() == ErrorKind::WouldBlock => {
                         ReadRes::Incomplete(ReadState::Idle)
@@ -111,7 +139,7 @@ impl ReadState {
                     Ok(amnt) => {
                         idx += amnt as u8;
                         ReadState::ReadingLen { data, idx }.next_state(conn)
-                    },
+                    }
                     Err(ref e) if e.kind() == ErrorKind::WouldBlock => {
                         ReadRes::Incomplete(ReadState::ReadingLen { data, idx })
                     }
@@ -126,10 +154,14 @@ impl ReadState {
                     Err(ref e) if e.kind() == ErrorKind::WouldBlock => {
                         ReadRes::Incomplete(ReadState::Idle)
                     }
-                    Err(e) => ReadRes::Err(e)
+                    Err(e) => ReadRes::Err(e),
                 }
             }
-            ReadState::ReadingMsg { mut data, mut idx, len } => {
+            ReadState::ReadingMsg {
+                mut data,
+                mut idx,
+                len,
+            } => {
                 match conn.read(&mut data[(idx as usize)..(len + 4) as usize]) {
                     Ok(0) => ReadRes::EOF,
                     Ok(amnt) if (amnt as u8 + idx - 4) as u32 == len => {
@@ -142,22 +174,44 @@ impl ReadState {
                     Err(ref e) if e.kind() == ErrorKind::WouldBlock => {
                         ReadRes::Incomplete(ReadState::ReadingMsg { data, idx, len })
                     }
-                    Err(e) => ReadRes::Err(e)
+                    Err(e) => ReadRes::Err(e),
                 }
             }
-            ReadState::ReadingPiece { mut prefix, mut data, len, mut idx } => {
+            ReadState::ReadingPiece {
+                mut prefix,
+                mut data,
+                len,
+                mut idx,
+            } => {
                 if idx < 13 {
                     match conn.read(&mut prefix[idx as usize..13]) {
                         Ok(0) => ReadRes::EOF,
-                        Ok(13) => ReadState::ReadingPiece { prefix, data, len, idx }.next_state(conn),
+                        Ok(13) => {
+                            ReadState::ReadingPiece {
+                                prefix,
+                                data,
+                                len,
+                                idx,
+                            }.next_state(conn)
+                        }
                         Ok(amnt) => {
                             idx += amnt;
-                            ReadState::ReadingPiece { prefix, data, len, idx }.next_state(conn)
+                            ReadState::ReadingPiece {
+                                prefix,
+                                data,
+                                len,
+                                idx,
+                            }.next_state(conn)
                         }
                         Err(ref e) if e.kind() == ErrorKind::WouldBlock => {
-                            ReadRes::Incomplete(ReadState::ReadingPiece { prefix, data, len, idx })
+                            ReadRes::Incomplete(ReadState::ReadingPiece {
+                                prefix,
+                                data,
+                                len,
+                                idx,
+                            })
                         }
-                        Err(e) => ReadRes::Err(e)
+                        Err(e) => ReadRes::Err(e),
                     }
                 } else {
                     match conn.read(&mut data[(idx - 13)..]) {
@@ -165,16 +219,31 @@ impl ReadState {
                         Ok(amnt) if idx + amnt - 13 == len as usize => {
                             let idx = (&prefix[5..9]).read_u32::<BigEndian>().unwrap();
                             let beg = (&prefix[9..13]).read_u32::<BigEndian>().unwrap();
-                            ReadRes::Message(Message::Piece{ index: idx, begin: beg, length: len, data })
+                            ReadRes::Message(Message::Piece {
+                                index: idx,
+                                begin: beg,
+                                length: len,
+                                data,
+                            })
                         }
                         Ok(amnt) => {
                             idx += amnt;
-                            ReadState::ReadingPiece { prefix, data, len, idx }.next_state(conn)
+                            ReadState::ReadingPiece {
+                                prefix,
+                                data,
+                                len,
+                                idx,
+                            }.next_state(conn)
                         }
                         Err(ref e) if e.kind() == ErrorKind::WouldBlock => {
-                            ReadRes::Incomplete(ReadState::ReadingPiece { prefix, data, len, idx })
+                            ReadRes::Incomplete(ReadState::ReadingPiece {
+                                prefix,
+                                data,
+                                len,
+                                idx,
+                            })
                         }
-                        Err(e) => ReadRes::Err(e)
+                        Err(e) => ReadRes::Err(e),
                     }
                 }
             }
@@ -183,7 +252,9 @@ impl ReadState {
                 match conn.read(&mut data[idx as usize..]) {
                     Ok(0) => ReadRes::EOF,
                     Ok(amnt) if idx + amnt == len => {
-                        ReadRes::Message(Message::Bitfield(Bitfield::from(data.into_boxed_slice(), len as u64 * 8)))
+                        ReadRes::Message(Message::Bitfield(
+                            Bitfield::from(data.into_boxed_slice(), len as u64 * 8),
+                        ))
                     }
                     Ok(amnt) => {
                         idx += amnt;
@@ -192,7 +263,7 @@ impl ReadState {
                     Err(ref e) if e.kind() == ErrorKind::WouldBlock => {
                         ReadRes::Incomplete(ReadState::ReadingBitfield { data, idx })
                     }
-                    Err(e) => ReadRes::Err(e)
+                    Err(e) => ReadRes::Err(e),
                 }
             }
         }
@@ -203,7 +274,10 @@ impl ReadState {
         if len == 0 {
             ReadRes::Message(Message::KeepAlive)
         } else {
-            ReadState::ReadingId { data: buf, len: len }.next_state(conn)
+            ReadState::ReadingId {
+                data: buf,
+                len: len,
+            }.next_state(conn)
         }
     }
 
@@ -215,35 +289,55 @@ impl ReadState {
             2 => ReadRes::Message(Message::Interested),
             3 => ReadRes::Message(Message::Uninterested),
             5 => {
-                ReadState::ReadingBitfield { data: vec![0; len as usize - 1], idx: 0 }.next_state(conn)
-            },
+                ReadState::ReadingBitfield {
+                    data: vec![0; len as usize - 1],
+                    idx: 0,
+                }.next_state(conn)
+            }
             7 => {
                 if len > 16393 {
-                    return ReadRes::Err(io_err_val("Only piece sizes of 16384 or less are accepted"));
+                    return ReadRes::Err(
+                        io_err_val("Only piece sizes of 16384 or less are accepted"),
+                    );
                 }
-                ReadState::ReadingPiece { prefix: buf, data: Box::new([0u8; 16384]), len: len - 9, idx: 5}.next_state(conn)
+                ReadState::ReadingPiece {
+                    prefix: buf,
+                    data: Box::new([0u8; 16384]),
+                    len: len - 9,
+                    idx: 5,
+                }.next_state(conn)
             }
             4 => {
                 if len != 5 {
                     return ReadRes::Err(io_err_val("Invalid Have message length"));
                 }
-                ReadState::ReadingMsg { data: buf, idx: 5, len: len }.next_state(conn)
-            },
+                ReadState::ReadingMsg {
+                    data: buf,
+                    idx: 5,
+                    len: len,
+                }.next_state(conn)
+            }
             0x09 => {
                 if len != 3 {
                     return ReadRes::Err(io_err_val("Invalid Port message length"));
                 }
-                ReadState::ReadingMsg { data: buf, idx: 5, len: len }.next_state(conn)
-            },
+                ReadState::ReadingMsg {
+                    data: buf,
+                    idx: 5,
+                    len: len,
+                }.next_state(conn)
+            }
             6 | 8 => {
                 if len != 13 {
                     return ReadRes::Err(io_err_val("Invalid Request/Cancel message length"));
                 }
-                ReadState::ReadingMsg { data: buf, idx: 5, len: len }.next_state(conn)
-            },
-            _ => {
-                ReadRes::Err(io_err_val("Invalid ID provided!"))
+                ReadState::ReadingMsg {
+                    data: buf,
+                    idx: 5,
+                    len: len,
+                }.next_state(conn)
             }
+            _ => ReadRes::Err(io_err_val("Invalid ID provided!")),
         }
     }
 
@@ -262,7 +356,11 @@ impl ReadState {
                 let idx = (&buf[5..9]).read_u32::<BigEndian>().unwrap();
                 let beg = (&buf[9..13]).read_u32::<BigEndian>().unwrap();
                 let len = (&buf[13..17]).read_u32::<BigEndian>().unwrap();
-                ReadRes::Message(Message::Request { index: idx, begin: beg, length: len })
+                ReadRes::Message(Message::Request {
+                    index: idx,
+                    begin: beg,
+                    length: len,
+                })
             }
             8 => {
                 if len != 13 {
@@ -271,7 +369,11 @@ impl ReadState {
                 let idx = (&buf[5..9]).read_u32::<BigEndian>().unwrap();
                 let beg = (&buf[9..13]).read_u32::<BigEndian>().unwrap();
                 let len = (&buf[13..17]).read_u32::<BigEndian>().unwrap();
-                ReadRes::Message(Message::Cancel { index: idx, begin: beg, length: len })
+                ReadRes::Message(Message::Cancel {
+                    index: idx,
+                    begin: beg,
+                    length: len,
+                })
             }
             9 => {
                 if len != 3 {
@@ -279,9 +381,7 @@ impl ReadState {
                 }
                 ReadRes::Message(Message::Port((&buf[5..7]).read_u16::<BigEndian>().unwrap()))
             }
-            _ => {
-                ReadRes::Err(io_err_val("Invalid message ID"))
-            }
+            _ => ReadRes::Err(io_err_val("Invalid message ID")),
         }
     }
 }
@@ -402,7 +502,11 @@ mod tests {
         let mut data = Cursor::new(vec![0u8, 0, 0, 13, 6, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1]);
         // Test one shot
         match r.readable(&mut data).unwrap().unwrap() {
-            Message::Request { index, begin, length } => {
+            Message::Request {
+                index,
+                begin,
+                length,
+            } => {
                 assert_eq!(index, 1);
                 assert_eq!(begin, 1);
                 assert_eq!(length, 1);
@@ -422,7 +526,12 @@ mod tests {
         // Test partial read
         assert!(r.readable(&mut info).unwrap().is_none());
         match r.readable(&mut data).unwrap().unwrap() {
-            Message::Piece { index, begin, length, ref data } => {
+            Message::Piece {
+                index,
+                begin,
+                length,
+                ref data,
+            } => {
                 assert_eq!(index, 1);
                 assert_eq!(begin, 1);
                 assert_eq!(length, 16384);
@@ -443,7 +552,11 @@ mod tests {
         let mut data = Cursor::new(vec![0u8, 0, 0, 13, 8, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1]);
         // Test one shot
         match r.readable(&mut data).unwrap().unwrap() {
-            Message::Cancel { index, begin, length } => {
+            Message::Cancel {
+                index,
+                begin,
+                length,
+            } => {
                 assert_eq!(index, 1);
                 assert_eq!(begin, 1);
                 assert_eq!(length, 1);
@@ -464,13 +577,16 @@ mod tests {
 
     #[test]
     fn test_read_handshake() {
-        use ::PEER_ID;
+        use PEER_ID;
         let mut r = Reader::new();
-        let m = Message::Handshake { rsv: [0; 8], hash: [0; 20], id: *PEER_ID };
+        let m = Message::Handshake {
+            rsv: [0; 8],
+            hash: [0; 20],
+            id: *PEER_ID,
+        };
         let mut data = vec![0; 68];
         m.encode(&mut data[..]).unwrap();
         let mut c = Cursor::new(data);
         assert_eq!(r.readable(&mut c).unwrap().unwrap(), m);
     }
 }
-

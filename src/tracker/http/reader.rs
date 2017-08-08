@@ -63,7 +63,7 @@ impl Reader {
     }
 
     pub fn readable<R: io::Read>(&mut self, conn: &mut R) -> Result<bool> {
-        while let ReadRes::Again = self.read(conn)? { }
+        while let ReadRes::Again = self.read(conn)? {}
         Ok(self.state.ready())
     }
 

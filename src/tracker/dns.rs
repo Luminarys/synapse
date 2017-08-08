@@ -30,8 +30,7 @@ impl AsRawFd for CSockWrapper {
 impl Resolver {
     pub fn new(reg: amy::Registrar, send: amy::Sender<QueryResponse>) -> Resolver {
         let mut opts = c_ares::Options::new();
-        opts.set_timeout(3000)
-            .set_tries(4);
+        opts.set_timeout(3000).set_tries(4);
         Resolver {
             reg,
             socks: HashMap::new(),
@@ -62,7 +61,9 @@ impl Resolver {
             if let Some(id) = self.csocks.get(&fd).cloned() {
                 marked.insert(id);
             } else {
-                let id = self.reg.register(&CSockWrapper(fd), amy::Event::Both).unwrap();
+                let id = self.reg
+                    .register(&CSockWrapper(fd), amy::Event::Both)
+                    .unwrap();
                 marked.insert(id);
                 self.socks.insert(id, fd);
                 self.csocks.insert(fd, id);
@@ -77,8 +78,8 @@ impl Resolver {
         marked: HashSet<usize>,
         socks: &mut HashMap<usize, c_ares::Socket>,
         csocks: &mut HashMap<c_ares::Socket, usize>,
-        reg: &amy::Registrar)
-    {
+        reg: &amy::Registrar,
+    ) {
         socks.retain(|id, fd| {
             if marked.contains(id) {
                 true
@@ -98,12 +99,11 @@ impl Resolver {
         let s = self.sender.clone();
         self.chan.query_a(host, move |res| {
             let res = res.chain_err(|| ErrorKind::DNS).and_then(|ips| {
-                ips.iter().next().ok_or(ErrorKind::DNS.into()).map(|ip| IpAddr::V4(ip.ipv4()))
+                ips.iter().next().ok_or(ErrorKind::DNS.into()).map(|ip| {
+                    IpAddr::V4(ip.ipv4())
+                })
             });
-            let resp = QueryResponse {
-                id,
-                res,
-            };
+            let resp = QueryResponse { id, res };
             if s.lock().unwrap().send(resp).is_err() {
                 // Other end was shutdown, ignore
             }

@@ -43,7 +43,10 @@ impl Manager {
             info!(l, "DHT table loaded from disk!");
             t
         } else {
-            info!(l, "DHT table could not be read from disk, creating new table!");
+            info!(
+                l,
+                "DHT table could not be read from disk, creating new table!"
+            );
             let mut t = rt::RoutingTable::new();
             if let Some(addr) = CONFIG.dht_bootstrap_node {
                 info!(l, "Using bootstrap node!");
@@ -59,7 +62,7 @@ impl Manager {
             id,
             buf: vec![0u8; 500],
             dht_flush: time::Instant::now(),
-            l
+            l,
         })
     }
 
@@ -100,7 +103,11 @@ impl Manager {
                     if e.kind() == io::ErrorKind::WouldBlock {
                         break;
                     } else {
-                        warn!(self.l, "Encountered unexpected error reading from UDP socket: {:?}!", e);
+                        warn!(
+                            self.l,
+                            "Encountered unexpected error reading from UDP socket: {:?}!",
+                            e
+                        );
                         break;
                     }
                 }
@@ -130,7 +137,12 @@ impl Manager {
             let data = self.table.serialize();
             thread::spawn(move || {
                 let p = Path::new(&CONFIG.session[..]).join(SESSION_FILE);
-                if let Err(e) = OpenOptions::new().write(true).create(true).open(&p).and_then(|mut f| f.write(&data[..])) {
+                if let Err(e) = OpenOptions::new()
+                    .write(true)
+                    .create(true)
+                    .open(&p)
+                    .and_then(|mut f| f.write(&data[..]))
+                {
                     // TODO: properly log
                     println!("DHT serialization failed: {:?}!", e);
                 }

@@ -109,11 +109,12 @@ pub struct Common {
 
 impl Common {
     pub fn new(info: &Info) -> Common {
-        let scale = info.piece_len/16384;
+        let scale = info.piece_len / 16384;
         // The n - 1 piece length, since the last one is (usually) shorter.
         let compl_piece_len = scale * (info.pieces() - 1);
         // the nth piece length
-        let mut last_piece_len = info.total_len - info.piece_len as u64 * (info.pieces() as u64 - 1) as u64;
+        let mut last_piece_len = info.total_len -
+            info.piece_len as u64 * (info.pieces() as u64 - 1) as u64;
         if last_piece_len % 16384 == 0 {
             last_piece_len /= 16384;
         } else {

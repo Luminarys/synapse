@@ -128,12 +128,22 @@ impl RPC {
                 CtlMessage::Shutdown => return true,
                 m => {
                     let msgs: Vec<_> = {
-                        self.processor.handle_ctl(m).into_iter().map(|(c, m)| (c, serde_json::to_string(&m).unwrap())).collect()
+                        self.processor
+                            .handle_ctl(m)
+                            .into_iter()
+                            .map(|(c, m)| (c, serde_json::to_string(&m).unwrap()))
+                            .collect()
                     };
                     for (c, m) in msgs {
                         let res = match self.clients.get_mut(&c) {
                             Some(client) => client.send(ws::Frame::Text(m)),
-                            None => { warn!(self.l, "Processor requested a message transfer to a nonexistent client!"); Ok(()) },
+                            None => {
+                                warn!(
+                                    self.l,
+                                    "Processor requested a message transfer to a nonexistent client!"
+                                );
+                                Ok(())
+                            }
                         };
                         if res.is_err() {
                             let client = self.clients.remove(&c).unwrap();
@@ -149,7 +159,7 @@ impl RPC {
     fn handle_transfer(&mut self, not: amy::Notification) {
         if not.event.readable() {
             match self.transfers.readable(not.id) {
-                TransferResult::Incomplete => { }
+                TransferResult::Incomplete => {}
                 TransferResult::Torrent { conn, data, path } => {
                     debug!(self.l, "Got torrent via HTTP transfer!");
                     self.reg.deregister(&conn).unwrap();
@@ -169,11 +179,21 @@ impl RPC {
                         }
                     }
                 }
-                TransferResult::Error { conn, err, client: id } => {
+                TransferResult::Error {
+                    conn,
+                    err,
+                    client: id,
+                } => {
                     self.reg.deregister(&conn).unwrap();
-                    let res = self.clients.get_mut(&id).map(|c| c.send(
-                            ws::Frame::Text(serde_json::to_string(&SMessage::TransferFailed(err)).unwrap())
-                    )).unwrap_or(Ok(()));
+                    let res = self.clients
+                        .get_mut(&id)
+                        .map(|c| {
+                            c.send(ws::Frame::Text(
+                                serde_json::to_string(&SMessage::TransferFailed(err))
+                                    .unwrap(),
+                            ))
+                        })
+                        .unwrap_or(Ok(()));
                     if res.is_err() {
                         let client = self.clients.remove(&id).unwrap();
                         self.remove_client(id, client);
@@ -213,10 +233,22 @@ impl RPC {
                     self.incoming.insert(id, i);
                 }
                 Ok(IncomingStatus::Transfer { data, token }) => {
-                    info!(self.l, "Attempting to initiate transfer with data {:?}", data);
+                    info!(
+                        self.l,
+                        "Attempting to initiate transfer with data {:?}",
+                        data
+                    );
                     match self.processor.get_transfer(token) {
                         Some((client, serial, TransferKind::UploadTorrent { path, size })) => {
-                            self.transfers.add_torrent(id, client, serial, i.into(), data, path, size);
+                            self.transfers.add_torrent(
+                                id,
+                                client,
+                                serial,
+                                i.into(),
+                                data,
+                                path,
+                                size,
+                            );
                         }
                         Some(_) => warn!(self.l, "Unimplemented transfer type ignored"),
                         None => {
@@ -250,7 +282,7 @@ impl RPC {
                                     for msg in msgs {
                                         if c.send(
                                             ws::Frame::Text(serde_json::to_string(&msg).unwrap()),
-                                            ).is_err()
+                                        ).is_err()
                                         {
                                             break 'outer false;
                                         }
@@ -261,7 +293,7 @@ impl RPC {
                                         self.l,
                                         "Client sent an invalid message, disconnecting: {}",
                                         e
-                                        );
+                                    );
                                     break false;
                                 }
                             }
@@ -304,9 +336,12 @@ impl RPC {
         });
         for (conn, id, err) in self.transfers.cleanup() {
             reg.deregister(&conn).unwrap();
-            self.clients.get_mut(&id).map(|c| c.send(
-                ws::Frame::Text(serde_json::to_string(&SMessage::TransferFailed(err)).unwrap())
-            ));
+            self.clients.get_mut(&id).map(|c| {
+                c.send(ws::Frame::Text(
+                    serde_json::to_string(&SMessage::TransferFailed(err))
+                        .unwrap(),
+                ))
+            });
         }
     }
 

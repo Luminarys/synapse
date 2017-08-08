@@ -138,7 +138,12 @@ fn init() -> io::Result<()> {
     thread::spawn(move || {
         let throttler = throttle::Throttler::new(0, 0, THROT_TOKS, &creg);
         if let Ok(acio) = acio::ACIO::new(cpoll, creg, chans, LOG.new(o!("ctrl" => "acio"))) {
-            if let Ok(mut ctrl) = control::Control::new(acio, throttler, LOG.new(o!("thread" => "ctrl"))) {
+            if let Ok(mut ctrl) = control::Control::new(
+                acio,
+                throttler,
+                LOG.new(o!("thread" => "ctrl")),
+            )
+            {
                 tx.send(true).unwrap();
                 ctrl.run();
             } else {

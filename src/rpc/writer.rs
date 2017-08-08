@@ -38,7 +38,7 @@ impl Writer {
                         return Ok(());
                     }
                 }
-                WR::Incomplete => { }
+                WR::Incomplete => {}
                 WR::Blocked => return Ok(()),
             }
         }
@@ -47,7 +47,10 @@ impl Writer {
     fn do_write<W: io::Write>(&mut self, w: &mut W) -> io::Result<WR> {
         match self.state {
             State::Idle => Ok(WR::Complete),
-            State::Writing { ref mut pos, ref buf } => {
+            State::Writing {
+                ref mut pos,
+                ref buf,
+            } => {
                 match awrite(&buf[*pos..], w) {
                     IOR::Complete => Ok(WR::Complete),
                     IOR::Incomplete(a) => {
@@ -64,14 +67,22 @@ impl Writer {
 
     fn next_msg(&mut self) {
         match self.queue.pop_front() {
-            Some(m) => self.state = State::Writing { pos: 0, buf: m.serialize() },
+            Some(m) => {
+                self.state = State::Writing {
+                    pos: 0,
+                    buf: m.serialize(),
+                }
+            }
             None => self.state = State::Idle,
         }
     }
 
     pub fn enqueue(&mut self, msg: Message) {
         if self.state.idle() {
-            self.state = State::Writing { pos: 0, buf: msg.serialize() }
+            self.state = State::Writing {
+                pos: 0,
+                buf: msg.serialize(),
+            }
         } else {
             self.queue.push_back(msg);
         }

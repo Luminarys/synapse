@@ -17,7 +17,7 @@ pub enum ResourceKind {
     Peer,
     File,
     Piece,
-    Tracker
+    Tracker,
 }
 
 #[derive(Copy, Clone, Debug, Deserialize, PartialEq)]
@@ -183,13 +183,13 @@ pub fn match_b(t: bool, c: &Criterion) -> bool {
                 Value::B(b) => t == b,
                 _ => false,
             }
-        },
+        }
         Operation::Neq => {
             match c.value {
                 Value::B(b) => t != b,
                 _ => false,
             }
-        },
+        }
         _ => false,
     }
 }

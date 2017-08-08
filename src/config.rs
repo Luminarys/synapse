@@ -41,7 +41,7 @@ impl Config {
         if let Some(n) = file.dht_bootstrap_node {
             match (&n).to_socket_addrs() {
                 Ok(mut a) => base.dht_bootstrap_node = a.next(),
-                _ => { }
+                _ => {}
             }
         }
         if let Some(s) = file.session {
@@ -70,5 +70,12 @@ impl Default for Config {
 }
 
 fn expand_tilde(s: &str) -> String {
-    s.replace('~', &env::home_dir().unwrap().into_os_string().into_string().unwrap())
+    s.replace(
+        '~',
+        &env::home_dir()
+            .unwrap()
+            .into_os_string()
+            .into_string()
+            .unwrap(),
+    )
 }

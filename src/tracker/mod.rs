@@ -87,8 +87,8 @@ impl Tracker {
         dns: dns::Resolver,
         dns_res: amy::Receiver<dns::QueryResponse>,
         timer: usize,
-        l: Logger)
-        -> Tracker {
+        l: Logger,
+    ) -> Tracker {
         Tracker {
             ch,
             http,
@@ -121,8 +121,7 @@ impl Tracker {
         // Shutdown loop - wait for all requests to complete
         loop {
             for event in self.poll.wait(POLL_INT_MS).unwrap() {
-                if self.handle_event(event).is_err() {
-                }
+                if self.handle_event(event).is_err() {}
                 if self.http.complete() && self.udp.complete() {
                     return;
                 }
@@ -130,7 +129,7 @@ impl Tracker {
         }
     }
 
-    fn handle_event(&mut self, event: amy::Notification)  -> result::Result<(), ()> {
+    fn handle_event(&mut self, event: amy::Notification) -> result::Result<(), ()> {
         if event.id == self.ch.rx.get_id() {
             return self.handle_request();
         } else if event.id == self.dns_res.get_id() {
@@ -153,10 +152,16 @@ impl Tracker {
                         match url.scheme() {
                             "http" => self.http.new_announce(req, &url, &mut self.dns),
                             "udp" => self.udp.new_announce(req, &url, &mut self.dns),
-                            s => Err(ErrorKind::InvalidRequest(format!("Unknown tracker url scheme: {}", s)).into()),
+                            s => Err(
+                                ErrorKind::InvalidRequest(
+                                    format!("Unknown tracker url scheme: {}", s),
+                                ).into(),
+                            ),
                         }
                     } else {
-                        Err(ErrorKind::InvalidRequest(format!("Invalid url: {}", req.url)).into())
+                        Err(
+                            ErrorKind::InvalidRequest(format!("Invalid url: {}", req.url)).into(),
+                        )
                     };
                     if let Err(e) = response {
                         self.send_response((id, Err(e)));
@@ -259,7 +264,9 @@ impl Request {
             uploaded: torrent.uploaded(),
             downloaded: torrent.downloaded(),
             // This is naive, TODO: REconsider
-            left: torrent.info().total_len.saturating_sub(torrent.downloaded()),
+            left: torrent.info().total_len.saturating_sub(
+                torrent.downloaded(),
+            ),
             event,
         })
     }
@@ -292,10 +299,13 @@ impl TrackerResponse {
     }
 
     pub fn from_bencode(data: BEncode) -> Result<TrackerResponse> {
-        let mut d = data.to_dict()
-            .ok_or(ErrorKind::InvalidResponse("Tracker response must be a dictionary type!"))?;
+        let mut d = data.to_dict().ok_or(ErrorKind::InvalidResponse(
+            "Tracker response must be a dictionary type!",
+        ))?;
         if let Some(BEncode::String(data)) = d.remove("failure reason") {
-            let reason = String::from_utf8(data).chain_err(|| ErrorKind::InvalidResponse("Failure reason must be UTF8!"))?;
+            let reason = String::from_utf8(data).chain_err(|| {
+                ErrorKind::InvalidResponse("Failure reason must be UTF8!")
+            })?;
             return Err(ErrorKind::TrackerError(reason).into());
         }
         let mut resp = TrackerResponse::empty();
@@ -308,7 +318,9 @@ impl TrackerResponse {
                 }
             }
             _ => {
-                return Err(ErrorKind::InvalidResponse("Response must have peers field!").into());
+                return Err(
+                    ErrorKind::InvalidResponse("Response must have peers field!").into(),
+                );
             }
         };
         match d.remove("interval") {
@@ -316,7 +328,9 @@ impl TrackerResponse {
                 resp.interval = *i as u32;
             }
             _ => {
-                return Err(ErrorKind::InvalidResponse("Response must have interval!").into());
+                return Err(
+                    ErrorKind::InvalidResponse("Response must have interval!").into(),
+                );
             }
         };
         Ok(resp)
@@ -333,6 +347,8 @@ pub fn start(creg: &mut amy::Registrar) -> io::Result<handle::Handle<Response, R
     let dht = dht::Manager::new(&reg, LOG.new(o!("trk" => "dht")))?;
     let http = http::Handler::new(&reg, LOG.new(o!("trk" => "http")))?;
     let dns = dns::Resolver::new(reg, dtx);
-    dh.run("trk", move |h, l| Tracker::new(poll, h, udp, dht, http, dns, drx, timer, l).run());
+    dh.run("trk", move |h, l| {
+        Tracker::new(poll, h, udp, dht, http, dns, drx, timer, l).run()
+    });
     Ok(ch)
 }
