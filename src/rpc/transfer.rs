@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::net::TcpStream;
 use std::io::Write;
+use std::time;
 
 use super::proto::message::Error;
 use util::{aread, IOR};
@@ -26,7 +27,10 @@ struct TorrentTx {
     pos: usize,
     buf: Vec<u8>,
     path: Option<String>,
+    last_action: time::Instant,
 }
+
+const CONN_TIMEOUT: u64 = 2;
 
 impl Transfers {
     pub fn new() -> Transfers {
@@ -55,6 +59,7 @@ impl Transfers {
                 pos,
                 buf: data,
                 path,
+                last_action: time::Instant::now(),
             },
             );
     }
@@ -76,7 +81,9 @@ impl Transfers {
                     format!("Connection: Closed"),
                 ];
                 let data = lines.join("\r\n") + "\r\n\r\n";
-                tx.conn.write(data.as_bytes());
+                if tx.conn.write(data.as_bytes()).is_err() {
+                    // Do nothing, we got the data, so who cares.
+                }
 
                 TransferResult::Torrent {
                     conn: tx.conn,
@@ -99,10 +106,25 @@ impl Transfers {
             None => TransferResult::Incomplete,
         }
     }
+
+    pub fn cleanup(&mut self) -> Vec<(TcpStream, usize, Error)> {
+        let mut res = Vec::new();
+        let ids: Vec<usize> = self.torrents
+            .iter()
+            .filter(|&(_, ref t)| t.timed_out())
+            .map(|(id, _)| *id)
+            .collect();
+        for id in ids {
+            let tx = self.torrents.remove(&id).unwrap();
+            res.push((tx.conn, id, Error { serial: Some(tx.serial), reason: "Timeout".to_owned() }));
+        }
+        res
+    }
 }
 
 impl TorrentTx {
     pub fn readable(&mut self) -> Result<bool, &'static str> {
+        self.last_action = time::Instant::now();
         loop {
             match aread(&mut self.buf[self.pos..], &mut self.conn) {
                 IOR::Complete => return Ok(true),
@@ -112,5 +134,9 @@ impl TorrentTx {
                 IOR::Err(_) => return Err("IO error!"),
             }
         }
+    }
+
+    pub fn timed_out(&self) -> bool {
+        self.last_action.elapsed().as_secs() > CONN_TIMEOUT
     }
 }

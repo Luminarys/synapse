@@ -316,7 +316,29 @@ impl<T: cio::CIO> Control<T> {
                     },
                 ]));
             }
-            _ => {}
+            rpc::Message::RemoveTorrent(id) => {
+                let hash_idx = &self.hash_idx;
+                let torrents = &mut self.torrents;
+                id_to_hash(&id)
+                    .and_then(|d| hash_idx.get(d.as_ref()))
+                    .and_then(|i| torrents.remove(i));
+            }
+            rpc::Message::RemovePeer { id, torrent_id } => {
+                let hash_idx = &self.hash_idx;
+                let torrents = &mut self.torrents;
+                id_to_hash(&torrent_id)
+                    .and_then(|d| hash_idx.get(d.as_ref()))
+                    .and_then(|i| torrents.get_mut(i))
+                    .map(|t| t.remove_peer(&id));
+            }
+            rpc::Message::RemoveTracker { id, torrent_id } => {
+                let hash_idx = &self.hash_idx;
+                let torrents = &mut self.torrents;
+                id_to_hash(&torrent_id)
+                    .and_then(|d| hash_idx.get(d.as_ref()))
+                    .and_then(|i| torrents.get_mut(i))
+                    .map(|t| t.remove_tracker(&id));
+            }
         }
         false
     }

@@ -257,6 +257,15 @@ impl<T: cio::CIO> Torrent<T> {
         }
     }
 
+    pub fn remove_peer(&mut self, rpc_id: &str) {
+        let ih = &self.info.hash;
+        self.peers.retain(|id, _| util::peer_rpc_id(ih, *id as u64) != rpc_id);
+    }
+
+    // TODO: Implement once mutlitracker support is in
+    pub fn remove_tracker(&mut self, rpc_id: &str) {
+    }
+
     pub fn get_throttle(&self, id: usize) -> Throttle {
         self.throttle.new_sibling(id)
     }
@@ -396,6 +405,10 @@ impl<T: cio::CIO> Torrent<T> {
                 let (piece_done, mut peers) = self.picker.completed(index, begin);
                 if piece_done {
                     self.pieces.set_bit(index as u64);
+                    self.cio.msg_rpc(rpc::CtlMessage::Update(vec![resource::SResourceUpdate::PieceDownloaded {
+                        id: util::piece_rpc_id(&self.info.hash, index as u64),
+                        downloaded: true,
+                    }]));
 
                     // Begin validation, and save state if the torrent is done
                     if self.pieces.complete() {
@@ -677,6 +690,7 @@ impl<T: cio::CIO> Torrent<T> {
             let id = util::file_rpc_id(&self.info.hash, f.path.as_path().to_string_lossy().as_ref());
             r.push(id)
         }
+        r.push(util::trk_rpc_id(&self.info.hash, &self.info.announce));
         // TOOD: Tracker removal too
         self.cio.msg_rpc(rpc::CtlMessage::Removed(r));
     }

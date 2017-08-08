@@ -292,9 +292,6 @@ impl<T: cio::CIO> Peer<T> {
                 s.set_port(p);
                 self.cio.msg_trk(tracker::Request::AddNode(s));
             }
-            Message::SharedPiece { .. } => {
-                unreachable!()
-            }
         }
         Ok(())
     }
@@ -359,12 +356,16 @@ impl<T: cio::CIO> Peer<T> {
     }
 
     pub fn send_rpc_removal(&mut self) {
+        self.cio.msg_rpc(rpc::CtlMessage::Removed(vec![
+            util::peer_rpc_id(&self.t_hash, self.id as u64)
+        ]));
     }
 }
 
 impl<T: cio::CIO> Drop for Peer<T> {
     fn drop(&mut self) {
         self.cio.remove_peer(self.id);
+        self.send_rpc_removal();
     }
 }
 

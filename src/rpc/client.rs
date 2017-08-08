@@ -12,7 +12,7 @@ use super::{Result, ResultExt, ErrorKind};
 use util::{IOR, aread, sha1_hash};
 
 pub struct Client {
-    conn: TcpStream,
+    pub conn: TcpStream,
     r: Reader,
     w: Writer,
     buf: FragBuf,
@@ -20,7 +20,7 @@ pub struct Client {
 }
 
 pub struct Incoming {
-    conn: TcpStream,
+    pub conn: TcpStream,
     key: Option<String>,
     buf: [u8; 1024],
     pos: usize,
@@ -39,8 +39,11 @@ enum FragBuf {
     Binary(Vec<u8>),
 }
 
+const CONN_TIMEOUT: u64 = 2;
+
 impl Client {
     pub fn read(&mut self) -> Result<Option<Frame>> {
+        self.last_action = time::Instant::now();
         loop {
             match self.read_frame()? {
                 Ok(f) => return Ok(Some(f)),
@@ -91,11 +94,16 @@ impl Client {
     }
 
     pub fn write(&mut self) -> Result<()> {
+        self.last_action = time::Instant::now();
         self.w.write(&mut self.conn).chain_err(|| ErrorKind::IO)
     }
 
     pub fn send(&mut self, f: Frame) -> Result<()> {
         self.send_msg(f.into())
+    }
+
+    pub fn timed_out(&self) -> bool {
+        self.last_action.elapsed().as_secs() > CONN_TIMEOUT
     }
 
     fn send_msg(&mut self, msg: Message) -> Result<()> {
@@ -123,7 +131,7 @@ impl Into<Client> for Incoming {
         ];
         let data = lines.join("\r\n") + "\r\n\r\n";
         // Ignore error, it'll pop up again anyways
-        self.conn.write(data.as_bytes());
+        if self.conn.write(data.as_bytes()).is_err() { };
 
         Client {
             r: Reader::new(),
@@ -156,6 +164,7 @@ impl Incoming {
     /// Result indicates if the Incoming connection is
     /// valid to be upgraded into a Client
     pub fn readable(&mut self) -> io::Result<IncomingStatus> {
+        self.last_action = time::Instant::now();
         loop {
             match aread(&mut self.buf[self.pos..], &mut self.conn) {
                 // TODO: Consider more
@@ -180,6 +189,10 @@ impl Incoming {
         }
     }
 
+    pub fn timed_out(&self) -> bool {
+        self.last_action.elapsed().as_secs() > CONN_TIMEOUT
+    }
+
     fn process_incoming(&mut self) -> io::Result<Option<IncomingStatus>> {
         let mut headers = [httparse::EMPTY_HEADER; 24];
         let mut req = httparse::Request::new(&mut headers);
@@ -194,7 +207,6 @@ impl Incoming {
                 } else {
                     // Probably some dumb CORS OPTION shit, just tell the client
                     // everyting's cool and close up
-
                     let lines = vec![
                         format!("HTTP/1.1 204 NO CONTENT"),
                         format!("Connection: Closed"),
@@ -203,8 +215,9 @@ impl Incoming {
                         format!("Access-Control-Allow-Headers: {}", "Access-Control-Allow-Headers, Origin, Accept, X-Requested-With, Content-Type, Access-Control-Request-Method, Access-Control-Request-Headers, Authorization"),
                     ];
                     let data = lines.join("\r\n") + "\r\n\r\n";
-                    // Ignore error, it'll pop up again anyways
-                    self.conn.write(data.as_bytes());
+                    if self.conn.write(data.as_bytes()).is_err() {
+                        // Ignore error, we're DCing anyways
+                    };
                     return Err(io::ErrorKind::InvalidData.into());
                 }
             }

@@ -60,6 +60,7 @@ pub struct RPC {
     ch: handle::Handle<CtlMessage, Message>,
     listener: TcpListener,
     lid: usize,
+    cleanup: usize,
     processor: Processor,
     transfers: Transfers,
     clients: HashMap<usize, Client>,
@@ -68,11 +69,13 @@ pub struct RPC {
 }
 
 const POLL_INT_MS: usize = 1000;
+const CLEANUP_INT_S: usize = 3000;
 
 impl RPC {
     pub fn start(creg: &mut amy::Registrar) -> io::Result<handle::Handle<Message, CtlMessage>> {
         let poll = amy::Poller::new()?;
         let mut reg = poll.get_registrar()?;
+        let cleanup = reg.set_interval(CLEANUP_INT_S)?;
         let (ch, dh) = handle::Handle::new(creg, &mut reg)?;
 
         let ip = Ipv4Addr::new(0, 0, 0, 0);
@@ -88,6 +91,7 @@ impl RPC {
                 reg,
                 listener,
                 lid,
+                cleanup,
                 clients: HashMap::new(),
                 incoming: HashMap::new(),
                 processor: Processor::new(),
@@ -110,6 +114,7 @@ impl RPC {
                         }
                     }
                     id if self.incoming.contains_key(&id) => self.handle_incoming(id),
+                    id if id == self.cleanup => self.cleanup(),
                     id if self.transfers.contains(id) => self.handle_transfer(not),
                     _ => self.handle_conn(not),
                 }
@@ -147,12 +152,14 @@ impl RPC {
                 TransferResult::Incomplete => { }
                 TransferResult::Torrent { conn, data, path } => {
                     debug!(self.l, "Got torrent via HTTP transfer!");
-                    self.reg.deregister(&conn);
+                    self.reg.deregister(&conn).unwrap();
                     // TODO: Send this to the client in an error msg
                     match bencode::decode_buf(&data) {
                         Ok(b) => {
                             if let Ok(i) = torrent::info::Info::from_bencode(b) {
-                                self.ch.send(Message::Torrent(i));
+                                if self.ch.send(Message::Torrent(i)).is_err() {
+                                    crit!(self.l, "Failed to pass message to ctrl!");
+                                }
                             } else {
                                 warn!(self.l, "Failed to parse torrent!");
                             }
@@ -163,7 +170,7 @@ impl RPC {
                     }
                 }
                 TransferResult::Error { conn, err, client: id } => {
-                    self.reg.deregister(&conn);
+                    self.reg.deregister(&conn).unwrap();
                     let res = self.clients.get_mut(&id).map(|c| c.send(
                             ws::Frame::Text(serde_json::to_string(&SMessage::TransferFailed(err)).unwrap())
                     )).unwrap_or(Ok(()));
@@ -275,6 +282,31 @@ impl RPC {
                 }
             }
             self.clients.insert(not.id, c);
+        }
+    }
+
+    fn cleanup(&mut self) {
+        self.processor.remove_expired_tokens();
+        let reg = &self.reg;
+        self.clients.retain(|_, client| {
+            let res = !client.timed_out();
+            if res {
+                reg.deregister(&client.conn).unwrap();
+            }
+            res
+        });
+        self.incoming.retain(|_, inc| {
+            let res = !inc.timed_out();
+            if res {
+                reg.deregister(&inc.conn).unwrap();
+            }
+            res
+        });
+        for (conn, id, err) in self.transfers.cleanup() {
+            reg.deregister(&conn).unwrap();
+            self.clients.get_mut(&id).map(|c| c.send(
+                ws::Frame::Text(serde_json::to_string(&SMessage::TransferFailed(err)).unwrap())
+            ));
         }
     }
 

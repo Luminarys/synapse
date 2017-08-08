@@ -66,12 +66,12 @@ pub enum SMessage<'a> {
     // Error messages
     UnknownResource(Error),
     InvalidResource(Error),
-    InvalidMessage(Error),
-    InvalidSchema(Error),
-    InvalidRequest(Error),
+    // InvalidMessage(Error),
+    // InvalidSchema(Error),
+    // InvalidRequest(Error),
     PermissionDenied(Error),
     TransferFailed(Error),
-    ServerError(Error),
+    // ServerError(Error),
 }
 
 #[derive(Serialize)]

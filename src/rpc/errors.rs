@@ -10,11 +10,6 @@ error_chain! {
             display("Client connection completed")
         }
 
-        Timeout {
-            description("Connection timeout")
-                display("Connection timeout")
-        }
-
         BadPayload(s: &'static str) {
             description("Failed to decode payload")
                 display("Bad payload: {}", s)

@@ -35,6 +35,8 @@ pub enum TransferKind {
     DownloadFile { path: String },
 }
 
+const EXPIRATION_DUR: i64 = 120;
+
 impl Processor {
     pub fn new() -> Processor {
         Processor {
@@ -43,6 +45,10 @@ impl Processor {
             resources: HashMap::new(),
             tokens: HashMap::new(),
         }
+    }
+
+    pub fn remove_expired_tokens(&mut self) {
+        self.tokens.retain(|_, tok| tok.expiration > Utc::now())
     }
 
     pub fn get_transfer(&mut self, tok: String) -> Option<(usize, u64, TransferKind)> {
@@ -189,10 +195,7 @@ impl Processor {
                 resp.push(SMessage::ResourcesExtant { serial, ids });
                 self.filter_subs.insert(serial, f);
             }
-            CMessage::FilterUnsubscribe {
-                serial,
-                filter_serial,
-            } => {
+            CMessage::FilterUnsubscribe { filter_serial, .. } => {
                 self.filter_subs.remove(&filter_serial);
             }
 
@@ -320,7 +323,7 @@ impl Processor {
     }
 
     fn new_transfer(&mut self, client: usize, serial: u64, kind: TransferKind) -> SMessage {
-        let expiration = Utc::now() + Duration::minutes(2);
+        let expiration = Utc::now() + Duration::seconds(EXPIRATION_DUR);
         let tok = random_string(15);
         self.tokens.insert(
             tok.clone(),
