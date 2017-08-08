@@ -4,7 +4,6 @@ use std::io::{self, Write};
 
 use base64;
 use httparse;
-use ring::digest;
 
 use super::reader::Reader;
 use super::writer::Writer;
@@ -160,43 +159,56 @@ impl Incoming {
         loop {
             match aread(&mut self.buf[self.pos..], &mut self.conn) {
                 // TODO: Consider more
-                IOR::Complete => return Err(io::ErrorKind::InvalidData.into()),
+                IOR::Complete => {
+                    self.pos = self.buf.len();
+                    if let Some(r) = self.process_incoming()? {
+                        return Ok(r);
+                    } else {
+                        return Err(io::ErrorKind::UnexpectedEof.into());
+                    }
+                },
                 IOR::Incomplete(a) => {
                     self.pos += a;
-                    let mut headers = [httparse::EMPTY_HEADER; 24];
-                    let mut req = httparse::Request::new(&mut headers);
-                    match req.parse(&self.buf[..self.pos]) {
-                        Ok(httparse::Status::Partial) => continue,
-                        Ok(httparse::Status::Complete(idx)) => {
-                            if let Ok(k) = validate_upgrade(&req) {
-                                self.key = Some(k);
-                                return Ok(IncomingStatus::Upgrade);
-                            } else if let Some(token) = validate_tx(&req) {
-                                return Ok(IncomingStatus::Transfer { data: self.buf[idx..self.pos].to_owned(), token });
-                            } else {
-                                // Probably some dumb CORS OPTION shit, just tell the client
-                                // everyting's cool and close up
-
-                                let lines = vec![
-                                    format!("HTTP/1.1 204 NO CONTENT"),
-                                    format!("Connection: Closed"),
-                                    format!("Access-Control-Allow-Origin: {}", "*"),
-                                    format!("Access-Control-Allow-Methods: {}", "OPTIONS, POST, GET"),
-                                    format!("Access-Control-Allow-Headers: {}", "Access-Control-Allow-Headers, Origin, Accept, X-Requested-With, Content-Type, Access-Control-Request-Method, Access-Control-Request-Headers, Authorization"),
-                                ];
-                                let data = lines.join("\r\n") + "\r\n\r\n";
-                                // Ignore error, it'll pop up again anyways
-                                self.conn.write(data.as_bytes());
-                                return Err(io::ErrorKind::InvalidData.into());
-                            }
-                        }
-                        Err(_) => return Err(io::ErrorKind::InvalidData.into()),
+                    if let Some(r) = self.process_incoming()? {
+                        return Ok(r);
                     }
                 }
                 IOR::Blocked => return Ok(IncomingStatus::Incomplete),
                 IOR::EOF => return Err(io::ErrorKind::UnexpectedEof.into()),
                 IOR::Err(e) => return Err(e),
             }
+        }
+    }
+
+    fn process_incoming(&mut self) -> io::Result<Option<IncomingStatus>> {
+        let mut headers = [httparse::EMPTY_HEADER; 24];
+        let mut req = httparse::Request::new(&mut headers);
+        match req.parse(&self.buf[..self.pos]) {
+            Ok(httparse::Status::Partial) => return Ok(None),
+            Ok(httparse::Status::Complete(idx)) => {
+                if let Ok(k) = validate_upgrade(&req) {
+                    self.key = Some(k);
+                    return Ok(Some(IncomingStatus::Upgrade));
+                } else if let Some(token) = validate_tx(&req) {
+                    return Ok(Some(IncomingStatus::Transfer { data: self.buf[idx..self.pos].to_owned(), token }));
+                } else {
+                    // Probably some dumb CORS OPTION shit, just tell the client
+                    // everyting's cool and close up
+
+                    let lines = vec![
+                        format!("HTTP/1.1 204 NO CONTENT"),
+                        format!("Connection: Closed"),
+                        format!("Access-Control-Allow-Origin: {}", "*"),
+                        format!("Access-Control-Allow-Methods: {}", "OPTIONS, POST, GET"),
+                        format!("Access-Control-Allow-Headers: {}", "Access-Control-Allow-Headers, Origin, Accept, X-Requested-With, Content-Type, Access-Control-Request-Method, Access-Control-Request-Headers, Authorization"),
+                    ];
+                    let data = lines.join("\r\n") + "\r\n\r\n";
+                    // Ignore error, it'll pop up again anyways
+                    self.conn.write(data.as_bytes());
+                    return Err(io::ErrorKind::InvalidData.into());
+                }
+            }
+            Err(_) => return Err(io::ErrorKind::InvalidData.into()),
         }
     }
 }

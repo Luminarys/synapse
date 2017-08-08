@@ -19,7 +19,9 @@ pub struct Listener {
 
 pub struct Message {
     pub peer: PeerConn,
+    pub id: [u8; 20],
     pub hash: [u8; 20],
+    pub rsv: [u8; 8],
 }
 
 impl fmt::Debug for Message {
@@ -101,9 +103,12 @@ impl Listener {
                 debug!(self.l, "Completed handshake({:?}) with peer, transferring!", hs);
                 let peer = self.incoming.remove(&pid).unwrap();
                 self.reg.deregister(peer.sock()).unwrap();
+                let hsd = hs.get_handshake_data();
                 if self.ch.send(Message {
                     peer,
-                    hash: hs.get_handshake_hash(),
+                    hash: hsd.0,
+                    id: hsd.1,
+                    rsv: hsd.2,
                 }).is_err() {
                     error!(self.l, "failed to send peer to ctrl");
                 }

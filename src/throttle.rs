@@ -102,7 +102,7 @@ struct ThrottleData {
     rate: usize,
     tokens: usize,
     max_tokens: usize,
-    last_used: usize,
+    last_used: u64,
     throttled: HashSet<usize>,
 }
 
@@ -193,31 +193,32 @@ impl ThrottleData {
 
     /// Adds some amount of tokens back.
     fn restore_tokens(&mut self, amnt: usize) {
-        self.last_used -= amnt;
+        self.last_used -= amnt as u64;
         self.tokens += amnt;
     }
 
     /// This method must be called every URATE milliseconds and returns
-    /// (self.max_tokens - self.tokens) * 1000/URATE - the bits/s
+    /// (self.last_used) * 1000/URATE - the bits/s, clearing self.last_used
     fn add_tokens(&mut self) -> u64 {
-        let drained = self.max_tokens - self.tokens;
+        let drained = self.last_used as u64; 
+        self.last_used = 0;
         self.tokens += self.rate * URATE;
         if self.tokens >= self.max_tokens {
             self.tokens = self.max_tokens;
         }
-        return drained as u64/URATE as u64 * 1000
+        return drained/URATE as u64 * 1000
     }
 
     /// Attempt to extract amnt tokens from the throttler.
     fn get_tokens(&mut self, amnt: usize) -> Result<(), ()> {
         if self.rate == 0 {
-            self.last_used += amnt;
+            self.last_used += amnt as u64;
             return Ok(())
         }
         if amnt > self.tokens {
             Err(())
         } else {
-            self.last_used += amnt;
+            self.last_used += amnt as u64;
             self.tokens -= amnt;
             Ok(())
         }

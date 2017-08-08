@@ -301,7 +301,7 @@ impl RoutingTable {
                 }
             }
 
-            (TransactionKind::Query(id), proto::ResponseKind::Error(e)) => {
+            (TransactionKind::Query(id), proto::ResponseKind::Error(_)) => {
                 if !self.contains_id(&id) {
                     return Err(reqs);
                 }

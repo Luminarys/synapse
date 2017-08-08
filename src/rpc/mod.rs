@@ -206,7 +206,7 @@ impl RPC {
                     self.incoming.insert(id, i);
                 }
                 Ok(IncomingStatus::Transfer { data, token }) => {
-                    warn!(self.l, "Attempting to initiate transfer");
+                    info!(self.l, "Attempting to initiate transfer with data {:?}", data);
                     match self.processor.get_transfer(token) {
                         Some((client, serial, TransferKind::UploadTorrent { path, size })) => {
                             self.transfers.add_torrent(id, client, serial, i.into(), data, path, size);

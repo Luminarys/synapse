@@ -2,18 +2,22 @@ mod reader;
 mod writer;
 mod message;
 
+use std::net::SocketAddr;
+use std::{io, fmt, mem, time};
+use std::net::TcpStream;
+
+use chrono::{DateTime, Utc};
+
 pub use self::message::Message;
 use self::reader::Reader;
 use self::writer::Writer;
-use std::net::TcpStream;
 use socket::Socket;
-use std::net::SocketAddr;
-use std::{io, fmt, mem, time};
 use torrent::{Torrent, Bitfield};
 use throttle::Throttle;
 use control::cio;
-use rpc::resource;
+use rpc::{self, resource};
 use tracker;
+use util;
 use {DHT_EXT, CONFIG};
 
 error_chain! {
@@ -34,10 +38,13 @@ pub struct Peer<T: cio::CIO> {
     local_status: Status,
     queued: u16,
     tid: usize,
-    downloaded: usize,
-    uploaded: usize,
+    downloaded: u64,
+    uploaded: u64,
+    last_flush: DateTime<Utc>,
     addr: SocketAddr,
-    rsv: [u8; 8],
+    t_hash: [u8; 20],
+    cid: Option<[u8; 20]>,
+    rsv: Option<[u8; 8]>,
     last_updated: time::Instant,
 }
 
@@ -73,11 +80,6 @@ impl PeerConn {
             writer,
             reader,
         }
-    }
-
-    pub fn rpc_info(&self) -> resource::Resource {
-        // TODO: Figure this out. Maybe do it in torrent.
-        unimplemented!();
     }
 
     pub fn sock(&self) -> &Socket {
@@ -137,8 +139,11 @@ impl Peer<cio::test::TCIO> {
             queued,
             pieces,
             tid: 0,
-            rsv: [0u8; 8],
+            t_hash: [0u8; 20],
+            rsv: None,
+            cid: None,
             last_updated: time::Instant::now(),
+            last_flush: Utc::now(),
         }
     }
 
@@ -162,7 +167,7 @@ impl Peer<cio::test::TCIO> {
 }
 
 impl<T: cio::CIO> Peer<T> {
-    pub fn new(mut conn: PeerConn, t: &mut Torrent<T>) -> cio::Result<Peer<T>> {
+    pub fn new(mut conn: PeerConn, t: &mut Torrent<T>, cid: Option<[u8; 20]>, rsv: Option<[u8; 8]>) -> cio::Result<Peer<T>> {
         let addr = conn.sock().addr();
         conn.set_throttle(t.get_throttle(0));
         let id = t.cio.add_peer(conn)?;
@@ -177,11 +182,15 @@ impl<T: cio::CIO> Peer<T> {
             queued: 0,
             pieces: Bitfield::new(t.info.hashes.len() as u64),
             tid: t.id,
-            rsv: [0u8; 8],
+            t_hash: t.info.hash,
+            rsv,
+            cid,
             last_updated: time::Instant::now(),
+            last_flush: Utc::now(),
         };
         p.send_message(Message::handshake(&t.info));
         p.send_message(Message::Bitfield(t.pieces.clone()));
+        p.send_rpc_info();
         Ok(p)
     }
 
@@ -202,12 +211,22 @@ impl<T: cio::CIO> Peer<T> {
         self.id
     }
 
-    pub fn flush_ul(&mut self) -> usize {
-        mem::replace(&mut self.uploaded, 0)
+    pub fn flush(&mut self) -> (u64, u64) {
+        self.last_flush = Utc::now();
+        (mem::replace(&mut self.uploaded, 0), mem::replace(&mut self.downloaded, 0))
     }
 
-    pub fn flush_dl(&mut self) -> usize {
-        mem::replace(&mut self.downloaded, 0)
+    pub fn remote_status(&self) -> &Status {
+        &self.remote_status
+    }
+
+    pub fn get_tx_rates(&self) -> (u64, u64) {
+        let dur = Utc::now()
+            .signed_duration_since(self.last_flush)
+            .num_milliseconds() as u64;
+        let ul = (1000 * self.uploaded) / dur;
+        let dl = (1000 * self.downloaded) / dur;
+        (ul, dl)
     }
 
     pub fn can_queue_req(&mut self) -> bool {
@@ -217,14 +236,16 @@ impl<T: cio::CIO> Peer<T> {
     pub fn handle_msg(&mut self, msg: &mut Message) -> Result<()> {
         self.last_updated = time::Instant::now();
         match *msg {
-            Message::Handshake { rsv, .. } => {
+            Message::Handshake { rsv, id, .. } => {
                 if (rsv[DHT_EXT.0] & DHT_EXT.1) != 0 {
                     self.send_message(Message::Port(CONFIG.dht_port));
                 }
-                self.rsv = rsv;
+                self.rsv = Some(rsv);
+                self.cid = Some(id);
+                self.send_rpc_info();
             }
-            Message::Piece { .. } => {
-                self.downloaded += 1;
+            Message::Piece { length, .. } | Message::SharedPiece { length, .. } => {
+                self.downloaded += length as u64;
                 self.queued -= 1;
             }
             Message::Request { .. } => {
@@ -313,10 +334,31 @@ impl<T: cio::CIO> Peer<T> {
     }
 
     pub fn send_message(&mut self, msg: Message) {
-        if msg.is_piece() {
-            self.uploaded += 1;
+        match &msg {
+            &Message::SharedPiece { length, .. }
+            | &Message::Piece { length, .. } => self.uploaded += length as u64,
+            _ => { }
         }
         self.cio.msg_peer(self.id, msg);
+    }
+
+    fn send_rpc_info(&mut self) {
+        if let Some(cid) = self.cid {
+            self.cio.msg_rpc(rpc::CtlMessage::Extant(vec![
+                resource::Resource::Peer(resource::Peer {
+                    id: util::peer_rpc_id(&self.t_hash, self.id as u64),
+                    torrent_id: util::hash_to_id(&self.t_hash[..]),
+                    client_id: cid,
+                    ip: self.addr.to_string(),
+                    rate_up: 0,
+                    rate_down: 0,
+                    availability: 0.,
+                })
+            ]));
+        }
+    }
+
+    pub fn send_rpc_removal(&mut self) {
     }
 }
 

@@ -1,6 +1,6 @@
 use chrono::{DateTime, Utc};
 
-use super::resource::{Resource, CResourceUpdate, SResourceUpdate};
+use super::resource::{CResourceUpdate, SResourceUpdate};
 use super::criterion::{ResourceKind, Criterion};
 
 /// Client -> server messages, deserialize only

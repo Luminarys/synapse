@@ -1,6 +1,6 @@
 use bencode::BEncode;
 use std::path::PathBuf;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 use std::{io, fs, fmt, cmp};
 use url::Url;
 use ring::digest;

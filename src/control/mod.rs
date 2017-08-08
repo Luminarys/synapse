@@ -18,14 +18,14 @@ mod job;
 /// Tracker update job interval
 const TRK_JOB_SECS: u64 = 60;
 /// Unchoke rotation job interval
-const UNCHK_JOB_SECS: u64 = 30;
+const UNCHK_JOB_SECS: u64 = 15;
 /// Session serialization job interval
 const SES_JOB_SECS: u64 = 10;
 /// Interval to update RPC of transfer stats
 const TX_JOB_MS: u64 = 333;
 
 /// Interval to requery all jobs and execute if needed
-const JOB_INT_MS: usize = 250;
+const JOB_INT_MS: usize = 333;
 
 pub struct Control<T: cio::CIO> {
     throttler: Throttler,
@@ -229,7 +229,7 @@ impl<T: cio::CIO> Control<T> {
     fn handle_lst_ev(&mut self, msg: listener::Message) {
         debug!(self.l, "Adding peer for torrent with hash {:?}!", msg.hash);
         if let Some(tid) = self.hash_idx.get(&msg.hash).cloned() {
-            self.add_peer(tid, msg.peer);
+            self.add_inc_peer(tid, msg.peer, msg.id, msg.rsv);
         } else {
             warn!(
                 self.l,
@@ -330,13 +330,22 @@ impl<T: cio::CIO> Control<T> {
         }
     }
 
+    fn add_inc_peer(&mut self, id: usize, peer: peer::PeerConn, cid: [u8; 20], rsv: [u8; 8]) {
+        trace!(self.l, "Adding peer to torrent {:?}!", id);
+        if let Some(torrent) = self.torrents.get_mut(&id) {
+            if let Some(pid) = torrent.add_inc_peer(peer, cid, rsv) {
+                self.peers.insert(pid, id);
+            }
+        }
+    }
+
     fn update_rpc_tx(&mut self) {
         if let Some((rate_up, rate_down)) = self.tx_rates {
             self.cio.msg_rpc(rpc::CtlMessage::Update(vec![
                 rpc::resource::SResourceUpdate::ServerTransfer {
                     id: hash_to_id(&PEER_ID[..]),
-                    rate_up: 0,
-                    rate_down: 0,
+                    rate_up,
+                    rate_down,
                 },
             ]));
             self.tx_rates = None;

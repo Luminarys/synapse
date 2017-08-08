@@ -79,8 +79,8 @@ impl TorrentTxUpdate {
 }
 
 struct Speed {
-    ul: u32,
-    dl: u32,
+    ul: u64,
+    dl: u64,
 }
 
 impl<T: cio::CIO> Job<T> for TorrentTxUpdate {
@@ -94,10 +94,10 @@ impl<T: cio::CIO> Job<T> for TorrentTxUpdate {
             // TODO: Use this result to get a better estimate
             if ls.ul != ul || ls.dl != dl {
                 torrent.update_rpc_transfer();
+                torrent.reset_last_tx_rate();
                 ls.ul = ul;
                 ls.dl = dl;
             }
-            torrent.reset_last_tx_rate();
         }
         self.speeds.retain(|id, _| torrents.contains_key(id));
     }

@@ -123,9 +123,9 @@ impl Message {
         }
     }
 
-    pub fn get_handshake_hash(&self) -> [u8; 20] {
+    pub fn get_handshake_data(&self) -> ([u8; 20], [u8; 20], [u8; 8]) {
         match *self {
-            Message::Handshake { hash, .. } => hash,
+            Message::Handshake { hash, id, rsv } => (hash, id, rsv),
             _ => unreachable!(),
         }
     }

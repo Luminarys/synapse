@@ -53,8 +53,8 @@ pub struct Torrent<T: cio::CIO> {
     cio: T,
     uploaded: u64,
     downloaded: u64,
-    last_ul: u32,
-    last_dl: u32,
+    last_ul: u64,
+    last_dl: u64,
     last_clear: DateTime<Utc>,
     throttle: Throttle,
     tracker: TrackerStatus,
@@ -288,7 +288,7 @@ impl<T: cio::CIO> Torrent<T> {
                     let p = Message::s_piece(context.idx, context.begin, context.length, data);
                     // This may not be 100% accurate, but close enough for now.
                     self.uploaded += context.length as u64;
-                    self.last_ul += context.length as u32;
+                    self.last_ul += context.length as u64;
                     self.dirty = true;
                     peer.send_message(p);
                 }
@@ -391,7 +391,7 @@ impl<T: cio::CIO> Torrent<T> {
                 self.write_piece(index, begin, data);
 
                 self.downloaded += length as u64;
-                self.last_dl += length as u32;
+                self.last_dl += length as u64;
                 let (piece_done, mut peers) = self.picker.completed(index, begin);
                 if piece_done {
                     self.pieces.set_bit(index as u64);
@@ -642,7 +642,7 @@ impl<T: cio::CIO> Torrent<T> {
             }
         }
 
-        for (i, f) in self.info.files.iter().enumerate() {
+        for f in self.info.files.iter() {
             let id = util::file_rpc_id(&self.info.hash, f.path.as_path().to_string_lossy().as_ref());
             r.push(resource::Resource::File(resource::File {
                 id,
@@ -666,7 +666,7 @@ impl<T: cio::CIO> Torrent<T> {
             let id = util::piece_rpc_id(&self.info.hash, i as u64);
             r.push(id)
         }
-        for (i, f) in self.info.files.iter().enumerate() {
+        for f in self.info.files.iter() {
             let id = util::file_rpc_id(&self.info.hash, f.path.as_path().to_string_lossy().as_ref());
             r.push(id)
         }
@@ -697,7 +697,7 @@ impl<T: cio::CIO> Torrent<T> {
         0.
     }
 
-    pub fn reset_last_tx_rate(&mut self) -> (u32, u32) {
+    pub fn reset_last_tx_rate(&mut self) -> (u64, u64) {
         let res = self.get_last_tx_rate();
         self.last_clear = Utc::now();
         self.last_ul = 0;
@@ -706,12 +706,12 @@ impl<T: cio::CIO> Torrent<T> {
     }
 
     // TODO: Implement Exp Moving Avg Somewhere
-    pub fn get_last_tx_rate(&self) -> (u32, u32) {
+    pub fn get_last_tx_rate(&self) -> (u64, u64) {
         let dur = Utc::now()
             .signed_duration_since(self.last_clear)
-            .num_milliseconds() as u32;
-        let ul = 1000 * (self.last_ul / dur);
-        let dl = 1000 * (self.last_dl / dur);
+            .num_milliseconds() as u64;
+        let ul = (1000 * self.last_ul) / dur;
+        let dl = (1000 * self.last_dl) / dur;
         (ul, dl)
     }
 
@@ -761,7 +761,19 @@ impl<T: cio::CIO> Torrent<T> {
     }
 
     pub fn add_peer(&mut self, conn: PeerConn) -> Option<usize> {
-        if let Ok(p) = Peer::new(conn, self) {
+        if let Ok(p) = Peer::new(conn, self, None, None) {
+            let pid = p.id();
+            debug!(self.l, "Adding peer {:?}!", pid);
+            self.picker.add_peer(&p);
+            self.peers.insert(pid, p);
+            Some(pid)
+        } else {
+            None
+        }
+    }
+
+    pub fn add_inc_peer(&mut self, conn: PeerConn, id: [u8; 20], rsv: [u8; 8]) -> Option<usize> {
+        if let Ok(p) = Peer::new(conn, self, Some(id), Some(rsv)) {
             let pid = p.id();
             debug!(self.l, "Adding peer {:?}!", pid);
             self.picker.add_peer(&p);
@@ -803,20 +815,43 @@ impl<T: cio::CIO> Torrent<T> {
     }
 
     pub fn update_rpc_transfer(&mut self) {
-        let availability = self.availability();
         let progress = self.progress();
         let (rate_up, rate_down) = self.get_last_tx_rate();
         let id = self.rpc_id();
-        self.cio.msg_rpc(rpc::CtlMessage::Update(vec![
-                                                 SResourceUpdate::TorrentTransfer {
+        let mut updates = Vec::new();
+        updates.push(SResourceUpdate::TorrentTransfer {
                                                      id,
                                                      rate_up,
                                                      rate_down,
                                                      transferred_up: self.uploaded,
                                                      transferred_down: self.downloaded,
                                                      progress,
-                                                 },
-        ]));
+                                                 });
+        if !self.status.leeching() {
+            for pid in self.choker.unchoked().iter() {
+                if let Some(p) = self.peers.get(pid) {
+                    let (rate_up, rate_down) = p.get_tx_rates();
+                    updates.push(SResourceUpdate::PeerRate {
+                                                         id: util::peer_rpc_id(&self.info.hash, *pid as u64),
+                                                         rate_up,
+                                                         rate_down,
+                                                     });
+                }
+            }
+        } else {
+            for (pid, p) in self.peers.iter() {
+                if p.remote_status().choked {
+                    continue;
+                }
+                let (rate_up, rate_down) = p.get_tx_rates();
+                updates.push(SResourceUpdate::PeerRate {
+                                                    id: util::peer_rpc_id(&self.info.hash, *pid as u64),
+                                                    rate_up,
+                                                    rate_down,
+                                                });
+            }
+        }
+        self.cio.msg_rpc(rpc::CtlMessage::Update(updates));
     }
 
     fn cleanup_peer(&mut self, peer: &mut Peer<T>) {

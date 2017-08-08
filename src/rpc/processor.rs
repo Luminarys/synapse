@@ -3,8 +3,8 @@ use std::collections::{HashMap, HashSet};
 use chrono::{DateTime, Utc, Duration};
 
 use super::proto::message::{CMessage, SMessage, Error};
-use super::proto::criterion::{Criterion, Operation, Value, ResourceKind, Filter as FTrait};
-use super::proto::resource::{Resource, Torrent, CResourceUpdate, SResourceUpdate};
+use super::proto::criterion::{Criterion, ResourceKind, Filter as FTrait};
+use super::proto::resource::{Resource, SResourceUpdate};
 use super::{CtlMessage, Message};
 use util::random_string;
 
@@ -54,7 +54,7 @@ impl Processor {
                         res = Some((bt.client, bt.serial, s.clone()));
                         false
                     }
-                    s => true,
+                    _ => true,
                 }
             }
             None => {
@@ -106,14 +106,14 @@ impl Processor {
                 }
                 resp.push(SMessage::UpdateResources { resources });
             }
-            CMessage::Unsubscribe { serial, ids } => {
+            CMessage::Unsubscribe { ids, .. } => {
                 for id in ids {
                     self.subs.get_mut(&id).map(|s| s.remove(&client));
                 }
             }
             CMessage::UpdateResource { serial, resource } => {
                 match self.resources.get(&resource.id) {
-                    Some(&Resource::Torrent(ref t)) => {
+                    Some(&Resource::Torrent(_)) => {
                         rmsg = Some(Message::UpdateTorrent(resource));
                     }
                     Some(&Resource::File(ref f)) => {
@@ -126,7 +126,7 @@ impl Processor {
                             });
                         }
                     }
-                    Some(&Resource::Server(ref s)) => {
+                    Some(&Resource::Server(_)) => {
                             rmsg = Some(Message::UpdateServer {
                                 id: resource.id,
                                 throttle_up: resource.throttle_up,
