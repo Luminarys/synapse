@@ -10,7 +10,7 @@ use super::reader::Reader;
 use super::writer::Writer;
 use super::proto::ws::{Message, Frame, Opcode};
 use super::{Result, ResultExt, ErrorKind};
-use util::{IOR, aread};
+use util::{IOR, aread, sha1_hash};
 
 pub struct Client {
     conn: TcpStream,
@@ -113,10 +113,8 @@ impl Into<TcpStream> for Client {
 
 impl Into<Client> for Incoming {
     fn into(mut self) -> Client {
-        let mut ctx = digest::Context::new(&digest::SHA1);
         let magic = self.key.unwrap() + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
-        ctx.update(magic.as_bytes());
-        let digest = ctx.finish();
+        let digest = sha1_hash(magic.as_bytes());
         let accept = base64::encode(digest.as_ref());
         let lines = vec![
             format!("HTTP/1.1 101 Switching Protocols"),

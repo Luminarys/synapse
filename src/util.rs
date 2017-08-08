@@ -3,6 +3,7 @@ use rand::{self, Rng};
 use std::fmt::Write as FWrite;
 use byteorder::{ReadBytesExt, WriteBytesExt, BigEndian};
 use std::net::{SocketAddr, Ipv4Addr, SocketAddrV4};
+use ring::digest;
 
 pub fn io_err<T>(reason: &'static str) -> io::Result<T> {
     Err(io::Error::new(io::ErrorKind::Other, reason))
@@ -70,12 +71,99 @@ pub fn random_string(len: usize) -> String {
         .collect::<String>()
 }
 
-pub fn torrent_name(hash: &[u8; 20]) -> String {
+pub fn sha1_hash(data: &[u8]) -> digest::Digest {
+    let mut ctx = digest::Context::new(&digest::SHA1);
+    ctx.update(data);
+    ctx.finish()
+}
+
+pub fn piece_rpc_id(torrent: &[u8; 20], piece: u64) -> String {
+    const PIECE_ID: &'static [u8] = b"PIECE";
+    let mut idx = [0u8; 8];
+    (&mut idx[..]).write_u64::<BigEndian>(piece).unwrap();
+
+    let mut ctx = digest::Context::new(&digest::SHA1);
+    ctx.update(torrent);
+    ctx.update(PIECE_ID);
+    ctx.update(&idx[..]);
+    hash_to_id(ctx.finish().as_ref())
+}
+
+pub fn peer_rpc_id(torrent: &[u8; 20], peer: u64) -> String {
+    const PEER_ID: &'static [u8] = b"PEER";
+    let mut idx = [0u8; 8];
+    (&mut idx[..]).write_u64::<BigEndian>(peer).unwrap();
+
+    let mut ctx = digest::Context::new(&digest::SHA1);
+    ctx.update(torrent);
+    ctx.update(PEER_ID);
+    ctx.update(&idx[..]);
+    hash_to_id(ctx.finish().as_ref())
+}
+
+pub fn file_rpc_id(torrent: &[u8; 20], file: &str) -> String {
+    const FILE_ID: &'static [u8] = b"FILE";
+    let mut ctx = digest::Context::new(&digest::SHA1);
+    ctx.update(torrent);
+    ctx.update(FILE_ID);
+    ctx.update(file.as_bytes());
+    hash_to_id(ctx.finish().as_ref())
+}
+
+pub fn trk_rpc_id(torrent: &[u8; 20], url: &str) -> String {
+    const TRK_ID: &'static [u8] = b"TRK";
+    let mut ctx = digest::Context::new(&digest::SHA1);
+    ctx.update(torrent);
+    ctx.update(TRK_ID);
+    ctx.update(url.as_bytes());
+    hash_to_id(ctx.finish().as_ref())
+}
+
+pub fn hash_to_id(hash: &[u8]) -> String {
     let mut hash_str = String::new();
     for i in 0..20 {
         write!(&mut hash_str, "{:02X}", hash[i]).unwrap();
     }
     hash_str
+}
+
+pub fn id_to_hash(s: &str) -> Option<[u8; 20]> {
+    let mut data = [0u8; 20];
+    if s.len() != 40 {
+        return None;
+    }
+    let mut c = s.chars();
+    for i in 0..20 {
+        if let (Some(a), Some(b)) = (hex_to_bit(c.next().unwrap()), hex_to_bit(c.next().unwrap())) {
+            data[i] = a << 4 | b
+        } else {
+            return None
+        }
+    }
+    Some(data)
+}
+
+fn hex_to_bit(c: char) -> Option<u8> {
+    let r = match c {
+        '0' => 0,
+        '1' => 1,
+        '2' => 2,
+        '3' => 3,
+        '4' => 4,
+        '5' => 5,
+        '6' => 6,
+        '7' => 7,
+        '8' => 8,
+        '9' => 9,
+        'a' | 'A' => 10,
+        'b' | 'B' => 11,
+        'c' | 'C' => 12,
+        'd' | 'D' => 13,
+        'e' | 'E' => 14,
+        'f' | 'F' => 15,
+        _ => return None,
+    };
+    Some(r)
 }
 
 pub fn bytes_to_addr(p: &[u8]) -> SocketAddr {
@@ -100,4 +188,11 @@ pub fn addr_to_bytes(addr: &SocketAddr) -> [u8; 6] {
         _ => unimplemented!(),
     }
     data
+}
+
+#[test]
+fn test_hash_enc() {
+    let hash = [8u8; 20];
+    let s = hash_to_id(&hash);
+    assert_eq!(id_to_hash(&s).unwrap(), hash);
 }

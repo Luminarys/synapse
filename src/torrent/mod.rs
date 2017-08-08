@@ -21,7 +21,7 @@ use tracker::{self, TrackerResponse};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use util::torrent_name;
+use util;
 use slog::Logger;
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -48,7 +48,6 @@ struct TorrentData {
 
 pub struct Torrent<T: cio::CIO> {
     id: usize,
-    rpc_id: u64,
     pieces: Bitfield,
     info: Arc<Info>,
     cio: T,
@@ -116,7 +115,6 @@ impl<T: cio::CIO> Torrent<T> {
         };
         let mut t = Torrent {
             id,
-            rpc_id: id as u64,
             info: Arc::new(info),
             peers,
             pieces,
@@ -155,7 +153,6 @@ impl<T: cio::CIO> Torrent<T> {
         let leechers = HashSet::new();
         let mut t = Torrent {
             id,
-            rpc_id: id as u64,
             info: Arc::new(d.info),
             peers,
             pieces: d.pieces,
@@ -211,6 +208,10 @@ impl<T: cio::CIO> Torrent<T> {
             self.info.hash,
         ));
         self.dirty = false;
+    }
+
+    pub fn rpc_id(&self) -> String {
+        util::hash_to_id(&self.info.hash[..])
     }
 
     pub fn delete(&mut self) {
@@ -513,7 +514,7 @@ impl<T: cio::CIO> Torrent<T> {
     fn rpc_info(&self) -> Vec<rpc::resource::Resource> {
         let mut r = Vec::new();
         r.push(Resource::Torrent(resource::Torrent {
-            id: self.rpc_id,
+            id: self.rpc_id(),
             name: self.info.name.clone(),
             // TODO: Properly add this
             path: "./".to_owned(),
@@ -541,20 +542,20 @@ impl<T: cio::CIO> Torrent<T> {
         }));
 
         for i in 0..self.info.pieces() {
+            let id = util::piece_rpc_id(&self.info.hash, i as u64);
             // TODO: Formalize these high bit ids
-            let id = (0xA << 60) | ((i as u64) << 32) | self.rpc_id;
             if self.pieces.has_bit(i as u64) {
                 r.push(Resource::Piece(resource::Piece {
                     // TODO: Formalize these high bit ids
                     id,
-                    torrent_id: self.rpc_id,
+                    torrent_id: self.rpc_id(),
                     available: true,
                     downloaded: true,
                 }))
             } else {
                 r.push(Resource::Piece(resource::Piece {
                     id,
-                    torrent_id: self.rpc_id,
+                    torrent_id: self.rpc_id(),
                     available: true,
                     downloaded: false,
                 }))
@@ -562,10 +563,10 @@ impl<T: cio::CIO> Torrent<T> {
         }
 
         for (i, f) in self.info.files.iter().enumerate() {
-            let id = (0xB << 60) | ((i as u64) << 32) | self.rpc_id;
+            let id = util::file_rpc_id(&self.info.hash, f.path.as_path().to_string_lossy().as_ref());
             r.push(resource::Resource::File(resource::File {
                 id,
-                torrent_id: self.rpc_id,
+                torrent_id: self.rpc_id(),
                 availability: 0.,
                 progress: 0.,
                 priority: 3,
@@ -681,9 +682,10 @@ impl<T: cio::CIO> Torrent<T> {
             return;
         }
         self.status = status;
+        let id = self.rpc_id();
         self.cio.msg_rpc(rpc::CtlMessage::Update(vec![
             SResourceUpdate::TorrentStatus {
-                id: self.rpc_id,
+                id,
                 error: match status {
                     Status::DiskError => Some("Disk error".to_owned()),
                     _ => None,
@@ -695,9 +697,10 @@ impl<T: cio::CIO> Torrent<T> {
 
     pub fn update_rpc_peers(&mut self) {
         let availability = self.availability();
+        let id = self.rpc_id();
         self.cio.msg_rpc(rpc::CtlMessage::Update(vec![
             SResourceUpdate::TorrentPeers {
-                id: self.rpc_id,
+                id,
                 peers: self.peers.len() as u16,
                 availability,
             },
@@ -708,10 +711,10 @@ impl<T: cio::CIO> Torrent<T> {
         let availability = self.availability();
         let progress = self.progress();
         let (rate_up, rate_down) = self.get_last_tx_rate();
-
+        let id = self.rpc_id();
         self.cio.msg_rpc(rpc::CtlMessage::Update(vec![
             SResourceUpdate::TorrentTransfer {
-                id: self.rpc_id,
+                id,
                 rate_up,
                 rate_down,
                 transferred_up: self.uploaded,
@@ -799,7 +802,7 @@ impl<T: cio::CIO> fmt::Debug for Torrent<T> {
 
 impl<T: cio::CIO> fmt::Display for Torrent<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "Torrent {}", torrent_name(&self.info.hash))
+        write!(f, "Torrent {}", util::hash_to_id(&self.info.hash[..]))
     }
 }
 

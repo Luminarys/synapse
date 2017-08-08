@@ -9,9 +9,9 @@ use super::{CtlMessage, Message};
 use util::random_string;
 
 pub struct Processor {
-    subs: HashMap<u64, HashSet<usize>>,
+    subs: HashMap<String, HashSet<usize>>,
     filter_subs: HashMap<u64, Filter>,
-    resources: HashMap<u64, Resource>,
+    resources: HashMap<String, Resource>,
     tokens: HashMap<String, BearerToken>,
 }
 
@@ -121,7 +121,7 @@ impl Processor {
                         if let Some(p) = resource.priority {
                             rmsg = Some(Message::UpdateFile {
                                 id: resource.id,
-                                torrent_id: f.torrent_id,
+                                torrent_id: f.torrent_id.to_owned(),
                                 priority: p,
                             });
                         }
@@ -148,13 +148,13 @@ impl Processor {
                     Some(&Resource::Tracker(ref t)) => {
                         rmsg = Some(Message::RemoveTracker {
                             id,
-                            torrent_id: t.id,
+                            torrent_id: t.id.to_owned(),
                         });
                     }
                     Some(&Resource::Peer(ref p)) => {
                         rmsg = Some(Message::RemovePeer {
                             id,
-                            torrent_id: p.id,
+                            torrent_id: p.id.to_owned(),
                         });
                     }
                     Some(_) => {
@@ -230,14 +230,21 @@ impl Processor {
         let mut msgs = Vec::new();
         match msg {
             CtlMessage::Extant(e) => {
-                let ids: Vec<_> = e.iter().map(|r| r.id()).collect();
-
+                // TODO: Make this cleaner
+                let mut ids = Vec::new();
                 for r in e {
-                    self.subs.insert(r.id(), HashSet::new());
-                    self.resources.insert(r.id(), r);
+                    ids.push(r.id().to_owned());
+                    self.subs.insert(r.id().to_owned(), HashSet::new());
+                    let id = r.id().to_owned();
+                    self.resources.insert(id, r);
+                }
+                // We have to make a new vec which points to the resource struct
+                let mut rids = Vec::new();
+                for id in ids {
+                    rids.push(self.resources.get(&id).unwrap().id());
                 }
 
-                for (c, filters) in self.get_matching_filters(ids.into_iter()) {
+                for (c, filters) in self.get_matching_filters(rids.into_iter()) {
                     for (serial, ids) in filters {
                         msgs.push((c, SMessage::ResourcesExtant { serial, ids }));
                     }
@@ -246,22 +253,22 @@ impl Processor {
             CtlMessage::Update(updates) => {
                 let mut clients = HashMap::new();
                 for update in updates {
-                    for c in self.subs.get(&update.id()).unwrap().iter() {
+                    for c in self.subs.get(update.id()).unwrap().iter() {
                         if !clients.contains_key(c) {
                             clients.insert(*c, Vec::new());
                         }
                         clients.get_mut(c).unwrap().push(update.clone());
                     }
-                    self.resources.get_mut(&update.id()).expect("Bad resource updated by a CtlMessage").update(update);
+                    self.resources.get_mut(update.id()).expect("Bad resource updated by a CtlMessage").update(update);
                 }
                 for (c, resources) in clients {
                     msgs.push((c, SMessage::UpdateResources { resources }));
                 }
             }
             CtlMessage::Removed(r) => {
-                for (c, filters) in self.get_matching_filters(r.iter().cloned()) {
+                for (c, filters) in self.get_matching_filters(r.iter().map(|s| s.as_str())) {
                     for (serial, ids) in filters {
-                        msgs.push((c, SMessage::ResourcesRemoved { serial, ids }));
+                        msgs.push((c, SMessage::ResourcesRemoved { serial, ids: ids.into_iter().map(|s| s.to_owned()).collect() }));
                     }
                 }
 
@@ -282,10 +289,10 @@ impl Processor {
     }
 
     /// Produces a map of the form Map<ClientId, Map<FilterSerial, Vec<ID>>>.
-    fn get_matching_filters<'a, I: Iterator<Item=u64>>(&self, ids: I) -> HashMap<usize, HashMap<u64, Vec<u64>>> {
+    fn get_matching_filters<'a, I: Iterator<Item=&'a str>>(&'a self, ids: I) -> HashMap<usize, HashMap<u64, Vec<&'a str>>> {
         let mut matched = HashMap::new();
         for id in ids {
-            let res = self.resources.get(&id).expect(
+            let res = self.resources.get(id).expect(
                 "Bad resource requested from a CtlMessage",
                 );
             for (s, f) in self.filter_subs.iter() {

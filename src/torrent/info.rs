@@ -4,7 +4,7 @@ use std::collections::{BTreeMap, HashMap};
 use std::{io, fs, fmt, cmp};
 use url::Url;
 use ring::digest;
-use util::torrent_name;
+use util::hash_to_id;
 use disk;
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -22,7 +22,7 @@ pub struct Info {
 impl fmt::Debug for Info {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "Torrent Info {{ name: {:?}, announce: {:?}, piece_len: {:?}, total_len: {:?}, hash: {:?}, files: {:?} }}",
-               self.name, self.announce, self.piece_len, self.total_len, torrent_name(&self.hash), self.files)
+               self.name, self.announce, self.piece_len, self.total_len, hash_to_id(&self.hash), self.files)
     }
 }
 
