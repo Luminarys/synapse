@@ -128,6 +128,16 @@ impl Throttle {
         self.dl_data().rate
     }
 
+    // TODO: Make this an HTB
+    pub fn set_ul_rate(&mut self, rate: usize) {
+        self.ul_data().rate = rate;
+    }
+
+    pub fn set_dl_rate(&mut self, rate: usize) {
+        self.dl_data().rate = rate;
+    }
+
+
     pub fn restore_bytes_dl(&mut self, amnt: usize) {
         self.dl_data().restore_tokens(amnt);
     }

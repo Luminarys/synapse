@@ -145,7 +145,7 @@ impl<T: cio::CIO> Torrent<T> {
         throttle: Throttle,
         cio: T,
         l: Logger,
-    ) -> Result<Torrent<T>, bincode::Error> {
+        ) -> Result<Torrent<T>, bincode::Error> {
         let mut d: TorrentData = bincode::deserialize(data)?;
         debug!(l, "Torrent data deserialized!");
         d.picker.unset_waiting();
@@ -181,9 +181,7 @@ impl<T: cio::CIO> Torrent<T> {
                 }
             }
             Status::Validating => {
-                t.cio.msg_disk(
-                    disk::Request::validate(t.id, t.info.clone()),
-                );
+                t.validate();
             }
             _ => {}
         };
@@ -203,10 +201,10 @@ impl<T: cio::CIO> Torrent<T> {
         let data = bincode::serialize(&d, bincode::Infinite).expect("Serialization failed!");
         debug!(self.l, "Sending serialization request!");
         self.cio.msg_disk(disk::Request::serialize(
-            self.id,
-            data,
-            self.info.hash,
-        ));
+                self.id,
+                data,
+                self.info.hash,
+                ));
         self.dirty = false;
     }
 
@@ -218,7 +216,7 @@ impl<T: cio::CIO> Torrent<T> {
         debug!(self.l, "Sending file deletion request!");
         self.cio.msg_disk(
             disk::Request::delete(self.id, self.info.hash),
-        );
+            );
     }
 
     pub fn set_tracker_response(&mut self, resp: &tracker::Result<TrackerResponse>) {
@@ -296,7 +294,10 @@ impl<T: cio::CIO> Torrent<T> {
                 debug!(self.l, "Validation completed!");
                 if invalid.is_empty() {
                     info!(self.l, "Torrent succesfully downloaded!");
-                    self.set_status(Status::Idle);
+                    // TOOD: Consider if we should cache this
+                    if !self.status.stopped() {
+                        self.set_status(Status::Idle);
+                    }
                     let req = tracker::Request::completed(self);
                     self.cio.msg_trk(req);
                 } else {
@@ -304,7 +305,7 @@ impl<T: cio::CIO> Torrent<T> {
                         self.l,
                         "Torrent has incorrect pieces {:?}, redownloading",
                         invalid
-                    );
+                        );
                     for piece in invalid {
                         self.picker.invalidate_piece(piece);
                     }
@@ -397,11 +398,7 @@ impl<T: cio::CIO> Torrent<T> {
 
                         debug!(self.l, "Beginning validation");
                         self.serialize();
-                        self.cio.msg_disk(
-                            disk::Request::validate(self.id, self.info.clone()),
-                        );
-                        self.update_rpc_transfer();
-                        self.set_status(Status::Validating);
+                        self.validate();
                     }
 
                     // Tell all relevant peers we got the piece
@@ -468,9 +465,9 @@ impl<T: cio::CIO> Torrent<T> {
                 self.choker.remove_peer(peer, &mut self.peers);
             }
             Message::KeepAlive |
-            Message::Choke |
-            Message::Cancel { .. } |
-            Message::Port(_) => {}
+                Message::Choke |
+                Message::Cancel { .. } |
+                Message::Port(_) => {}
 
             Message::SharedPiece { .. } => unreachable!(),
         }
@@ -485,6 +482,49 @@ impl<T: cio::CIO> Torrent<T> {
         } else {
             self.choker.update_upload(&mut self.peers)
         };
+    }
+
+    pub fn rpc_update(&mut self, u: rpc::proto::resource::CResourceUpdate) {
+        if let Some(status) = u.status {
+            match (status, self.status) {
+                (resource::Status::Paused, Status::Paused) => {
+                    self.resume();
+                }
+                (resource::Status::Paused, _) => {
+                    self.pause();
+                }
+                (resource::Status::Hashing, Status::Validating) => { }
+                (resource::Status::Hashing, _) => {
+                    self.validate();
+                }
+                // The rpc module should handle invalid status requests.
+                _ => { }
+            }
+        }
+
+        if u.throttle_up.is_some() || u.throttle_down.is_some() {
+            let tu = u.throttle_up.unwrap_or(self.throttle.ul_rate() as u32);
+            let td = u.throttle_down.unwrap_or(self.throttle.dl_rate() as u32);
+            self.set_throttle(tu, td);
+        }
+
+        if let Some(p) = u.path {
+            // TODO: Implement custom paths
+        }
+
+        if let Some(p) = u.priority {
+            // TODO: Implement priority
+        }
+
+        if let Some(s) = u.sequential {
+            if s {
+                let p = Picker::new_sequential(&self.info);
+                self.change_picker(p);
+            } else {
+                let p = Picker::new_rarest(&self.info);
+                self.change_picker(p);
+            }
+        }
     }
 
     fn start(&mut self) {
@@ -511,7 +551,18 @@ impl<T: cio::CIO> Torrent<T> {
         self.pieces.complete()
     }
 
-    fn rpc_info(&self) -> Vec<rpc::resource::Resource> {
+    fn set_throttle(&mut self, ul: u32, dl: u32) {
+        self.throttle.set_ul_rate(ul as usize);
+        self.throttle.set_dl_rate(dl as usize);
+        let id = self.rpc_id();
+        self.cio.msg_rpc(rpc::CtlMessage::Update(vec![resource::SResourceUpdate::Throttle {
+            id,
+            throttle_up: ul,
+            throttle_down: dl,
+        }]));
+    }
+
+    fn rpc_info(&self) -> Vec<resource::Resource> {
         let mut r = Vec::new();
         r.push(Resource::Torrent(resource::Torrent {
             id: self.rpc_id(),
@@ -639,7 +690,7 @@ impl<T: cio::CIO> Torrent<T> {
     fn make_requests_pid(&mut self, pid: usize) {
         let peer = self.peers.get_mut(&pid).expect(
             "Expected peer id not present",
-        );
+            );
         if self.status.stopped() {
             return;
         }
@@ -684,14 +735,14 @@ impl<T: cio::CIO> Torrent<T> {
         self.status = status;
         let id = self.rpc_id();
         self.cio.msg_rpc(rpc::CtlMessage::Update(vec![
-            SResourceUpdate::TorrentStatus {
-                id,
-                error: match status {
-                    Status::DiskError => Some("Disk error".to_owned()),
-                    _ => None,
-                },
-                status: status.into(),
-            },
+                                                 SResourceUpdate::TorrentStatus {
+                                                     id,
+                                                     error: match status {
+                                                         Status::DiskError => Some("Disk error".to_owned()),
+                                                         _ => None,
+                                                     },
+                                                     status: status.into(),
+                                                 },
         ]));
     }
 
@@ -699,11 +750,11 @@ impl<T: cio::CIO> Torrent<T> {
         let availability = self.availability();
         let id = self.rpc_id();
         self.cio.msg_rpc(rpc::CtlMessage::Update(vec![
-            SResourceUpdate::TorrentPeers {
-                id,
-                peers: self.peers.len() as u16,
-                availability,
-            },
+                                                 SResourceUpdate::TorrentPeers {
+                                                     id,
+                                                     peers: self.peers.len() as u16,
+                                                     availability,
+                                                 },
         ]));
     }
 
@@ -713,14 +764,14 @@ impl<T: cio::CIO> Torrent<T> {
         let (rate_up, rate_down) = self.get_last_tx_rate();
         let id = self.rpc_id();
         self.cio.msg_rpc(rpc::CtlMessage::Update(vec![
-            SResourceUpdate::TorrentTransfer {
-                id,
-                rate_up,
-                rate_down,
-                transferred_up: self.uploaded,
-                transferred_down: self.downloaded,
-                progress,
-            },
+                                                 SResourceUpdate::TorrentTransfer {
+                                                     id,
+                                                     rate_up,
+                                                     rate_down,
+                                                     transferred_up: self.uploaded,
+                                                     transferred_down: self.downloaded,
+                                                     progress,
+                                                 },
         ]));
     }
 
@@ -755,10 +806,7 @@ impl<T: cio::CIO> Torrent<T> {
             }
             Status::DiskError => {
                 if self.pieces.complete() {
-                    self.cio.msg_disk(
-                        disk::Request::validate(self.id, self.info.clone()),
-                    );
-                    self.set_status(Status::Validating);
+                    self.validate();
                 } else {
                     self.request_all();
                     self.set_status(Status::Idle);
@@ -771,6 +819,13 @@ impl<T: cio::CIO> Torrent<T> {
         } else {
             self.set_status(Status::Pending);
         }
+    }
+
+    fn validate(&mut self) {
+        self.cio.msg_disk(
+            disk::Request::validate(self.id, self.info.clone()),
+            );
+        self.set_status(Status::Validating);
     }
 
     fn request_all(&mut self) {
@@ -791,6 +846,14 @@ impl<T: cio::CIO> Torrent<T> {
             picker.add_peer(peer);
         }
         self.picker.change_picker(picker);
+        let id = self.rpc_id();
+        let sequential = self.picker.is_sequential();
+        self.cio.msg_rpc(rpc::CtlMessage::Update(vec![
+                                                 SResourceUpdate::TorrentPicker {
+                                                     id,
+                                                     sequential,
+                                                 }
+        ]));
     }
 }
 
