@@ -309,7 +309,7 @@ impl<T: cio::CIO> Control<T> {
                 self.throttler.set_ul_rate(tu as usize);
                 self.throttler.set_dl_rate(td as usize);
                 self.cio.msg_rpc(rpc::CtlMessage::Update(vec![
-                    rpc::resource::SResourceUpdate::ServerThrottle {
+                    rpc::resource::SResourceUpdate::Throttle {
                         id,
                         throttle_up: tu,
                         throttle_down: td,
@@ -342,7 +342,7 @@ impl<T: cio::CIO> Control<T> {
     fn update_rpc_tx(&mut self) {
         if let Some((rate_up, rate_down)) = self.tx_rates {
             self.cio.msg_rpc(rpc::CtlMessage::Update(vec![
-                rpc::resource::SResourceUpdate::ServerTransfer {
+                rpc::resource::SResourceUpdate::Rate {
                     id: hash_to_id(&PEER_ID[..]),
                     rate_up,
                     rate_down,

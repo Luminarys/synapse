@@ -29,16 +29,12 @@ pub enum SResourceUpdate<'a> {
         throttle_up: u32,
         throttle_down: u32,
     },
-    ServerTransfer {
+    Rate {
         id: String,
         rate_up: u64,
         rate_down: u64,
     },
-    ServerThrottle {
-        id: String,
-        throttle_up: u32,
-        throttle_down: u32,
-    },
+
     TorrentStatus {
         id: String,
         error: Option<String>,
@@ -62,15 +58,18 @@ pub enum SResourceUpdate<'a> {
         id: String,
         priority: u8,
     },
+
+    TrackerStatus {
+        id: String,
+        last_report: DateTime<Utc>,
+        error: Option<String>,
+    },
+
     FilePriority {
         id: String,
         priority: u8,
     },
-    PeerRate {
-        id: String,
-        rate_up: u64,
-        rate_down: u64,
-    },
+
     PieceAvailable { id: String, available: bool },
     PieceDownloaded { id: String, downloaded: bool },
 }
@@ -187,15 +186,14 @@ impl<'a> SResourceUpdate<'a> {
         match self {
             &SResourceUpdate::Resource(ref r) => r.id(),
             &SResourceUpdate::Throttle { ref id, .. } |
-            &SResourceUpdate::ServerTransfer { ref id, .. } |
-            &SResourceUpdate::ServerThrottle { ref id, .. } |
+            &SResourceUpdate::Rate { ref id, .. } |
             &SResourceUpdate::TorrentStatus { ref id, .. } |
             &SResourceUpdate::TorrentTransfer { ref id, .. } |
             &SResourceUpdate::TorrentPeers { ref id, .. } |
             &SResourceUpdate::TorrentPicker { ref id, .. } |
             &SResourceUpdate::TorrentPriority { ref id, .. } |
             &SResourceUpdate::FilePriority { ref id, .. } |
-            &SResourceUpdate::PeerRate { ref id, .. } |
+            &SResourceUpdate::TrackerStatus { ref id, .. } |
             &SResourceUpdate::PieceAvailable { ref id, .. } |
             &SResourceUpdate::PieceDownloaded { ref id, .. } => id,
         }
@@ -246,7 +244,7 @@ impl Resource {
                 s.throttle_down = throttle_down;
             }
             (&mut Resource::Server(ref mut s),
-             SResourceUpdate::ServerTransfer { rate_up, rate_down, .. }) => {
+             SResourceUpdate::Rate { rate_up, rate_down, .. }) => {
                 s.rate_up = rate_up;
                 s.rate_down = rate_down;
             }
@@ -288,7 +286,7 @@ impl Resource {
                 t.sequential = sequential;
             }
             (&mut Resource::Peer(ref mut p),
-             SResourceUpdate::PeerRate { rate_up, rate_down, .. }) => {
+             SResourceUpdate::Rate { rate_up, rate_down, .. }) => {
                 p.rate_up = rate_up;
                 p.rate_down = rate_down;
             }
@@ -299,6 +297,11 @@ impl Resource {
             (&mut Resource::Piece(ref mut p),
              SResourceUpdate::PieceDownloaded { downloaded, .. }) => {
                 p.downloaded = downloaded;
+            }
+            (&mut Resource::Tracker(ref mut t),
+             SResourceUpdate::TrackerStatus { ref mut last_report, ref mut error, .. }) => {
+                mem::swap(&mut t.last_report, last_report);
+                mem::swap(&mut t.error, error);
             }
             _ => unreachable!(),
         }

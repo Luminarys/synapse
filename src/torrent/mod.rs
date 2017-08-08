@@ -55,10 +55,10 @@ pub struct Torrent<T: cio::CIO> {
     downloaded: u64,
     last_ul: u64,
     last_dl: u64,
+    priority: u8,
     last_clear: DateTime<Utc>,
     throttle: Throttle,
     tracker: TrackerStatus,
-    priority: u8,
     tracker_update: Option<Instant>,
     peers: HashMap<usize, Peer<T>>,
     leechers: HashSet<usize>,
@@ -243,6 +243,7 @@ impl<T: cio::CIO> Torrent<T> {
                 self.tracker = TrackerStatus::Error;
             }
         }
+        self.update_rpc_tracker();
     }
 
     pub fn update_tracker(&mut self) {
@@ -654,7 +655,13 @@ impl<T: cio::CIO> Torrent<T> {
             }))
         }
 
-        // TODO: Send trackers too
+        r.push(resource::Resource::Tracker(resource::Tracker {
+            id: util::trk_rpc_id(&self.info.hash, &self.info.announce),
+            torrent_id: self.rpc_id(),
+            url: self.info.announce.clone(),
+            last_report: Utc::now(),
+            error: None,
+        }));
 
         r
     }
@@ -814,6 +821,22 @@ impl<T: cio::CIO> Torrent<T> {
         ]));
     }
 
+    pub fn update_rpc_tracker(&mut self) {
+        let id = util::trk_rpc_id(&self.info.hash, &self.info.announce);
+        let error = match &self.tracker {
+            &TrackerStatus::Failure(ref r) => Some(r.clone()),
+            &TrackerStatus::Error => Some("Failed to query tracker for an unknown reason.".to_owned()),
+            _ => None
+        };
+        self.cio.msg_rpc(rpc::CtlMessage::Update(vec![
+                                                 SResourceUpdate::TrackerStatus {
+                                                    id,
+                                                    last_report: Utc::now(),
+                                                    error,
+                                                 },
+        ]));
+    }
+
     pub fn update_rpc_transfer(&mut self) {
         let progress = self.progress();
         let (rate_up, rate_down) = self.get_last_tx_rate();
@@ -831,7 +854,7 @@ impl<T: cio::CIO> Torrent<T> {
             for pid in self.choker.unchoked().iter() {
                 if let Some(p) = self.peers.get(pid) {
                     let (rate_up, rate_down) = p.get_tx_rates();
-                    updates.push(SResourceUpdate::PeerRate {
+                    updates.push(SResourceUpdate::Rate {
                                                          id: util::peer_rpc_id(&self.info.hash, *pid as u64),
                                                          rate_up,
                                                          rate_down,
@@ -844,7 +867,7 @@ impl<T: cio::CIO> Torrent<T> {
                     continue;
                 }
                 let (rate_up, rate_down) = p.get_tx_rates();
-                updates.push(SResourceUpdate::PeerRate {
+                updates.push(SResourceUpdate::Rate {
                                                     id: util::peer_rpc_id(&self.info.hash, *pid as u64),
                                                     rate_up,
                                                     rate_down,
@@ -917,7 +940,6 @@ impl<T: cio::CIO> Torrent<T> {
         self.peers.keys().cloned().collect()
     }
 
-    // TODO: use this over RPC
     pub fn change_picker(&mut self, mut picker: Picker) {
         debug!(self.l, "Swapping pickers!");
         for (_, peer) in self.peers.iter() {
