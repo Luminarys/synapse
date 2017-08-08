@@ -163,7 +163,7 @@ mod tests {
         let mut h = HashMap::new();
         assert_eq!(c.update_upload(&mut h).is_none(), true);
         for i in 0..6 {
-            let mut p = Peer::test_from_stats(i, i, 6 - i);
+            let mut p = Peer::test_from_stats(i, i as u64, 6 - i as u64);
             c.add_peer(&mut p);
             h.insert(i, p);
         }
@@ -180,7 +180,7 @@ mod tests {
         let mut h = HashMap::new();
         assert_eq!(c.update_download(&mut h).is_none(), true);
         for i in 0..6 {
-            let mut p = Peer::test_from_stats(i, 6 - i, i);
+            let mut p = Peer::test_from_stats(i, 6 - i as u64, i as u64);
             c.add_peer(&mut p);
             h.insert(i, p);
         }

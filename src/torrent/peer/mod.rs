@@ -127,7 +127,7 @@ impl Status {
 
 #[cfg(test)]
 impl Peer<cio::test::TCIO> {
-    pub fn test(id: usize, uploaded: usize, downloaded: usize, queued: u16, pieces: Bitfield) -> Peer<cio::test::TCIO> {
+    pub fn test(id: usize, uploaded: u64, downloaded: u64, queued: u16, pieces: Bitfield) -> Peer<cio::test::TCIO> {
         Peer {
             id,
             remote_status: Status::new(),
@@ -151,7 +151,7 @@ impl Peer<cio::test::TCIO> {
         Peer::test(id, 0, 0, 0, pieces)
     }
 
-    pub fn test_from_stats(id: usize, ul: usize, dl: usize) -> Peer<cio::test::TCIO> {
+    pub fn test_from_stats(id: usize, ul: u64, dl: u64) -> Peer<cio::test::TCIO> {
         Peer::test(id, ul, dl, 0, Bitfield::new(4))
     }
 
