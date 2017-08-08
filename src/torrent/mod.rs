@@ -659,6 +659,21 @@ impl<T: cio::CIO> Torrent<T> {
         r
     }
 
+    pub fn send_rpc_removal(&mut self) {
+        let mut r = Vec::new();
+        r.push(self.rpc_id());
+        for i in 0..self.info.pieces() {
+            let id = util::piece_rpc_id(&self.info.hash, i as u64);
+            r.push(id)
+        }
+        for (i, f) in self.info.files.iter().enumerate() {
+            let id = util::file_rpc_id(&self.info.hash, f.path.as_path().to_string_lossy().as_ref());
+            r.push(id)
+        }
+        // TOOD: Tracker removal too
+        self.cio.msg_rpc(rpc::CtlMessage::Removed(r));
+    }
+
     fn error(&self) -> Option<String> {
         match self.status {
             Status::DiskError => Some("Disk error!".to_owned()),
@@ -912,6 +927,7 @@ impl<T: cio::CIO> Drop for Torrent<T> {
                 self.cio.msg_trk(req);
             }
         }
+        self.send_rpc_removal();
     }
 }
 

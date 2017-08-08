@@ -37,6 +37,11 @@ pub enum CtlMessage {
 #[derive(Debug)]
 pub enum Message {
     UpdateTorrent(resource::CResourceUpdate),
+    UpdateServer {
+        id: String,
+        throttle_up: Option<u32>,
+        throttle_down: Option<u32>,
+    },
     UpdateFile {
         id: String,
         torrent_id: String,

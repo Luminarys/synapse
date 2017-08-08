@@ -10,6 +10,8 @@ use std::collections::HashSet;
 pub struct Throttler {
     id: usize,
     fid: usize,
+    last_ul: u64,
+    last_dl: u64,
     dl_data: Rc<UnsafeCell<ThrottleData>>,
     ul_data: Rc<UnsafeCell<ThrottleData>>,
 }
@@ -28,18 +30,35 @@ impl Throttler {
         Throttler {
             id,
             fid,
+            last_ul: 0,
+            last_dl: 0,
             ul_data: Rc::new(UnsafeCell::new(ut)),
             dl_data: Rc::new(UnsafeCell::new(dt)),
         }
     }
 
-    pub fn update(&mut self) {
-        self.ul_data().add_tokens();
-        self.dl_data().add_tokens();
+    pub fn update(&mut self) -> Option<(u64, u64)> {
+        let ul = self.ul_data().add_tokens();
+        let dl = self.dl_data().add_tokens();
+        if ul != self.last_ul || dl != self.last_dl {
+            self.last_ul = ul;
+            self.last_dl = dl;
+            Some((ul, dl))
+        } else {
+            None
+        }
     }
 
     pub fn get_throttle(&self, id: usize) -> Throttle {
         Throttle { ul_data: self.ul_data.clone(), dl_data: self.dl_data.clone(), id }
+    }
+
+    pub fn ul_rate(&mut self) -> usize {
+        self.ul_data().rate
+    }
+
+    pub fn dl_rate(&mut self) -> usize {
+        self.dl_data().rate
     }
 
     pub fn set_ul_rate(&mut self, rate: usize) {
@@ -178,12 +197,15 @@ impl ThrottleData {
         self.tokens += amnt;
     }
 
-    /// This method must be called every URATE milliseconds.
-    fn add_tokens(&mut self) {
+    /// This method must be called every URATE milliseconds and returns
+    /// (self.max_tokens - self.tokens) * 1000/URATE - the bits/s
+    fn add_tokens(&mut self) -> u64 {
+        let drained = self.max_tokens - self.tokens;
         self.tokens += self.rate * URATE;
         if self.tokens >= self.max_tokens {
             self.tokens = self.max_tokens;
         }
+        return drained as u64/URATE as u64 * 1000
     }
 
     /// Attempt to extract amnt tokens from the throttler.

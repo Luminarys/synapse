@@ -1,11 +1,14 @@
 use std::{fs, io, time};
-use slog::Logger;
 use std::io::Read;
 use std::sync::atomic;
-use {rpc, tracker, disk, listener, CONFIG, SHUTDOWN};
-use util::{io_err, io_err_val, id_to_hash};
-use torrent::{self, peer, Torrent};
 use std::collections::HashMap;
+
+use slog::Logger;
+use chrono::Utc;
+
+use {rpc, tracker, disk, listener, CONFIG, SHUTDOWN, PEER_ID};
+use util::{io_err, io_err_val, id_to_hash, hash_to_id};
+use torrent::{self, peer, Torrent};
 use throttle::Throttler;
 
 pub mod cio;
@@ -29,6 +32,7 @@ pub struct Control<T: cio::CIO> {
     cio: T,
     tid_cnt: usize,
     job_timer: usize,
+    tx_rates: Option<(u64, u64)>,
     jobs: job::JobManager<T>,
     torrents: HashMap<usize, Torrent<T>>,
     peers: HashMap<usize, usize>,
@@ -66,6 +70,7 @@ impl<T: cio::CIO> Control<T> {
             torrents,
             peers,
             hash_idx,
+            tx_rates: None,
             l,
         })
     }
@@ -75,6 +80,7 @@ impl<T: cio::CIO> Control<T> {
             warn!(self.l, "Session deserialization failed!");
         }
         debug!(self.l, "Initialized!");
+        self.send_rpc_info();
         let mut events = Vec::with_capacity(20);
         loop {
             self.cio.poll(&mut events);
@@ -163,11 +169,14 @@ impl<T: cio::CIO> Control<T> {
             }
             cio::Event::Timer(t) => {
                 if t == self.throttler.id() {
-                    self.throttler.update();
+                    if let Some(p) = self.throttler.update() {
+                        self.tx_rates = Some(p);
+                    }
                 } else if t == self.throttler.fid() {
                     self.flush_blocked_peers();
                 } else if t == self.job_timer {
                     self.update_jobs();
+                    self.update_rpc_tx();
                 } else {
                     error!(self.l, "unknown timer id {} reported", t);
                 }
@@ -276,7 +285,11 @@ impl<T: cio::CIO> Control<T> {
                 }
             }
             rpc::Message::Torrent(i) => self.add_torrent(i),
-            rpc::Message::UpdateFile { id, torrent_id, priority } => {
+            rpc::Message::UpdateFile {
+                id,
+                torrent_id,
+                priority,
+            } => {
                 let hash_idx = &self.hash_idx;
                 let torrents = &mut self.torrents;
                 let res = id_to_hash(&torrent_id)
@@ -285,6 +298,23 @@ impl<T: cio::CIO> Control<T> {
                 if let Some(t) = res {
                     t.rpc_update_file(id, priority);
                 }
+            }
+            rpc::Message::UpdateServer {
+                id,
+                throttle_up,
+                throttle_down,
+            } => {
+                let tu = throttle_up.unwrap_or(self.throttler.ul_rate() as u32);
+                let td = throttle_down.unwrap_or(self.throttler.dl_rate() as u32);
+                self.throttler.set_ul_rate(tu as usize);
+                self.throttler.set_dl_rate(td as usize);
+                self.cio.msg_rpc(rpc::CtlMessage::Update(vec![
+                    rpc::resource::SResourceUpdate::ServerThrottle {
+                        id,
+                        throttle_up: tu,
+                        throttle_down: td,
+                    },
+                ]));
             }
             _ => {}
         }
@@ -298,6 +328,31 @@ impl<T: cio::CIO> Control<T> {
                 self.peers.insert(pid, id);
             }
         }
+    }
+
+    fn update_rpc_tx(&mut self) {
+        if let Some((rate_up, rate_down)) = self.tx_rates {
+            self.cio.msg_rpc(rpc::CtlMessage::Update(vec![
+                rpc::resource::SResourceUpdate::ServerTransfer {
+                    id: hash_to_id(&PEER_ID[..]),
+                    rate_up: 0,
+                    rate_down: 0,
+                },
+            ]));
+            self.tx_rates = None;
+        }
+    }
+
+    fn send_rpc_info(&mut self) {
+        let res = rpc::resource::Resource::Server(rpc::resource::Server {
+            id: hash_to_id(&PEER_ID[..]),
+            rate_up: 0,
+            rate_down: 0,
+            throttle_up: 0,
+            throttle_down: 0,
+            started: Utc::now(),
+        });
+        self.cio.msg_rpc(rpc::CtlMessage::Extant(vec![res]));
     }
 }
 

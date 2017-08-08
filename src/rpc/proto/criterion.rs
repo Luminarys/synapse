@@ -10,6 +10,7 @@ pub struct Criterion {
 
 #[derive(Copy, Clone, Debug, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
+#[serde(rename_all = "lowercase")]
 pub enum ResourceKind {
     Server,
     Torrent,

@@ -126,10 +126,17 @@ impl Processor {
                             });
                         }
                     }
+                    Some(&Resource::Server(ref s)) => {
+                            rmsg = Some(Message::UpdateServer {
+                                id: resource.id,
+                                throttle_up: resource.throttle_up,
+                                throttle_down: resource.throttle_down,
+                            });
+                    }
                     Some(_) => {
                         resp.push(SMessage::PermissionDenied(Error {
                             serial: Some(serial),
-                            reason: format!("Only torrents and files have mutable fields"),
+                            reason: format!("Only torrents, server, and files have mutable fields"),
                         }));
                     }
                     None => {

@@ -34,6 +34,11 @@ pub enum SResourceUpdate<'a> {
         rate_up: u32,
         rate_down: u32,
     },
+    ServerThrottle {
+        id: String,
+        throttle_up: u32,
+        throttle_down: u32,
+    },
     TorrentStatus {
         id: String,
         error: Option<String>,
@@ -183,6 +188,7 @@ impl<'a> SResourceUpdate<'a> {
             &SResourceUpdate::Resource(ref r) => r.id(),
             &SResourceUpdate::Throttle { ref id, .. } |
             &SResourceUpdate::ServerTransfer { ref id, .. } |
+            &SResourceUpdate::ServerThrottle { ref id, .. } |
             &SResourceUpdate::TorrentStatus { ref id, .. } |
             &SResourceUpdate::TorrentTransfer { ref id, .. } |
             &SResourceUpdate::TorrentPeers { ref id, .. } |
