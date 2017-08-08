@@ -58,6 +58,7 @@ pub struct Torrent<T: cio::CIO> {
     last_clear: DateTime<Utc>,
     throttle: Throttle,
     tracker: TrackerStatus,
+    priority: u8,
     tracker_update: Option<Instant>,
     peers: HashMap<usize, Peer<T>>,
     leechers: HashSet<usize>,
@@ -119,6 +120,7 @@ impl<T: cio::CIO> Torrent<T> {
             peers,
             pieces,
             picker,
+            priority: 3,
             uploaded: 0,
             downloaded: 0,
             last_ul: 0,
@@ -161,6 +163,7 @@ impl<T: cio::CIO> Torrent<T> {
             downloaded: d.downloaded,
             last_ul: 0,
             last_dl: 0,
+            priority: 3,
             last_clear: Utc::now(),
             cio,
             leechers,
@@ -509,11 +512,11 @@ impl<T: cio::CIO> Torrent<T> {
         }
 
         if let Some(p) = u.path {
-            // TODO: Implement custom paths
+            self.set_path(p);
         }
 
         if let Some(p) = u.priority {
-            // TODO: Implement priority
+            self.set_priority(p);
         }
 
         if let Some(s) = u.sequential {
@@ -525,6 +528,10 @@ impl<T: cio::CIO> Torrent<T> {
                 self.change_picker(p);
             }
         }
+    }
+
+    pub fn rpc_update_file(&mut self, id: String, priority: u8) {
+        self.set_file_priority(id, priority);
     }
 
     fn start(&mut self) {
@@ -559,6 +566,28 @@ impl<T: cio::CIO> Torrent<T> {
             id,
             throttle_up: ul,
             throttle_down: dl,
+        }]));
+    }
+
+    fn set_path(&mut self, path: String) {
+        // TODO: IMplement
+    }
+
+    fn set_priority(&mut self, priority: u8) {
+        // TODO: Implement priority somewhere(throttle or ctrl)
+        self.priority = priority;
+        let id = self.rpc_id();
+        self.cio.msg_rpc(rpc::CtlMessage::Update(vec![resource::SResourceUpdate::TorrentPriority {
+            id,
+            priority,
+        }]));
+    }
+
+    fn set_file_priority(&mut self, id: String, priority: u8) {
+        // TODO: Implement file priority in picker
+        self.cio.msg_rpc(rpc::CtlMessage::Update(vec![resource::SResourceUpdate::FilePriority {
+            id,
+            priority,
         }]));
     }
 
@@ -839,7 +868,6 @@ impl<T: cio::CIO> Torrent<T> {
     }
 
     // TODO: use this over RPC
-    #[allow(dead_code)]
     pub fn change_picker(&mut self, mut picker: Picker) {
         debug!(self.l, "Swapping pickers!");
         for (_, peer) in self.peers.iter() {

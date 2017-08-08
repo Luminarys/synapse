@@ -276,75 +276,18 @@ impl<T: cio::CIO> Control<T> {
                 }
             }
             rpc::Message::Torrent(i) => self.add_torrent(i),
+            rpc::Message::UpdateFile { id, torrent_id, priority } => {
+                let hash_idx = &self.hash_idx;
+                let torrents = &mut self.torrents;
+                let res = id_to_hash(&torrent_id)
+                    .and_then(|d| hash_idx.get(d.as_ref()))
+                    .and_then(|i| torrents.get_mut(i));
+                if let Some(t) = res {
+                    t.rpc_update_file(id, priority);
+                }
+            }
             _ => {}
         }
-        /*
-           match req {
-           rpc::Request::ListTorrents => {
-           let mut resp = Vec::new();
-           for (id, _) in self.torrents.iter() {
-           resp.push(*id);
-           }
-           self.send_rpc_msg(rpc::Response::Torrents(resp));
-           }
-           rpc::Request::TorrentInfo(i) => {
-           let resp = if let Some(torrent) = self.torrents.get(&i) {
-           rpc::Response::TorrentInfo(torrent.rpc_info())
-           } else {
-           rpc::Response::Err("Torrent ID not found!".to_owned())
-           };
-           self.send_rpc_msg(resp);
-           }
-           rpc::Request::AddTorrent(data) => {
-           let resp = match torrent::Info::from_bencode(data) {
-           Ok(i) => {
-           rpc::Response::Ack
-           }
-           Err(e) => {
-           rpc::Response::Err(e.to_owned())
-           }
-           };
-           self.send_rpc_msg(resp);
-           }
-           rpc::Request::PauseTorrent(id) => {
-           let resp = if let Some(t) = self.torrents.get_mut(&id) {
-           t.pause();
-           rpc::Response::Ack
-           } else {
-           rpc::Response::Err("Torrent not found!".to_owned())
-           };
-           self.send_rpc_msg(resp);
-           }
-           rpc::Request::ResumeTorrent(id) => {
-           let resp = if let Some(t) = self.torrents.get_mut(&id) {
-           t.resume();
-           rpc::Response::Ack
-           } else {
-           rpc::Response::Err("Torrent not found!".to_owned())
-           };
-           self.send_rpc_msg(resp);
-           }
-           rpc::Request::RemoveTorrent(id) => {
-           let resp = if let Some(mut t) = self.torrents.remove(&id) {
-           self.hash_idx.remove(&t.info().hash);
-           t.delete();
-           rpc::Response::Ack
-           } else {
-           rpc::Response::Err("Torrent not found!".to_owned())
-           };
-           self.send_rpc_msg(resp);
-           }
-           rpc::Request::ThrottleUpload(amnt) => {
-           self.throttler.set_ul_rate(amnt);
-           self.send_rpc_msg(rpc::Response::Ack);
-           }
-           rpc::Request::ThrottleDownload(amnt) => {
-           self.throttler.set_dl_rate(amnt);
-           self.send_rpc_msg(rpc::Response::Ack);
-           }
-           rpc::Request::Shutdown => { return true; }
-           }
-           */
         false
     }
 

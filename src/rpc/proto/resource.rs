@@ -53,6 +53,14 @@ pub enum SResourceUpdate<'a> {
         availability: f32,
     },
     TorrentPicker { id: String, sequential: bool },
+    TorrentPriority {
+        id: String,
+        priority: u8,
+    },
+    FilePriority {
+        id: String,
+        priority: u8,
+    },
     PeerRate {
         id: String,
         rate_up: u32,
@@ -179,6 +187,8 @@ impl<'a> SResourceUpdate<'a> {
             &SResourceUpdate::TorrentTransfer { ref id, .. } |
             &SResourceUpdate::TorrentPeers { ref id, .. } |
             &SResourceUpdate::TorrentPicker { ref id, .. } |
+            &SResourceUpdate::TorrentPriority { ref id, .. } |
+            &SResourceUpdate::FilePriority { ref id, .. } |
             &SResourceUpdate::PeerRate { ref id, .. } |
             &SResourceUpdate::PieceAvailable { ref id, .. } |
             &SResourceUpdate::PieceDownloaded { ref id, .. } => id,
