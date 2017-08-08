@@ -30,7 +30,7 @@ use CONFIG;
 pub enum CtlMessage {
     Extant(Vec<resource::Resource>),
     Update(Vec<resource::SResourceUpdate<'static>>),
-    Removed(Vec<u64>),
+    Removed(Vec<String>),
     Shutdown,
 }
 
@@ -38,13 +38,13 @@ pub enum CtlMessage {
 pub enum Message {
     UpdateTorrent(resource::CResourceUpdate),
     UpdateFile {
-        id: u64,
-        torrent_id: u64,
+        id: String,
+        torrent_id: String,
         priority: u8,
     },
-    RemoveTorrent(u64),
-    RemovePeer { id: u64, torrent_id: u64 },
-    RemoveTracker { id: u64, torrent_id: u64 },
+    RemoveTorrent(String),
+    RemovePeer { id: String, torrent_id: String },
+    RemoveTracker { id: String, torrent_id: String },
     Torrent(torrent::Info),
 }
 

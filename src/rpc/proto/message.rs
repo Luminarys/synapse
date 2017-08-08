@@ -10,14 +10,14 @@ use super::criterion::{ResourceKind, Criterion};
 #[serde(deny_unknown_fields)]
 pub enum CMessage {
     // Standard messages
-    GetResources { serial: u64, ids: Vec<u64> },
-    Subscribe { serial: u64, ids: Vec<u64> },
-    Unsubscribe { serial: u64, ids: Vec<u64> },
+    GetResources { serial: u64, ids: Vec<String> },
+    Subscribe { serial: u64, ids: Vec<String> },
+    Unsubscribe { serial: u64, ids: Vec<String> },
     UpdateResource {
         serial: u64,
         resource: CResourceUpdate,
     },
-    RemoveResource { serial: u64, id: u64 },
+    RemoveResource { serial: u64, id: String },
     FilterSubscribe {
         serial: u64,
         #[serde(default)]
@@ -42,7 +42,7 @@ pub enum CMessage {
         size: u64,
         path: String,
     },
-    DownloadFile { serial: u64, id: u64 },
+    DownloadFile { serial: u64, id: String },
 }
 
 /// Server -> client message, serialize only
@@ -51,8 +51,8 @@ pub enum CMessage {
 #[serde(tag = "type")]
 pub enum SMessage<'a> {
     // Standard messages
-    ResourcesExtant { serial: u64, ids: Vec<u64> },
-    ResourcesRemoved { serial: u64, ids: Vec<u64> },
+    ResourcesExtant { serial: u64, ids: Vec<&'a str> },
+    ResourcesRemoved { serial: u64, ids: Vec<String> },
     UpdateResources { resources: Vec<SResourceUpdate<'a>> },
 
     // Special messages

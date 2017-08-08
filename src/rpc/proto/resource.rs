@@ -25,22 +25,22 @@ pub enum Resource {
 pub enum SResourceUpdate<'a> {
     Resource(&'a Resource),
     Throttle {
-        id: u64,
+        id: String,
         throttle_up: u32,
         throttle_down: u32,
     },
     ServerTransfer {
-        id: u64,
+        id: String,
         rate_up: u32,
         rate_down: u32,
     },
     TorrentStatus {
-        id: u64,
+        id: String,
         error: Option<String>,
         status: Status,
     },
     TorrentTransfer {
-        id: u64,
+        id: String,
         rate_up: u32,
         rate_down: u32,
         transferred_up: u64,
@@ -48,18 +48,18 @@ pub enum SResourceUpdate<'a> {
         progress: f32,
     },
     TorrentPeers {
-        id: u64,
+        id: String,
         peers: u16,
         availability: f32,
     },
-    TorrentPicker { id: u64, sequential: bool },
+    TorrentPicker { id: String, sequential: bool },
     PeerRate {
-        id: u64,
+        id: String,
         rate_up: u32,
         rate_down: u32,
     },
-    PieceAvailable { id: u64, available: bool },
-    PieceDownloaded { id: u64, downloaded: bool },
+    PieceAvailable { id: String, available: bool },
+    PieceDownloaded { id: String, downloaded: bool },
 }
 
 /// Collection of mutable fields that clients
@@ -67,7 +67,7 @@ pub enum SResourceUpdate<'a> {
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CResourceUpdate {
-    pub id: u64,
+    pub id: String,
     pub status: Option<Status>,
     pub path: Option<String>,
     pub priority: Option<u8>,
@@ -79,7 +79,7 @@ pub struct CResourceUpdate {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Server {
-    pub id: u64,
+    pub id: String,
     pub rate_up: u32,
     pub rate_down: u32,
     pub throttle_up: u32,
@@ -90,7 +90,7 @@ pub struct Server {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Torrent {
-    pub id: u64,
+    pub id: String,
     pub name: String,
     pub path: String,
     pub created: DateTime<Utc>,
@@ -130,8 +130,8 @@ pub enum Status {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Piece {
-    pub id: u64,
-    pub torrent_id: u64,
+    pub id: String,
+    pub torrent_id: String,
     pub available: bool,
     pub downloaded: bool,
 }
@@ -139,8 +139,8 @@ pub struct Piece {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct File {
-    pub id: u64,
-    pub torrent_id: u64,
+    pub id: String,
+    pub torrent_id: String,
     pub path: String,
     pub progress: f32,
     pub availability: f32,
@@ -150,8 +150,8 @@ pub struct File {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Peer {
-    pub id: u64,
-    pub torrent_id: u64,
+    pub id: String,
+    pub torrent_id: String,
     pub client_id: [u8; 20],
     pub ip: String,
     pub rate_up: u32,
@@ -162,39 +162,39 @@ pub struct Peer {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Tracker {
-    pub id: u64,
-    pub torrent_id: u64,
+    pub id: String,
+    pub torrent_id: String,
     pub url: String,
     pub last_report: DateTime<Utc>,
     pub error: Option<String>,
 }
 
 impl<'a> SResourceUpdate<'a> {
-    pub fn id(&self) -> u64 {
+    pub fn id(&self) -> &str {
         match self {
             &SResourceUpdate::Resource(ref r) => r.id(),
-            &SResourceUpdate::Throttle { id, .. } |
-            &SResourceUpdate::ServerTransfer { id, .. } |
-            &SResourceUpdate::TorrentStatus { id, .. } |
-            &SResourceUpdate::TorrentTransfer { id, .. } |
-            &SResourceUpdate::TorrentPeers { id, .. } |
-            &SResourceUpdate::TorrentPicker { id, .. } |
-            &SResourceUpdate::PeerRate { id, .. } |
-            &SResourceUpdate::PieceAvailable { id, .. } |
-            &SResourceUpdate::PieceDownloaded { id, .. } => id,
+            &SResourceUpdate::Throttle { ref id, .. } |
+            &SResourceUpdate::ServerTransfer { ref id, .. } |
+            &SResourceUpdate::TorrentStatus { ref id, .. } |
+            &SResourceUpdate::TorrentTransfer { ref id, .. } |
+            &SResourceUpdate::TorrentPeers { ref id, .. } |
+            &SResourceUpdate::TorrentPicker { ref id, .. } |
+            &SResourceUpdate::PeerRate { ref id, .. } |
+            &SResourceUpdate::PieceAvailable { ref id, .. } |
+            &SResourceUpdate::PieceDownloaded { ref id, .. } => id,
         }
     }
 }
 
 impl Resource {
-    pub fn id(&self) -> u64 {
+    pub fn id(&self) -> &str {
         match self {
-            &Resource::Server(ref t) => t.id,
-            &Resource::Torrent(ref t) => t.id,
-            &Resource::File(ref t) => t.id,
-            &Resource::Piece(ref t) => t.id,
-            &Resource::Peer(ref t) => t.id,
-            &Resource::Tracker(ref t) => t.id,
+            &Resource::Server(ref t) => &t.id,
+            &Resource::Torrent(ref t) => &t.id,
+            &Resource::File(ref t) => &t.id,
+            &Resource::Piece(ref t) => &t.id,
+            &Resource::Peer(ref t) => &t.id,
+            &Resource::Tracker(ref t) => &t.id,
         }
     }
 
@@ -308,7 +308,8 @@ impl Filter for Resource {
 impl Filter for Server {
     fn matches(&self, c: &Criterion) -> bool {
         match &c.field[..] {
-            "id" => match_n(self.id, c),
+            "id" => match_s(&self.id, c),
+
             "rate_up" => match_n(self.rate_up as u64, c),
             "rate_down" => match_n(self.rate_down as u64, c),
             "throttle_up" => match_n(self.throttle_up as u64, c),
@@ -322,7 +323,12 @@ impl Filter for Server {
 impl Filter for Torrent {
     fn matches(&self, c: &Criterion) -> bool {
         match &c.field[..] {
-            "id" => match_n(self.id, c),
+            "id" => match_s(&self.id, c),
+            "name" => match_s(&self.name, c),
+            "path" => match_s(&self.path, c),
+            "status" => match_s(self.status.as_str(), c),
+            "error" => match_s(self.error.as_ref().map(|s| s.as_str()).unwrap_or(""), c),
+
             "priority" => match_n(self.priority as u64, c),
             "rate_up" => match_n(self.rate_up as u64, c),
             "rate_down" => match_n(self.rate_down as u64, c),
@@ -339,11 +345,6 @@ impl Filter for Torrent {
             "progress" => match_f(self.progress, c),
             "availability" => match_f(self.availability, c),
 
-            "name" => match_s(&self.name, c),
-            "path" => match_s(&self.path, c),
-            "status" => match_s(self.status.as_str(), c),
-            "error" => match_s(self.error.as_ref().map(|s| s.as_str()).unwrap_or(""), c),
-
             "sequential" => match_b(self.sequential, c),
 
             _ => false,
@@ -354,8 +355,8 @@ impl Filter for Torrent {
 impl Filter for Piece {
     fn matches(&self, c: &Criterion) -> bool {
         match &c.field[..] {
-            "id" => match_n(self.id, c),
-            "torrent_id" => match_n(self.id, c),
+            "id" => match_s(&self.id, c),
+            "torrent_id" => match_s(&self.torrent_id, c),
 
             "available" => match_b(self.available, c),
             "downloaded" => match_b(self.downloaded, c),
@@ -368,13 +369,14 @@ impl Filter for Piece {
 impl Filter for File {
     fn matches(&self, c: &Criterion) -> bool {
         match &c.field[..] {
-            "id" => match_n(self.id, c),
-            "torrent_id" => match_n(self.id, c),
+            "id" => match_s(&self.id, c),
+            "torrent_id" => match_s(&self.id, c),
+            "path" => match_s(&self.path, c),
+
             "priority" => match_n(self.priority as u64, c),
 
             "progress" => match_f(self.progress, c),
 
-            "path" => match_s(&self.path, c),
 
             _ => false,
         }
@@ -384,14 +386,15 @@ impl Filter for File {
 impl Filter for Peer {
     fn matches(&self, c: &Criterion) -> bool {
         match &c.field[..] {
-            "id" => match_n(self.id, c),
-            "torrent_id" => match_n(self.id, c),
+            "id" => match_s(&self.id, c),
+            "torrent_id" => match_s(&self.id, c),
+            "ip" => match_s(&self.ip, c),
+
             "rate_up" => match_n(self.rate_up as u64, c),
             "rate_down" => match_n(self.rate_down as u64, c),
 
             "availability" => match_f(self.availability, c),
 
-            "ip" => match_s(&self.ip, c),
 
             // TODO: Come up with a way to match this
             "client_id" => false,
@@ -404,9 +407,8 @@ impl Filter for Peer {
 impl Filter for Tracker {
     fn matches(&self, c: &Criterion) -> bool {
         match &c.field[..] {
-            "id" => match_n(self.id, c),
-            "torrent_id" => match_n(self.id, c),
-
+            "id" => match_s(&self.id, c),
+            "torrent_id" => match_s(&self.id, c),
             "url" => match_s(&self.url, c),
             "error" => match_s(self.error.as_ref().map(|s| s.as_str()).unwrap_or(""), c),
 

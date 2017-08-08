@@ -3,6 +3,7 @@ use rand::{self, Rng};
 use std::fmt::Write as FWrite;
 use byteorder::{ReadBytesExt, WriteBytesExt, BigEndian};
 use std::net::{SocketAddr, Ipv4Addr, SocketAddrV4};
+use ring::digest;
 
 pub fn io_err<T>(reason: &'static str) -> io::Result<T> {
     Err(io::Error::new(io::ErrorKind::Other, reason))
@@ -70,7 +71,55 @@ pub fn random_string(len: usize) -> String {
         .collect::<String>()
 }
 
-pub fn hash_to_id(hash: &[u8; 20]) -> String {
+pub fn sha1_hash(data: &[u8]) -> digest::Digest {
+    let mut ctx = digest::Context::new(&digest::SHA1);
+    ctx.update(data);
+    ctx.finish()
+}
+
+pub fn piece_rpc_id(torrent: &[u8; 20], piece: u64) -> String {
+    const PIECE_ID: &'static [u8] = b"PIECE";
+    let mut idx = [0u8; 8];
+    (&mut idx[..]).write_u64::<BigEndian>(piece).unwrap();
+
+    let mut ctx = digest::Context::new(&digest::SHA1);
+    ctx.update(torrent);
+    ctx.update(PIECE_ID);
+    ctx.update(&idx[..]);
+    hash_to_id(ctx.finish().as_ref())
+}
+
+pub fn peer_rpc_id(torrent: &[u8; 20], peer: u64) -> String {
+    const PEER_ID: &'static [u8] = b"PEER";
+    let mut idx = [0u8; 8];
+    (&mut idx[..]).write_u64::<BigEndian>(peer).unwrap();
+
+    let mut ctx = digest::Context::new(&digest::SHA1);
+    ctx.update(torrent);
+    ctx.update(PEER_ID);
+    ctx.update(&idx[..]);
+    hash_to_id(ctx.finish().as_ref())
+}
+
+pub fn file_rpc_id(torrent: &[u8; 20], file: &str) -> String {
+    const FILE_ID: &'static [u8] = b"FILE";
+    let mut ctx = digest::Context::new(&digest::SHA1);
+    ctx.update(torrent);
+    ctx.update(FILE_ID);
+    ctx.update(file.as_bytes());
+    hash_to_id(ctx.finish().as_ref())
+}
+
+pub fn trk_rpc_id(torrent: &[u8; 20], url: &str) -> String {
+    const TRK_ID: &'static [u8] = b"TRK";
+    let mut ctx = digest::Context::new(&digest::SHA1);
+    ctx.update(torrent);
+    ctx.update(TRK_ID);
+    ctx.update(url.as_bytes());
+    hash_to_id(ctx.finish().as_ref())
+}
+
+pub fn hash_to_id(hash: &[u8]) -> String {
     let mut hash_str = String::new();
     for i in 0..20 {
         write!(&mut hash_str, "{:02X}", hash[i]).unwrap();
