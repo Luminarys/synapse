@@ -71,6 +71,15 @@ impl Message {
         }
     }
 
+    pub fn ping(d: Vec<u8>) -> Message {
+        Message {
+            header: 0x80 | Opcode::Ping.code(),
+            len: d.len() as u64,
+            mask: None,
+            data: d,
+        }
+    }
+
     pub fn allocate(&mut self) {
         let cl = self.data.len();
         let len = self.len as usize;

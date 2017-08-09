@@ -39,7 +39,8 @@ enum FragBuf {
     Binary(Vec<u8>),
 }
 
-const CONN_TIMEOUT: u64 = 2;
+const CONN_TIMEOUT: u64 = 20;
+const CONN_PING: u64 = 15;
 
 impl Client {
     pub fn read(&mut self) -> Result<Option<Frame>> {
@@ -90,13 +91,15 @@ impl Client {
             Opcode::Ping => {
                 self.send_msg(Message::pong(m.data))?;
             }
+            Opcode::Pong => {
+                self.last_action = time::Instant::now();
+            }
             _ => {}
         }
         Ok(Err(false))
     }
 
     pub fn write(&mut self) -> Result<()> {
-        self.last_action = time::Instant::now();
         self.w.write(&mut self.conn).chain_err(|| ErrorKind::IO)
     }
 
@@ -108,6 +111,19 @@ impl Client {
         self.w.enqueue(msg);
         self.write()
     }
+
+    pub fn timed_out(&mut self) -> bool {
+        if self.last_action.elapsed().as_secs() > CONN_TIMEOUT {
+            return true;
+        }
+        if self.last_action.elapsed().as_secs() > CONN_PING {
+            if self.send_msg(Message::ping(vec![0xDE, 0xAD])).is_err() {
+                return true;
+            }
+        }
+        false
+    }
+
 }
 
 impl Into<TcpStream> for Client {

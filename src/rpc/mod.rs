@@ -69,7 +69,7 @@ pub struct RPC {
 }
 
 const POLL_INT_MS: usize = 1000;
-const CLEANUP_INT_S: usize = 3000;
+const CLEANUP_INT_S: usize = 2000;
 
 impl RPC {
     pub fn start(creg: &mut amy::Registrar) -> io::Result<handle::Handle<Message, CtlMessage>> {
@@ -141,7 +141,7 @@ impl RPC {
                                 warn!(
                                     self.l,
                                     "Processor requested a message transfer to a nonexistent client!"
-                                );
+                                    );
                                 Ok(())
                             }
                         };
@@ -189,11 +189,11 @@ impl RPC {
                         .get_mut(&id)
                         .map(|c| {
                             c.send(ws::Frame::Text(
-                                serde_json::to_string(&SMessage::TransferFailed(err))
+                                    serde_json::to_string(&SMessage::TransferFailed(err))
                                     .unwrap(),
-                            ))
+                                    ))
                         })
-                        .unwrap_or(Ok(()));
+                    .unwrap_or(Ok(()));
                     if res.is_err() {
                         let client = self.clients.remove(&id).unwrap();
                         self.remove_client(id, client);
@@ -243,7 +243,7 @@ impl RPC {
                                 data,
                                 path,
                                 size,
-                            );
+                                );
                         }
                         Some(_) => warn!(self.l, "Unimplemented transfer type ignored"),
                         None => {
@@ -277,18 +277,18 @@ impl RPC {
                                     for msg in msgs {
                                         if c.send(
                                             ws::Frame::Text(serde_json::to_string(&msg).unwrap()),
-                                        ).is_err()
+                                            ).is_err()
                                         {
                                             break 'outer false;
                                         }
                                     }
                                 }
                                 Err(e) => {
-                                    info!(
+                                    debug!(
                                         self.l,
                                         "Client sent an invalid message, disconnecting: {}",
                                         e
-                                    );
+                                        );
                                     break false;
                                 }
                             }
@@ -298,6 +298,7 @@ impl RPC {
                     }
                 };
                 if !res {
+                    debug!(self.l, "Client error, disconnecting");
                     self.remove_client(not.id, c);
                     return;
                 }
@@ -315,20 +316,29 @@ impl RPC {
     fn cleanup(&mut self) {
         self.processor.remove_expired_tokens();
         let reg = &self.reg;
+        let l = &self.l;
+        self.clients.retain(|id, client| {
+            let res = client.timed_out();
+            if res {
+                info!(l, "client {} timed out", id);
+                reg.deregister(&client.conn).unwrap();
+            }
+            !res
+        });
         self.incoming.retain(|_, inc| {
-            let res = !inc.timed_out();
+            let res = inc.timed_out();
             if res {
                 reg.deregister(&inc.conn).unwrap();
             }
-            res
+            !res
         });
         for (conn, id, err) in self.transfers.cleanup() {
             reg.deregister(&conn).unwrap();
             self.clients.get_mut(&id).map(|c| {
                 c.send(ws::Frame::Text(
-                    serde_json::to_string(&SMessage::TransferFailed(err))
+                        serde_json::to_string(&SMessage::TransferFailed(err))
                         .unwrap(),
-                ))
+                        ))
             });
         }
     }
