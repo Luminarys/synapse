@@ -429,7 +429,7 @@ impl<T: cio::CIO> Torrent<T> {
                                 peer.send_message(m.clone());
                             }
                         } else {
-                            warn!(self.l, "PID {} in leechers not found in peers.", pid);
+                            crit!(self.l, "PID {} in leechers not found in peers.", pid);
                         }
                     }
 

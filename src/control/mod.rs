@@ -317,11 +317,12 @@ impl<T: cio::CIO> Control<T> {
                 ]));
             }
             rpc::Message::RemoveTorrent(id) => {
-                let hash_idx = &self.hash_idx;
+                let hash_idx = &mut self.hash_idx;
                 let torrents = &mut self.torrents;
                 id_to_hash(&id)
-                    .and_then(|d| hash_idx.get(d.as_ref()))
-                    .and_then(|i| torrents.remove(i));
+                    .and_then(|d| hash_idx.remove(d.as_ref()))
+                    .and_then(|i| torrents.remove(&i))
+                    .map(|mut t| t.delete());
             }
             rpc::Message::RemovePeer { id, torrent_id } => {
                 let hash_idx = &self.hash_idx;

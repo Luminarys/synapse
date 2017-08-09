@@ -97,8 +97,7 @@ impl Picker {
             (piece.idx, piece.availability)
         };
 
-        // TODO: Investigate potential failure from underflow here
-        let swap_idx = self.priorities[avail - 1];
+        let swap_idx = self.priorities[avail.saturating_sub(1)];
         let swap_piece = self.pieces[swap_idx];
 
         {
