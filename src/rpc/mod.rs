@@ -233,11 +233,6 @@ impl RPC {
                     self.incoming.insert(id, i);
                 }
                 Ok(IncomingStatus::Transfer { data, token }) => {
-                    info!(
-                        self.l,
-                        "Attempting to initiate transfer with data {:?}",
-                        data
-                    );
                     match self.processor.get_transfer(token) {
                         Some((client, serial, TransferKind::UploadTorrent { path, size })) => {
                             self.transfers.add_torrent(
@@ -320,13 +315,6 @@ impl RPC {
     fn cleanup(&mut self) {
         self.processor.remove_expired_tokens();
         let reg = &self.reg;
-        self.clients.retain(|_, client| {
-            let res = !client.timed_out();
-            if res {
-                reg.deregister(&client.conn).unwrap();
-            }
-            res
-        });
         self.incoming.retain(|_, inc| {
             let res = !inc.timed_out();
             if res {

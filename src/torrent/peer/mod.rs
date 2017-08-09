@@ -208,6 +208,11 @@ impl<T: cio::CIO> Peer<T> {
         Ok(p)
     }
 
+    /// Returns whether or not the peer has received a handshake
+    pub fn ready(&self) -> bool {
+        self.cid.is_some()
+    }
+
     pub fn addr(&self) -> SocketAddr {
         self.addr
     }
@@ -363,9 +368,10 @@ impl<T: cio::CIO> Peer<T> {
 
     fn send_rpc_info(&mut self) {
         if let Some(cid) = self.cid {
+            let id = util::peer_rpc_id(&self.t_hash, self.id as u64);
             self.cio.msg_rpc(rpc::CtlMessage::Extant(vec![
                 resource::Resource::Peer(resource::Peer {
-                    id: util::peer_rpc_id(&self.t_hash, self.id as u64),
+                    id,
                     torrent_id: util::hash_to_id(&self.t_hash[..]),
                     client_id: cid,
                     ip: self.addr.to_string(),
@@ -378,9 +384,11 @@ impl<T: cio::CIO> Peer<T> {
     }
 
     pub fn send_rpc_removal(&mut self) {
-        self.cio.msg_rpc(rpc::CtlMessage::Removed(
-            vec![util::peer_rpc_id(&self.t_hash, self.id as u64)],
-        ));
+        if self.ready() {
+            self.cio.msg_rpc(rpc::CtlMessage::Removed(
+                vec![util::peer_rpc_id(&self.t_hash, self.id as u64)],
+            ));
+        }
     }
 }
 

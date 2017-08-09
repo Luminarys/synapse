@@ -104,10 +104,6 @@ impl Client {
         self.send_msg(f.into())
     }
 
-    pub fn timed_out(&self) -> bool {
-        self.last_action.elapsed().as_secs() > CONN_TIMEOUT
-    }
-
     fn send_msg(&mut self, msg: Message) -> Result<()> {
         self.w.enqueue(msg);
         self.write()

@@ -887,12 +887,13 @@ impl<T: cio::CIO> Torrent<T> {
             }
         } else {
             for (pid, p) in self.peers.iter() {
-                if p.remote_status().choked {
+                if p.remote_status().choked || !p.ready() {
                     continue;
                 }
                 let (rate_up, rate_down) = p.get_tx_rates();
+                let id = util::peer_rpc_id(&self.info.hash, *pid as u64);
                 updates.push(SResourceUpdate::Rate {
-                    id: util::peer_rpc_id(&self.info.hash, *pid as u64),
+                    id,
                     rate_up,
                     rate_down,
                 });
