@@ -315,6 +315,15 @@ impl<T: cio::CIO> Torrent<T> {
                     }
                     let req = tracker::Request::completed(self);
                     self.cio.msg_trk(req);
+                    // Remove all seeding peers.
+                    let leechers = &self.leechers;
+                    let seeders = self.peers
+                        .iter()
+                        .filter(|&(id, _)| !leechers.contains(id))
+                        .map(|(id, _)| *id);
+                    for seeder in seeders {
+                        self.cio.remove_peer(seeder);
+                    }
                 } else {
                     warn!(
                         self.l,
