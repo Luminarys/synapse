@@ -205,6 +205,16 @@ impl Resource {
         }
     }
 
+    pub fn torrent_id(&self) -> Option<&str> {
+        match self {
+            &Resource::File(ref t) => Some(&t.torrent_id),
+            &Resource::Piece(ref t) => Some(&t.torrent_id),
+            &Resource::Peer(ref t) => Some(&t.torrent_id),
+            &Resource::Tracker(ref t) => Some(&t.torrent_id),
+            _ => None,
+        }
+    }
+
     pub fn kind(&self) -> ResourceKind {
         match self {
             &Resource::Server(_) => ResourceKind::Server,

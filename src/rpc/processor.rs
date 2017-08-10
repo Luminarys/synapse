@@ -12,6 +12,10 @@ pub struct Processor {
     subs: HashMap<String, HashSet<usize>>,
     filter_subs: HashMap<u64, Filter>,
     resources: HashMap<String, Resource>,
+    // Index by resource kind
+    kinds: Vec<HashSet<String>>,
+    // Index by torrent ID
+    torrent_idx: HashMap<String, HashSet<String>>,
     tokens: HashMap<String, BearerToken>,
 }
 
@@ -44,6 +48,8 @@ impl Processor {
             filter_subs: HashMap::new(),
             resources: HashMap::new(),
             tokens: HashMap::new(),
+            torrent_idx: HashMap::new(),
+            kinds: vec![HashSet::new(); 6],
         }
     }
 
@@ -253,6 +259,13 @@ impl Processor {
                     ids.push(r.id().to_owned());
                     self.subs.insert(r.id().to_owned(), HashSet::new());
                     let id = r.id().to_owned();
+                    self.kinds[r.kind() as usize].insert(id.clone());
+                    if let Some(tid) = r.torrent_id() {
+                        if !self.torrent_idx.contains_key(tid) {
+                            self.torrent_idx.insert(tid.to_owned(), HashSet::new());
+                        }
+                        self.torrent_idx.get_mut(tid).unwrap().insert(id.clone());
+                    }
                     self.resources.insert(id, r);
                 }
                 // We have to make a new vec which points to the resource struct
@@ -299,7 +312,17 @@ impl Processor {
                 }
 
                 for id in r {
-                    self.resources.remove(&id);
+                    let r = self.resources.remove(&id).unwrap();
+                    self.kinds[r.kind() as usize].remove(&id);
+                    // If this resource is part of a torrent, remove from index,
+                    // if we haven't removed the entire torrent already.
+                    // Otherwise, attempt to remove the resource itself from the
+                    // torrent index, since it's either a torrent or a server(ignored).
+                    if let Some(tid) = r.torrent_id() {
+                        self.torrent_idx.get_mut(tid).map(|s| s.remove(&id));
+                    } else {
+                        self.torrent_idx.remove(&id);
+                    }
                 }
             }
             CtlMessage::Shutdown => unreachable!(),

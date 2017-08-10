@@ -12,7 +12,7 @@ pub struct Criterion {
 #[serde(deny_unknown_fields)]
 #[serde(rename_all = "lowercase")]
 pub enum ResourceKind {
-    Server,
+    Server = 0,
     Torrent,
     Peer,
     File,
