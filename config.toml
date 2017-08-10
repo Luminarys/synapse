@@ -3,7 +3,7 @@ port = 16493
 
 [rpc]
 # TCP port used for RPC
-# port = 8412
+port = 8412
 
 [tracker]
 # UDP port used for UDP tracker interaction

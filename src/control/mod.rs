@@ -246,6 +246,7 @@ impl<T: cio::CIO> Control<T> {
         p.get(&peer).cloned().and_then(|id| t.get_mut(&id)).map(
             |torrent| if torrent.peer_ev(peer, ev).is_err() {
                 p.remove(&peer);
+                torrent.update_rpc_peers();
             },
         );
     }
