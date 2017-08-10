@@ -6,6 +6,7 @@ use slog::Logger;
 use amy;
 
 use {rpc, tracker, disk, listener, torrent};
+use CONFIG;
 use control::cio::{self, Result, ResultExt, ErrorKind};
 
 const POLL_INT_MS: usize = 1000;
@@ -129,6 +130,9 @@ impl cio::CIO for ACIO {
     }
 
     fn add_peer(&mut self, mut peer: torrent::PeerConn) -> Result<cio::PID> {
+        if self.d().peers.len() > CONFIG.net.max_open_sockets {
+            return Err(ErrorKind::Full.into());
+        }
         let id = self.d()
             .reg
             .register(peer.sock(), amy::Event::Both)

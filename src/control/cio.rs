@@ -7,6 +7,11 @@ error_chain! {
                 display("IO error")
         }
 
+        Full {
+            description("FD limit reached")
+                display("Too many existing open fd's, socket rejected")
+        }
+
         Request {
             description("removal requested")
                 display("removal requested")
