@@ -511,6 +511,9 @@ impl<T: cio::CIO> Torrent<T> {
             Message::Uninterested => {
                 self.choker.remove_peer(peer, &mut self.peers);
             }
+
+            // These messages are all handled at the peer level, not the torrent level,
+            // so just ignore here
             Message::KeepAlive |
             Message::Choke |
             Message::Cancel { .. } |

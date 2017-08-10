@@ -308,7 +308,9 @@ impl<T: cio::CIO> Peer<T> {
                 pieces.cap(self.pieces.len());
                 mem::swap(pieces, &mut self.pieces);
             }
-            Message::KeepAlive => {}
+            Message::KeepAlive => {
+                self.send_message(Message::KeepAlive);
+            }
             Message::Cancel { index, begin, .. } => {
                 self.cio.get_peer(self.id, |conn| {
                     conn.writer.write_queue.retain(|m| {
