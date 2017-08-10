@@ -119,6 +119,10 @@ impl Handler {
         })
     }
 
+    pub fn active_requests(&self) -> usize {
+        self.connections.len()
+    }
+
     pub fn complete(&self) -> bool {
         self.connections.is_empty()
     }

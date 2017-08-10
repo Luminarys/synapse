@@ -4,24 +4,28 @@ mod errors;
 mod dns;
 mod dht;
 
-use byteorder::{BigEndian, ReadBytesExt};
+use std::collections::VecDeque;
 use std::net::{SocketAddr, SocketAddrV4, Ipv4Addr};
 use std::{result, io};
+
+use byteorder::{BigEndian, ReadBytesExt};
 use slog::Logger;
+use url::Url;
+
+pub use self::errors::{Result, ResultExt, Error, ErrorKind};
 use torrent::Torrent;
 use bencode::BEncode;
-use url::Url;
-use {CONFIG, LOG};
 use control::cio;
 use handle;
 use amy;
-pub use self::errors::{Result, ResultExt, Error, ErrorKind};
+use {CONFIG, LOG};
 
 pub struct Tracker {
     poll: amy::Poller,
     ch: handle::Handle<Request, Response>,
     dns_res: amy::Receiver<dns::QueryResponse>,
     http: http::Handler,
+    queue: VecDeque<Announce>,
     udp: udp::Handler,
     dht: dht::Manager,
     dns: dns::Resolver,
@@ -89,7 +93,7 @@ impl Tracker {
         dns_res: amy::Receiver<dns::QueryResponse>,
         timer: usize,
         l: Logger,
-    ) -> Tracker {
+        ) -> Tracker {
         Tracker {
             ch,
             http,
@@ -100,6 +104,7 @@ impl Tracker {
             dns,
             dns_res,
             timer,
+            queue: VecDeque::new(),
             shutting_down: false,
         }
     }
@@ -146,28 +151,7 @@ impl Tracker {
     fn handle_request(&mut self) -> result::Result<(), ()> {
         while let Ok(r) = self.ch.recv() {
             match r {
-                Request::Announce(req) => {
-                    debug!(self.l, "Handling announce request!");
-                    let id = req.id;
-                    let response = if let Ok(url) = Url::parse(&req.url) {
-                        match url.scheme() {
-                            "http" => self.http.new_announce(req, &url, &mut self.dns),
-                            "udp" => self.udp.new_announce(req, &url, &mut self.dns),
-                            s => Err(
-                                ErrorKind::InvalidRequest(
-                                    format!("Unknown tracker url scheme: {}", s),
-                                ).into(),
-                            ),
-                        }
-                    } else {
-                        Err(
-                            ErrorKind::InvalidRequest(format!("Invalid url: {}", req.url)).into(),
-                        )
-                    };
-                    if let Err(e) = response {
-                        self.send_response((id, Err(e)));
-                    }
-                }
+                Request::Announce(req) => self.handle_announce(req),
                 Request::GetPeers(gp) => {
                     debug!(self.l, "Handling dht peer find req!");
                     self.dht.get_peers(gp.id, gp.hash);
@@ -186,6 +170,36 @@ impl Tracker {
             }
         }
         Ok(())
+    }
+
+    fn handle_announce(&mut self, req: Announce) {
+        debug!(self.l, "Handling announce request!");
+        let id = req.id;
+        let response = if let Ok(url) = Url::parse(&req.url) {
+            match url.scheme() {
+                "http" => {
+                    if self.http.active_requests() > CONFIG.net.max_open_announces {
+                        self.queue.push_back(req);
+                        Ok(())
+                    } else {
+                        self.http.new_announce(req, &url, &mut self.dns)
+                    }
+                }
+                "udp" => self.udp.new_announce(req, &url, &mut self.dns),
+                s => Err(
+                    ErrorKind::InvalidRequest(
+                        format!("Unknown tracker url scheme: {}", s),
+                        ).into(),
+                    ),
+            }
+        } else {
+            Err(
+                ErrorKind::InvalidRequest(format!("Invalid url: {}", req.url)).into(),
+            )
+        };
+        if let Err(e) = response {
+            self.send_response((id, Err(e)));
+        }
     }
 
     fn handle_dns_res(&mut self) {
@@ -226,6 +240,10 @@ impl Tracker {
             };
             if let Some(r) = resp {
                 self.send_response(r);
+                // Attempt to dequeue next request if we can
+                if let Some(a) = self.queue.pop_front() {
+                    self.handle_announce(a);
+                }
             }
         } else if self.udp.id() == event.id {
             for resp in self.udp.readable() {
@@ -267,12 +285,12 @@ impl Request {
             // This is naive, TODO: Reconsider
             left: torrent.info().total_len.saturating_sub(
                 torrent.downloaded(),
-            ),
-            // TODO: Develop better heuristics here.
-            // For now, only request peers if we're leeching,
-            // let existing peers connect otherwise
-            num_want: if torrent.complete() { None } else { Some(20) },
-            event,
+                ),
+                // TODO: Develop better heuristics here.
+                // For now, only request peers if we're leeching,
+                // let existing peers connect otherwise
+                num_want: if torrent.complete() { None } else { Some(20) },
+                event,
         })
     }
 
@@ -305,8 +323,8 @@ impl TrackerResponse {
 
     pub fn from_bencode(data: BEncode) -> Result<TrackerResponse> {
         let mut d = data.to_dict().ok_or(ErrorKind::InvalidResponse(
-            "Tracker response must be a dictionary type!",
-        ))?;
+                "Tracker response must be a dictionary type!",
+                ))?;
         if let Some(BEncode::String(data)) = d.remove("failure reason") {
             let reason = String::from_utf8(data).chain_err(|| {
                 ErrorKind::InvalidResponse("Failure reason must be UTF8!")
@@ -325,7 +343,7 @@ impl TrackerResponse {
             _ => {
                 return Err(
                     ErrorKind::InvalidResponse("Response must have peers field!").into(),
-                );
+                    );
             }
         };
         match d.remove("interval") {
@@ -335,7 +353,7 @@ impl TrackerResponse {
             _ => {
                 return Err(
                     ErrorKind::InvalidResponse("Response must have interval!").into(),
-                );
+                    );
             }
         };
         Ok(resp)
