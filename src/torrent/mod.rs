@@ -572,8 +572,16 @@ impl<T: cio::CIO> Torrent<T> {
         self.cio.msg_rpc(rpc::CtlMessage::Extant(resources));
     }
 
-    fn complete(&self) -> bool {
-        self.pieces.complete()
+    pub fn complete(&self) -> bool {
+        match self.status {
+            Status::Leeching
+            | Status::Validating
+            | Status::Pending => false,
+            Status::Idle
+            | Status::Seeding
+            | Status::Paused => true,
+            Status::DiskError => self.pieces.complete(),
+        }
     }
 
     fn set_throttle(&mut self, ul: u32, dl: u32) {

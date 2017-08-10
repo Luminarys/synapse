@@ -48,6 +48,7 @@ pub struct Announce {
     uploaded: u64,
     downloaded: u64,
     left: u64,
+    num_want: Option<u16>,
     event: Option<Event>,
 }
 
@@ -263,10 +264,14 @@ impl Request {
             port: CONFIG.port,
             uploaded: torrent.uploaded(),
             downloaded: torrent.downloaded(),
-            // This is naive, TODO: REconsider
+            // This is naive, TODO: Reconsider
             left: torrent.info().total_len.saturating_sub(
                 torrent.downloaded(),
             ),
+            // TODO: Develop better heuristics here.
+            // For now, only request peers if we're leeching,
+            // let existing peers connect otherwise
+            num_want: if torrent.complete() { None } else { Some(20) },
             event,
         })
     }

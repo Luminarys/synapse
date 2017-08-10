@@ -248,6 +248,7 @@ impl Handler {
             {
                 let mut announce_req = Cursor::new(&mut data[..]);
                 announce_req.write_u64::<BigEndian>(connection_id).unwrap();
+                // announce action
                 announce_req.write_u32::<BigEndian>(1).unwrap();
 
                 let tid = random::<u32>();
@@ -279,6 +280,18 @@ impl Handler {
                         announce_req.write_u32::<BigEndian>(0).unwrap();
                     }
                 }
+
+                // IP
+                announce_req.write_u32::<BigEndian>(0).unwrap();
+                // Key - TODO: randomly generate this
+                announce_req.write_u32::<BigEndian>(0xF00BA).unwrap();
+                // Num want
+                let nw = conn.announce.num_want.map(|nw| nw as i32).unwrap_or(-1);
+                announce_req.write_i32::<BigEndian>(nw).unwrap();
+                // port
+                announce_req.write_u16::<BigEndian>(conn.announce.port).unwrap();
+                // extensions
+                announce_req.write_u16::<BigEndian>(0).unwrap();
             }
             conn.state = State::Announcing { addr, data };
             conn.last_updated = time::Instant::now();

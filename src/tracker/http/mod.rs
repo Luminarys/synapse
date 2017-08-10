@@ -224,21 +224,20 @@ impl Handler {
         append_query_pair(&mut http_req, "left", &req.left.to_string());
         append_query_pair(&mut http_req, "compact", "1");
         append_query_pair(&mut http_req, "port", &req.port.to_string());
+        if let Some(nw) = req.num_want {
+            append_query_pair(&mut http_req, "numwant", &nw.to_string());
+        }
         match req.event {
             Some(tracker::Event::Started) => {
-                append_query_pair(&mut http_req, "numwant", "50");
                 append_query_pair(&mut http_req, "event", "started");
             }
             Some(tracker::Event::Stopped) => {
                 append_query_pair(&mut http_req, "event", "started");
             }
             Some(tracker::Event::Completed) => {
-                append_query_pair(&mut http_req, "numwant", "20");
                 append_query_pair(&mut http_req, "event", "completed");
             }
-            None => {
-                append_query_pair(&mut http_req, "numwant", "20");
-            }
+            None => { }
         }
 
         // Encode HTTP protocol
