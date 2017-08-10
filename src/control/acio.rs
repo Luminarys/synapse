@@ -181,7 +181,7 @@ impl cio::CIO for ACIO {
             peer.write_message(msg).chain_err(|| ErrorKind::IO).err()
         } else {
             // might happen if removed but still present in a torrent
-            debug!(d.l, "Tried to message peer which has been removed!");
+            error!(d.l, "Tried to message peer which has been removed!");
             None
         };
         if let Some(e) = err {

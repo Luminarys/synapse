@@ -125,8 +125,8 @@ impl Request {
     }
 
     fn execute(self, fc: FileCache) -> io::Result<Option<Response>> {
-        let sd = &CONFIG.session;
-        let dd = &CONFIG.directory;
+        let sd = &CONFIG.disk.session;
+        let dd = &CONFIG.disk.directory;
         match self {
             Request::Write { data, locations, .. } => {
                 let mut pb = path::PathBuf::from(dd);
@@ -289,7 +289,7 @@ impl Disk {
     }
 
     pub fn run(&mut self) {
-        let sd = &CONFIG.session;
+        let sd = &CONFIG.disk.session;
         fs::create_dir_all(sd).unwrap();
 
         loop {

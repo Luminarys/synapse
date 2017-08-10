@@ -22,10 +22,10 @@ const UNCHK_JOB_SECS: u64 = 15;
 /// Session serialization job interval
 const SES_JOB_SECS: u64 = 10;
 /// Interval to update RPC of transfer stats
-const TX_JOB_MS: u64 = 333;
+const TX_JOB_MS: u64 = 500;
 
 /// Interval to requery all jobs and execute if needed
-const JOB_INT_MS: usize = 333;
+const JOB_INT_MS: usize = 500;
 
 pub struct Control<T: cio::CIO> {
     throttler: Throttler,
@@ -105,7 +105,7 @@ impl<T: cio::CIO> Control<T> {
 
     fn deserialize(&mut self) -> io::Result<()> {
         debug!(self.l, "Deserializing torrents!");
-        let sd = &CONFIG.session;
+        let sd = &CONFIG.disk.session;
         for entry in fs::read_dir(sd)? {
             if let Err(e) = self.deserialize_torrent(entry) {
                 warn!(self.l, "Failed to deserialize torrent file: {:?}!", e);

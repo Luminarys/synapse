@@ -125,7 +125,7 @@ impl Request {
                 id,
                 hash,
                 token,
-                port: CONFIG.dht_port,
+                port: CONFIG.dht.port,
                 implied_port: false,
             },
         }

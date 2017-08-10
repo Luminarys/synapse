@@ -260,7 +260,7 @@ impl<T: cio::CIO> Peer<T> {
         match *msg {
             Message::Handshake { rsv, id, .. } => {
                 if (rsv[DHT_EXT.0] & DHT_EXT.1) != 0 {
-                    self.send_message(Message::Port(CONFIG.dht_port));
+                    self.send_message(Message::Port(CONFIG.dht.port));
                 }
                 self.rsv = Some(rsv);
                 self.cid = Some(id);

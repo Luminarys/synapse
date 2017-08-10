@@ -30,11 +30,11 @@ pub struct Manager {
 
 impl Manager {
     pub fn new(reg: &amy::Registrar, l: Logger) -> io::Result<Manager> {
-        let sock = UdpSocket::bind(("0.0.0.0", CONFIG.dht_port))?;
+        let sock = UdpSocket::bind(("0.0.0.0", CONFIG.dht.port))?;
         sock.set_nonblocking(true)?;
         let id = reg.register(&sock, amy::Event::Read)?;
 
-        let p = Path::new(&CONFIG.session[..]).join(SESSION_FILE);
+        let p = Path::new(&CONFIG.disk.session[..]).join(SESSION_FILE);
         let mut data = Vec::new();
         if let Ok(mut f) = OpenOptions::new().read(true).open(&p) {
             f.read_to_end(&mut data)?;
@@ -48,7 +48,7 @@ impl Manager {
                 "DHT table could not be read from disk, creating new table!"
             );
             let mut t = rt::RoutingTable::new();
-            if let Some(addr) = CONFIG.dht_bootstrap_node {
+            if let Some(addr) = CONFIG.dht.bootstrap_node {
                 info!(l, "Using bootstrap node!");
                 let (msg, _) = t.add_addr(addr.clone());
                 sock.send_to(&msg.encode(), addr)?;
@@ -136,7 +136,7 @@ impl Manager {
         if self.dht_flush.elapsed() > time::Duration::from_secs(60) {
             let data = self.table.serialize();
             thread::spawn(move || {
-                let p = Path::new(&CONFIG.session[..]).join(SESSION_FILE);
+                let p = Path::new(&CONFIG.disk.session[..]).join(SESSION_FILE);
                 if let Err(e) = OpenOptions::new()
                     .write(true)
                     .create(true)

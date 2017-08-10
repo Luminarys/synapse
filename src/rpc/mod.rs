@@ -79,7 +79,7 @@ impl RPC {
         let (ch, dh) = handle::Handle::new(creg, &mut reg)?;
 
         let ip = Ipv4Addr::new(0, 0, 0, 0);
-        let port = CONFIG.rpc_port;
+        let port = CONFIG.rpc.port;
         let listener = TcpListener::bind(SocketAddrV4::new(ip, port))?;
         listener.set_nonblocking(true)?;
         let lid = reg.register(&listener, amy::Event::Both)?;

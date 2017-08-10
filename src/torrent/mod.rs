@@ -353,9 +353,9 @@ impl<T: cio::CIO> Torrent<T> {
             }
             Message::Bitfield(_) => {
                 if self.pieces.usable(peer.pieces()) {
-                    self.picker.add_peer(peer);
                     peer.interested();
                 }
+                self.picker.add_peer(peer);
                 if !peer.pieces().complete() {
                     self.leechers.insert(peer.id());
                 }
@@ -415,7 +415,6 @@ impl<T: cio::CIO> Torrent<T> {
 
                     // Begin validation, and save state if the torrent is done
                     if self.pieces.complete() {
-
                         debug!(self.l, "Beginning validation");
                         self.serialize();
                         self.validate();
@@ -429,7 +428,9 @@ impl<T: cio::CIO> Torrent<T> {
                                 peer.send_message(m.clone());
                             }
                         } else {
-                            crit!(self.l, "PID {} in leechers not found in peers.", pid);
+                            // This situation can occur when a torrent itself is a leecher
+                            // and the piece download causes a "self notification", while it
+                            // has been removed. Ignore for now.
                         }
                     }
 
@@ -903,7 +904,7 @@ impl<T: cio::CIO> Torrent<T> {
     }
 
     fn cleanup_peer(&mut self, peer: &mut Peer<T>) {
-        debug!(self.l, "Removing peer {:?}!", peer);
+        debug!(self.l, "Removing {:?}!", peer);
         self.choker.remove_peer(peer, &mut self.peers);
         self.leechers.remove(&peer.id());
         self.picker.remove_peer(&peer);
@@ -996,7 +997,6 @@ impl<T: cio::CIO> Drop for Torrent<T> {
         debug!(self.l, "Removing peers");
         for (id, peer) in self.peers.drain() {
             trace!(self.l, "Removing peer {:?}", peer);
-            self.cio.remove_peer(id);
             self.leechers.remove(&id);
         }
         match self.status {

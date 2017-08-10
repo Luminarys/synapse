@@ -4,67 +4,167 @@ use std::net::{SocketAddr, ToSocketAddrs};
 #[derive(Debug, Clone)]
 pub struct Config {
     pub port: u16,
-    pub trk_port: u16,
-    pub dht_port: u16,
-    pub dht_bootstrap_node: Option<SocketAddr>,
-    pub rpc_port: u16,
-    pub session: String,
-    pub directory: String,
+    pub trk: TrkConfig,
+    pub dht: DhtConfig,
+    pub rpc: RpcConfig,
+    pub disk: DiskConfig,
+    pub net: NetConfig,
+}
+
+#[derive(Debug, Clone)]
+pub struct DhtConfig {
+    pub port: u16,
+    pub bootstrap_node: Option<SocketAddr>,
 }
 
 #[derive(Serialize, Deserialize)]
 pub struct ConfigFile {
-    pub port: Option<u16>,
-    pub rpc_port: Option<u16>,
-    pub trk_port: Option<u16>,
-    pub dht_port: Option<u16>,
-    pub dht_bootstrap_node: Option<String>,
-    pub session: Option<String>,
-    pub directory: Option<String>,
+    #[serde(default = "default_port")]
+    pub port: u16,
+    #[serde(default)]
+    pub rpc: RpcConfig,
+    #[serde(default)]
+    pub tracker: TrkConfig,
+    #[serde(default)]
+    pub dht: DhtConfigFile,
+    #[serde(default)]
+    pub disk: DiskConfig,
+    #[serde(default)]
+    pub net: NetConfig,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RpcConfig {
+    #[serde(default = "default_rpc_port")]
+    pub port: u16,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TrkConfig {
+    #[serde(default = "default_trk_port")]
+    pub port: u16,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DhtConfigFile {
+    #[serde(default = "default_dht_port")]
+    pub port: u16,
+    #[serde(default = "default_bootstrap_node")]
+    pub bootstrap_node: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DiskConfig {
+    #[serde(default = "default_session_dir")]
+    pub session: String,
+    #[serde(default = "default_directory_dir")]
+    pub directory: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NetConfig {
+    #[serde(default = "default_max_files")]
+    pub max_open_files: usize,
+    #[serde(default = "default_max_sockets")]
+    pub max_open_sockets: usize,
+    #[serde(default = "default_max_announces")]
+    pub max_open_announces: usize,
 }
 
 impl Config {
-    pub fn from_file(file: ConfigFile) -> Config {
-        let mut base: Config = Default::default();
-        if let Some(p) = file.port {
-            base.port = p
+    pub fn from_file(mut file: ConfigFile) -> Config {
+        let addr = file.dht.bootstrap_node.and_then(|n| n.to_socket_addrs().ok()).and_then(|mut a| a.next());
+        let dht = DhtConfig {
+            port: file.dht.port,
+            bootstrap_node: addr,
+        };
+        file.disk.session = expand_tilde(&file.disk.session);
+        file.disk.directory = expand_tilde(&file.disk.directory);
+        Config {
+            port: file.port,
+            trk: file.tracker,
+            rpc: file.rpc,
+            disk: file.disk,
+            net: file.net,
+            dht,
+
         }
-        if let Some(p) = file.rpc_port {
-            base.rpc_port = p
-        }
-        if let Some(p) = file.trk_port {
-            base.trk_port = p
-        }
-        if let Some(p) = file.dht_port {
-            base.dht_port = p
-        }
-        if let Some(n) = file.dht_bootstrap_node {
-            match (&n).to_socket_addrs() {
-                Ok(mut a) => base.dht_bootstrap_node = a.next(),
-                _ => {}
-            }
-        }
-        if let Some(s) = file.session {
-            base.session = expand_tilde(&s);
-        }
-        if let Some(d) = file.directory {
-            base.directory = expand_tilde(&d)
-        }
-        base
     }
 }
 
+fn default_port() -> u16 { 16384 }
+fn default_trk_port() -> u16 { 16384 }
+fn default_dht_port() -> u16 { 16362 }
+fn default_rpc_port() -> u16 { 8412 }
+fn default_bootstrap_node() -> Option<String> { None }
+fn default_session_dir() -> String { expand_tilde("~/.syn_session") }
+fn default_directory_dir() -> String { expand_tilde("./") }
+fn default_max_files() -> usize { 500 }
+fn default_max_sockets() -> usize { 400 }
+fn default_max_announces() -> usize { 50 }
+
 impl Default for Config {
-    fn default() -> Config {
-        let s = "~/.syn_session".to_owned();
+    fn default() -> Self {
         Config {
-            port: 16493,
-            rpc_port: 8412,
-            trk_port: 16362,
-            dht_port: 14831,
-            dht_bootstrap_node: None,
-            session: expand_tilde(&s),
-            directory: "./".to_owned(),
+            port: default_port(),
+            trk: Default::default(),
+            rpc: Default::default(),
+            disk: Default::default(),
+            net: Default::default(),
+            dht: Default::default(),
+        }
+    }
+}
+
+impl Default for RpcConfig {
+    fn default() -> RpcConfig {
+        RpcConfig {
+            port: default_rpc_port(),
+        }
+    }
+}
+
+impl Default for TrkConfig {
+    fn default() -> TrkConfig {
+        TrkConfig {
+            port: default_trk_port(),
+        }
+    }
+}
+
+impl Default for DhtConfigFile {
+    fn default() -> DhtConfigFile {
+        DhtConfigFile {
+            port: 14831,
+            bootstrap_node: default_bootstrap_node(),
+        }
+    }
+}
+
+impl Default for DhtConfig {
+    fn default() -> DhtConfig {
+        DhtConfig {
+            port: default_dht_port(),
+            bootstrap_node: None,
+        }
+    }
+}
+
+impl Default for DiskConfig {
+    fn default() -> DiskConfig {
+        DiskConfig {
+            session: default_session_dir(),
+            directory: default_directory_dir(),
+        }
+    }
+}
+
+impl Default for NetConfig {
+    fn default() -> NetConfig {
+        NetConfig {
+            max_open_files: default_max_files(),
+            max_open_sockets: default_max_sockets(),
+            max_open_announces: default_max_announces(),
         }
     }
 }
@@ -73,9 +173,9 @@ fn expand_tilde(s: &str) -> String {
     s.replace(
         '~',
         &env::home_dir()
-            .unwrap()
-            .into_os_string()
-            .into_string()
-            .unwrap(),
-    )
+        .unwrap()
+        .into_os_string()
+        .into_string()
+        .unwrap(),
+        )
 }

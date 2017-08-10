@@ -97,7 +97,7 @@ impl Picker {
             (piece.idx, piece.availability)
         };
 
-        let swap_idx = self.priorities[avail.saturating_sub(1)];
+        let swap_idx = self.priorities[avail - 1];
         let swap_piece = self.pieces[swap_idx];
 
         {

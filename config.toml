@@ -1,14 +1,29 @@
 # TCP port used for peer connections
 port = 16493
+
+[rpc]
 # TCP port used for RPC
-rpc_port = 8412
+# port = 8412
+
+[tracker]
 # UDP port used for UDP tracker interaction
-trk_port = 16362
+port = 16362
+
+[dht]
 # UDP port used for DHT interaction
-dht_port = 6881
+port = 6881
 # Node to use for DHT bootstrapping
-dht_bootstrap_node = "router.bittorrent.com:6881"
+bootstrap_node = "router.bittorrent.com:6881"
+
+[disk]
 # Location for storing session metadata
 session = "~/.syn_session"
 # Default download directory
 directory = "./"
+
+[net]
+# These max open limits should be set to be somewhat lower
+# than whatever the system ulimit is
+max_open_files = 500
+max_open_sockets = 400
+max_open_announces = 50
