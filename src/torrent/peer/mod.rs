@@ -45,7 +45,6 @@ pub struct Peer<T: cio::CIO> {
     t_hash: [u8; 20],
     cid: Option<[u8; 20]>,
     rsv: Option<[u8; 8]>,
-    last_updated: time::Instant,
 }
 
 #[derive(Debug)]
@@ -55,6 +54,7 @@ pub struct Status {
 }
 
 pub struct PeerConn {
+    last_action: time::Instant,
     sock: Socket,
     reader: Reader,
     writer: Writer,
@@ -68,6 +68,7 @@ impl PeerConn {
             sock,
             writer,
             reader,
+            last_action: time::Instant::now(),
         }
     }
 
@@ -76,6 +77,7 @@ impl PeerConn {
         let writer = Writer::new();
         let reader = Reader::new();
         PeerConn {
+            last_action: time::Instant::now(),
             sock: Socket::empty(),
             writer,
             reader,
@@ -88,6 +90,10 @@ impl PeerConn {
 
     pub fn sock_mut(&mut self) -> &mut Socket {
         &mut self.sock
+    }
+
+    pub fn last_action(&self) -> &time::Instant {
+        &self.last_action
     }
 
     /// Creates a new "outgoing" peer, which acts as a client.
@@ -103,10 +109,12 @@ impl PeerConn {
     }
 
     pub fn writable(&mut self) -> io::Result<()> {
+        self.last_action = time::Instant::now();
         self.writer.writable(&mut self.sock)
     }
 
     pub fn readable(&mut self) -> io::Result<Option<Message>> {
+        self.last_action = time::Instant::now();
         self.reader.readable(&mut self.sock)
     }
 
@@ -151,7 +159,6 @@ impl Peer<cio::test::TCIO> {
             t_hash: [0u8; 20],
             rsv: None,
             cid: None,
-            last_updated: time::Instant::now(),
             last_flush: Utc::now(),
         }
     }
@@ -199,7 +206,6 @@ impl<T: cio::CIO> Peer<T> {
             t_hash: t.info.hash,
             rsv,
             cid,
-            last_updated: time::Instant::now(),
             last_flush: Utc::now(),
         };
         p.send_message(Message::handshake(&t.info));
@@ -256,7 +262,6 @@ impl<T: cio::CIO> Peer<T> {
     }
 
     pub fn handle_msg(&mut self, msg: &mut Message) -> Result<()> {
-        self.last_updated = time::Instant::now();
         match *msg {
             Message::Handshake { rsv, id, .. } => {
                 if (rsv[DHT_EXT.0] & DHT_EXT.1) != 0 {

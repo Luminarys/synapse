@@ -28,3 +28,9 @@ directory = "./"
 max_open_files = 500
 max_open_sockets = 400
 max_open_announces = 50
+
+[peer]
+# Duration(in seconds) of inactivity before
+# a connection is eligible for forced pruning
+# when the max socket limit is reached
+prune_timeout = 15

@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::cell::UnsafeCell;
 use std::rc::Rc;
+use std::time;
 use slog::Logger;
 
 use amy;
@@ -10,6 +11,7 @@ use CONFIG;
 use control::cio::{self, Result, ResultExt, ErrorKind};
 
 const POLL_INT_MS: usize = 1000;
+const PRUNE_GOAL: usize = 50;
 
 /// Amy based CIO implementation. Currently the default one used.
 pub struct ACIO {
@@ -131,7 +133,24 @@ impl cio::CIO for ACIO {
 
     fn add_peer(&mut self, mut peer: torrent::PeerConn) -> Result<cio::PID> {
         if self.d().peers.len() > CONFIG.net.max_open_sockets {
-            return Err(ErrorKind::Full.into());
+            let mut pruned = Vec::new();
+            for (id, peer) in self.d().peers.iter() {
+                if peer.last_action().elapsed() > time::Duration::from_secs(CONFIG.peer.prune_timeout) {
+                    pruned.push(*id)
+                }
+                if pruned.len() == PRUNE_GOAL {
+                    break;
+                }
+            }
+            // We couldn't even prune anything, this client must be really busy...
+            // Either way just return an error
+            if pruned.len() == 0 {
+                return Err(ErrorKind::Full.into());
+            }
+
+            for id in pruned {
+                self.remove_peer(id);
+            }
         }
         let id = self.d()
             .reg

@@ -377,16 +377,23 @@ impl<T: cio::CIO> Torrent<T> {
                 self.picker.add_peer(peer);
                 if !peer.pieces().complete() {
                     self.leechers.insert(peer.id());
+                } else if self.complete() {
+                    // Don't waste a connection on a peer if they're also a seeder
+                    return Err(());
                 }
             }
             Message::Have(idx) => {
+                self.picker.piece_available(idx);
                 if peer.pieces().complete() {
                     self.leechers.remove(&peer.id());
+                    // If they're now a seeder and we're also seeding, drop the conn
+                    if self.complete() {
+                        return Err(());
+                    }
                 }
                 if self.pieces.usable(peer.pieces()) {
                     peer.interested();
                 }
-                self.picker.piece_available(idx);
             }
             Message::Unchoke => {
                 debug!(self.l, "Unchoked by: {:?}!", peer);

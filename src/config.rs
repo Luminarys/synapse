@@ -9,6 +9,7 @@ pub struct Config {
     pub rpc: RpcConfig,
     pub disk: DiskConfig,
     pub net: NetConfig,
+    pub peer: PeerConfig,
 }
 
 #[derive(Debug, Clone)]
@@ -31,6 +32,8 @@ pub struct ConfigFile {
     pub disk: DiskConfig,
     #[serde(default)]
     pub net: NetConfig,
+    #[serde(default)]
+    pub peer: PeerConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -71,6 +74,12 @@ pub struct NetConfig {
     pub max_open_announces: usize,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PeerConfig {
+    #[serde(default = "default_prune_timeout")]
+    pub prune_timeout: u64,
+}
+
 impl Config {
     pub fn from_file(mut file: ConfigFile) -> Config {
         let addr = file.dht.bootstrap_node.and_then(|n| n.to_socket_addrs().ok()).and_then(|mut a| a.next());
@@ -86,6 +95,7 @@ impl Config {
             rpc: file.rpc,
             disk: file.disk,
             net: file.net,
+            peer: file.peer,
             dht,
 
         }
@@ -102,6 +112,7 @@ fn default_directory_dir() -> String { expand_tilde("./") }
 fn default_max_files() -> usize { 500 }
 fn default_max_sockets() -> usize { 400 }
 fn default_max_announces() -> usize { 50 }
+fn default_prune_timeout() -> u64 { 15 }
 
 impl Default for Config {
     fn default() -> Self {
@@ -112,6 +123,7 @@ impl Default for Config {
             disk: Default::default(),
             net: Default::default(),
             dht: Default::default(),
+            peer: Default::default(),
         }
     }
 }
@@ -165,6 +177,14 @@ impl Default for NetConfig {
             max_open_files: default_max_files(),
             max_open_sockets: default_max_sockets(),
             max_open_announces: default_max_announces(),
+        }
+    }
+}
+
+impl Default for PeerConfig {
+    fn default() -> PeerConfig {
+        PeerConfig {
+            prune_timeout: default_prune_timeout(),
         }
     }
 }
