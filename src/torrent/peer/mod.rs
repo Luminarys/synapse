@@ -394,7 +394,6 @@ impl<T: cio::CIO> Peer<T> {
 
 impl<T: cio::CIO> Drop for Peer<T> {
     fn drop(&mut self) {
-        self.cio.remove_peer(self.id);
         self.send_rpc_removal();
     }
 }

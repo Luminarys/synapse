@@ -239,9 +239,13 @@ impl cio::CIO for ACIO {
 impl ACIOData {
     fn remove_peer(&mut self, pid: cio::PID) {
         if let Some(p) = self.peers.remove(&pid) {
-            while let Err(e) = self.reg.deregister(p.sock()) {
+            if let Err(e) = self.reg.deregister(p.sock()) {
                 warn!(self.l, "Failed to deregister sock: {:?}", e);
             }
+            self.events.push(cio::Event::Peer {
+                peer: pid,
+                event: Err(ErrorKind::Request.into()),
+            });
         }
     }
 }

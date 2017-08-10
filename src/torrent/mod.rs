@@ -259,9 +259,10 @@ impl<T: cio::CIO> Torrent<T> {
 
     pub fn remove_peer(&mut self, rpc_id: &str) {
         let ih = &self.info.hash;
-        self.peers.retain(|id, _| {
-            util::peer_rpc_id(ih, *id as u64) != rpc_id
-        });
+        let cio = &mut self.cio;
+        self.peers.iter().find(|&(id, _)| {
+            util::peer_rpc_id(ih, *id as u64) == rpc_id
+        }).map(|(id, _)| cio.remove_peer(*id));
     }
 
     // TODO: Implement once mutlitracker support is in
@@ -308,7 +309,7 @@ impl<T: cio::CIO> Torrent<T> {
                 debug!(self.l, "Validation completed!");
                 if invalid.is_empty() {
                     info!(self.l, "Torrent succesfully downloaded!");
-                    // TOOD: Consider if we should cache this
+                    // TOOD: Consider if we should store this result
                     if !self.status.stopped() {
                         self.set_status(Status::Idle);
                     }
@@ -334,14 +335,23 @@ impl<T: cio::CIO> Torrent<T> {
     }
 
     pub fn peer_ev(&mut self, pid: cio::PID, evt: cio::Result<Message>) -> Result<(), ()> {
+        // TODO: Consider Boxing peers so it's just pointer insert/removal
         let mut peer = self.peers.remove(&pid).ok_or(())?;
         if let Ok(mut msg) = evt {
             if peer.handle_msg(&mut msg).is_ok() && self.handle_msg(msg, &mut peer).is_ok() {
                 self.peers.insert(pid, peer);
                 return Ok(());
+            } else {
+                // In order to ensure there's only one source of truth,
+                // we instruct the CIO to remove the peer and let the event bubble up.
+                // We then will receieve it later and call cleanup_peer as needed.
+                // This ensures that events flow from control -> torrent and get
+                // properly processed
+                self.cio.remove_peer(self.id);
             }
+        } else {
+            self.cleanup_peer(&mut peer);
         }
-        self.cleanup_peer(&mut peer);
         Err(())
     }
 

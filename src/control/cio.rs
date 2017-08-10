@@ -7,6 +7,11 @@ error_chain! {
                 display("IO error")
         }
 
+        Request {
+            description("removal requested")
+                display("removal requested")
+        }
+
         Channel(r: &'static str) {
             description("Channel error")
                 display("Encountered channel error: {}", r)
@@ -43,7 +48,9 @@ pub trait CIO {
     fn get_peer<T, F: FnOnce(&mut torrent::PeerConn) -> T>(&mut self, peer: PID, f: F)
         -> Option<T>;
 
-    /// Removes a peer
+    /// Removes a peer - This will trigger an error being
+    /// reported at the next poll time, clients should wait
+    /// for this to occur before internally removing the peer.
     fn remove_peer(&mut self, peer: PID);
 
     /// Flushes events on the given vec of peers
