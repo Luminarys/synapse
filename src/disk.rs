@@ -79,6 +79,11 @@ impl FileCache {
         if d.contains_key(path) {
             f(d.get_mut(path).unwrap())?;
         } else {
+            // TODO: LRU maybe?
+            if d.len() >= CONFIG.net.max_open_files {
+                let removal = d.iter().map(|(id, _)| id.clone()).next().unwrap();
+                d.remove(&removal);
+            }
             let mut file = fs::OpenOptions::new()
                 .write(true)
                 .create(true)
