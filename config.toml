@@ -23,7 +23,8 @@ directory = "./"
 
 [net]
 # These max open limits should be set to be somewhat lower
-# than whatever the system ulimit is
+# than whatever the system ulimit is to accomodate for internal
+# fd's
 max_open_files = 500
 max_open_sockets = 400
 max_open_announces = 50
