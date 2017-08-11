@@ -65,6 +65,10 @@ impl Handler {
         self.connections.is_empty()
     }
 
+    pub fn active_requests(&self) -> usize {
+        self.connections.len()
+    }
+
     pub fn contains(&self, id: usize) -> bool {
         self.connections.contains_key(&id)
     }

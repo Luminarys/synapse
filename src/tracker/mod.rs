@@ -174,31 +174,35 @@ impl Tracker {
 
     fn handle_announce(&mut self, req: Announce) {
         debug!(self.l, "Handling announce request!");
-        let id = req.id;
-        let response = if let Ok(url) = Url::parse(&req.url) {
-            match url.scheme() {
-                "http" => {
-                    if self.http.active_requests() > CONFIG.net.max_open_announces {
-                        self.queue.push_back(req);
-                        Ok(())
-                    } else {
-                        self.http.new_announce(req, &url, &mut self.dns)
-                    }
-                }
-                "udp" => self.udp.new_announce(req, &url, &mut self.dns),
-                s => Err(
-                    ErrorKind::InvalidRequest(
-                        format!("Unknown tracker url scheme: {}", s),
-                        ).into(),
-                    ),
-            }
+        if self.udp.active_requests() + self.http.active_requests() > CONFIG.net.max_open_announces {
+            self.queue.push_back(req);
         } else {
-            Err(
-                ErrorKind::InvalidRequest(format!("Invalid url: {}", req.url)).into(),
-            )
-        };
-        if let Err(e) = response {
-            self.send_response((id, Err(e)));
+            let id = req.id;
+            let response = if let Ok(url) = Url::parse(&req.url) {
+                match url.scheme() {
+                    "http" => self.http.new_announce(req, &url, &mut self.dns),
+                    "udp" => self.udp.new_announce(req, &url, &mut self.dns),
+                    s => Err(
+                        ErrorKind::InvalidRequest(
+                            format!("Unknown tracker url scheme: {}", s),
+                            ).into(),
+                        ),
+                }
+            } else {
+                Err(
+                    ErrorKind::InvalidRequest(format!("Invalid url: {}", req.url)).into(),
+                )
+            };
+            if let Err(e) = response {
+                self.send_response((id, Err(e)));
+            }
+        }
+    }
+
+    fn dequeue_req(&mut self) {
+        // Attempt to dequeue next request if we can
+        if let Some(a) = self.queue.pop_front() {
+            self.handle_announce(a);
         }
     }
 
@@ -240,14 +244,12 @@ impl Tracker {
             };
             if let Some(r) = resp {
                 self.send_response(r);
-                // Attempt to dequeue next request if we can
-                if let Some(a) = self.queue.pop_front() {
-                    self.handle_announce(a);
-                }
+                self.dequeue_req();
             }
         } else if self.udp.id() == event.id {
             for resp in self.udp.readable() {
                 self.send_response(resp);
+                self.dequeue_req();
             }
         } else if self.dht.id() == event.id {
             for resp in self.dht.readable() {
