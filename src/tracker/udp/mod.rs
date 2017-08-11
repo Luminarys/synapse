@@ -77,7 +77,7 @@ impl Handler {
     ) -> Result<()> {
         // TODO: Attempt to parse into an IP address first, then perform dns res
         debug!(self.l, "Received a new announce req for {:?}", url);
-        let mut host = url.host_str().ok_or::<Error>(
+        let host = url.host_str().ok_or::<Error>(
             ErrorKind::InvalidRequest(
                 format!("Tracker announce url has no host!"),
             ).into(),
