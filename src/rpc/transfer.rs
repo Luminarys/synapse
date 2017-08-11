@@ -72,7 +72,7 @@ impl Transfers {
         self.torrents.contains_key(&id)
     }
 
-    pub fn readable(&mut self, id: usize) -> TransferResult {
+    pub fn ready(&mut self, id: usize) -> TransferResult {
         match self.torrents.get_mut(&id).map(|tx| tx.readable()) {
             Some(Ok(true)) => {
                 let mut tx = self.torrents.remove(&id).unwrap();

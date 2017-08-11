@@ -115,7 +115,7 @@ impl RPC {
                     }
                     id if self.incoming.contains_key(&id) => self.handle_incoming(id),
                     id if id == self.cleanup => self.cleanup(),
-                    id if self.transfers.contains(id) => self.handle_transfer(not),
+                    id if self.transfers.contains(id) => self.handle_transfer(id),
                     _ => self.handle_conn(not),
                 }
             }
@@ -156,51 +156,48 @@ impl RPC {
         false
     }
 
-    fn handle_transfer(&mut self, not: amy::Notification) {
-        if not.event.readable() {
-            match self.transfers.readable(not.id) {
-                TransferResult::Incomplete => {}
-                TransferResult::Torrent { conn, data, path } => {
-                    debug!(self.l, "Got torrent via HTTP transfer!");
-                    self.reg.deregister(&conn).unwrap();
-                    // TODO: Send this to the client in an error msg
-                    match bencode::decode_buf(&data) {
-                        Ok(b) => {
-                            if let Ok(i) = torrent::info::Info::from_bencode(b) {
-                                if self.ch.send(Message::Torrent(i)).is_err() {
-                                    crit!(self.l, "Failed to pass message to ctrl!");
-                                }
-                            } else {
-                                warn!(self.l, "Failed to parse torrent!");
-                            }
-                        }
-                        Err(e) => {
-                            warn!(self.l, "Failed to decode BE data: {}!", e);
-                        }
-                    }
-                }
-                TransferResult::Error {
-                    conn,
-                    err,
-                    client: id,
-                } => {
-                    self.reg.deregister(&conn).unwrap();
-                    let res = self.clients
-                        .get_mut(&id)
-                        .map(|c| {
-                            c.send(ws::Frame::Text(
-                                    serde_json::to_string(&SMessage::TransferFailed(err))
-                                    .unwrap(),
-                                    ))
-                        })
-                    .unwrap_or(Ok(()));
-                    if res.is_err() {
-                        let client = self.clients.remove(&id).unwrap();
-                        self.remove_client(id, client);
-                    }
-                }
-            }
-        } else {
+    fn handle_transfer(&mut self, id: usize) {
+        match self.transfers.ready(id) {
+           TransferResult::Incomplete => {}
+           TransferResult::Torrent { conn, data, path } => {
+               debug!(self.l, "Got torrent via HTTP transfer!");
+               self.reg.deregister(&conn).unwrap();
+               // TODO: Send this to the client in an error msg
+               match bencode::decode_buf(&data) {
+                   Ok(b) => {
+                       if let Ok(i) = torrent::info::Info::from_bencode(b) {
+                           if self.ch.send(Message::Torrent(i)).is_err() {
+                               crit!(self.l, "Failed to pass message to ctrl!");
+                           }
+                       } else {
+                           warn!(self.l, "Failed to parse torrent!");
+                       }
+                   }
+                   Err(e) => {
+                       warn!(self.l, "Failed to decode BE data: {}!", e);
+                   }
+               }
+           }
+           TransferResult::Error {
+               conn,
+               err,
+               client: id,
+           } => {
+               self.reg.deregister(&conn).unwrap();
+               let res = self.clients
+                   .get_mut(&id)
+                   .map(|c| {
+                       c.send(ws::Frame::Text(
+                               serde_json::to_string(&SMessage::TransferFailed(err))
+                               .unwrap(),
+                               ))
+                   })
+               .unwrap_or(Ok(()));
+               if res.is_err() {
+                   let client = self.clients.remove(&id).unwrap();
+                   self.remove_client(id, client);
+               }
+           }
         }
     }
 
@@ -233,8 +230,10 @@ impl RPC {
                     self.incoming.insert(id, i);
                 }
                 Ok(IncomingStatus::Transfer { data, token }) => {
+                    debug!(self.l, "File transfer requested, validating");
                     match self.processor.get_transfer(token) {
                         Some((client, serial, TransferKind::UploadTorrent { path, size })) => {
+                            debug!(self.l, "Torrent transfer initiated");
                             self.transfers.add_torrent(
                                 id,
                                 client,
@@ -244,6 +243,9 @@ impl RPC {
                                 path,
                                 size,
                                 );
+                            // Since a succesful result means the buffer hasn't been flushed,
+                            // immediatly attempt to handle the transfer as if it was ready
+                            self.handle_transfer(id);
                         }
                         Some(_) => warn!(self.l, "Unimplemented transfer type ignored"),
                         None => {
