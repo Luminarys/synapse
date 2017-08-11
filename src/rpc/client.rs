@@ -123,7 +123,6 @@ impl Client {
         }
         false
     }
-
 }
 
 impl Into<TcpStream> for Client {

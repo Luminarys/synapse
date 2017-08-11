@@ -97,14 +97,18 @@ impl Resolver {
     pub fn new_query(&mut self, id: usize, host: &str) {
         // TODO: handle ipv6 too
         let s = self.sender.clone();
-        self.chan.get_host_by_name(host, c_ares::AddressFamily::INET, move |res| {
-            let res = res.chain_err(|| ErrorKind::DNS).and_then(|ips| {
-                ips.addresses().next().ok_or(ErrorKind::DNS.into())
-            });
-            let resp = QueryResponse { id, res };
-            if s.lock().unwrap().send(resp).is_err() {
-                // Other end was shutdown, ignore
-            }
-        });
+        self.chan.get_host_by_name(
+            host,
+            c_ares::AddressFamily::INET,
+            move |res| {
+                let res = res.chain_err(|| ErrorKind::DNS).and_then(|ips| {
+                    ips.addresses().next().ok_or(ErrorKind::DNS.into())
+                });
+                let resp = QueryResponse { id, res };
+                if s.lock().unwrap().send(resp).is_err() {
+                    // Other end was shutdown, ignore
+                }
+            },
+        );
     }
 }

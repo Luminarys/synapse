@@ -241,7 +241,7 @@ impl Handler {
             Some(tracker::Event::Completed) => {
                 append_query_pair(&mut http_req, "event", "completed");
             }
-            None => { }
+            None => {}
         }
 
         // Encode HTTP protocol

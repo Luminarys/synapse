@@ -294,7 +294,9 @@ impl Handler {
                 let nw = conn.announce.num_want.map(|nw| nw as i32).unwrap_or(-1);
                 announce_req.write_i32::<BigEndian>(nw).unwrap();
                 // port
-                announce_req.write_u16::<BigEndian>(conn.announce.port).unwrap();
+                announce_req
+                    .write_u16::<BigEndian>(conn.announce.port)
+                    .unwrap();
             }
             conn.state = State::Announcing { addr, data };
             conn.last_updated = time::Instant::now();

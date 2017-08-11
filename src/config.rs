@@ -82,7 +82,10 @@ pub struct PeerConfig {
 
 impl Config {
     pub fn from_file(mut file: ConfigFile) -> Config {
-        let addr = file.dht.bootstrap_node.and_then(|n| n.to_socket_addrs().ok()).and_then(|mut a| a.next());
+        let addr = file.dht
+            .bootstrap_node
+            .and_then(|n| n.to_socket_addrs().ok())
+            .and_then(|mut a| a.next());
         let dht = DhtConfig {
             port: file.dht.port,
             bootstrap_node: addr,
@@ -97,22 +100,43 @@ impl Config {
             net: file.net,
             peer: file.peer,
             dht,
-
         }
     }
 }
 
-fn default_port() -> u16 { 16384 }
-fn default_trk_port() -> u16 { 16384 }
-fn default_dht_port() -> u16 { 16362 }
-fn default_rpc_port() -> u16 { 8412 }
-fn default_bootstrap_node() -> Option<String> { None }
-fn default_session_dir() -> String { expand_tilde("~/.syn_session") }
-fn default_directory_dir() -> String { expand_tilde("./") }
-fn default_max_files() -> usize { 500 }
-fn default_max_sockets() -> usize { 400 }
-fn default_max_announces() -> usize { 50 }
-fn default_prune_timeout() -> u64 { 15 }
+fn default_port() -> u16 {
+    16384
+}
+fn default_trk_port() -> u16 {
+    16384
+}
+fn default_dht_port() -> u16 {
+    16362
+}
+fn default_rpc_port() -> u16 {
+    8412
+}
+fn default_bootstrap_node() -> Option<String> {
+    None
+}
+fn default_session_dir() -> String {
+    expand_tilde("~/.syn_session")
+}
+fn default_directory_dir() -> String {
+    expand_tilde("./")
+}
+fn default_max_files() -> usize {
+    500
+}
+fn default_max_sockets() -> usize {
+    400
+}
+fn default_max_announces() -> usize {
+    50
+}
+fn default_prune_timeout() -> u64 {
+    15
+}
 
 impl Default for Config {
     fn default() -> Self {
@@ -130,17 +154,13 @@ impl Default for Config {
 
 impl Default for RpcConfig {
     fn default() -> RpcConfig {
-        RpcConfig {
-            port: default_rpc_port(),
-        }
+        RpcConfig { port: default_rpc_port() }
     }
 }
 
 impl Default for TrkConfig {
     fn default() -> TrkConfig {
-        TrkConfig {
-            port: default_trk_port(),
-        }
+        TrkConfig { port: default_trk_port() }
     }
 }
 
@@ -183,9 +203,7 @@ impl Default for NetConfig {
 
 impl Default for PeerConfig {
     fn default() -> PeerConfig {
-        PeerConfig {
-            prune_timeout: default_prune_timeout(),
-        }
+        PeerConfig { prune_timeout: default_prune_timeout() }
     }
 }
 
@@ -193,9 +211,9 @@ fn expand_tilde(s: &str) -> String {
     s.replace(
         '~',
         &env::home_dir()
-        .unwrap()
-        .into_os_string()
-        .into_string()
-        .unwrap(),
-        )
+            .unwrap()
+            .into_os_string()
+            .into_string()
+            .unwrap(),
+    )
 }

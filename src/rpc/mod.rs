@@ -142,7 +142,7 @@ impl RPC {
                                 warn!(
                                     self.l,
                                     "Processor requested a message transfer to a nonexistent client!"
-                                    );
+                                );
                                 Ok(())
                             }
                         };
@@ -159,62 +159,65 @@ impl RPC {
 
     fn handle_transfer(&mut self, id: usize) {
         match self.transfers.ready(id) {
-           TransferResult::Incomplete => {}
-           TransferResult::Torrent { conn, data, path, client, serial } => {
-               debug!(self.l, "Got torrent via HTTP transfer!");
-               self.reg.deregister(&conn).unwrap();
-               // TODO: Send this to the client in an error msg
-               match bencode::decode_buf(&data) {
-                   Ok(b) => {
-                       if let Ok(i) = torrent::info::Info::from_bencode(b) {
-                           let res = self.clients
-                             .get_mut(&client)
-                             .map(|c| {
+            TransferResult::Incomplete => {}
+            TransferResult::Torrent {
+                conn,
+                data,
+                path,
+                client,
+                serial,
+            } => {
+                debug!(self.l, "Got torrent via HTTP transfer!");
+                self.reg.deregister(&conn).unwrap();
+                // TODO: Send this to the client in an error msg
+                match bencode::decode_buf(&data) {
+                    Ok(b) => {
+                        if let Ok(i) = torrent::info::Info::from_bencode(b) {
+                            let res = self.clients.get_mut(&client).map(|c| {
                                 let tid = util::hash_to_id(&i.hash[..]);
-                                 c.send(ws::Frame::Text(
-                                         serde_json::to_string(&SMessage::ResourcesExtant {
-                                             serial,
-                                             ids: vec![&tid],
-                                         }).unwrap()
-                                         )
-                                     )
-                             });
-                           if res.unwrap_or(Ok(())).is_err() {
-                               let client = self.clients.remove(&id).unwrap();
-                               self.remove_client(id, client);
-                           }
-                           if self.ch.send(Message::Torrent(i)).is_err() {
-                               crit!(self.l, "Failed to pass message to ctrl!");
-                           }
-                       } else {
-                           warn!(self.l, "Failed to parse torrent!");
-                       }
-                   }
-                   Err(e) => {
-                       warn!(self.l, "Failed to decode BE data: {}!", e);
-                   }
-               }
-           }
-           TransferResult::Error {
-               conn,
-               err,
-               client: id,
-           } => {
-               self.reg.deregister(&conn).unwrap();
-               let res = self.clients
-                   .get_mut(&id)
-                   .map(|c| {
-                       c.send(ws::Frame::Text(
-                               serde_json::to_string(&SMessage::TransferFailed(err))
-                               .unwrap(),
-                               ))
-                   })
-               .unwrap_or(Ok(()));
-               if res.is_err() {
-                   let client = self.clients.remove(&id).unwrap();
-                   self.remove_client(id, client);
-               }
-           }
+                                c.send(ws::Frame::Text(
+                                    serde_json::to_string(&SMessage::ResourcesExtant {
+                                        serial,
+                                        ids: vec![&tid],
+                                    }).unwrap(),
+                                ))
+                            });
+                            if res.unwrap_or(Ok(())).is_err() {
+                                let client = self.clients.remove(&id).unwrap();
+                                self.remove_client(id, client);
+                            }
+                            if self.ch.send(Message::Torrent(i)).is_err() {
+                                crit!(self.l, "Failed to pass message to ctrl!");
+                            }
+                        } else {
+                            warn!(self.l, "Failed to parse torrent!");
+                        }
+                    }
+                    Err(e) => {
+                        warn!(self.l, "Failed to decode BE data: {}!", e);
+                    }
+                }
+            }
+            TransferResult::Error {
+                conn,
+                err,
+                client: id,
+            } => {
+                self.reg.deregister(&conn).unwrap();
+                let res = self.clients
+                    .get_mut(&id)
+                    .map(|c| {
+                        c.send(ws::Frame::Text(
+                            serde_json::to_string(&SMessage::TransferFailed(err))
+                                .unwrap(),
+                        ))
+                    })
+                    .unwrap_or(Ok(()));
+                if res.is_err() {
+                    let client = self.clients.remove(&id).unwrap();
+                    self.remove_client(id, client);
+                }
+            }
         }
     }
 
@@ -259,7 +262,7 @@ impl RPC {
                                 data,
                                 path,
                                 size,
-                                );
+                            );
                             // Since a succesful result means the buffer hasn't been flushed,
                             // immediatly attempt to handle the transfer as if it was ready
                             self.handle_transfer(id);
@@ -287,7 +290,7 @@ impl RPC {
                         Ok(None) => break true,
                         Ok(Some(ws::Frame::Text(data))) => {
                             if self.process_frame(not.id, &mut c, &data).is_err() {
-                                break false
+                                break false;
                             }
                         }
                         Ok(Some(_)) => break false,
@@ -309,7 +312,7 @@ impl RPC {
             self.clients.insert(not.id, c);
         }
     }
-    
+
     fn process_frame(&mut self, id: usize, c: &mut Client, data: &str) -> result::Result<(), ()> {
         match serde_json::from_str(data) {
             Ok(m) => {
@@ -318,9 +321,8 @@ impl RPC {
                     self.ch.send(m).unwrap();
                 }
                 for msg in msgs {
-                    if c.send(
-                        ws::Frame::Text(serde_json::to_string(&msg).unwrap()),
-                        ).is_err()
+                    if c.send(ws::Frame::Text(serde_json::to_string(&msg).unwrap()))
+                        .is_err()
                     {
                         return Err(());
                     }
@@ -332,17 +334,21 @@ impl RPC {
                         serial: None,
                         reason: format!("JSON decode error: {}", e),
                     });
-                    if c.send(ws::Frame::Text(serde_json::to_string(&msg).unwrap())).is_err() { };
-                    return Err(())
+                    if c.send(ws::Frame::Text(serde_json::to_string(&msg).unwrap()))
+                        .is_err()
+                    {}
+                    return Err(());
                 }
                 if e.is_data() {
                     let msg = SMessage::InvalidSchema(message::Error {
                         serial: None,
                         reason: format!("Invalid message format: {}", e),
                     });
-                    if c.send(ws::Frame::Text(serde_json::to_string(&msg).unwrap())).is_err() {
+                    if c.send(ws::Frame::Text(serde_json::to_string(&msg).unwrap()))
+                        .is_err()
+                    {
                         return Err(());
-                    };
+                    }
                 }
             }
         }
@@ -372,9 +378,9 @@ impl RPC {
             reg.deregister(&conn).unwrap();
             self.clients.get_mut(&id).map(|c| {
                 c.send(ws::Frame::Text(
-                        serde_json::to_string(&SMessage::TransferFailed(err))
+                    serde_json::to_string(&SMessage::TransferFailed(err))
                         .unwrap(),
-                        ))
+                ))
             });
         }
     }

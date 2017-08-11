@@ -135,7 +135,9 @@ impl cio::CIO for ACIO {
         if self.d().peers.len() > CONFIG.net.max_open_sockets {
             let mut pruned = Vec::new();
             for (id, peer) in self.d().peers.iter() {
-                if peer.last_action().elapsed() > time::Duration::from_secs(CONFIG.peer.prune_timeout) {
+                if peer.last_action().elapsed() >
+                    time::Duration::from_secs(CONFIG.peer.prune_timeout)
+                {
                     pruned.push(*id)
                 }
                 if pruned.len() == PRUNE_GOAL {

@@ -202,14 +202,14 @@ impl Processor {
                 };
                 {
                     let mut valid = &self.kinds[kind as usize];
-                    let crit_res = f.criteria.iter()
+                    let crit_res = f.criteria
+                        .iter()
                         .find(|c| c.field == "torrent_id")
-                        .and_then(|c| {
-                            match &c.value {
-                                &criterion::Value::S(ref s) => Some(s),
-                                _ => None,
-                            }
-                        }).and_then(|id| self.torrent_idx.get(id));
+                        .and_then(|c| match &c.value {
+                            &criterion::Value::S(ref s) => Some(s),
+                            _ => None,
+                        })
+                        .and_then(|id| self.torrent_idx.get(id));
 
                     let mut ids = Vec::new();
                     if let Some(t) = crit_res {

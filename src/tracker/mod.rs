@@ -93,7 +93,7 @@ impl Tracker {
         dns_res: amy::Receiver<dns::QueryResponse>,
         timer: usize,
         l: Logger,
-        ) -> Tracker {
+    ) -> Tracker {
         Tracker {
             ch,
             http,
@@ -174,7 +174,9 @@ impl Tracker {
 
     fn handle_announce(&mut self, req: Announce) {
         debug!(self.l, "Handling announce request!");
-        if self.udp.active_requests() + self.http.active_requests() > CONFIG.net.max_open_announces {
+        if self.udp.active_requests() + self.http.active_requests() >
+            CONFIG.net.max_open_announces
+        {
             self.queue.push_back(req);
         } else {
             let id = req.id;
@@ -183,10 +185,9 @@ impl Tracker {
                     "http" => self.http.new_announce(req, &url, &mut self.dns),
                     "udp" => self.udp.new_announce(req, &url, &mut self.dns),
                     s => Err(
-                        ErrorKind::InvalidRequest(
-                            format!("Unknown tracker url scheme: {}", s),
-                            ).into(),
-                        ),
+                        ErrorKind::InvalidRequest(format!("Unknown tracker url scheme: {}", s))
+                            .into(),
+                    ),
                 }
             } else {
                 Err(
@@ -287,12 +288,12 @@ impl Request {
             // This is naive, TODO: Reconsider
             left: torrent.info().total_len.saturating_sub(
                 torrent.downloaded(),
-                ),
-                // TODO: Develop better heuristics here.
-                // For now, only request peers if we're leeching,
-                // let existing peers connect otherwise
-                num_want: if torrent.complete() { None } else { Some(20) },
-                event,
+            ),
+            // TODO: Develop better heuristics here.
+            // For now, only request peers if we're leeching,
+            // let existing peers connect otherwise
+            num_want: if torrent.complete() { None } else { Some(20) },
+            event,
         })
     }
 
@@ -325,8 +326,8 @@ impl TrackerResponse {
 
     pub fn from_bencode(data: BEncode) -> Result<TrackerResponse> {
         let mut d = data.to_dict().ok_or(ErrorKind::InvalidResponse(
-                "Tracker response must be a dictionary type!",
-                ))?;
+            "Tracker response must be a dictionary type!",
+        ))?;
         if let Some(BEncode::String(data)) = d.remove("failure reason") {
             let reason = String::from_utf8(data).chain_err(|| {
                 ErrorKind::InvalidResponse("Failure reason must be UTF8!")
@@ -345,7 +346,7 @@ impl TrackerResponse {
             _ => {
                 return Err(
                     ErrorKind::InvalidResponse("Response must have peers field!").into(),
-                    );
+                );
             }
         };
         match d.remove("interval") {
@@ -355,7 +356,7 @@ impl TrackerResponse {
             _ => {
                 return Err(
                     ErrorKind::InvalidResponse("Response must have interval!").into(),
-                    );
+                );
             }
         };
         Ok(resp)

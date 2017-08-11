@@ -260,9 +260,10 @@ impl<T: cio::CIO> Torrent<T> {
     pub fn remove_peer(&mut self, rpc_id: &str) {
         let ih = &self.info.hash;
         let cio = &mut self.cio;
-        self.peers.iter().find(|&(id, _)| {
-            util::peer_rpc_id(ih, *id as u64) == rpc_id
-        }).map(|(id, _)| cio.remove_peer(*id));
+        self.peers
+            .iter()
+            .find(|&(id, _)| util::peer_rpc_id(ih, *id as u64) == rpc_id)
+            .map(|(id, _)| cio.remove_peer(*id));
     }
 
     // TODO: Implement once mutlitracker support is in
@@ -603,12 +604,8 @@ impl<T: cio::CIO> Torrent<T> {
 
     pub fn complete(&self) -> bool {
         match self.status {
-            Status::Leeching
-            | Status::Validating
-            | Status::Pending => false,
-            Status::Idle
-            | Status::Seeding
-            | Status::Paused => true,
+            Status::Leeching | Status::Validating | Status::Pending => false,
+            Status::Idle | Status::Seeding | Status::Paused => true,
             Status::DiskError => self.pieces.complete(),
         }
     }
