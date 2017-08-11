@@ -3,7 +3,7 @@ use std::collections::{HashMap, HashSet};
 use chrono::{DateTime, Utc, Duration};
 
 use super::proto::message::{CMessage, SMessage, Error};
-use super::proto::criterion::{Criterion, ResourceKind, Filter as FTrait};
+use super::proto::criterion::{self, Criterion, ResourceKind, Filter as FTrait};
 use super::proto::resource::{Resource, SResourceUpdate};
 use super::{CtlMessage, Message};
 use util::random_string;
@@ -200,13 +200,35 @@ impl Processor {
                     kind,
                     client,
                 };
-                let mut ids = Vec::new();
-                for (_, r) in self.resources.iter() {
-                    if r.kind() == kind && f.matches(r) {
-                        ids.push(r.id());
+                {
+                    let mut valid = &self.kinds[kind as usize];
+                    let crit_res = f.criteria.iter()
+                        .find(|c| c.field == "torrent_id")
+                        .and_then(|c| {
+                            match &c.value {
+                                &criterion::Value::S(ref s) => Some(s),
+                                _ => None,
+                            }
+                        }).and_then(|id| self.torrent_idx.get(id));
+
+                    let mut ids = Vec::new();
+                    if let Some(t) = crit_res {
+                        for id in valid.intersection(t) {
+                            let r = self.resources.get(id).unwrap();
+                            if f.matches(r) {
+                                ids.push(r.id());
+                            }
+                        }
+                    } else {
+                        for id in valid.iter() {
+                            let r = self.resources.get(id).unwrap();
+                            if f.matches(r) {
+                                ids.push(r.id());
+                            }
+                        }
                     }
+                    resp.push(SMessage::ResourcesExtant { serial, ids });
                 }
-                resp.push(SMessage::ResourcesExtant { serial, ids });
                 self.filter_subs.insert(serial, f);
             }
             CMessage::FilterUnsubscribe { filter_serial, .. } => {
