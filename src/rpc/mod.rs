@@ -6,7 +6,7 @@ mod client;
 mod processor;
 mod transfer;
 
-use std::{io, str};
+use std::{io, str, result};
 use std::net::{TcpListener, TcpStream, Ipv4Addr, SocketAddrV4};
 use std::collections::HashMap;
 
@@ -15,7 +15,7 @@ use serde_json;
 use amy;
 
 pub use self::proto::resource;
-use self::proto::message::SMessage;
+use self::proto::message::{self, SMessage};
 pub use self::errors::{Result, ResultExt, ErrorKind, Error};
 use self::proto::ws;
 use self::client::{Incoming, IncomingStatus, Client};
@@ -269,30 +269,8 @@ impl RPC {
                     match c.read() {
                         Ok(None) => break true,
                         Ok(Some(ws::Frame::Text(data))) => {
-                            match serde_json::from_str(&data) {
-                                Ok(m) => {
-                                    trace!(self.l, "Got a message from the client: {:?}", m);
-                                    let (msgs, rm) = self.processor.handle_client(not.id, m);
-                                    if let Some(m) = rm {
-                                        self.ch.send(m).unwrap();
-                                    }
-                                    for msg in msgs {
-                                        if c.send(
-                                            ws::Frame::Text(serde_json::to_string(&msg).unwrap()),
-                                            ).is_err()
-                                        {
-                                            break 'outer false;
-                                        }
-                                    }
-                                }
-                                Err(e) => {
-                                    debug!(
-                                        self.l,
-                                        "Client sent an invalid message, disconnecting: {}",
-                                        e
-                                        );
-                                    break false;
-                                }
+                            if self.process_frame(not.id, &mut c, &data).is_err() {
+                                break false
                             }
                         }
                         Ok(Some(_)) => break false,
@@ -313,6 +291,45 @@ impl RPC {
             }
             self.clients.insert(not.id, c);
         }
+    }
+    
+    fn process_frame(&mut self, id: usize, c: &mut Client, data: &str) -> result::Result<(), ()> {
+        match serde_json::from_str(data) {
+            Ok(m) => {
+                let (msgs, rm) = self.processor.handle_client(id, m);
+                if let Some(m) = rm {
+                    self.ch.send(m).unwrap();
+                }
+                for msg in msgs {
+                    if c.send(
+                        ws::Frame::Text(serde_json::to_string(&msg).unwrap()),
+                        ).is_err()
+                    {
+                        return Err(());
+                    }
+                }
+            }
+            Err(e) => {
+                if e.is_syntax() || e.is_eof() {
+                    let msg = SMessage::InvalidSchema(message::Error {
+                        serial: None,
+                        reason: format!("JSON decode error: {}", e),
+                    });
+                    if c.send(ws::Frame::Text(serde_json::to_string(&msg).unwrap())).is_err() { };
+                    return Err(())
+                }
+                if e.is_data() {
+                    let msg = SMessage::InvalidSchema(message::Error {
+                        serial: None,
+                        reason: format!("Invalid message format: {}", e),
+                    });
+                    if c.send(ws::Frame::Text(serde_json::to_string(&msg).unwrap())).is_err() {
+                        return Err(());
+                    };
+                }
+            }
+        }
+        Ok(())
     }
 
     fn cleanup(&mut self) {
