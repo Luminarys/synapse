@@ -15,6 +15,8 @@ pub enum TransferResult {
         conn: TcpStream,
         data: Vec<u8>,
         path: Option<String>,
+        client: usize,
+        serial: u64,
     },
     Error {
         conn: TcpStream,
@@ -96,6 +98,8 @@ impl Transfers {
                     conn: tx.conn,
                     data: tx.buf,
                     path: tx.path,
+                    client: tx.client,
+                    serial: tx.serial,
                 }
             }
             Some(Ok(false)) => TransferResult::Incomplete,

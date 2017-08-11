@@ -21,6 +21,7 @@ use self::proto::ws;
 use self::client::{Incoming, IncomingStatus, Client};
 use self::processor::{Processor, TransferKind};
 use self::transfer::{Transfers, TransferResult};
+use util;
 use bencode;
 use handle;
 use torrent;
@@ -159,13 +160,29 @@ impl RPC {
     fn handle_transfer(&mut self, id: usize) {
         match self.transfers.ready(id) {
            TransferResult::Incomplete => {}
-           TransferResult::Torrent { conn, data, path } => {
+           TransferResult::Torrent { conn, data, path, client, serial } => {
                debug!(self.l, "Got torrent via HTTP transfer!");
                self.reg.deregister(&conn).unwrap();
                // TODO: Send this to the client in an error msg
                match bencode::decode_buf(&data) {
                    Ok(b) => {
                        if let Ok(i) = torrent::info::Info::from_bencode(b) {
+                           let res = self.clients
+                             .get_mut(&client)
+                             .map(|c| {
+                                let tid = util::hash_to_id(&i.hash[..]);
+                                 c.send(ws::Frame::Text(
+                                         serde_json::to_string(&SMessage::ResourcesExtant {
+                                             serial,
+                                             ids: vec![&tid],
+                                         }).unwrap()
+                                         )
+                                     )
+                             });
+                           if res.unwrap_or(Ok(())).is_err() {
+                               let client = self.clients.remove(&id).unwrap();
+                               self.remove_client(id, client);
+                           }
                            if self.ch.send(Message::Torrent(i)).is_err() {
                                crit!(self.l, "Failed to pass message to ctrl!");
                            }
