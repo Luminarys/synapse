@@ -147,25 +147,29 @@ impl<T: cio::CIO> Control<T> {
                 self.handle_trk_ev(e);
             }
             cio::Event::Tracker(Err(e)) => {
-                error!(self.l, "tracker error: {:?}", e.backtrace());
+                error!(self.l, "tracker error: {:?}", e);
+                trace!(self.l, "tracker error bt: {:?}", e.backtrace());
             }
             cio::Event::Disk(Ok(e)) => {
                 self.handle_disk_ev(e);
             }
             cio::Event::Disk(Err(e)) => {
-                error!(self.l, "disk error: {:?}", e.backtrace());
+                error!(self.l, "disk error: {:?}", e);
+                trace!(self.l, "disk error: {:?}", e.backtrace());
             }
             cio::Event::RPC(Ok(e)) => {
                 return self.handle_rpc_ev(e);
             }
             cio::Event::RPC(Err(e)) => {
-                error!(self.l, "rpc error: {:?}", e.backtrace());
+                error!(self.l, "rpc error: {:?}", e);
+                trace!(self.l, "rpc error: {:?}", e.backtrace());
             }
             cio::Event::Listener(Ok(e)) => {
                 self.handle_lst_ev(e);
             }
             cio::Event::Listener(Err(e)) => {
-                error!(self.l, "listener error: {:?}", e.backtrace());
+                error!(self.l, "listener error: {:?}", e);
+                trace!(self.l, "listener error: {:?}", e.backtrace());
             }
             cio::Event::Timer(t) => {
                 if t == self.throttler.id() {

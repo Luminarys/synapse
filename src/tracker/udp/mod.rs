@@ -75,8 +75,9 @@ impl Handler {
         url: &Url,
         dns: &mut dns::Resolver,
     ) -> Result<()> {
+        // TODO: Attempt to parse into an IP address first, then perform dns res
         debug!(self.l, "Received a new announce req for {:?}", url);
-        let host = url.host_str().ok_or::<Error>(
+        let mut host = url.host_str().ok_or::<Error>(
             ErrorKind::InvalidRequest(
                 format!("Tracker announce url has no host!"),
             ).into(),
@@ -290,8 +291,6 @@ impl Handler {
                 announce_req.write_i32::<BigEndian>(nw).unwrap();
                 // port
                 announce_req.write_u16::<BigEndian>(conn.announce.port).unwrap();
-                // extensions
-                announce_req.write_u16::<BigEndian>(0).unwrap();
             }
             conn.state = State::Announcing { addr, data };
             conn.last_updated = time::Instant::now();
@@ -318,7 +317,8 @@ impl Handler {
         resp.leechers = announce_resp.read_u32::<BigEndian>().unwrap();
         resp.seeders = announce_resp.read_u32::<BigEndian>().unwrap();
         if len > 20 {
-            for p in announce_resp.get_ref()[20..len].chunks(6) {
+            let pos = announce_resp.position() as usize;
+            for p in announce_resp.get_ref()[pos..].chunks(6) {
                 resp.peers.push(bytes_to_addr(p));
             }
         }
