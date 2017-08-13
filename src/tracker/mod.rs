@@ -223,11 +223,7 @@ impl Tracker {
     }
 
     fn handle_timer(&mut self) {
-        for r in self.http.tick() {
-            self.send_response(r);
-        }
-
-        for r in self.udp.tick() {
+        for r in self.http.tick().into_iter().chain(self.udp.tick().into_iter()) {
             self.send_response(r);
         }
 
@@ -245,12 +241,10 @@ impl Tracker {
             };
             if let Some(r) = resp {
                 self.send_response(r);
-                self.dequeue_req();
             }
         } else if self.udp.id() == event.id {
             for resp in self.udp.readable() {
                 self.send_response(resp);
-                self.dequeue_req();
             }
         } else if self.dht.id() == event.id {
             for resp in self.dht.readable() {
@@ -268,11 +262,15 @@ impl Tracker {
 
     }
 
-    fn send_response(&self, r: Response) {
+    fn send_response(&mut self, r: Response) {
         if !self.shutting_down {
             debug!(self.l, "Sending trk response to control!");
             self.ch.send(r).unwrap();
         }
+        // TODO: The active announce queue could grow with DHT usage, since DHT stuff doesn't go into
+        // the announce queue, but still triggers send_response. Not a big deal, but worth
+        // thinking about for later.
+        self.dequeue_req();
     }
 }
 

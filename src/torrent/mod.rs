@@ -133,7 +133,7 @@ impl<T: cio::CIO> Torrent<T> {
             tracker_update: None,
             choker: choker::Choker::new(),
             l: l.clone(),
-            dirty: false,
+            dirty: true,
             status,
         };
         t.start();
@@ -600,6 +600,7 @@ impl<T: cio::CIO> Torrent<T> {
         // Update RPC of the torrent, tracker, files, and peers
         let resources = self.rpc_info();
         self.cio.msg_rpc(rpc::CtlMessage::Extant(resources));
+        self.serialize();
     }
 
     pub fn complete(&self) -> bool {

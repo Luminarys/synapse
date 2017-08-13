@@ -27,6 +27,9 @@ use handle;
 use torrent;
 use CONFIG;
 
+const POLL_INT_MS: usize = 1000;
+const CLEANUP_INT_MS: usize = 2000;
+
 #[derive(Debug)]
 pub enum CtlMessage {
     Extant(Vec<resource::Resource>),
@@ -69,14 +72,11 @@ pub struct RPC {
     l: Logger,
 }
 
-const POLL_INT_MS: usize = 1000;
-const CLEANUP_INT_S: usize = 2000;
-
 impl RPC {
     pub fn start(creg: &mut amy::Registrar) -> io::Result<handle::Handle<Message, CtlMessage>> {
         let poll = amy::Poller::new()?;
         let mut reg = poll.get_registrar()?;
-        let cleanup = reg.set_interval(CLEANUP_INT_S)?;
+        let cleanup = reg.set_interval(CLEANUP_INT_MS)?;
         let (ch, dh) = handle::Handle::new(creg, &mut reg)?;
 
         let ip = Ipv4Addr::new(0, 0, 0, 0);

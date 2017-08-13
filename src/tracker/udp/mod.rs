@@ -12,8 +12,8 @@ use rand::random;
 
 // We're not going to bother with backoff, if the tracker/network aren't working now
 // the torrent can just resend a request later.
-const TIMEOUT_MS: u64 = 5000;
-const RETRANS_MS: u64 = 500;
+const TIMEOUT_MS: u64 = 15000;
+const RETRANS_MS: u64 = 5000;
 const MAGIC_NUM: u64 = 0x41727101980;
 
 pub struct Handler {
