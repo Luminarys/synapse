@@ -133,10 +133,17 @@ impl Common {
     }
 
     pub fn invalidate_piece(&mut self, idx: u32) {
+        let mut unset = false;
         for i in 0..self.scale {
-            self.blocks.unset_bit(idx as u64 * self.scale + i);
+            let bit = idx as u64 * self.scale + i;
+            if self.blocks.has_bit(bit) {
+                unset = true;
+                self.blocks.unset_bit(bit);
+            }
         }
-        self.endgame_cnt += idx as u64 * self.scale;
+        if unset {
+            self.endgame_cnt += idx as u64 * self.scale;
+        }
     }
 
     fn unset_waiting(&mut self) {

@@ -326,13 +326,14 @@ impl<T: cio::CIO> Torrent<T> {
                         self.cio.remove_peer(seeder);
                     }
                 } else {
-                    warn!(
+                    debug!(
                         self.l,
                         "Torrent has incorrect pieces {:?}, redownloading",
                         invalid
                     );
                     for piece in invalid {
                         self.picker.invalidate_piece(piece);
+                        self.pieces.unset_bit(piece as u64);
                     }
                     self.request_all();
                 }
@@ -601,6 +602,8 @@ impl<T: cio::CIO> Torrent<T> {
         let resources = self.rpc_info();
         self.cio.msg_rpc(rpc::CtlMessage::Extant(resources));
         self.serialize();
+        // Check initial pieces
+        self.validate();
     }
 
     pub fn complete(&self) -> bool {
