@@ -113,10 +113,10 @@ impl Simulation {
                 let cnt = peer.requested_pieces.get_mut(&ucp.data.id()).unwrap();
                 if peer.data.pieces().usable(ucp.data.pieces()) {
                     while *cnt < self.cfg.req_queue_len {
-                        if let Some((piece, _)) = peer.picker.pick(&ucp.data) {
+                        if let Some(block) = peer.picker.pick(&ucp.data) {
                             ucp.requests.push(Request {
                                 peer: peer.data.id(),
-                                piece,
+                                piece: block.index,
                             });
                             *cnt += 1;
                         } else {
@@ -211,7 +211,8 @@ fn test_seq_efficiency() {
         req_queue_len: 2,
     };
     let info = Info::with_pieces(cfg.pieces as usize);
-    let p = Picker::new_sequential(&info);
+    let b = Bitfield::new(cfg.pieces as u64);
+    let p = Picker::new_sequential(&info, &b);
     test_efficiency(cfg, p);
 }
 
@@ -227,6 +228,7 @@ fn test_rarest_efficiency() {
         req_queue_len: 2,
     };
     let info = Info::with_pieces(cfg.pieces as usize);
-    let p = Picker::new_rarest(&info);
+    let b = Bitfield::new(cfg.pieces as u64);
+    let p = Picker::new_rarest(&info, &b);
     test_efficiency(cfg, p);
 }

@@ -15,14 +15,41 @@ pub enum Picker {
     Sequential(sequential::Picker),
 }
 
+/// Common data that all pickers will need
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Common {
+    /// Bitfield of which blocks have been waiting
+    pub blocks: Bitfield,
+    /// Number of blocks per piece
+    pub scale: u64,
+    /// Set of pieces which have blocks waiting. These should be prioritized.
+    pub waiting: HashSet<u64>,
+    /// Map of block indeces to peers waiting on them. Used for
+    /// cancelling in endgame.
+    pub waiting_peers: HashMap<u64, HashSet<usize>>,
+    /// Number of blocks left to request. Once this becomes 0
+    /// endgame mode is entered.
+    pub endgame_cnt: u64,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct Block {
+    pub index: u32,
+    pub offset: u32,
+}
+
 impl Picker {
-    pub fn new_rarest(info: &Info) -> Picker {
-        let picker = rarest::Picker::new(info);
+    /// Creates a new rarest picker, which will select over
+    /// the given pieces
+    pub fn new_rarest(info: &Info, pieces: &Bitfield) -> Picker {
+        let picker = rarest::Picker::new(info, pieces);
         Picker::Rarest(picker)
     }
 
-    pub fn new_sequential(info: &Info) -> Picker {
-        let picker = sequential::Picker::new(info);
+    /// Creates a new rarest picker, which will select over
+    /// the given pieces
+    pub fn new_sequential(info: &Info, pieces: &Bitfield) -> Picker {
+        let picker = sequential::Picker::new(info, pieces);
         Picker::Sequential(picker)
     }
 
@@ -33,7 +60,7 @@ impl Picker {
         }
     }
 
-    pub fn pick<T: cio::CIO>(&mut self, peer: &Peer<T>) -> Option<(u32, u32)> {
+    pub fn pick<T: cio::CIO>(&mut self, peer: &Peer<T>) -> Option<Block> {
         match *self {
             Picker::Sequential(ref mut p) => p.pick(peer),
             Picker::Rarest(ref mut p) => p.pick(peer),
@@ -90,21 +117,10 @@ impl Picker {
     }
 }
 
-/// Common data that all pickers will need
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct Common {
-    /// Bitfield of which blocks have been waiting
-    pub blocks: Bitfield,
-    /// Number of blocks per piece
-    pub scale: u64,
-    /// Set of pieces which have blocks waiting. These should be prioritized.
-    pub waiting: HashSet<u64>,
-    /// Map of block indeces to peers waiting on them. Used for
-    /// cancelling in endgame.
-    pub waiting_peers: HashMap<u64, HashSet<usize>>,
-    /// Number of blocks left to request. Once this becomes 0
-    /// endgame mode is entered.
-    pub endgame_cnt: u64,
+impl Block {
+    pub fn new(index: u32, offset: u32) -> Block {
+        Block { index, offset }
+    }
 }
 
 impl Common {

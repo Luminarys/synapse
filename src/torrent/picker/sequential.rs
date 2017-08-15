@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 use std::cmp;
-use torrent::{Info, Peer, picker};
+use torrent::{Info, Bitfield, Peer, picker};
 use control::cio;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -12,14 +12,14 @@ pub struct Picker {
 }
 
 impl Picker {
-    pub fn new(info: &Info) -> Picker {
+    pub fn new(info: &Info, pieces: &Bitfield) -> Picker {
         Picker {
             c: picker::Common::new(info),
             piece_idx: 0,
         }
     }
 
-    pub fn pick<T: cio::CIO>(&mut self, peer: &Peer<T>) -> Option<(u32, u32)> {
+    pub fn pick<T: cio::CIO>(&mut self, peer: &Peer<T>) -> Option<picker::Block> {
         for idx in peer.pieces().iter_from(self.piece_idx) {
             let start = idx * self.c.scale;
             for i in 0..self.c.scale {
@@ -34,7 +34,10 @@ impl Picker {
                         println!("Entering endgame!");
                     }
                     self.c.endgame_cnt = self.c.endgame_cnt.saturating_sub(1);
-                    return Some((idx as u32, (i * 16384) as u32));
+                    return Some(picker::Block {
+                        index: idx as u32,
+                        offset: (i * 16384) as u32 }
+                    );
                 }
             }
         }
@@ -48,10 +51,10 @@ impl Picker {
             }
             if let Some(i) = idx {
                 self.c.waiting_peers.get_mut(&i).unwrap().insert(peer.id());
-                return Some((
-                    (i / self.c.scale) as u32,
-                    ((i % self.c.scale) * 16384) as u32,
-                ));
+                return Some(picker::Block {
+                    index: (i / self.c.scale) as u32,
+                    offset: ((i % self.c.scale) * 16384) as u32,
+                });
             }
         }
         None
@@ -105,6 +108,7 @@ impl Picker {
 mod tests {
     use torrent::{Info, Peer, Bitfield};
     use super::Picker;
+    use super::super::Block;
 
     #[test]
     fn test_piece_size() {
@@ -119,7 +123,8 @@ mod tests {
             private: false,
         };
 
-        let picker = Picker::new(&info);
+        let b = Bitfield::new(info.pieces() as u64);
+        let picker = Picker::new(&info, &b);
         assert_eq!(picker.c.scale as u32, info.piece_len / 16384);
         assert_eq!(picker.c.blocks.len(), 123);
     }
@@ -128,22 +133,22 @@ mod tests {
     fn test_piece_pick_order() {
         let info = Info::with_pieces(3);
 
-        let mut picker = Picker::new(&info);
         let b = Bitfield::new(4);
+        let mut picker = Picker::new(&info, &b);
         let mut peer = Peer::test_from_pieces(0, b);
         assert_eq!(picker.pick(&peer), None);
         peer.pieces_mut().set_bit(1);
-        assert_eq!(picker.pick(&peer), Some((1, 0)));
+        assert_eq!(picker.pick(&peer), Some(Block::new(1, 0)));
         peer.pieces_mut().set_bit(0);
-        assert_eq!(picker.pick(&peer), Some((0, 0)));
+        assert_eq!(picker.pick(&peer), Some(Block::new(0, 0)));
         peer.pieces_mut().set_bit(2);
-        assert_eq!(picker.pick(&peer), Some((2, 0)));
+        assert_eq!(picker.pick(&peer), Some(Block::new(2, 0)));
 
         picker.completed(0, 0);
         picker.completed(1, 0);
         picker.completed(2, 0);
         assert_eq!(picker.pick(&peer), None);
         picker.invalidate_piece(1);
-        assert_eq!(picker.pick(&peer), Some((1, 0)));
+        assert_eq!(picker.pick(&peer), Some(Block::new(1, 0)));
     }
 }

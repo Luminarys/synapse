@@ -104,9 +104,9 @@ impl<T: cio::CIO> Torrent<T> {
         let peers = HashMap::new();
         let pieces = Bitfield::new(info.pieces() as u64);
         let picker = if RAREST_PKR {
-            Picker::new_rarest(&info)
+            Picker::new_rarest(&info, &pieces)
         } else {
-            Picker::new_sequential(&info)
+            Picker::new_sequential(&info, &pieces)
         };
         let leechers = HashSet::new();
         let status = if created.is_some() {
@@ -570,10 +570,10 @@ impl<T: cio::CIO> Torrent<T> {
 
         if let Some(s) = u.sequential {
             if s {
-                let p = Picker::new_sequential(&self.info);
+                let p = Picker::new_sequential(&self.info, &self.pieces);
                 self.change_picker(p);
             } else {
-                let p = Picker::new_rarest(&self.info);
+                let p = Picker::new_rarest(&self.info, &self.pieces);
                 self.change_picker(p);
             }
         }
@@ -807,8 +807,8 @@ impl<T: cio::CIO> Torrent<T> {
             return;
         }
         while peer.can_queue_req() {
-            if let Some((idx, offset)) = self.picker.pick(peer) {
-                peer.request_piece(idx, offset, self.info.block_len(idx, offset));
+            if let Some(block) = self.picker.pick(peer) {
+                peer.request_piece(block.index, block.offset, self.info.block_len(block.index, block.offset));
             } else {
                 break;
             }
@@ -820,8 +820,8 @@ impl<T: cio::CIO> Torrent<T> {
             return;
         }
         while peer.can_queue_req() {
-            if let Some((idx, offset)) = self.picker.pick(peer) {
-                peer.request_piece(idx, offset, self.info.block_len(idx, offset));
+            if let Some(block) = self.picker.pick(peer) {
+                peer.request_piece(block.index, block.offset, self.info.block_len(block.index, block.offset));
             } else {
                 break;
             }

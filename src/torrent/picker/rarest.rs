@@ -1,7 +1,7 @@
 // Implementation based off of http://blog.libtorrent.org/2011/11/writing-a-fast-piece-picker/
 
 use std::collections::HashSet;
-use torrent::{Info, Peer, picker};
+use torrent::{Info, Peer, Bitfield, picker};
 use std::ops::IndexMut;
 use control::cio;
 
@@ -26,9 +26,9 @@ struct PieceInfo {
 }
 
 impl Picker {
-    pub fn new(info: &Info) -> Picker {
+    pub fn new(info: &Info, pieces: &Bitfield) -> Picker {
         let mut piece_idx = Vec::new();
-        for i in 0..info.pieces() {
+        for i in 0..pieces.len() {
             piece_idx.push(PieceInfo {
                 idx: i as usize,
                 availability: 0,
@@ -111,7 +111,7 @@ impl Picker {
         self.pieces.swap(idx, swap_idx);
     }
 
-    pub fn pick<T: cio::CIO>(&mut self, peer: &Peer<T>) -> Option<(u32, u32)> {
+    pub fn pick<T: cio::CIO>(&mut self, peer: &Peer<T>) -> Option<picker::Block> {
         for pidx in self.pieces.iter() {
             if peer.pieces().has_bit(*pidx as u64) {
                 for bidx in 0..self.c.scale {
@@ -126,7 +126,10 @@ impl Picker {
                             // println!("Entering endgame!");
                         }
                         self.c.endgame_cnt = self.c.endgame_cnt.saturating_sub(1);
-                        return Some((*pidx as u32, bidx as u32 * 16384));
+                        return Some(picker::Block {
+                            index: *pidx as u32,
+                            offset: bidx as u32 * 16384,
+                        });
                     }
                 }
             }
@@ -141,10 +144,10 @@ impl Picker {
             }
             if let Some(i) = idx {
                 self.c.waiting_peers.get_mut(&i).unwrap();
-                return Some((
-                    (i / self.c.scale) as u32,
-                    ((i % self.c.scale) * 16384) as u32,
-                ));
+                return Some(picker::Block {
+                    index: (i / self.c.scale) as u32,
+                    offset: ((i % self.c.scale) * 16384) as u32,
+                });
             }
         }
         None
@@ -193,6 +196,7 @@ impl Picker {
 
 #[cfg(test)]
 mod tests {
+    use super::super::Block;
     use super::Picker;
     use torrent::{Info, Peer, Bitfield};
 
@@ -200,8 +204,8 @@ mod tests {
     fn test_available() {
         let info = Info::with_pieces(3);
 
-        let mut picker = Picker::new(&info);
         let b = Bitfield::new(3);
+        let mut picker = Picker::new(&info, &b);
         let mut peers = vec![
             Peer::test_from_pieces(0, b.clone()),
             Peer::test_from_pieces(0, b.clone()),
@@ -217,19 +221,19 @@ mod tests {
         for peer in peers.iter() {
             picker.add_peer(peer);
         }
-        assert_eq!(picker.pick(&peers[1]), Some((2, 0)));
-        assert_eq!(picker.pick(&peers[1]), Some((0, 0)));
+        assert_eq!(picker.pick(&peers[1]), Some(Block::new(2, 0)));
+        assert_eq!(picker.pick(&peers[1]), Some(Block::new(0, 0)));
         assert_eq!(picker.pick(&peers[1]), None);
         assert_eq!(picker.pick(&peers[0]), None);
-        assert_eq!(picker.pick(&peers[2]), Some((1, 0)));
+        assert_eq!(picker.pick(&peers[2]), Some(Block::new(1, 0)));
     }
 
     #[test]
     fn test_unavailable() {
+        let b = Bitfield::new(3);
         let info = Info::with_pieces(3);
 
-        let mut picker = Picker::new(&info);
-        let b = Bitfield::new(3);
+        let mut picker = Picker::new(&info, &b);
         let mut peers = vec![
             Peer::test_from_pieces(0, b.clone()),
             Peer::test_from_pieces(0, b.clone()),
@@ -249,15 +253,15 @@ mod tests {
         }
         picker.remove_peer(&peers[0]);
 
-        assert_eq!(picker.pick(&peers[1]), Some((2, 0)));
-        assert_eq!(picker.pick(&peers[2]), Some((0, 0)));
-        assert_eq!(picker.pick(&peers[2]), Some((1, 0)));
+        assert_eq!(picker.pick(&peers[1]), Some(Block::new(2, 0)));
+        assert_eq!(picker.pick(&peers[2]), Some(Block::new(0, 0)));
+        assert_eq!(picker.pick(&peers[2]), Some(Block::new(1, 0)));
 
         picker.completed(0, 0);
         picker.completed(1, 0);
         picker.completed(2, 0);
         assert_eq!(picker.pick(&peers[1]), None);
         picker.invalidate_piece(1);
-        assert_eq!(picker.pick(&peers[1]), Some((1, 0)));
+        assert_eq!(picker.pick(&peers[1]), Some(Block::new(1, 0)));
     }
 }

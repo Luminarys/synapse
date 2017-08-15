@@ -201,7 +201,7 @@ impl Processor {
                     client,
                 };
                 {
-                    let mut valid = &self.kinds[kind as usize];
+                    let valid = &self.kinds[kind as usize];
                     let crit_res = f.criteria
                         .iter()
                         .find(|c| c.field == "torrent_id")
