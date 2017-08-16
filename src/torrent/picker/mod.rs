@@ -1,5 +1,6 @@
 use std::collections::{HashMap, HashSet};
 use std::mem;
+use std::time;
 use torrent::{Info, Peer, Bitfield};
 use control::cio;
 
@@ -11,10 +12,15 @@ mod tests;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Picker {
-    c: Common,
+    /// Number of blocks per piece
+    scale: u64,
+    /// Number of detected seeders
+    seeders: u16,
+    /// Set of pieces which have blocks waiting. These should be prioritized.
+    downloading: HashMap<u32, Vec<Downloading>>,
+    /// The current picker in use
     picker: PickerKind,
 }
-
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 enum PickerKind {
@@ -22,21 +28,16 @@ enum PickerKind {
     Sequential(sequential::Picker),
 }
 
-/// Common data that all pickers will need
-#[derive(Clone, Debug, Serialize, Deserialize)]
-struct Common {
-    /// Bitfield of which blocks have been waiting
-    pub blocks: Bitfield,
-    /// Number of blocks per piece
-    pub scale: u64,
-    /// Set of pieces which have blocks waiting. These should be prioritized.
-    pub waiting: HashSet<u64>,
-    /// Map of block indeces to peers waiting on them. Used for
-    /// cancelling in endgame.
-    pub waiting_peers: HashMap<u64, HashSet<usize>>,
-    /// Number of blocks left to request. Once this becomes 0
-    /// endgame mode is entered.
-    pub endgame_cnt: u64,
+#[derive(Clone, Debug, PartialEq)]
+struct Downloading {
+    offset: u32,
+    completed: bool,
+    requested: [Option<Request>; 3],
+}
+
+struct Request {
+    peer: usize,
+    requested_at: time::Instant,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -49,78 +50,83 @@ impl Picker {
     /// Creates a new rarest picker, which will select over
     /// the given pieces
     pub fn new_rarest(info: &Info, pieces: &Bitfield) -> Picker {
-        let picker = rarest::Picker::new(info, pieces);
-        Picker::Rarest(picker)
+        let scale = info.piece_len / 16384;
+        let picker = rarest::Picker::new(pieces);
+        Picker {
+            kind: PickerKind::Rarest(picker),
+            scale,
+            seeders: 0,
+            downloading: HashMap::new(),
+        }
     }
 
     /// Creates a new rarest picker, which will select over
     /// the given pieces
     pub fn new_sequential(info: &Info, pieces: &Bitfield) -> Picker {
-        let picker = sequential::Picker::new(info, pieces);
-        Picker::Sequential(picker)
+        let scale = info.piece_len / 16384;
+        let picker = sequential::Picker::new(pieces);
+        Picker {
+            kind: PickerKind::Sequential(picker),
+            scale,
+            seeders: 0,
+            downloading: HashMap::new(),
+        }
     }
 
     pub fn is_sequential(&self) -> bool {
-        match self {
-            &Picker::Sequential(_) => true,
+        match &self.kind {
+            &PickerKind::Sequential(_) => true,
             _ => false,
         }
     }
 
     pub fn pick<T: cio::CIO>(&mut self, peer: &Peer<T>) -> Option<Block> {
-        match *self {
-            Picker::Sequential(ref mut p) => p.pick(peer),
-            Picker::Rarest(ref mut p) => p.pick(peer),
-        }
+        let piece = match self.kind {
+            PickerKind::Sequential(ref mut p) => p.pick(peer),
+            PickerKind::Rarest(ref mut p) => p.pick(peer),
+        };
     }
 
     /// Returns whether or not the whole piece is complete.
-    pub fn completed(&mut self, idx: u32, offset: u32) -> (bool, HashSet<usize>) {
-        match *self {
-            Picker::Sequential(ref mut p) => p.completed(idx, offset),
-            Picker::Rarest(ref mut p) => p.completed(idx, offset),
-        }
+    pub fn completed(&mut self, b: Block) -> (bool, Iterator<Item=usize>) {
+        // match *self {
+        //     Picker::Sequential(ref mut p) => p.completed(idx, offset),
+        //     Picker::Rarest(ref mut p) => p.completed(idx, offset),
+        // }
     }
 
     pub fn invalidate_piece(&mut self, idx: u32) {
         match *self {
-            Picker::Sequential(ref mut p) => p.invalidate_piece(idx),
-            Picker::Rarest(ref mut p) => p.invalidate_piece(idx),
+            Picker::Sequential(ref mut p) => p.incomplete(idx),
+            Picker::Rarest(ref mut p) => p.incomplete(idx),
         }
     }
 
     pub fn piece_available(&mut self, idx: u32) {
-        if let Picker::Rarest(ref mut p) = *self {
+        if let PickerKind::Rarest(ref mut p) = *self.kind {
             p.piece_available(idx);
         }
     }
 
     pub fn add_peer<T: cio::CIO>(&mut self, peer: &Peer<T>) {
-        if let Picker::Rarest(ref mut p) = *self {
+        if let PickerKind::Rarest(ref mut p) = *self.kind {
             p.add_peer(peer);
         }
     }
 
     pub fn remove_peer<T: cio::CIO>(&mut self, peer: &Peer<T>) {
-        if let Picker::Rarest(ref mut p) = *self {
+        if let Picker::Rarest(ref mut p) = *self.kind {
             p.remove_peer(peer);
         }
     }
 
     pub fn change_picker(&mut self, mut picker: Picker) {
-        mem::swap(self.common(), picker.common());
-        mem::swap(self, &mut picker);
+        // mem::swap(self.common(), picker.common());
+        // mem::swap(self, &mut picker);
     }
 
     pub fn unset_waiting(&mut self) {
-        self.common().unset_waiting();
-    }
-
-    fn common(&mut self) -> &mut Common {
-        match *self {
-            Picker::Sequential(ref mut p) => &mut p.c,
-            Picker::Rarest(ref mut p) => &mut p.c,
-        }
+        // self.common().unset_waiting();
     }
 }
 
@@ -130,6 +136,7 @@ impl Block {
     }
 }
 
+/*
 impl Common {
     pub fn new(info: &Info) -> Common {
         let scale = info.piece_len / 16384;
@@ -178,3 +185,4 @@ impl Common {
         self.waiting_peers.clear();
     }
 }
+*/

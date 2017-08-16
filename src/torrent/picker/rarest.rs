@@ -13,8 +13,6 @@ pub struct Picker {
     priorities: Vec<usize>,
     /// Index mapping a piece to a position in the pieces field
     piece_idx: Vec<PieceInfo>,
-    /// Set of peers which are seeders, and are not included in availability calcs
-    seeders: HashSet<usize>,
 }
 
 enum PieceStatus {
@@ -42,7 +40,6 @@ impl Picker {
             });
         }
         let mut p = Picker {
-            seeders: HashSet::new(),
             pieces: (0..info.pieces()).collect(),
             piece_idx,
             priorities: vec![info.pieces() as usize],
@@ -62,21 +59,12 @@ impl Picker {
     }
 
     pub fn add_peer<T: cio::CIO>(&mut self, peer: &Peer<T>) {
-        // Ignore seeders for availability calc
-        if peer.pieces().complete() {
-            self.seeders.insert(peer.id());
-            return;
-        }
         for idx in peer.pieces().iter() {
             self.piece_available(idx as u32);
         }
     }
 
     pub fn remove_peer<T: cio::CIO>(&mut self, peer: &Peer<T>) {
-        if self.seeders.contains(&peer.id()) {
-            self.seeders.remove(&peer.id());
-            return;
-        }
         for idx in peer.pieces().iter() {
             self.piece_unavailable(idx as u32);
         }
