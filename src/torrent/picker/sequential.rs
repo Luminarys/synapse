@@ -5,21 +5,40 @@ use control::cio;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Picker {
-    /// Common picker data
-    pub c: picker::Common,
     /// The max block index that we've picked up to so far
     piece_idx: u64,
+    pieces: Vec<Piece>,
+}
+
+struct Piece {
+    pos: u32,
+    status: PieceStatus,
+}
+
+enum PieceStatus {
+    Incomplete,
+    Complete,
 }
 
 impl Picker {
-    pub fn new(info: &Info, pieces: &Bitfield) -> Picker {
+    pub fn new(pieces: &Bitfield) -> Picker {
+        let mut p = (0..pieces.len())
+                      .filter(|p| !pieces.has_bit(p))
+                      .map(|p| Piece { pos: p, status: PieceStatus::Complete });
+        let il = p.len();
+        p.extend(pieces.iter().map(|p| Piece { pos: p, status: PieceStatus::Incomplete }));
+
         Picker {
-            c: picker::Common::new(info),
-            piece_idx: 0,
+            piece_idx: il,
+            pieces,
         }
     }
 
-    pub fn pick<T: cio::CIO>(&mut self, peer: &Peer<T>) -> Option<picker::Block> {
+    pub fn pick<T: cio::CIO>(&mut self, peer: &Peer<T>) -> Option<u32> {
+        self.pieces[self.piece_idx..].iter()
+            .find(|p| peer.pieces().has_bit(p.pos))
+
+            /*
         for idx in peer.pieces().iter_from(self.piece_idx) {
             let start = idx * self.c.scale;
             for i in 0..self.c.scale {
@@ -58,10 +77,17 @@ impl Picker {
             }
         }
         None
+        */
     }
 
     /// Returns whether or not the whole piece is complete.
-    pub fn completed(&mut self, idx: u32, offset: u32) -> (bool, HashSet<usize>) {
+    pub fn completed(&mut self, idx: u32) {
+        self.pieces[self.piece_idx..].iter_mut()
+            .find(|p| p.pos == idx)
+            .map(|p| p.status == PieceStatus::Complete);
+        /*
+        self.pieces.iter_from(self.piece_idx)
+            .find(|p| peer.pieces().has_bit(p.pos))
         let mut idx = idx as u64;
         let mut offset = offset as u64;
         offset /= 16384;
@@ -78,27 +104,24 @@ impl Picker {
                 return (false, peers);
             }
         }
+        */
         self.update_piece_idx();
-        (true, peers)
     }
 
-    pub fn invalidate_piece(&mut self, idx: u32) {
-        self.piece_idx = cmp::min(idx as u64, self.piece_idx);
-        self.c.invalidate_piece(idx);
+    pub fn incomplete(&mut self, idx: u32) {
+        self.pieces.iter_mut()
+            .find(|p| p.pos == idx)
+            .map(|p| {
+                p.status == PieceStatus::Incomplete;
+                self.piece_idx = p;
+            });
     }
 
     fn update_piece_idx(&mut self) {
         let mut idx = self.piece_idx * self.c.scale;
-        loop {
-            for i in 0..self.c.scale {
-                if idx + i < self.c.blocks.len() && !self.c.blocks.has_bit(idx + i) {
-                    return;
-                }
-            }
-            self.piece_idx += 1;
-            idx += self.c.scale;
-            if idx > self.c.blocks.len() {
-                return;
+        for i in self.piece_idx..self.pieces.len() {
+            if self.pieces[i].status == PieceStatus::Complete {
+                self.piece_idx += 1;
             }
         }
     }

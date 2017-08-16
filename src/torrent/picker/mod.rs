@@ -10,14 +10,21 @@ mod sequential;
 mod tests;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub enum Picker {
+pub struct Picker {
+    c: Common,
+    picker: PickerKind,
+}
+
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+enum PickerKind {
     Rarest(rarest::Picker),
     Sequential(sequential::Picker),
 }
 
 /// Common data that all pickers will need
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct Common {
+struct Common {
     /// Bitfield of which blocks have been waiting
     pub blocks: Bitfield,
     /// Number of blocks per piece

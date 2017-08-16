@@ -7,8 +7,6 @@ use control::cio;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Picker {
-    /// Common data
-    pub c: picker::Common,
     /// Current order of pieces
     pieces: Vec<u32>,
     /// Indices into pieces which indicate priority bounds
@@ -19,28 +17,48 @@ pub struct Picker {
     seeders: HashSet<usize>,
 }
 
+enum PieceStatus {
+    Incomplete,
+    Complete,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 struct PieceInfo {
     idx: usize,
     availability: usize,
+    status: PieceStatus,
 }
 
+const PIECE_COMPLETE_INC: usize = 100;
+
 impl Picker {
-    pub fn new(info: &Info, pieces: &Bitfield) -> Picker {
+    pub fn new(pieces: &Bitfield) -> Picker {
         let mut piece_idx = Vec::new();
         for i in 0..pieces.len() {
             piece_idx.push(PieceInfo {
                 idx: i as usize,
                 availability: 0,
+                status: PieceStatus::Incomplete,
             });
         }
-        Picker {
-            c: picker::Common::new(info),
+        let mut p = Picker {
             seeders: HashSet::new(),
             pieces: (0..info.pieces()).collect(),
             piece_idx,
             priorities: vec![info.pieces() as usize],
+        };
+        // Start every piece at an availability of 1.
+        // This way when we decrement availability for an initial
+        // pick we never underflow, and can keep track of which pieces
+        // are unpicked(odd) and picked(even).
+        // We additionally mark pieces as properly completed
+        for i in 0..pieces.len() {
+            p.piece_available(i as u32);
+            if pieces.has_bit(i) {
+                p.completed(i);
+            }
         }
+        p
     }
 
     pub fn add_peer<T: cio::CIO>(&mut self, peer: &Peer<T>) {
@@ -76,17 +94,7 @@ impl Picker {
         };
 
         let swap_idx = self.priorities[avail];
-        let swap_piece = self.pieces[swap_idx];
-
-        {
-            let piece = self.piece_idx.index_mut(piece as usize);
-            piece.idx = swap_idx;
-        }
-        {
-            let piece = self.piece_idx.index_mut(swap_piece as usize);
-            piece.idx = idx;
-        }
-        self.pieces.swap(idx, swap_idx);
+        self.swap_piece(idx, swap_idx);
     }
 
     pub fn piece_unavailable(&mut self, piece: u32) {
@@ -98,23 +106,24 @@ impl Picker {
         };
 
         let swap_idx = self.priorities[avail - 1];
-        let swap_piece = self.pieces[swap_idx];
-
-        {
-            let piece = self.piece_idx.index_mut(piece as usize);
-            piece.idx = swap_idx;
-        }
-        {
-            let piece = self.piece_idx.index_mut(swap_piece as usize);
-            piece.idx = idx;
-        }
-        self.pieces.swap(idx, swap_idx);
+        self.swap_piece(idx, swap_idx);
     }
 
-    pub fn pick<T: cio::CIO>(&mut self, peer: &Peer<T>) -> Option<picker::Block> {
-        for pidx in self.pieces.iter() {
-            if peer.pieces().has_bit(*pidx as u64) {
-                for bidx in 0..self.c.scale {
+    pub fn pick<T: cio::CIO>(&mut self, peer: &Peer<T>) -> Option<u32> {
+        // Find the first matching piece which is not complete,
+        // and that the peer also has
+        self.pieces.iter()
+            .cloned()
+            .filter(|p| self.piece_idx[p].status == PieceStatus::Incomplete)
+            .find(|p| peer.pieces().has_bit(p as u64))
+            .map(|p| {
+                if (self.piece_idx[p].availability % 2) == 0 {
+                    self.piece_unavailable(p);
+                }
+                p
+            })
+                /*
+                or bidx in 0..self.c.scale {
                     let block = *pidx as u64 * self.c.scale + bidx;
                     if !self.c.blocks.has_bit(block) {
                         self.c.blocks.set_bit(block);
@@ -132,42 +141,37 @@ impl Picker {
                         });
                     }
                 }
-            }
-        }
-        if self.c.endgame_cnt == 0 {
-            let mut idx = None;
-            for piece in self.c.waiting.iter() {
-                if peer.pieces().has_bit(*piece / self.c.scale) {
-                    idx = Some(*piece);
-                    break;
-                }
-            }
-            if let Some(i) = idx {
-                self.c.waiting_peers.get_mut(&i).unwrap();
-                return Some(picker::Block {
-                    index: (i / self.c.scale) as u32,
-                    offset: ((i % self.c.scale) * 16384) as u32,
-                });
-            }
-        }
-        None
+                */
     }
 
-    pub fn completed(&mut self, oidx: u32, offset: u32) -> (bool, HashSet<usize>) {
-        let idx: u64 = oidx as u64 * self.c.scale;
-        let offset: u64 = offset as u64 / 16384;
-        let block = idx + offset;
-        self.c.waiting.remove(&block);
-        let peers = self.c.waiting_peers.remove(&block).unwrap_or_else(|| {
-            HashSet::with_capacity(0)
-        });
-        for i in 0..self.c.scale {
-            if (idx + i < self.c.blocks.len() && !self.c.blocks.has_bit(idx + i)) ||
-                self.c.waiting.contains(&(idx + i))
-            {
-                return (false, peers);
-            }
+    pub fn incomplete(&mut self, piece: u32) {
+        self.piece_idx[piece as usize].status = PieceStatus::Incomplete;
+        for _ in 0..PIECE_COMPLETE_INC {
+            self.piece_unavailable(piece);
         }
+    }
+
+    pub fn completed(&mut self, piece: u32) {
+        self.piece_idx[piece as usize].status = PieceStatus::Complete;
+        // As hacky as this is, it's a good way to ensure that
+        // we never waste time picking already selected pieces
+        for _ in 0..PIECE_COMPLETE_INC {
+            self.piece_available(piece);
+        }
+        //let idx: u64 = oidx as u64 * self.c.scale;
+        //let offset: u64 = offset as u64 / 16384;
+        //let block = idx + offset;
+        //self.c.waiting.remove(&block);
+        //let peers = self.c.waiting_peers.remove(&block).unwrap_or_else(|| {
+        //    HashSet::with_capacity(0)
+        //});
+        //for i in 0..self.c.scale {
+        //    if (idx + i < self.c.blocks.len() && !self.c.blocks.has_bit(idx + i)) ||
+        //        self.c.waiting.contains(&(idx + i))
+        //    {
+        //        return (false, peers);
+        //    }
+        //}
 
         // TODO: Make this less hacky somehow
         // let pri_idx = self.piece_idx[oidx as usize].availability;
@@ -183,15 +187,15 @@ impl Picker {
         //     }
         // }
         // self.pieces.remove(pinfo_idx);
-        for _ in 0..100 {
-            self.piece_available(oidx);
-        }
         (true, peers)
     }
 
-    pub fn invalidate_piece(&mut self, idx: u32) {
-        self.c.invalidate_piece(idx);
+    fn swap_piece(&mut self, a: u32, b: u32) {
+        self.piece_idx[self.pieces[a]].idx = b;
+        self.piece_idx[self.pieces[b]].idx = a;
+        self.pieces.swap(a, b);
     }
+
 }
 
 #[cfg(test)]
@@ -261,7 +265,7 @@ mod tests {
         picker.completed(1, 0);
         picker.completed(2, 0);
         assert_eq!(picker.pick(&peers[1]), None);
-        picker.invalidate_piece(1);
-        assert_eq!(picker.pick(&peers[1]), Some(Block::new(1, 0)));
+        // picker.invalidate_piece(1);
+        // assert_eq!(picker.pick(&peers[1]), Some(Block::new(1, 0)));
     }
 }
