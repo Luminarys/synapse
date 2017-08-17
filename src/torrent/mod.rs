@@ -566,13 +566,7 @@ impl<T: cio::CIO> Torrent<T> {
         }
 
         if let Some(s) = u.sequential {
-            if s {
-                let p = Picker::new_sequential(&self.info, &self.pieces);
-                self.change_picker(p);
-            } else {
-                let p = Picker::new_rarest(&self.info, &self.pieces);
-                self.change_picker(p);
-            }
+            self.change_picker(s);
         }
     }
 
@@ -998,12 +992,12 @@ impl<T: cio::CIO> Torrent<T> {
         self.peers.keys().cloned().collect()
     }
 
-    pub fn change_picker(&mut self, mut picker: Picker) {
+    pub fn change_picker(&mut self, sequential: bool) {
         debug!(self.l, "Swapping pickers!");
+        self.picker.change_picker(sequential);
         for (_, peer) in self.peers.iter() {
-            picker.add_peer(peer);
+            self.picker.add_peer(peer);
         }
-        self.picker = picker;
         let id = self.rpc_id();
         let sequential = self.picker.is_sequential();
         self.cio.msg_rpc(rpc::CtlMessage::Update(

@@ -71,6 +71,11 @@ impl Picker {
     }
 
     pub fn piece_available(&mut self, piece: u32) {
+        self.inc_avail(piece);
+        self.inc_avail(piece);
+    }
+
+    pub fn inc_avail(&mut self, piece: u32) {
         let (idx, avail) = {
             let piece = self.piece_idx.index_mut(piece as usize);
             self.priorities[piece.availability] -= 1;
@@ -86,6 +91,11 @@ impl Picker {
     }
 
     pub fn piece_unavailable(&mut self, piece: u32) {
+        self.dec_avail(piece);
+        self.dec_avail(piece);
+    }
+
+    pub fn dec_avail(&mut self, piece: u32) {
         let (idx, avail) = {
             let piece = self.piece_idx.index_mut(piece as usize);
             piece.availability -= 1;
@@ -106,7 +116,7 @@ impl Picker {
             .find(|p| peer.pieces().has_bit(*p as u64))
             .map(|p| {
                 if (self.piece_idx[p as usize].availability % 2) == 0 {
-                    self.piece_unavailable(p);
+                    self.dec_avail(p);
                 }
                 p
             })
@@ -193,10 +203,8 @@ mod tests {
 
     #[test]
     fn test_available() {
-        let info = Info::with_pieces(3);
-
         let b = Bitfield::new(3);
-        let mut picker = Picker::new(&info, &b);
+        let mut picker = Picker::new(&b);
         let mut peers = vec![
             Peer::test_from_pieces(0, b.clone()),
             Peer::test_from_pieces(0, b.clone()),
@@ -212,19 +220,18 @@ mod tests {
         for peer in peers.iter() {
             picker.add_peer(peer);
         }
-        assert_eq!(picker.pick(&peers[1]), Some(Block::new(2, 0)));
-        assert_eq!(picker.pick(&peers[1]), Some(Block::new(0, 0)));
+        assert_eq!(picker.pick(&peers[1]), Some(2));
+        assert_eq!(picker.pick(&peers[1]), Some(0));
         assert_eq!(picker.pick(&peers[1]), None);
         assert_eq!(picker.pick(&peers[0]), None);
-        assert_eq!(picker.pick(&peers[2]), Some(Block::new(1, 0)));
+        assert_eq!(picker.pick(&peers[2]), Some(1));
     }
 
     #[test]
     fn test_unavailable() {
         let b = Bitfield::new(3);
-        let info = Info::with_pieces(3);
 
-        let mut picker = Picker::new(&info, &b);
+        let mut picker = Picker::new(&b);
         let mut peers = vec![
             Peer::test_from_pieces(0, b.clone()),
             Peer::test_from_pieces(0, b.clone()),
@@ -244,15 +251,15 @@ mod tests {
         }
         picker.remove_peer(&peers[0]);
 
-        assert_eq!(picker.pick(&peers[1]), Some(Block::new(2, 0)));
-        assert_eq!(picker.pick(&peers[2]), Some(Block::new(0, 0)));
-        assert_eq!(picker.pick(&peers[2]), Some(Block::new(1, 0)));
+        assert_eq!(picker.pick(&peers[1]), Some(2));
+        assert_eq!(picker.pick(&peers[2]), Some(0));
+        assert_eq!(picker.pick(&peers[2]), Some(1));
 
-        picker.completed(0, 0);
-        picker.completed(1, 0);
-        picker.completed(2, 0);
+        picker.completed(0);
+        picker.completed(1);
+        picker.completed(2);
         assert_eq!(picker.pick(&peers[1]), None);
-        // picker.invalidate_piece(1);
-        // assert_eq!(picker.pick(&peers[1]), Some(Block::new(1, 0)));
+        picker.incomplete(1);
+        assert_eq!(picker.pick(&peers[1]), Some(1));
     }
 }

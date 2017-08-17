@@ -45,19 +45,12 @@ features = ["max_level_debug"]
 [profile.bench]
 opt-level = 3
 debug = true
-rpath = true
-lto = false
 debug-assertions = true
-codegen-units = 1
 panic = 'unwind'
 
 [profile.release]
 opt-level = 3
-debug = true
-rpath = true
-lto = true
 debug-assertions = true
-codegen-units = 1
 panic = 'unwind'
 
 [features]

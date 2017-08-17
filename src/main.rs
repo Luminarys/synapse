@@ -1,3 +1,5 @@
+#![allow(unused_doc_comment)]
+
 extern crate amy;
 extern crate byteorder;
 extern crate rand;

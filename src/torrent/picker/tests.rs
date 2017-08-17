@@ -1,4 +1,4 @@
-use super::Picker;
+use super::{Block, Picker};
 use std::collections::HashMap;
 use std::cell::UnsafeCell;
 use torrent::{Bitfield, Peer as TGPeer, Info};
@@ -89,7 +89,7 @@ impl Simulation {
                         peer.requests.remove(b.ind_sample(&mut rng))
                     };
                     let ref mut received = self.peers()[req.peer];
-                    received.picker.completed(req.piece, 0);
+                    received.picker.completed(Block::new(req.piece, 0));
                     received.data.pieces_mut().set_bit(req.piece as u64);
                     if received.data.pieces().complete() {
                         received.compl = Some(self.ticks);

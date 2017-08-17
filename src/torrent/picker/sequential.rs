@@ -23,11 +23,14 @@ enum PieceStatus {
 impl Picker {
     pub fn new(pieces: &Bitfield) -> Picker {
         let mut p = (0..pieces.len())
-                      .filter(|p| !pieces.has_bit(*p))
+                      .filter(|p| pieces.has_bit(*p))
                       .map(|p| Piece { pos: p as u32, status: PieceStatus::Complete })
                       .collect::<Vec<_>>();
         let il = p.len();
-        p.extend(pieces.iter().map(|p| Piece { pos: p as u32, status: PieceStatus::Incomplete }));
+        p.extend((0..pieces.len())
+                      .filter(|p| !pieces.has_bit(*p))
+                      .map(|p| Piece { pos: p as u32, status: PieceStatus::Incomplete }));
+        println!("{:?}", p);
 
         Picker {
             piece_idx: il,
@@ -86,7 +89,7 @@ impl Picker {
     pub fn completed(&mut self, idx: u32) {
         self.pieces[self.piece_idx..].iter_mut()
             .find(|p| p.pos == idx)
-            .map(|p| p.status == PieceStatus::Complete);
+            .map(|p| p.status = PieceStatus::Complete);
         /*
         self.pieces.iter_from(self.piece_idx)
             .find(|p| peer.pieces().has_bit(p.pos))
@@ -116,7 +119,7 @@ impl Picker {
             .enumerate()
             .find(|&(_, ref p)| p.pos == idx)
             .map(|(idx, p)| {
-                p.status == PieceStatus::Incomplete;
+                p.status = PieceStatus::Incomplete;
                 *piece_idx = idx;
             });
     }
@@ -134,47 +137,27 @@ impl Picker {
 mod tests {
     use torrent::{Info, Peer, Bitfield};
     use super::Picker;
-    use super::super::Block;
-
-    #[test]
-    fn test_piece_size() {
-        let info = Info {
-            name: String::from(""),
-            announce: String::from(""),
-            piece_len: 262144,
-            total_len: 2000000,
-            hashes: vec![vec![0u8]; 8],
-            hash: [0u8; 20],
-            files: vec![],
-            private: false,
-        };
-
-        let b = Bitfield::new(info.pieces() as u64);
-        let picker = Picker::new(&info, &b);
-        assert_eq!(picker.c.scale as u32, info.piece_len / 16384);
-        assert_eq!(picker.c.blocks.len(), 123);
-    }
 
     #[test]
     fn test_piece_pick_order() {
         let info = Info::with_pieces(3);
 
-        let b = Bitfield::new(4);
-        let mut picker = Picker::new(&info, &b);
+        let b = Bitfield::new(3);
+        let mut picker = Picker::new(&b);
         let mut peer = Peer::test_from_pieces(0, b);
         assert_eq!(picker.pick(&peer), None);
         peer.pieces_mut().set_bit(1);
-        assert_eq!(picker.pick(&peer), Some(Block::new(1, 0)));
+        assert_eq!(picker.pick(&peer), Some(1));
         peer.pieces_mut().set_bit(0);
-        assert_eq!(picker.pick(&peer), Some(Block::new(0, 0)));
+        assert_eq!(picker.pick(&peer), Some(0));
+        picker.completed(0);
+        picker.completed(1);
         peer.pieces_mut().set_bit(2);
-        assert_eq!(picker.pick(&peer), Some(Block::new(2, 0)));
+        assert_eq!(picker.pick(&peer), Some(2));
 
-        picker.completed(0, 0);
-        picker.completed(1, 0);
-        picker.completed(2, 0);
+        picker.completed(2);
         assert_eq!(picker.pick(&peer), None);
-        picker.invalidate_piece(1);
-        assert_eq!(picker.pick(&peer), Some(Block::new(1, 0)));
+        picker.incomplete(1);
+        assert_eq!(picker.pick(&peer), Some(1));
     }
 }

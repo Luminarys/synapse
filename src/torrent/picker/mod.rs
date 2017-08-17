@@ -17,6 +17,9 @@ pub struct Picker {
     seeders: u16,
     /// Set of pieces which have blocks waiting. These should be prioritized.
     downloading: HashMap<u32, Vec<Downloading>>,
+    /// Bitfield of unpicked pieces, not in progress or
+    /// completed yet. A set bit is picked, unset is unpicked.
+    unpicked: Bitfield,
     /// The current picker in use
     picker: PickerKind,
 }
@@ -56,6 +59,7 @@ impl Picker {
             picker: PickerKind::Rarest(picker),
             scale,
             seeders: 0,
+            unpicked: pieces.clone(),
             downloading: HashMap::new(),
         }
     }
@@ -69,6 +73,7 @@ impl Picker {
             picker: PickerKind::Sequential(picker),
             scale,
             seeders: 0,
+            unpicked: pieces.clone(),
             downloading: HashMap::new(),
         }
     }
@@ -85,6 +90,7 @@ impl Picker {
             PickerKind::Sequential(ref mut p) => p.pick(peer),
             PickerKind::Rarest(ref mut p) => p.pick(peer),
         };
+        ;
         piece.and_then(|p| self.pick_piece(p, peer.id()))
             .or_else(|| self.pick_downloading(peer))
     }
@@ -107,6 +113,7 @@ impl Picker {
                 PickerKind::Sequential(ref mut p) => p.completed(piece),
                 PickerKind::Rarest(ref mut p) => p.completed(piece),
             }
+            self.unpicked.set_bit(piece as u64);
         }
         Some(Block {
             index: piece,
@@ -138,6 +145,7 @@ impl Picker {
                              .find(|r| r.offset == b.offset)
                              .map(|r| r.complete()))
             .map(|r| r.into_iter().map(|e| e.peer).collect());
+
         // If we've requested every single block for this piece and they're all complete, remove it
         // and report completion
         let scale = self.scale;
@@ -156,6 +164,7 @@ impl Picker {
             PickerKind::Sequential(ref mut p) => p.incomplete(idx),
             PickerKind::Rarest(ref mut p) => p.incomplete(idx),
         }
+        self.unpicked.unset_bit(idx as u64);
     }
 
     pub fn piece_available(&mut self, idx: u32) {
@@ -165,6 +174,9 @@ impl Picker {
     }
 
     pub fn add_peer<T: cio::CIO>(&mut self, peer: &Peer<T>) {
+        if peer.pieces().complete() {
+            self.seeders += 1;
+        }
         if let PickerKind::Rarest(ref mut p) = self.picker {
             p.add_peer(peer);
         }
@@ -173,6 +185,20 @@ impl Picker {
     pub fn remove_peer<T: cio::CIO>(&mut self, peer: &Peer<T>) {
         if let PickerKind::Rarest(ref mut p) = self.picker {
             p.remove_peer(peer);
+        }
+    }
+
+    pub fn change_picker(&mut self, sequential: bool) {
+        self.picker = if sequential {
+            PickerKind::Sequential(sequential::Picker::new(&self.unpicked))
+        } else {
+            PickerKind::Rarest(rarest::Picker::new(&self.unpicked))
+        };
+        for (i, _) in self.downloading.iter() {
+            match self.picker {
+                PickerKind::Rarest(ref mut p) => p.dec_avail(*i),
+                _ => { }
+            }
         }
     }
 }
