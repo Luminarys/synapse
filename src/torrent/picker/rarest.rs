@@ -5,7 +5,7 @@ use torrent::{Info, Peer, Bitfield, picker};
 use std::ops::IndexMut;
 use control::cio;
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug)]
 pub struct Picker {
     /// Current order of pieces
     pieces: Vec<u32>,
@@ -15,12 +15,13 @@ pub struct Picker {
     piece_idx: Vec<PieceInfo>,
 }
 
+#[derive(Clone, Debug, PartialEq)]
 enum PieceStatus {
     Incomplete,
     Complete,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug)]
 struct PieceInfo {
     idx: usize,
     availability: usize,
@@ -40,9 +41,9 @@ impl Picker {
             });
         }
         let mut p = Picker {
-            pieces: (0..info.pieces()).collect(),
+            pieces: (0..pieces.len() as u32).collect(),
             piece_idx,
-            priorities: vec![info.pieces() as usize],
+            priorities: vec![pieces.len() as usize],
         };
         // Start every piece at an availability of 1.
         // This way when we decrement availability for an initial
@@ -52,7 +53,7 @@ impl Picker {
         for i in 0..pieces.len() {
             p.piece_available(i as u32);
             if pieces.has_bit(i) {
-                p.completed(i);
+                p.completed(i as u32);
             }
         }
         p
@@ -102,10 +103,10 @@ impl Picker {
         // and that the peer also has
         self.pieces.iter()
             .cloned()
-            .filter(|p| self.piece_idx[p].status == PieceStatus::Incomplete)
-            .find(|p| peer.pieces().has_bit(p as u64))
+            .filter(|p| self.piece_idx[*p as usize].status == PieceStatus::Incomplete)
+            .find(|p| peer.pieces().has_bit(*p as u64))
             .map(|p| {
-                if (self.piece_idx[p].availability % 2) == 0 {
+                if (self.piece_idx[p as usize].availability % 2) == 0 {
                     self.piece_unavailable(p);
                 }
                 p
@@ -175,12 +176,11 @@ impl Picker {
         //     }
         // }
         // self.pieces.remove(pinfo_idx);
-        (true, peers)
     }
 
-    fn swap_piece(&mut self, a: u32, b: u32) {
-        self.piece_idx[self.pieces[a]].idx = b;
-        self.piece_idx[self.pieces[b]].idx = a;
+    fn swap_piece(&mut self, a: usize, b: usize) {
+        self.piece_idx[self.pieces[a] as usize].idx = b;
+        self.piece_idx[self.pieces[b] as usize].idx = a;
         self.pieces.swap(a, b);
     }
 

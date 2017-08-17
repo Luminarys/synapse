@@ -42,7 +42,6 @@ struct TorrentData {
     pieces: Bitfield,
     uploaded: u64,
     downloaded: u64,
-    picker: Picker,
     status: Status,
 }
 
@@ -150,15 +149,15 @@ impl<T: cio::CIO> Torrent<T> {
     ) -> Result<Torrent<T>, bincode::Error> {
         let mut d: TorrentData = bincode::deserialize(data)?;
         debug!(l, "Torrent data deserialized!");
-        d.picker.unset_waiting();
         let peers = HashMap::new();
         let leechers = HashSet::new();
+        let picker = picker::Picker::new_rarest(&d.info, &d.pieces);
         let mut t = Torrent {
             id,
             info: Arc::new(d.info),
             peers,
             pieces: d.pieces,
-            picker: d.picker,
+            picker,
             uploaded: d.uploaded,
             downloaded: d.downloaded,
             last_ul: 0,
@@ -198,7 +197,6 @@ impl<T: cio::CIO> Torrent<T> {
             pieces: self.pieces.clone(),
             uploaded: self.uploaded,
             downloaded: self.downloaded,
-            picker: self.picker.clone(),
             status: self.status,
         };
         let data = bincode::serialize(&d, bincode::Infinite).expect("Serialization failed!");
@@ -424,6 +422,8 @@ impl<T: cio::CIO> Torrent<T> {
                     return Err(());
                 }
 
+                let (piece_done, mut peers) = self.picker.completed(picker::Block::new(index, begin))?;
+
                 // Internal data structures which are being serialized have changed, flag self as
                 // dirty
                 self.dirty = true;
@@ -431,7 +431,6 @@ impl<T: cio::CIO> Torrent<T> {
 
                 self.downloaded += length as u64;
                 self.last_dl += length as u64;
-                let (piece_done, mut peers) = self.picker.completed(index, begin);
                 if piece_done {
                     self.pieces.set_bit(index as u64);
                     self.cio.msg_rpc(rpc::CtlMessage::Update(vec![
@@ -470,19 +469,17 @@ impl<T: cio::CIO> Torrent<T> {
                     }
                 }
 
-                // If there are any peers we've asked duplicate pieces for(due to endgame),
-                // cancel it, though we should still assume they'll probably send it anyways
-                if peers.len() > 1 {
-                    peers.remove(&peer.id());
-                    let m = Message::Cancel {
-                        index,
-                        begin,
-                        length,
-                    };
-                    for pid in peers {
-                        if let Some(peer) = self.peers.get_mut(&pid) {
-                            peer.send_message(m.clone());
-                        }
+                // If there are any peers we've asked duplicate pieces for,
+                // cancel them, though we should still assume they'll probably send it anyways
+                let m = Message::Cancel {
+                    index,
+                    begin,
+                    length,
+                };
+                
+                for pid in peers.into_iter().filter(|p| *p != peer.id()) {
+                    if let Some(peer) = self.peers.get_mut(&pid) {
+                        peer.send_message(m.clone());
                     }
                 }
 
@@ -750,10 +747,7 @@ impl<T: cio::CIO> Torrent<T> {
     }
 
     fn sequential(&self) -> bool {
-        match &self.picker {
-            &Picker::Sequential(_) => true,
-            _ => false,
-        }
+        self.picker.is_sequential()
     }
 
     fn progress(&self) -> f32 {
@@ -1009,7 +1003,7 @@ impl<T: cio::CIO> Torrent<T> {
         for (_, peer) in self.peers.iter() {
             picker.add_peer(peer);
         }
-        self.picker.change_picker(picker);
+        self.picker = picker;
         let id = self.rpc_id();
         let sequential = self.picker.is_sequential();
         self.cio.msg_rpc(rpc::CtlMessage::Update(

@@ -3,18 +3,20 @@ use std::cmp;
 use torrent::{Info, Bitfield, Peer, picker};
 use control::cio;
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug)]
 pub struct Picker {
     /// The max block index that we've picked up to so far
-    piece_idx: u64,
+    piece_idx: usize,
     pieces: Vec<Piece>,
 }
 
+#[derive(Clone, Debug)]
 struct Piece {
     pos: u32,
     status: PieceStatus,
 }
 
+#[derive(Clone, Debug, PartialEq)]
 enum PieceStatus {
     Incomplete,
     Complete,
@@ -23,20 +25,22 @@ enum PieceStatus {
 impl Picker {
     pub fn new(pieces: &Bitfield) -> Picker {
         let mut p = (0..pieces.len())
-                      .filter(|p| !pieces.has_bit(p))
-                      .map(|p| Piece { pos: p, status: PieceStatus::Complete });
+                      .filter(|p| !pieces.has_bit(*p))
+                      .map(|p| Piece { pos: p as u32, status: PieceStatus::Complete })
+                      .collect::<Vec<_>>();
         let il = p.len();
-        p.extend(pieces.iter().map(|p| Piece { pos: p, status: PieceStatus::Incomplete }));
+        p.extend(pieces.iter().map(|p| Piece { pos: p as u32, status: PieceStatus::Incomplete }));
 
         Picker {
             piece_idx: il,
-            pieces,
+            pieces: p,
         }
     }
 
     pub fn pick<T: cio::CIO>(&mut self, peer: &Peer<T>) -> Option<u32> {
         self.pieces[self.piece_idx..].iter()
-            .find(|p| peer.pieces().has_bit(p.pos))
+            .find(|p| peer.pieces().has_bit(p.pos as u64))
+            .map(|p| p.pos)
 
             /*
         for idx in peer.pieces().iter_from(self.piece_idx) {
@@ -109,16 +113,17 @@ impl Picker {
     }
 
     pub fn incomplete(&mut self, idx: u32) {
+        let piece_idx = &mut self.piece_idx;
         self.pieces.iter_mut()
-            .find(|p| p.pos == idx)
-            .map(|p| {
+            .enumerate()
+            .find(|&(_, ref p)| p.pos == idx)
+            .map(|(idx, p)| {
                 p.status == PieceStatus::Incomplete;
-                self.piece_idx = p;
+                *piece_idx = idx;
             });
     }
 
     fn update_piece_idx(&mut self) {
-        let mut idx = self.piece_idx * self.c.scale;
         for i in self.piece_idx..self.pieces.len() {
             if self.pieces[i].status == PieceStatus::Complete {
                 self.piece_idx += 1;

@@ -1,6 +1,5 @@
 use std::collections::{HashMap, HashSet};
-use std::mem;
-use std::time;
+use std::{mem, time, vec};
 use torrent::{Info, Peer, Bitfield};
 use control::cio;
 
@@ -10,10 +9,10 @@ mod sequential;
 #[cfg(test)]
 mod tests;
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug)]
 pub struct Picker {
     /// Number of blocks per piece
-    scale: u64,
+    scale: u32,
     /// Number of detected seeders
     seeders: u16,
     /// Set of pieces which have blocks waiting. These should be prioritized.
@@ -22,19 +21,20 @@ pub struct Picker {
     picker: PickerKind,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug)]
 enum PickerKind {
     Rarest(rarest::Picker),
     Sequential(sequential::Picker),
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug)]
 struct Downloading {
     offset: u32,
     completed: bool,
-    requested: [Option<Request>; 3],
+    requested: Vec<Request>,
 }
 
+#[derive(Clone, Debug)]
 struct Request {
     peer: usize,
     requested_at: time::Instant,
@@ -53,7 +53,7 @@ impl Picker {
         let scale = info.piece_len / 16384;
         let picker = rarest::Picker::new(pieces);
         Picker {
-            kind: PickerKind::Rarest(picker),
+            picker: PickerKind::Rarest(picker),
             scale,
             seeders: 0,
             downloading: HashMap::new(),
@@ -66,7 +66,7 @@ impl Picker {
         let scale = info.piece_len / 16384;
         let picker = sequential::Picker::new(pieces);
         Picker {
-            kind: PickerKind::Sequential(picker),
+            picker: PickerKind::Sequential(picker),
             scale,
             seeders: 0,
             downloading: HashMap::new(),
@@ -74,65 +74,128 @@ impl Picker {
     }
 
     pub fn is_sequential(&self) -> bool {
-        match &self.kind {
-            &PickerKind::Sequential(_) => true,
+        match self.picker {
+            PickerKind::Sequential(_) => true,
             _ => false,
         }
     }
 
     pub fn pick<T: cio::CIO>(&mut self, peer: &Peer<T>) -> Option<Block> {
-        let piece = match self.kind {
+        let piece = match self.picker {
             PickerKind::Sequential(ref mut p) => p.pick(peer),
             PickerKind::Rarest(ref mut p) => p.pick(peer),
         };
+        piece.and_then(|p| self.pick_piece(p, peer.id()))
+            .or_else(|| self.pick_downloading(peer))
+    }
+
+    fn pick_piece(&mut self, piece: u32, id: usize) -> Option<Block> {
+        if !self.downloading.contains_key(&piece) {
+            self.downloading.insert(piece, vec![]);
+        }
+        let dl = self.downloading.get_mut(&piece).unwrap();
+        let offset = dl.len() as u32* 16384;
+        dl.push(
+            Downloading {
+                offset,
+                completed: false,
+                requested: vec![Request::new(id)],
+            });
+
+        if dl.len() == self.scale as usize {
+            match self.picker {
+                PickerKind::Sequential(ref mut p) => p.completed(piece),
+                PickerKind::Rarest(ref mut p) => p.completed(piece),
+            }
+        }
+        Some(Block {
+            index: piece,
+            offset,
+        })
+    }
+
+    fn pick_downloading<T: cio::CIO>(&mut self, peer: &Peer<T>) -> Option<Block> {
+        for (idx, dl) in self.downloading.iter_mut() {
+            if peer.pieces().has_bit(*idx as u64) {
+                return dl.iter_mut()
+                    .find(|r| !r.completed)
+                    .map(|r| {
+                        r.requested.push(Request::new(peer.id()));
+                        Block::new(*idx, r.offset)
+                    });
+            }
+        }
+        None
     }
 
     /// Returns whether or not the whole piece is complete.
-    pub fn completed(&mut self, b: Block) -> (bool, Iterator<Item=usize>) {
-        // match *self {
-        //     Picker::Sequential(ref mut p) => p.completed(idx, offset),
-        //     Picker::Rarest(ref mut p) => p.completed(idx, offset),
-        // }
+    /// The error value indicates if the block was invalid(not requested)
+    pub fn completed(&mut self, b: Block) -> Result<(bool, Vec<usize>), ()> {
+        // Find the block in our downloading blocks, mark as true,
+        // and extract the current peer list for return.
+        let res = self.downloading.get_mut(&b.index)
+            .and_then(|dl| dl.iter_mut()
+                             .find(|r| r.offset == b.offset)
+                             .map(|r| r.complete()))
+            .map(|r| r.into_iter().map(|e| e.peer).collect());
+        // If we've requested every single block for this piece and they're all complete, remove it
+        // and report completion
+        let scale = self.scale;
+        let complete = self.downloading.get_mut(&b.index)
+            .map(|r| r.len() as u32 == scale && r.iter().all(|d| d.completed)).unwrap_or(false);
+
+        if complete {
+            self.downloading.remove(&b.index);
+        }
+
+        res.map(|r| (complete, r)).ok_or(())
     }
 
     pub fn invalidate_piece(&mut self, idx: u32) {
-        match *self {
-            Picker::Sequential(ref mut p) => p.incomplete(idx),
-            Picker::Rarest(ref mut p) => p.incomplete(idx),
+        match self.picker {
+            PickerKind::Sequential(ref mut p) => p.incomplete(idx),
+            PickerKind::Rarest(ref mut p) => p.incomplete(idx),
         }
     }
 
     pub fn piece_available(&mut self, idx: u32) {
-        if let PickerKind::Rarest(ref mut p) = *self.kind {
+        if let PickerKind::Rarest(ref mut p) = self.picker {
             p.piece_available(idx);
         }
     }
 
     pub fn add_peer<T: cio::CIO>(&mut self, peer: &Peer<T>) {
-        if let PickerKind::Rarest(ref mut p) = *self.kind {
+        if let PickerKind::Rarest(ref mut p) = self.picker {
             p.add_peer(peer);
         }
     }
 
     pub fn remove_peer<T: cio::CIO>(&mut self, peer: &Peer<T>) {
-        if let Picker::Rarest(ref mut p) = *self.kind {
+        if let PickerKind::Rarest(ref mut p) = self.picker {
             p.remove_peer(peer);
         }
-    }
-
-    pub fn change_picker(&mut self, mut picker: Picker) {
-        // mem::swap(self.common(), picker.common());
-        // mem::swap(self, &mut picker);
-    }
-
-    pub fn unset_waiting(&mut self) {
-        // self.common().unset_waiting();
     }
 }
 
 impl Block {
     pub fn new(index: u32, offset: u32) -> Block {
         Block { index, offset }
+    }
+}
+
+impl Request {
+    fn new(peer: usize) -> Request {
+        Request {
+            peer,
+            requested_at: time::Instant::now(),
+        }
+    }
+}
+
+impl Downloading {
+    fn complete(&mut self) -> Vec<Request> {
+        self.completed = true;
+        mem::replace(&mut self.requested, Vec::with_capacity(0))
     }
 }
 
