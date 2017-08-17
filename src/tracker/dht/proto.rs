@@ -631,7 +631,6 @@ mod tests {
     fn test_encode_decode_req_annnounce() {
         let r = Vec::from(&b"d1:ad2:id20:abcdefghij012345678912:implied_porti1e9:info_hash20:mnopqrstuvwxyz1234564:porti6881e5:token8:aoeusnthe1:q13:announce_peer1:t2:aa1:y1:qe"[..]);
         let d = Request::decode(&r).unwrap();
-        println!("{:?}", d);
         assert_eq!(
             String::from_utf8(d.encode()).unwrap(),
             String::from_utf8(r).unwrap()

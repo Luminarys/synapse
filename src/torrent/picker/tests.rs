@@ -1,4 +1,4 @@
-use super::Picker;
+use super::{Block, Picker};
 use std::collections::HashMap;
 use std::cell::UnsafeCell;
 use torrent::{Bitfield, Peer as TGPeer, Info};
@@ -89,7 +89,7 @@ impl Simulation {
                         peer.requests.remove(b.ind_sample(&mut rng))
                     };
                     let ref mut received = self.peers()[req.peer];
-                    received.picker.completed(req.piece, 0);
+                    received.picker.completed(Block::new(req.piece, 0));
                     received.data.pieces_mut().set_bit(req.piece as u64);
                     if received.data.pieces().complete() {
                         received.compl = Some(self.ticks);
@@ -231,4 +231,28 @@ fn test_rarest_efficiency() {
     let b = Bitfield::new(cfg.pieces as u64);
     let p = Picker::new_rarest(&info, &b);
     test_efficiency(cfg, p);
+}
+
+#[test]
+fn test_seq_picker() {
+    let i = Info::with_pieces(10);
+    let b = Bitfield::new(10);
+    let mut p = Picker::new_sequential(&i, &b);
+    let mut pb = Bitfield::new(10);
+    for i in 0..10 {
+        pb.set_bit(i);
+    }
+    let peer = TPeer::test_from_pieces(0, pb);
+
+    for i in 0..10 {
+        assert_eq!(p.pick(&peer), Some(Block::new(i, 0)));
+    }
+
+    for i in 0..10 {
+        assert_eq!(p.completed(Block::new(i, 0)), Ok((true, vec![0])));
+    }
+
+    p.invalidate_piece(5);
+
+    assert_eq!(p.pick(&peer), Some(Block::new(5, 0)));
 }

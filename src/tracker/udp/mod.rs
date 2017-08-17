@@ -112,7 +112,7 @@ impl Handler {
         let id = resp.id;
         let mut success = false;
         debug!(self.l, "Received a DNS resp for {:?}", id);
-        let resp = if let Some(mut conn) = self.connections.get_mut(&id) {
+        let resp = if let Some(conn) = self.connections.get_mut(&id) {
             match conn.state {
                 State::ResolvingDNS { port } => {
                     conn.last_updated = time::Instant::now();

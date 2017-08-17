@@ -1,25 +1,48 @@
-use std::collections::HashSet;
-use std::cmp;
-use torrent::{Info, Bitfield, Peer, picker};
+use torrent::{Bitfield, Peer};
 use control::cio;
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug)]
 pub struct Picker {
-    /// Common picker data
-    pub c: picker::Common,
     /// The max block index that we've picked up to so far
-    piece_idx: u64,
+    piece_idx: usize,
+    pieces: Vec<Piece>,
+}
+
+#[derive(Clone, Debug)]
+struct Piece {
+    pos: u32,
+    status: PieceStatus,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+enum PieceStatus {
+    Incomplete,
+    Complete,
 }
 
 impl Picker {
-    pub fn new(info: &Info, pieces: &Bitfield) -> Picker {
+    pub fn new(pieces: &Bitfield) -> Picker {
+        let mut p = (0..pieces.len())
+                      .filter(|p| pieces.has_bit(*p))
+                      .map(|p| Piece { pos: p as u32, status: PieceStatus::Complete })
+                      .collect::<Vec<_>>();
+        let il = p.len();
+        p.extend((0..pieces.len())
+                      .filter(|p| !pieces.has_bit(*p))
+                      .map(|p| Piece { pos: p as u32, status: PieceStatus::Incomplete }));
+
         Picker {
-            c: picker::Common::new(info),
-            piece_idx: 0,
+            piece_idx: il,
+            pieces: p,
         }
     }
 
-    pub fn pick<T: cio::CIO>(&mut self, peer: &Peer<T>) -> Option<picker::Block> {
+    pub fn pick<T: cio::CIO>(&mut self, peer: &Peer<T>) -> Option<u32> {
+        self.pieces[self.piece_idx..].iter()
+            .find(|p| peer.pieces().has_bit(p.pos as u64))
+            .map(|p| p.pos)
+
+            /*
         for idx in peer.pieces().iter_from(self.piece_idx) {
             let start = idx * self.c.scale;
             for i in 0..self.c.scale {
@@ -58,10 +81,17 @@ impl Picker {
             }
         }
         None
+        */
     }
 
     /// Returns whether or not the whole piece is complete.
-    pub fn completed(&mut self, idx: u32, offset: u32) -> (bool, HashSet<usize>) {
+    pub fn completed(&mut self, idx: u32) {
+        self.pieces[self.piece_idx..].iter_mut()
+            .find(|p| p.pos == idx)
+            .map(|p| p.status = PieceStatus::Complete);
+        /*
+        self.pieces.iter_from(self.piece_idx)
+            .find(|p| peer.pieces().has_bit(p.pos))
         let mut idx = idx as u64;
         let mut offset = offset as u64;
         offset /= 16384;
@@ -78,27 +108,25 @@ impl Picker {
                 return (false, peers);
             }
         }
+        */
         self.update_piece_idx();
-        (true, peers)
     }
 
-    pub fn invalidate_piece(&mut self, idx: u32) {
-        self.piece_idx = cmp::min(idx as u64, self.piece_idx);
-        self.c.invalidate_piece(idx);
+    pub fn incomplete(&mut self, idx: u32) {
+        let piece_idx = &mut self.piece_idx;
+        self.pieces.iter_mut()
+            .enumerate()
+            .find(|&(_, ref p)| p.pos == idx)
+            .map(|(idx, p)| {
+                p.status = PieceStatus::Incomplete;
+                *piece_idx = idx;
+            });
     }
 
     fn update_piece_idx(&mut self) {
-        let mut idx = self.piece_idx * self.c.scale;
-        loop {
-            for i in 0..self.c.scale {
-                if idx + i < self.c.blocks.len() && !self.c.blocks.has_bit(idx + i) {
-                    return;
-                }
-            }
-            self.piece_idx += 1;
-            idx += self.c.scale;
-            if idx > self.c.blocks.len() {
-                return;
+        for i in self.piece_idx..self.pieces.len() {
+            if self.pieces[i].status == PieceStatus::Complete {
+                self.piece_idx += 1;
             }
         }
     }
@@ -108,47 +136,27 @@ impl Picker {
 mod tests {
     use torrent::{Info, Peer, Bitfield};
     use super::Picker;
-    use super::super::Block;
-
-    #[test]
-    fn test_piece_size() {
-        let info = Info {
-            name: String::from(""),
-            announce: String::from(""),
-            piece_len: 262144,
-            total_len: 2000000,
-            hashes: vec![vec![0u8]; 8],
-            hash: [0u8; 20],
-            files: vec![],
-            private: false,
-        };
-
-        let b = Bitfield::new(info.pieces() as u64);
-        let picker = Picker::new(&info, &b);
-        assert_eq!(picker.c.scale as u32, info.piece_len / 16384);
-        assert_eq!(picker.c.blocks.len(), 123);
-    }
 
     #[test]
     fn test_piece_pick_order() {
         let info = Info::with_pieces(3);
 
-        let b = Bitfield::new(4);
-        let mut picker = Picker::new(&info, &b);
+        let b = Bitfield::new(3);
+        let mut picker = Picker::new(&b);
         let mut peer = Peer::test_from_pieces(0, b);
         assert_eq!(picker.pick(&peer), None);
         peer.pieces_mut().set_bit(1);
-        assert_eq!(picker.pick(&peer), Some(Block::new(1, 0)));
+        assert_eq!(picker.pick(&peer), Some(1));
         peer.pieces_mut().set_bit(0);
-        assert_eq!(picker.pick(&peer), Some(Block::new(0, 0)));
+        assert_eq!(picker.pick(&peer), Some(0));
+        picker.completed(0);
+        picker.completed(1);
         peer.pieces_mut().set_bit(2);
-        assert_eq!(picker.pick(&peer), Some(Block::new(2, 0)));
+        assert_eq!(picker.pick(&peer), Some(2));
 
-        picker.completed(0, 0);
-        picker.completed(1, 0);
-        picker.completed(2, 0);
+        picker.completed(2);
         assert_eq!(picker.pick(&peer), None);
-        picker.invalidate_piece(1);
-        assert_eq!(picker.pick(&peer), Some(Block::new(1, 0)));
+        picker.incomplete(1);
+        assert_eq!(picker.pick(&peer), Some(1));
     }
 }

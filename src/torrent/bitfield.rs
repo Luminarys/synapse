@@ -106,10 +106,6 @@ impl Bitfield {
     pub fn iter(&self) -> BitfieldIter {
         BitfieldIter::new(self)
     }
-
-    pub fn iter_from(&self, idx: u64) -> BitfieldIter {
-        BitfieldIter::from_pos(self, idx)
-    }
 }
 
 use std::fmt;
@@ -137,10 +133,6 @@ pub struct BitfieldIter<'a> {
 impl<'a> BitfieldIter<'a> {
     fn new(pf: &'a Bitfield) -> BitfieldIter<'a> {
         BitfieldIter { pf: pf, idx: 0 }
-    }
-
-    fn from_pos(pf: &'a Bitfield, idx: u64) -> BitfieldIter<'a> {
-        BitfieldIter { pf: pf, idx: idx }
     }
 }
 

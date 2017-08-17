@@ -179,6 +179,7 @@ impl Info {
             private: false,
         }
     }
+
     pub fn create_files(&self) -> Result<(), io::Error> {
         for file in self.files.iter() {
             file.create()?;
