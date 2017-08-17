@@ -197,9 +197,8 @@ impl Picker {
 
 #[cfg(test)]
 mod tests {
-    use super::super::Block;
     use super::Picker;
-    use torrent::{Info, Peer, Bitfield};
+    use torrent::{Peer, Bitfield};
 
     #[test]
     fn test_available() {
@@ -221,10 +220,13 @@ mod tests {
             picker.add_peer(peer);
         }
         assert_eq!(picker.pick(&peers[1]), Some(2));
+        picker.completed(2);
         assert_eq!(picker.pick(&peers[1]), Some(0));
+        picker.completed(0);
         assert_eq!(picker.pick(&peers[1]), None);
         assert_eq!(picker.pick(&peers[0]), None);
         assert_eq!(picker.pick(&peers[2]), Some(1));
+        picker.completed(1);
     }
 
     #[test]
@@ -252,12 +254,12 @@ mod tests {
         picker.remove_peer(&peers[0]);
 
         assert_eq!(picker.pick(&peers[1]), Some(2));
-        assert_eq!(picker.pick(&peers[2]), Some(0));
-        assert_eq!(picker.pick(&peers[2]), Some(1));
-
-        picker.completed(0);
-        picker.completed(1);
         picker.completed(2);
+        assert_eq!(picker.pick(&peers[2]), Some(0));
+        picker.completed(0);
+        assert_eq!(picker.pick(&peers[2]), Some(1));
+        picker.completed(1);
+
         assert_eq!(picker.pick(&peers[1]), None);
         picker.incomplete(1);
         assert_eq!(picker.pick(&peers[1]), Some(1));
