@@ -1,5 +1,5 @@
-use std::collections::{HashMap, HashSet};
-use std::{mem, time, vec};
+use std::collections::HashMap;
+use std::{mem, time};
 use torrent::{Info, Peer, Bitfield};
 use control::cio;
 

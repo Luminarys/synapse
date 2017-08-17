@@ -147,7 +147,7 @@ impl<T: cio::CIO> Torrent<T> {
         cio: T,
         l: Logger,
     ) -> Result<Torrent<T>, bincode::Error> {
-        let mut d: TorrentData = bincode::deserialize(data)?;
+        let d: TorrentData = bincode::deserialize(data)?;
         debug!(l, "Torrent data deserialized!");
         let peers = HashMap::new();
         let leechers = HashSet::new();
@@ -422,7 +422,7 @@ impl<T: cio::CIO> Torrent<T> {
                     return Err(());
                 }
 
-                let (piece_done, mut peers) = self.picker.completed(picker::Block::new(index, begin))?;
+                let (piece_done, peers) = self.picker.completed(picker::Block::new(index, begin))?;
 
                 // Internal data structures which are being serialized have changed, flag self as
                 // dirty

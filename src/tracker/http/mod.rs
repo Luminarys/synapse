@@ -134,7 +134,7 @@ impl Handler {
     pub fn dns_resolved(&mut self, resp: dns::QueryResponse) -> Option<Response> {
         let id = resp.id;
         debug!(self.l, "Received a DNS resp for {:?}", id);
-        let resp = if let Some(mut trk) = self.connections.get_mut(&id) {
+        let resp = if let Some(trk) = self.connections.get_mut(&id) {
             trk.last_updated = Instant::now();
             match trk.state.handle(Event::DNSResolved(resp)) {
                 Ok(_) => None,
@@ -150,7 +150,7 @@ impl Handler {
     }
 
     pub fn writable(&mut self, id: usize) -> Option<Response> {
-        let resp = if let Some(mut trk) = self.connections.get_mut(&id) {
+        let resp = if let Some(trk) = self.connections.get_mut(&id) {
             trk.last_updated = Instant::now();
             match trk.state.handle(Event::Writable) {
                 Ok(_) => None,
@@ -166,7 +166,7 @@ impl Handler {
     }
 
     pub fn readable(&mut self, id: usize) -> Option<Response> {
-        let resp = if let Some(mut trk) = self.connections.get_mut(&id) {
+        let resp = if let Some(trk) = self.connections.get_mut(&id) {
             trk.last_updated = Instant::now();
             match trk.state.handle(Event::Readable) {
                 Ok(Some(r)) => {

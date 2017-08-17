@@ -1,6 +1,4 @@
-use std::collections::HashSet;
-use std::cmp;
-use torrent::{Info, Bitfield, Peer, picker};
+use torrent::{Bitfield, Peer};
 use control::cio;
 
 #[derive(Clone, Debug)]

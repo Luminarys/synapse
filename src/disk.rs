@@ -195,7 +195,7 @@ impl Request {
                             f = fs::OpenOptions::new().read(true).open(&pb);
                             cf = loc.file;
                         }
-                        if let Ok(Ok(amnt)) = f.as_mut().map(|mut file| file.read(&mut buf)) {
+                        if let Ok(Ok(amnt)) = f.as_mut().map(|file| file.read(&mut buf)) {
                             ctx.update(&buf[0..amnt]);
                         }
                     }

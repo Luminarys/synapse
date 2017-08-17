@@ -1,7 +1,6 @@
 // Implementation based off of http://blog.libtorrent.org/2011/11/writing-a-fast-piece-picker/
 
-use std::collections::HashSet;
-use torrent::{Info, Peer, Bitfield, picker};
+use torrent::{Peer, Bitfield};
 use std::ops::IndexMut;
 use control::cio;
 
