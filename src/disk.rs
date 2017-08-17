@@ -186,6 +186,7 @@ impl Request {
                 let mut f = fs::OpenOptions::new().read(true).open(&pb);
 
                 for i in 0..info.pieces() {
+                    let mut valid = true;
                     let mut ctx = digest::Context::new(&digest::SHA1);
                     let locs = info.piece_disk_locs(i);
                     for loc in locs {
@@ -197,10 +198,12 @@ impl Request {
                         }
                         if let Ok(Ok(amnt)) = f.as_mut().map(|file| file.read(&mut buf)) {
                             ctx.update(&buf[0..amnt]);
+                        } else {
+                            valid = false;
                         }
                     }
                     let digest = ctx.finish();
-                    if digest.as_ref() != &info.hashes[i as usize][..] {
+                    if !valid || digest.as_ref() != &info.hashes[i as usize][..] {
                         invalid.push(i);
                     }
                 }

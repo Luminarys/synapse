@@ -232,3 +232,27 @@ fn test_rarest_efficiency() {
     let p = Picker::new_rarest(&info, &b);
     test_efficiency(cfg, p);
 }
+
+#[test]
+fn test_seq_picker() {
+    let i = Info::with_pieces(10);
+    let b = Bitfield::new(10);
+    let mut p = Picker::new_sequential(&i, &b);
+    let mut pb = Bitfield::new(10);
+    for i in 0..10 {
+        pb.set_bit(i);
+    }
+    let peer = TPeer::test_from_pieces(0, pb);
+
+    for i in 0..10 {
+        assert_eq!(p.pick(&peer), Some(Block::new(i, 0)));
+    }
+
+    for i in 0..10 {
+        assert_eq!(p.completed(Block::new(i, 0)), Ok((true, vec![0])));
+    }
+
+    p.invalidate_piece(5);
+
+    assert_eq!(p.pick(&peer), Some(Block::new(5, 0)));
+}

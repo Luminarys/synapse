@@ -319,15 +319,11 @@ fn validate_upgrade(req: &httparse::Request) -> result::Result<String, ()> {
         return Err(());
     }
 
-    let mut conn = None;
     let mut upgrade = None;
     let mut key = None;
     let mut version = None;
 
     for header in req.headers.iter() {
-        if header.name == "Connection" {
-            conn = str::from_utf8(header.value).ok();
-        }
         if header.name == "Upgrade" {
             upgrade = str::from_utf8(header.value).ok();
         }
@@ -339,9 +335,6 @@ fn validate_upgrade(req: &httparse::Request) -> result::Result<String, ()> {
         }
     }
 
-    if conn != Some("Upgrade") {
-        return Err(());
-    }
     if upgrade.map(|s| s.to_lowercase()) != Some("websocket".to_owned()) {
         return Err(());
     }

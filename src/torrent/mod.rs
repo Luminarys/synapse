@@ -98,8 +98,6 @@ impl Status {
 impl<T: cio::CIO> Torrent<T> {
     pub fn new(id: usize, info: Info, throttle: Throttle, cio: T, l: Logger) -> Torrent<T> {
         debug!(l, "Creating {:?}", info);
-        // Create empty initial files
-        let created = info.create_files().ok();
         let peers = HashMap::new();
         let pieces = Bitfield::new(info.pieces() as u64);
         let picker = if RAREST_PKR {
@@ -108,11 +106,7 @@ impl<T: cio::CIO> Torrent<T> {
             Picker::new_sequential(&info, &pieces)
         };
         let leechers = HashSet::new();
-        let status = if created.is_some() {
-            Status::Pending
-        } else {
-            Status::DiskError
-        };
+        let status = Status::Pending;
         let mut t = Torrent {
             id,
             info: Arc::new(info),
@@ -136,6 +130,7 @@ impl<T: cio::CIO> Torrent<T> {
             status,
         };
         t.start();
+        t.validate();
 
         t
     }
@@ -188,6 +183,7 @@ impl<T: cio::CIO> Torrent<T> {
             _ => {}
         };
         t.start();
+        t.announce_start();
         Ok(t)
     }
 
@@ -307,6 +303,11 @@ impl<T: cio::CIO> Torrent<T> {
             disk::Response::ValidationComplete { invalid, .. } => {
                 debug!(self.l, "Validation completed!");
                 if invalid.is_empty() {
+                    if !self.pieces.complete() {
+                        for i in 0..self.pieces.len() {
+                            self.pieces.set_bit(i);
+                        }
+                    }
                     info!(self.l, "Torrent succesfully downloaded!");
                     // TOOD: Consider if we should store this result
                     if !self.status.stopped() {
@@ -324,17 +325,37 @@ impl<T: cio::CIO> Torrent<T> {
                         self.cio.remove_peer(seeder);
                     }
                 } else {
-                    debug!(
-                        self.l,
-                        "Torrent has incorrect pieces {:?}, redownloading",
-                        invalid
-                    );
-                    for piece in invalid {
-                        self.picker.invalidate_piece(piece);
-                        self.pieces.unset_bit(piece as u64);
+                    // If this is an initialization hash, start the torrent
+                    // immediatly.
+                    if !self.pieces.complete() {
+                        // If there was some partial completion,
+                        // set the pieces appropriately, then reset the
+                        // picker to use the new bitfield
+                        if invalid.len() as u64 != self.pieces.len() {
+                            for i in 0..self.pieces.len() {
+                                self.pieces.set_bit(i);
+                            }
+                            for piece in invalid {
+                                self.pieces.unset_bit(piece as u64);
+                            }
+                            let seq = self.picker.is_sequential();
+                            self.change_picker(seq);
+                        }
+                        if self.info.create_files().is_ok() {
+                            self.announce_start();
+                        } else {
+                            self.set_status(Status::DiskError);
+                        }
+                    } else {
+                        for piece in invalid {
+                            self.picker.invalidate_piece(piece);
+                            self.pieces.unset_bit(piece as u64);
+                        }
+                        self.request_all();
                     }
-                    self.request_all();
                 }
+                // update the RPC stats once done
+                self.update_rpc_transfer();
             }
             disk::Response::Error { err, .. } => {
                 warn!(self.l, "Disk error: {:?}", err);
@@ -367,9 +388,7 @@ impl<T: cio::CIO> Torrent<T> {
     pub fn handle_msg(&mut self, msg: Message, peer: &mut Peer<T>) -> Result<(), ()> {
         trace!(self.l, "Received {:?} from peer", msg);
         match msg {
-            Message::Handshake { .. } => {
-                debug!(self.l, "Connection established with peer {:?}", peer.id());
-            }
+            Message::Handshake { .. } => { }
             Message::Bitfield(_) => {
                 if self.pieces.usable(peer.pieces()) {
                     peer.interested();
@@ -396,7 +415,6 @@ impl<T: cio::CIO> Torrent<T> {
                 }
             }
             Message::Unchoke => {
-                debug!(self.l, "Unchoked by: {:?}!", peer);
                 self.make_requests(peer);
             }
             Message::Piece {
@@ -422,7 +440,12 @@ impl<T: cio::CIO> Torrent<T> {
                     return Err(());
                 }
 
-                let (piece_done, peers) = self.picker.completed(picker::Block::new(index, begin))?;
+                let pr = self.picker.completed(picker::Block::new(index, begin));
+                let (piece_done, peers) = if let Ok(r) = pr {
+                    r
+                } else {
+                    return Ok(());
+                };
 
                 // Internal data structures which are being serialized have changed, flag self as
                 // dirty
@@ -575,7 +598,14 @@ impl<T: cio::CIO> Torrent<T> {
     }
 
     fn start(&mut self) {
-        debug!(self.l, "Sending start request");
+        debug!(self.l, "Starting torrent");
+        // Update RPC of the torrent, tracker, files, and peers
+        let resources = self.rpc_info();
+        self.cio.msg_rpc(rpc::CtlMessage::Extant(resources));
+        self.serialize();
+    }
+
+    fn announce_start(&mut self) {
         let req = tracker::Request::started(self);
         self.cio.msg_trk(req);
         // TODO: Consider repeatedly sending out these during annoucne intervals
@@ -588,13 +618,6 @@ impl<T: cio::CIO> Torrent<T> {
             });
             self.cio.msg_trk(req);
         }
-
-        // Update RPC of the torrent, tracker, files, and peers
-        let resources = self.rpc_info();
-        self.cio.msg_rpc(rpc::CtlMessage::Extant(resources));
-        self.serialize();
-        // Check initial pieces
-        self.validate();
     }
 
     pub fn complete(&self) -> bool {
@@ -819,7 +842,7 @@ impl<T: cio::CIO> Torrent<T> {
     pub fn add_peer(&mut self, conn: PeerConn) -> Option<usize> {
         if let Ok(p) = Peer::new(conn, self, None, None) {
             let pid = p.id();
-            debug!(self.l, "Adding peer {:?}!", pid);
+            trace!(self.l, "Adding peer {:?}!", pid);
             self.picker.add_peer(&p);
             self.peers.insert(pid, p);
             Some(pid)
@@ -930,7 +953,7 @@ impl<T: cio::CIO> Torrent<T> {
     }
 
     fn cleanup_peer(&mut self, peer: &mut Peer<T>) {
-        debug!(self.l, "Removing {:?}!", peer);
+        trace!(self.l, "Removing {:?}!", peer);
         self.choker.remove_peer(peer, &mut self.peers);
         self.leechers.remove(&peer.id());
         self.picker.remove_peer(&peer);

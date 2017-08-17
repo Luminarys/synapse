@@ -30,7 +30,6 @@ impl Picker {
         p.extend((0..pieces.len())
                       .filter(|p| !pieces.has_bit(*p))
                       .map(|p| Piece { pos: p as u32, status: PieceStatus::Incomplete }));
-        println!("{:?}", p);
 
         Picker {
             piece_idx: il,

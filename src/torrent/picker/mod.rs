@@ -24,12 +24,23 @@ pub struct Picker {
     picker: PickerKind,
 }
 
+#[derive(Clone, Debug, PartialEq)]
+pub struct Block {
+    pub index: u32,
+    pub offset: u32,
+}
+
+/// Pickers act solely as piece picking algorithm.
+/// They will select the optimal next piece for a peer,
+/// and can be told when a piece is complete(or invalid).
 #[derive(Clone, Debug)]
 enum PickerKind {
     Rarest(rarest::Picker),
     Sequential(sequential::Picker),
 }
 
+/// A downloading block and the peers it has been
+/// requested from.
 #[derive(Clone, Debug)]
 struct Downloading {
     offset: u32,
@@ -37,17 +48,14 @@ struct Downloading {
     requested: Vec<Request>,
 }
 
+/// A request to a peer and the time it was initiated.
 #[derive(Clone, Debug)]
 struct Request {
     peer: usize,
     requested_at: time::Instant,
 }
 
-#[derive(Clone, Debug, PartialEq)]
-pub struct Block {
-    pub index: u32,
-    pub offset: u32,
-}
+const MAX_DUP_REQS: usize = 3;
 
 impl Picker {
     /// Creates a new rarest picker, which will select over
@@ -64,7 +72,7 @@ impl Picker {
         }
     }
 
-    /// Creates a new rarest picker, which will select over
+    /// Creates a new sequential picker, which will select over
     /// the given pieces
     pub fn new_sequential(info: &Info, pieces: &Bitfield) -> Picker {
         let scale = info.piece_len / 16384;
@@ -78,6 +86,7 @@ impl Picker {
         }
     }
 
+    /// Returns true if the current picker algorithm is sequential
     pub fn is_sequential(&self) -> bool {
         match self.picker {
             PickerKind::Sequential(_) => true,
@@ -85,16 +94,29 @@ impl Picker {
         }
     }
 
+    /// Attempts to select a block for a peer.
     pub fn pick<T: cio::CIO>(&mut self, peer: &Peer<T>) -> Option<Block> {
+        if let Some(b) = self.pick_expired(peer) {
+            return Some(b);
+        }
+
         let piece = match self.picker {
             PickerKind::Sequential(ref mut p) => p.pick(peer),
             PickerKind::Rarest(ref mut p) => p.pick(peer),
         };
-        ;
         piece.and_then(|p| self.pick_piece(p, peer.id()))
             .or_else(|| self.pick_downloading(peer))
     }
 
+    /// Attempts to pick an expired block
+    fn pick_expired<T: cio::CIO>(&mut self, peer: &Peer<T>) -> Option<Block> {
+        // TODO: Use some form of heuristic here to say "we expect to have
+        // downloaded some pieces by X, hit the picker with a tick which checks
+        // that, flags shit as invalid, and then does a double request
+        None
+    }
+
+    /// Picks a block from a given piece for a peer
     fn pick_piece(&mut self, piece: u32, id: usize) -> Option<Block> {
         if !self.downloading.contains_key(&piece) {
             self.downloading.insert(piece, vec![]);
@@ -121,11 +143,12 @@ impl Picker {
         })
     }
 
+    /// Attempts to pick an already requested block
     fn pick_downloading<T: cio::CIO>(&mut self, peer: &Peer<T>) -> Option<Block> {
         for (idx, dl) in self.downloading.iter_mut() {
             if peer.pieces().has_bit(*idx as u64) {
                 return dl.iter_mut()
-                    .find(|r| !r.completed)
+                    .find(|r| !r.completed && r.requested.len() < MAX_DUP_REQS)
                     .map(|r| {
                         r.requested.push(Request::new(peer.id()));
                         Block::new(*idx, r.offset)
@@ -135,8 +158,10 @@ impl Picker {
         None
     }
 
-    /// Returns whether or not the whole piece is complete.
-    /// The error value indicates if the block was invalid(not requested)
+    /// Marks a block as completed. Returns a result indicating if the block
+    /// was actually requested, the success value containing a bool indicating
+    /// if the block is complete, and a vector of peers from which the block
+    /// was requested(for cancellation).
     pub fn completed(&mut self, b: Block) -> Result<(bool, Vec<usize>), ()> {
         // Find the block in our downloading blocks, mark as true,
         // and extract the current peer list for return.
@@ -159,6 +184,7 @@ impl Picker {
         res.map(|r| (complete, r)).ok_or(())
     }
 
+    /// Invalidates a piece
     pub fn invalidate_piece(&mut self, idx: u32) {
         match self.picker {
             PickerKind::Sequential(ref mut p) => p.incomplete(idx),
@@ -188,6 +214,9 @@ impl Picker {
         }
     }
 
+    /// Alters the picker to sequential/non sequential. If changing
+    /// from sequential to non sequential, peer state will need to be loaded
+    /// after this.
     pub fn change_picker(&mut self, sequential: bool) {
         self.picker = if sequential {
             PickerKind::Sequential(sequential::Picker::new(&self.unpicked))
