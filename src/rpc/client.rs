@@ -318,7 +318,7 @@ fn validate_tx(req: &httparse::Request) -> Option<String> {
         .and_then(|path| Url::parse(&format!("http://localhost{}", path)).ok())
         .and_then(|url| url.query_pairs()
                   .find(|&(ref k, _)| k == "token")
-                  .map(|(k, v)| format!("{}", v)))
+                  .map(|(_, v)| format!("{}", v)))
 }
 
 fn validate_upgrade(req: &httparse::Request) -> result::Result<String, ()> {

@@ -62,6 +62,7 @@ pub enum SResourceUpdate<'a> {
     },
 
     FilePriority { id: String, priority: u8 },
+    FileProgress { id: String, progress: f32 },
 
     PieceAvailable { id: String, available: bool },
     PieceDownloaded { id: String, downloaded: bool },
@@ -186,6 +187,7 @@ impl<'a> SResourceUpdate<'a> {
             &SResourceUpdate::TorrentPicker { ref id, .. } |
             &SResourceUpdate::TorrentPriority { ref id, .. } |
             &SResourceUpdate::FilePriority { ref id, .. } |
+            &SResourceUpdate::FileProgress { ref id, .. } |
             &SResourceUpdate::TrackerStatus { ref id, .. } |
             &SResourceUpdate::PieceAvailable { ref id, .. } |
             &SResourceUpdate::PieceDownloaded { ref id, .. } => id,
@@ -309,7 +311,20 @@ impl Resource {
                 mem::swap(&mut t.last_report, last_report);
                 mem::swap(&mut t.error, error);
             }
-            _ => unreachable!(),
+            (&mut Resource::File(ref mut f), SResourceUpdate::FilePriority {
+                priority,
+                ..
+            }) => {
+                f.priority = priority;
+            }
+            (&mut Resource::File(ref mut f), SResourceUpdate::FileProgress {
+                progress,
+                ..
+            }) => {
+                f.progress = progress;
+            }
+            _ => {
+            },
         }
     }
 }

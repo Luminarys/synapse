@@ -4,25 +4,25 @@ pub mod bitfield;
 mod picker;
 mod choker;
 
+use std::fmt;
+use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
+use std::time::{Duration, Instant};
+
 use chrono::{DateTime, Utc};
+use slog::Logger;
 
 pub use self::bitfield::Bitfield;
 pub use self::info::Info;
 pub use self::peer::{Peer, PeerConn};
-
 pub use self::peer::Message;
+
 use self::picker::Picker;
-use std::fmt;
+use {bincode, rpc, disk, util, RAREST_PKR};
 use control::cio;
-use {bincode, rpc, disk, RAREST_PKR};
 use rpc::resource::{self, Resource, SResourceUpdate};
 use throttle::Throttle;
 use tracker::{self, TrackerResponse};
-use std::collections::{HashMap, HashSet};
-use std::sync::Arc;
-use std::time::{Duration, Instant};
-use util;
-use slog::Logger;
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub enum TrackerStatus {
@@ -948,6 +948,23 @@ impl<T: cio::CIO> Torrent<T> {
                     rate_down,
                 });
             }
+        }
+        let mut files = HashMap::new();
+        for p in self.pieces.iter() {
+            for loc in self.info.piece_disk_locs(p as u32) {
+                if !files.contains_key(&loc.file) {
+                    files.insert(loc.file.clone(), (0, 0));
+                }
+                files.get_mut(&loc.file).unwrap().0 += loc.end - loc.start;
+            }
+        }
+        for f in self.info.files.iter() {
+            files.get_mut(&f.path).map(|v| v.1 = f.length);
+        }
+        for (p, d) in files {
+            let id =
+                util::file_rpc_id(&self.info.hash, p.as_path().to_string_lossy().as_ref());
+            updates.push(SResourceUpdate::FileProgress { id, progress: (d.0 as f32 / d.1 as f32) });
         }
         self.cio.msg_rpc(rpc::CtlMessage::Update(updates));
     }
