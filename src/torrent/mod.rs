@@ -499,7 +499,7 @@ impl<T: cio::CIO> Torrent<T> {
                     begin,
                     length,
                 };
-                
+
                 for pid in peers.into_iter().filter(|p| *p != peer.id()) {
                     if let Some(peer) = self.peers.get_mut(&pid) {
                         peer.send_message(m.clone());
@@ -696,10 +696,8 @@ impl<T: cio::CIO> Torrent<T> {
 
         for i in 0..self.info.pieces() {
             let id = util::piece_rpc_id(&self.info.hash, i as u64);
-            // TODO: Formalize these high bit ids
             if self.pieces.has_bit(i as u64) {
                 r.push(Resource::Piece(resource::Piece {
-                    // TODO: Formalize these high bit ids
                     id,
                     torrent_id: self.rpc_id(),
                     available: true,
@@ -926,7 +924,7 @@ impl<T: cio::CIO> Torrent<T> {
         });
         if !self.status.leeching() {
             for pid in self.choker.unchoked().iter() {
-                if let Some(p) = self.peers.get(pid) {
+                if let Some(p) = self.peers.get_mut(pid) {
                     let (rate_up, rate_down) = p.get_tx_rates();
                     updates.push(SResourceUpdate::Rate {
                         id: util::peer_rpc_id(&self.info.hash, *pid as u64),
@@ -936,7 +934,7 @@ impl<T: cio::CIO> Torrent<T> {
                 }
             }
         } else {
-            for (pid, p) in self.peers.iter() {
+            for (pid, p) in self.peers.iter_mut() {
                 if p.remote_status().choked || !p.ready() {
                     continue;
                 }

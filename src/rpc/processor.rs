@@ -8,6 +8,11 @@ use super::proto::resource::{Resource, SResourceUpdate};
 use super::{CtlMessage, Message};
 use util::random_string;
 
+// TODO: Figure out a way to reduce allocations
+// in this entire file, ideally by taking pointers
+// to existing heap allocated structures, and by
+// inlining appropriately
+
 pub struct Processor {
     subs: HashMap<String, HashSet<usize>>,
     filter_subs: HashMap<u64, Filter>,
@@ -279,15 +284,19 @@ impl Processor {
                 let mut ids = Vec::new();
                 for r in e {
                     ids.push(r.id().to_owned());
+
                     self.subs.insert(r.id().to_owned(), HashSet::new());
                     let id = r.id().to_owned();
+
                     self.kinds[r.kind() as usize].insert(id.clone());
+
                     if let Some(tid) = r.torrent_id() {
                         if !self.torrent_idx.contains_key(tid) {
                             self.torrent_idx.insert(tid.to_owned(), HashSet::new());
                         }
                         self.torrent_idx.get_mut(tid).unwrap().insert(id.clone());
                     }
+
                     self.resources.insert(id, r);
                 }
                 // We have to make a new vec which points to the resource struct

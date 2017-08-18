@@ -97,7 +97,7 @@ impl Choker {
             return None;
         }
         let (slowest, _) = self.unchoked.iter().enumerate().fold(
-            (0, std::u64::MAX),
+            (0, std::u32::MAX),
             |(slowest, min),
              (idx, id)| {
                 let (ul, _) = peers.get_mut(id).unwrap().flush();
@@ -116,7 +116,7 @@ impl Choker {
         }
 
         let (slowest, _) = self.unchoked.iter().enumerate().fold(
-            (0, std::u64::MAX),
+            (0, std::u32::MAX),
             |(slowest, min),
              (idx, id)| {
                 let (_, dl) = peers.get_mut(id).unwrap().flush();

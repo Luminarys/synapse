@@ -38,8 +38,10 @@ pub struct Peer<T: cio::CIO> {
     local_status: Status,
     queued: u16,
     tid: usize,
-    downloaded: u64,
-    uploaded: u64,
+    downloaded: u32,
+    uploaded: u32,
+    downloaded_bytes: u64,
+    uploaded_bytes: u64,
     last_flush: DateTime<Utc>,
     addr: SocketAddr,
     t_hash: [u8; 20],
@@ -151,6 +153,8 @@ impl Peer<cio::test::TCIO> {
             local_status: Status::new(),
             uploaded,
             downloaded,
+            uploaded_bytes: 0,
+            downloaded_bytes: 0,
             addr: "127.0.0.1:0".parse().unwrap(),
             cio: cio::test::TCIO::new(),
             queued,
@@ -199,6 +203,8 @@ impl<T: cio::CIO> Peer<T> {
             local_status: Status::new(),
             uploaded: 0,
             downloaded: 0,
+            uploaded_bytes: 0,
+            downloaded_bytes: 0,
             cio: t.cio.new_handle(),
             queued: 0,
             pieces: Bitfield::new(t.info.hashes.len() as u64),
@@ -236,8 +242,7 @@ impl<T: cio::CIO> Peer<T> {
         self.id
     }
 
-    pub fn flush(&mut self) -> (u64, u64) {
-        self.last_flush = Utc::now();
+    pub fn flush(&mut self) -> (u32, u32) {
         (
             mem::replace(&mut self.uploaded, 0),
             mem::replace(&mut self.downloaded, 0),
@@ -248,12 +253,15 @@ impl<T: cio::CIO> Peer<T> {
         &self.remote_status
     }
 
-    pub fn get_tx_rates(&self) -> (u64, u64) {
+    pub fn get_tx_rates(&mut self) -> (u64, u64) {
         let dur = Utc::now()
             .signed_duration_since(self.last_flush)
             .num_milliseconds() as u64;
-        let ul = (1000 * self.uploaded) / dur;
-        let dl = (1000 * self.downloaded) / dur;
+        let ub = mem::replace(&mut self.uploaded_bytes, 0);
+        let db = mem::replace(&mut self.downloaded_bytes, 0);
+        let ul = (1000 * ub) / dur;
+        let dl = (1000 * db) / dur;
+        self.last_flush = Utc::now();
         (ul, dl)
     }
 
@@ -273,7 +281,8 @@ impl<T: cio::CIO> Peer<T> {
             }
             Message::Piece { length, .. } |
             Message::SharedPiece { length, .. } => {
-                self.downloaded += length as u64;
+                self.downloaded_bytes += length as u64;
+                self.downloaded += 1;
                 self.queued -= 1;
             }
             Message::Request { .. } => {
@@ -367,7 +376,10 @@ impl<T: cio::CIO> Peer<T> {
     pub fn send_message(&mut self, msg: Message) {
         match &msg {
             &Message::SharedPiece { length, .. } |
-            &Message::Piece { length, .. } => self.uploaded += length as u64,
+            &Message::Piece { length, .. } => {
+                self.uploaded += 1;
+                self.uploaded_bytes += length as u64;
+            }
             _ => {}
         }
         self.cio.msg_peer(self.id, msg);
