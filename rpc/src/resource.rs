@@ -19,10 +19,13 @@ pub enum Resource {
 /// To increase server->client update efficiency, we
 /// encode common partial updates to resources with
 /// this enum.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum SResourceUpdate<'a> {
+    #[serde(skip_deserializing)]
     Resource(&'a Resource),
+    #[serde(skip_serializing)]
+    OResource(Resource),
     Throttle {
         id: String,
         throttle_up: u32,
@@ -70,7 +73,7 @@ pub enum SResourceUpdate<'a> {
 
 /// Collection of mutable fields that clients
 /// can modify. Due to shared field names, all fields are aggregated
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CResourceUpdate {
     pub id: String,
@@ -179,6 +182,7 @@ impl<'a> SResourceUpdate<'a> {
     pub fn id(&self) -> &str {
         match self {
             &SResourceUpdate::Resource(ref r) => r.id(),
+            &SResourceUpdate::OResource(ref r) => r.id(),
             &SResourceUpdate::Throttle { ref id, .. } |
             &SResourceUpdate::Rate { ref id, .. } |
             &SResourceUpdate::TorrentStatus { ref id, .. } |

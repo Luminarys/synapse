@@ -1,0 +1,14 @@
+[package]
+name = "rpc"
+version = "0.1.0"
+authors = ["Luminarys <postmaster@gensok.io>"]
+
+[dependencies]
+regex = "0.2"
+serde = "1"
+serde_derive = "1"
+
+[dependencies.chrono]
+version = "0.4"
+default-features = false
+features = ["serde"]

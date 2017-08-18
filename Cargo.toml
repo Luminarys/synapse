@@ -4,6 +4,7 @@ version = "0.1.0"
 authors = ["Luminarys <postmaster@gensok.io>"]
 
 [dependencies]
+rpc = { path = "rpc" }
 amy = "0.8.0"
 byteorder = "1.0"
 lazy_static = "*"
@@ -24,7 +25,6 @@ c-ares = "2"
 httparse = "1.2.3"
 base64 = "0.6.0"
 base32 = "0.3.1"
-regex = "0.2"
 
 [dependencies.chrono]
 version = "0.4"

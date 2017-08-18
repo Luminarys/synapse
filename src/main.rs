@@ -25,7 +25,6 @@ extern crate c_ares;
 extern crate httparse;
 extern crate base64;
 extern crate base32;
-extern crate regex;
 
 extern crate chrono;
 // TODO: Get rid of this
