@@ -4,6 +4,12 @@ port = 16493
 [rpc]
 # TCP port used for RPC
 port = 8412
+# Whether or not RPC should listen on localhost
+# or 0.0.0.0
+local = true
+# Whether or not RPC should use auth
+auth = false
+password = "hackme"
 
 [tracker]
 # UDP port used for UDP tracker interaction

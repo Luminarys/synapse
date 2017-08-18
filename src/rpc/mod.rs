@@ -79,7 +79,11 @@ impl RPC {
         let cleanup = reg.set_interval(CLEANUP_INT_MS)?;
         let (ch, dh) = handle::Handle::new(creg, &mut reg)?;
 
-        let ip = Ipv4Addr::new(0, 0, 0, 0);
+        let ip = if CONFIG.rpc.local {
+            Ipv4Addr::new(127, 0, 0, 1)
+        } else {
+            Ipv4Addr::new(0, 0, 0, 0)
+        };
         let port = CONFIG.rpc.port;
         let listener = TcpListener::bind(SocketAddrV4::new(ip, port))?;
         listener.set_nonblocking(true)?;

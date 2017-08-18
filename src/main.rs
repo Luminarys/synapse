@@ -77,7 +77,15 @@ lazy_static! {
             match contents {
                 Ok(s) => {
                     match toml::from_str(&s) {
-                        Ok(cf) => config::Config::from_file(cf),
+                        Ok(cf) => {
+                            let mut c = config::Config::from_file(cf);
+                            if !c.rpc.local && !c.rpc.auth {
+                                error!(LOG, "Synapse must use authentication for a non local config!");
+                                error!(LOG, "Overriding config to use local RPC!");
+                                c.rpc.local = true
+                            }
+                            c
+                        }
                         Err(e) => {
                             error!(LOG, "Failed to parse config: {}. Falling back to default.", e);
                             Default::default()

@@ -11,6 +11,7 @@ use super::writer::Writer;
 use super::proto::ws::{Message, Frame, Opcode};
 use super::{Result, ResultExt, ErrorKind};
 use util::{IOR, aread, sha1_hash};
+use CONFIG;
 
 pub struct Client {
     pub conn: TcpStream,
@@ -348,6 +349,19 @@ fn validate_upgrade(req: &httparse::Request) -> result::Result<String, ()> {
 
     if version != Some("13") {
         return Err(());
+    }
+
+    if CONFIG.rpc.auth {
+        let auth = req.path
+            .and_then(|path| Url::parse(&format!("http://localhost{}", path)).ok())
+            .and_then(|url| url.query_pairs()
+                  .find(|&(ref k, _)| k == "password")
+                  .map(|(_, v)| format!("{}", v))
+                  .map(|p| p == CONFIG.rpc.password))
+            .unwrap_or(false);
+        if !auth {
+            return Err(());
+        }
     }
 
     if let Some(k) = key {

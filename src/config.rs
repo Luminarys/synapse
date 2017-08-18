@@ -40,6 +40,12 @@ pub struct ConfigFile {
 pub struct RpcConfig {
     #[serde(default = "default_rpc_port")]
     pub port: u16,
+    #[serde(default = "default_local")]
+    pub local: bool,
+    #[serde(default = "default_auth")]
+    pub auth: bool,
+    #[serde(default = "default_password")]
+    pub password: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -116,6 +122,15 @@ fn default_dht_port() -> u16 {
 fn default_rpc_port() -> u16 {
     8412
 }
+fn default_local() -> bool {
+    true
+}
+fn default_auth() -> bool {
+    false
+}
+fn default_password() -> String {
+    "hackme".to_owned()
+}
 fn default_bootstrap_node() -> Option<String> {
     None
 }
@@ -154,7 +169,12 @@ impl Default for Config {
 
 impl Default for RpcConfig {
     fn default() -> RpcConfig {
-        RpcConfig { port: default_rpc_port() }
+        RpcConfig {
+            port: default_rpc_port(),
+            local: default_local(),
+            auth: default_auth(),
+            password: default_password(),
+        }
     }
 }
 
