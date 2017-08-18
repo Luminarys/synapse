@@ -147,12 +147,15 @@ impl Picker {
     fn pick_downloading<T: cio::CIO>(&mut self, peer: &Peer<T>) -> Option<Block> {
         for (idx, dl) in self.downloading.iter_mut() {
             if peer.pieces().has_bit(*idx as u64) {
-                return dl.iter_mut()
+                let r = dl.iter_mut()
                     .find(|r| !r.completed && r.requested.len() < MAX_DUP_REQS)
                     .map(|r| {
                         r.requested.push(Request::new(peer.id()));
                         Block::new(*idx, r.offset)
                     });
+                if r.is_some() {
+                    return r;
+                }
             }
         }
         None

@@ -290,7 +290,7 @@ impl Request {
             // TODO: Develop better heuristics here.
             // For now, only request peers if we're leeching,
             // let existing peers connect otherwise
-            num_want: if torrent.complete() { None } else { Some(20) },
+            num_want: if torrent.complete() { None } else { Some(50) },
             event,
         })
     }
