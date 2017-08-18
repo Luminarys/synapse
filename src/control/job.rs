@@ -85,6 +85,7 @@ impl TorrentTxUpdate {
 struct Speed {
     ul: u64,
     dl: u64,
+    linger: u8,
 }
 
 impl<T: cio::CIO> Job<T> for TorrentTxUpdate {
@@ -92,15 +93,20 @@ impl<T: cio::CIO> Job<T> for TorrentTxUpdate {
         for (id, torrent) in torrents.iter_mut() {
             let (ul, dl) = torrent.get_last_tx_rate();
             if !self.speeds.contains_key(id) {
-                self.speeds.insert(*id, Speed { dl: 0, ul: 0 });
+                self.speeds.insert(*id, Speed { dl: 0, ul: 0, linger: 0 });
             }
             let ls = self.speeds.get_mut(id).unwrap();
             // TODO: Use this result to get a better estimate
-            if ls.ul != ul || ls.dl != dl {
+            if ls.ul != ul || ls.dl != dl || ls.linger != 0 {
                 torrent.update_rpc_transfer();
                 torrent.reset_last_tx_rate();
                 ls.ul = ul;
                 ls.dl = dl;
+                if ls.linger == 0 {
+                    ls.linger = 2;
+                } else {
+                    ls.linger -=1;
+                }
             }
         }
         self.speeds.retain(|id, _| torrents.contains_key(id));
