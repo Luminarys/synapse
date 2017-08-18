@@ -29,11 +29,13 @@ pub enum Request {
         tid: usize,
         data: Box<[u8; 16384]>,
         locations: Vec<Location>,
+        path: Option<String>,
     },
     Read {
         data: Box<[u8; 16384]>,
         locations: Vec<Location>,
         context: Ctx,
+        path: Option<String>,
     },
     Serialize {
         tid: usize,
@@ -97,19 +99,31 @@ impl FileCache {
 }
 
 impl Request {
-    pub fn write(tid: usize, data: Box<[u8; 16384]>, locations: Vec<Location>) -> Request {
+    pub fn write(
+        tid: usize,
+        data: Box<[u8; 16384]>,
+        locations: Vec<Location>,
+        path: Option<String>,
+    ) -> Request {
         Request::Write {
             tid,
             data,
             locations,
+            path,
         }
     }
 
-    pub fn read(context: Ctx, data: Box<[u8; 16384]>, locations: Vec<Location>) -> Request {
+    pub fn read(
+        context: Ctx,
+        data: Box<[u8; 16384]>,
+        locations: Vec<Location>,
+        path: Option<String>,
+    ) -> Request {
         Request::Read {
             context,
             data,
             locations,
+            path,
         }
     }
 
@@ -133,8 +147,8 @@ impl Request {
         let sd = &CONFIG.disk.session;
         let dd = &CONFIG.disk.directory;
         match self {
-            Request::Write { data, locations, .. } => {
-                let mut pb = path::PathBuf::from(dd);
+            Request::Write { data, locations, path, .. } => {
+                let mut pb = path::PathBuf::from(path.as_ref().unwrap_or(dd));
                 for loc in locations {
                     pb.push(&loc.file);
                     fc.get_file(&pb, |f| {
@@ -149,9 +163,10 @@ impl Request {
                 context,
                 mut data,
                 locations,
+                path,
                 ..
             } => {
-                let mut pb = path::PathBuf::from(dd);
+                let mut pb = path::PathBuf::from(path.as_ref().unwrap_or(dd));
                 for loc in locations {
                     pb.push(&loc.file);
                     fc.get_file(&pb, |f| {

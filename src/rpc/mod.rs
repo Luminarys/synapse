@@ -54,7 +54,7 @@ pub enum Message {
     RemoveTorrent(String),
     RemovePeer { id: String, torrent_id: String },
     RemoveTracker { id: String, torrent_id: String },
-    Torrent(torrent::Info),
+    Torrent { info: torrent::Info, path: Option<String> },
 }
 
 #[allow(dead_code)]
@@ -190,7 +190,7 @@ impl RPC {
                                 let client = self.clients.remove(&id).unwrap();
                                 self.remove_client(id, client);
                             }
-                            if self.ch.send(Message::Torrent(i)).is_err() {
+                            if self.ch.send(Message::Torrent { info: i, path: path }).is_err() {
                                 crit!(self.l, "Failed to pass message to ctrl!");
                             }
                         } else {

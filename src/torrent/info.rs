@@ -1,7 +1,7 @@
 use bencode::BEncode;
 use std::path::PathBuf;
 use std::collections::BTreeMap;
-use std::{io, fs, fmt, cmp};
+use std::{fmt, cmp};
 use url::Url;
 use ring::digest;
 use util::hash_to_id;
@@ -64,17 +64,6 @@ impl File {
             }
             _ => Err("File dict must contain length and name or path"),
         }
-    }
-
-    fn create(&self) -> Result<(), io::Error> {
-        if let Some(parent) = self.path.parent() {
-            fs::create_dir_all(parent)?;
-        }
-        let f = fs::OpenOptions::new().write(true).create(true).open(
-            &self.path,
-        )?;
-        f.set_len(self.length as u64)?;
-        Ok(())
     }
 }
 
@@ -178,13 +167,6 @@ impl Info {
             files: vec![],
             private: false,
         }
-    }
-
-    pub fn create_files(&self) -> Result<(), io::Error> {
-        for file in self.files.iter() {
-            file.create()?;
-        }
-        Ok(())
     }
 
     pub fn block_len(&self, idx: u32, offset: u32) -> u32 {

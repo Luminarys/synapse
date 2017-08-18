@@ -18,7 +18,7 @@ pub use self::peer::{Peer, PeerConn};
 pub use self::peer::Message;
 
 use self::picker::Picker;
-use {bincode, rpc, disk, util, RAREST_PKR};
+use {bincode, rpc, disk, util, RAREST_PKR, CONFIG};
 use control::cio;
 use rpc::resource::{self, Resource, SResourceUpdate};
 use throttle::Throttle;
@@ -43,6 +43,7 @@ struct TorrentData {
     uploaded: u64,
     downloaded: u64,
     status: Status,
+    path: Option<String>,
 }
 
 pub struct Torrent<T: cio::CIO> {
@@ -66,6 +67,7 @@ pub struct Torrent<T: cio::CIO> {
     choker: choker::Choker,
     l: Logger,
     dirty: bool,
+    path: Option<String>,
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -96,7 +98,14 @@ impl Status {
 }
 
 impl<T: cio::CIO> Torrent<T> {
-    pub fn new(id: usize, info: Info, throttle: Throttle, cio: T, l: Logger) -> Torrent<T> {
+    pub fn new(
+        id: usize,
+        path: Option<String>,
+        info: Info,
+        throttle: Throttle,
+        cio: T,
+        l: Logger
+    ) -> Torrent<T> {
         debug!(l, "Creating {:?}", info);
         let peers = HashMap::new();
         let pieces = Bitfield::new(info.pieces() as u64);
@@ -110,6 +119,7 @@ impl<T: cio::CIO> Torrent<T> {
         let mut t = Torrent {
             id,
             info: Arc::new(info),
+            path,
             peers,
             pieces,
             picker,
@@ -168,6 +178,7 @@ impl<T: cio::CIO> Torrent<T> {
             l: l.clone(),
             dirty: false,
             status: d.status,
+            path: d.path,
         };
         match t.status {
             Status::DiskError | Status::Seeding | Status::Leeching => {
@@ -194,6 +205,7 @@ impl<T: cio::CIO> Torrent<T> {
             uploaded: self.uploaded,
             downloaded: self.downloaded,
             status: self.status,
+            path: self.path.clone(),
         };
         let data = bincode::serialize(&d, bincode::Infinite).expect("Serialization failed!");
         debug!(self.l, "Sending serialization request!");
@@ -341,11 +353,7 @@ impl<T: cio::CIO> Torrent<T> {
                             let seq = self.picker.is_sequential();
                             self.change_picker(seq);
                         }
-                        if self.info.create_files().is_ok() {
-                            self.announce_start();
-                        } else {
-                            self.set_status(Status::DiskError);
-                        }
+                        self.announce_start();
                     } else {
                         for piece in invalid {
                             self.picker.invalidate_piece(piece);
@@ -670,7 +678,7 @@ impl<T: cio::CIO> Torrent<T> {
             id: self.rpc_id(),
             name: self.info.name.clone(),
             // TODO: Properly add this
-            path: "./".to_owned(),
+            path: self.path.as_ref().unwrap_or(&CONFIG.disk.directory).clone(),
             created: Utc::now(),
             modified: Utc::now(),
             status: self.status.into(),
@@ -797,7 +805,7 @@ impl<T: cio::CIO> Torrent<T> {
     /// The disk send handle is also provided.
     fn write_piece(&mut self, index: u32, begin: u32, data: Box<[u8; 16384]>) {
         let locs = self.info.block_disk_locs(index, begin);
-        self.cio.msg_disk(disk::Request::write(self.id, data, locs));
+        self.cio.msg_disk(disk::Request::write(self.id, data, locs, self.path.clone()));
     }
 
     /// Issues a read request of the given torrent
@@ -805,7 +813,7 @@ impl<T: cio::CIO> Torrent<T> {
         let locs = self.info.block_disk_locs(index, begin);
         let len = self.info.block_len(index, begin);
         let ctx = disk::Ctx::new(id, self.id, index, begin, len);
-        self.cio.msg_disk(disk::Request::read(ctx, data, locs));
+        self.cio.msg_disk(disk::Request::read(ctx, data, locs, self.path.clone()));
     }
 
     fn make_requests_pid(&mut self, pid: usize) {
