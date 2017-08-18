@@ -2,7 +2,7 @@ use std::mem;
 
 use chrono::{DateTime, Utc};
 
-use super::criterion::{Criterion, ResourceKind, Filter, match_n, match_f, match_s, match_b};
+use super::criterion::{Criterion, Filter, match_n, match_f, match_s, match_b};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -14,6 +14,18 @@ pub enum Resource {
     File(File),
     Peer(Peer),
     Tracker(Tracker),
+}
+
+#[derive(Copy, Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+#[serde(rename_all = "lowercase")]
+pub enum ResourceKind {
+    Server = 0,
+    Torrent,
+    Peer,
+    File,
+    Piece,
+    Tracker,
 }
 
 /// To increase server->client update efficiency, we

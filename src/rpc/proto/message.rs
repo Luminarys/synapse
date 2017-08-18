@@ -1,7 +1,7 @@
 use chrono::{DateTime, Utc};
 
-use super::resource::{CResourceUpdate, SResourceUpdate};
-use super::criterion::{ResourceKind, Criterion};
+use super::resource::{ResourceKind, CResourceUpdate, SResourceUpdate};
+use super::criterion::Criterion;
 
 /// Client -> server messages, deserialize only
 #[derive(Debug, Deserialize)]

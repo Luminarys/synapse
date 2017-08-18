@@ -1,6 +1,8 @@
 use regex::{self, Regex};
 
-#[derive(Debug, Deserialize)]
+use resource::ResourceKind;
+
+#[derive(Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Criterion {
     pub field: String,
@@ -8,19 +10,7 @@ pub struct Criterion {
     pub value: Value,
 }
 
-#[derive(Copy, Clone, Debug, Deserialize, PartialEq)]
-#[serde(deny_unknown_fields)]
-#[serde(rename_all = "lowercase")]
-pub enum ResourceKind {
-    Server = 0,
-    Torrent,
-    Peer,
-    File,
-    Piece,
-    Tracker,
-}
-
-#[derive(Copy, Clone, Debug, Deserialize, PartialEq)]
+#[derive(Copy, Clone, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub enum Operation {
     #[serde(rename = "==")]
@@ -45,7 +35,7 @@ pub enum Operation {
     NotIn,
 }
 
-#[derive(Debug, Deserialize, PartialEq)]
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
 #[serde(untagged)]
 #[serde(deny_unknown_fields)]
 pub enum Value {

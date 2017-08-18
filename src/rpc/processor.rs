@@ -3,8 +3,8 @@ use std::collections::{HashMap, HashSet};
 use chrono::{DateTime, Utc, Duration};
 
 use super::proto::message::{CMessage, SMessage, Error};
-use super::proto::criterion::{self, Criterion, ResourceKind, Filter as FTrait};
-use super::proto::resource::{Resource, SResourceUpdate};
+use super::proto::criterion::{self, Criterion, Filter as FTrait};
+use super::proto::resource::{Resource, ResourceKind, SResourceUpdate};
 use super::{CtlMessage, Message};
 use util::random_string;
 
