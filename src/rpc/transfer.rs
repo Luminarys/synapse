@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::net::TcpStream;
-use std::io::Write;
-use std::time;
+use std::io::{self, Read, Write};
+use std::{time, thread, fs};
 
 use super::proto::message::Error;
 use util::{aread, IOR};
@@ -40,7 +40,9 @@ const CONN_TIMEOUT: u64 = 2;
 
 impl Transfers {
     pub fn new() -> Transfers {
-        Transfers { torrents: HashMap::new() }
+        Transfers {
+            torrents: HashMap::new(),
+        }
     }
 
     pub fn add_torrent(
@@ -70,6 +72,18 @@ impl Transfers {
         );
     }
 
+    pub fn add_download(&self, conn: TcpStream, path: String) {
+        thread::spawn(move || {
+            match handle_dl(conn, path) {
+                Ok(()) => {
+                }
+                Err(_) => {
+                    // TODO: ?
+                }
+            }
+        });
+    }
+
     pub fn contains(&self, id: usize) -> bool {
         self.torrents.contains_key(&id)
     }
@@ -87,9 +101,10 @@ impl Transfers {
                         "Access-Control-Allow-Headers: {}",
                         "Access-Control-Allow-Headers, Origin, Accept, X-Requested-With, Content-Type, Access-Control-Request-Method, Access-Control-Request-Headers, Authorization"
                     ),
-                    format!("Connection: Closed"),
+                    format!("Connection: {}", "Close"),
+                    format!("\r\n"),
                 ];
-                let data = lines.join("\r\n") + "\r\n\r\n";
+                let data = lines.join("\r\n");
                 if tx.conn.write(data.as_bytes()).is_err() {
                     // Do nothing, we got the data, so who cares.
                 }
@@ -157,4 +172,36 @@ impl TorrentTx {
     pub fn timed_out(&self) -> bool {
         self.last_action.elapsed().as_secs() > CONN_TIMEOUT
     }
+}
+
+fn handle_dl(mut conn: TcpStream, path: String) -> io::Result<()> {
+    let mut f = fs::File::open(&path)?;
+    let len = f.metadata()?.len();
+
+    let lines = vec![
+        format!("HTTP/1.1 200 OK"),
+        format!("Access-Control-Allow-Origin: {}", "*"),
+        format!("Access-Control-Allow-Methods: {}", "OPTIONS, POST, GET"),
+        format!(
+            "Access-Control-Allow-Headers: {}",
+            "Access-Control-Allow-Headers, Origin, Accept, X-Requested-With, Content-Type, Access-Control-Request-Method, Access-Control-Request-Headers, Authorization"
+        ),
+        format!("Content-Length: {}", len),
+        format!("Content-Type: {}", "application/octet-stream"),
+        format!("Content-Disposition: attachment; filename=\"{}\"", path),
+        format!("Connection: {}", "Close"),
+        format!("\r\n"),
+    ];
+    let data = lines.join("\r\n");
+    conn.write_all(data.as_bytes())?;
+
+    let mut buf = vec![0u8; 16384];
+    loop {
+        let amnt = f.read(&mut buf)?;
+        conn.write_all(&buf[0..amnt])?;
+        if amnt != buf.len() {
+            break;
+        }
+    }
+    Ok(())
 }

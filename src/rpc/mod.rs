@@ -267,6 +267,15 @@ impl RPC {
                             // immediatly attempt to handle the transfer as if it was ready
                             self.handle_transfer(id);
                         }
+                        Some((_, _, TransferKind::DownloadFile { path })) => {
+                            debug!(self.l, "File download requested, validating");
+                            // The file transfer is going to be done in a new thread
+                            // with blocking ups, so deregister and set blocking.
+                            let conn: TcpStream = i.into();
+                            conn.set_nonblocking(false).is_ok();
+                            self.reg.deregister(&conn).is_ok();
+                            self.transfers.add_download(conn, path);
+                        }
                         Some(_) => warn!(self.l, "Unimplemented transfer type ignored"),
                         None => {
                             warn!(self.l, "Transfer used invalid token");

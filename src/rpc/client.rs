@@ -4,6 +4,7 @@ use std::io::{self, Write};
 
 use base64;
 use httparse;
+use url::Url;
 
 use super::reader::Reader;
 use super::writer::Writer;
@@ -228,15 +229,16 @@ impl Incoming {
                     let lines =
                         vec![
                             format!("HTTP/1.1 204 NO CONTENT"),
-                            format!("Connection: Closed"),
+                            format!("Connection: {}", "Close"),
                             format!("Access-Control-Allow-Origin: {}", "*"),
                             format!("Access-Control-Allow-Methods: {}", "OPTIONS, POST, GET"),
                             format!(
                                 "Access-Control-Allow-Headers: {}",
                                 "Access-Control-Allow-Headers, Origin, Accept, X-Requested-With, Content-Type, Access-Control-Request-Method, Access-Control-Request-Headers, Authorization"
                             ),
+                            format!("\r\n"),
                         ];
-                    let data = lines.join("\r\n") + "\r\n\r\n";
+                    let data = lines.join("\r\n");
                     if self.conn.write(data.as_bytes()).is_err() {
                         // Ignore error, we're DCing anyways
                     };
@@ -311,7 +313,12 @@ fn validate_tx(req: &httparse::Request) -> Option<String> {
             );
         }
     }
-    None
+    // Check ?token=blah too
+    req.path
+        .and_then(|path| Url::parse(&format!("http://localhost{}", path)).ok())
+        .and_then(|url| url.query_pairs()
+                  .find(|&(ref k, _)| k == "token")
+                  .map(|(k, v)| format!("{}", v)))
 }
 
 fn validate_upgrade(req: &httparse::Request) -> result::Result<String, ()> {
