@@ -17,6 +17,7 @@ pub struct Resolver {
     csocks: HashMap<c_ares::Socket, usize>,
     chan: c_ares::Channel,
     sender: Arc<Mutex<amy::Sender<QueryResponse>>>,
+    marked: HashSet<usize>,
 }
 
 struct CSockWrapper(c_ares::Socket);
@@ -37,6 +38,7 @@ impl Resolver {
             csocks: HashMap::new(),
             chan: c_ares::Channel::with_options(opts).unwrap(),
             sender: Arc::new(Mutex::new(send)),
+            marked: HashSet::new(),
         }
     }
 
@@ -49,46 +51,38 @@ impl Resolver {
     }
 
     pub fn writable(&mut self, id: usize) {
-        self.chan.process_fd(self.socks[&id], c_ares::SOCKET_BAD);
+        self.chan.process_fd(c_ares::SOCKET_BAD, self.socks[&id]);
     }
 
     pub fn tick(&mut self) {
-        let mut marked = HashSet::new();
+        self.marked.clear();
         // Add any unrecognized fd's to amy for polling, remove
         // any fd's in amy which are no longer handled by c_ares
         for (fd, _, _) in &self.chan.get_sock() {
             // Not efficient, but the max number of queries active at at time is likely limited
             if let Some(id) = self.csocks.get(&fd).cloned() {
-                marked.insert(id);
+                self.marked.insert(id);
             } else {
                 let id = self.reg
                     .register(&CSockWrapper(fd), amy::Event::Both)
                     .unwrap();
-                marked.insert(id);
+                self.marked.insert(id);
                 self.socks.insert(id, fd);
                 self.csocks.insert(fd, id);
             }
         }
 
         // Any socks remaining in csocks should be deregistered and destroyed
-        Resolver::remove_socks(marked, &mut self.socks, &mut self.csocks, &self.reg);
-    }
-
-    fn remove_socks(
-        marked: HashSet<usize>,
-        socks: &mut HashMap<usize, c_ares::Socket>,
-        csocks: &mut HashMap<c_ares::Socket, usize>,
-        reg: &amy::Registrar,
-    ) {
+        let socks = &mut self.socks;
+        let csocks = &mut self.csocks;
+        let marked = &self.marked;
+        let reg = &self.reg;
         socks.retain(|id, fd| {
             if marked.contains(id) {
                 true
             } else {
                 csocks.remove(fd);
-                if reg.deregister(&CSockWrapper(*fd)).is_err() {
-                    // Probably from EINTR, so we're shutting down
-                    // and it doesn't matter if it's ignored
-                }
+                reg.deregister(&CSockWrapper(*fd)).ok();
                 false
             }
         });
