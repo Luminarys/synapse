@@ -54,6 +54,7 @@ fn main() {
                          .multiple(true)
                          .short("t")
                          .long("torrents")
+                         .required(true)
                          .index(1))
                    )
         .subcommand(SubCommand::with_name("list")
@@ -148,7 +149,12 @@ fn main() {
             }
         }
         "del" => {
-            cmd::del(client);
+            let args = matches.subcommand_matches("del").unwrap();
+            let res = cmd::del(client, args.values_of("torrents").unwrap().collect());
+            if res.is_err() {
+                eprintln!("Failed to delete torrents: {:?}", res.err().unwrap());
+                process::exit(1);
+            }
         }
         "dl" => {
             cmd::dl(client);
