@@ -1,7 +1,8 @@
 use std::collections::HashMap;
 use std::net::TcpStream;
-use std::io::{self, Read, Write};
+use std::io::{self, Write};
 use std::{time, thread, fs};
+use std::path::Path;
 
 use super::proto::message::Error;
 use util::{aread, IOR};
@@ -178,6 +179,7 @@ fn handle_dl(mut conn: TcpStream, path: String) -> io::Result<()> {
     let mut f = fs::File::open(&path)?;
     let len = f.metadata()?.len();
 
+    let p = Path::new(&path);
     let lines = vec![
         format!("HTTP/1.1 200 OK"),
         format!("Access-Control-Allow-Origin: {}", "*"),
@@ -188,20 +190,12 @@ fn handle_dl(mut conn: TcpStream, path: String) -> io::Result<()> {
         ),
         format!("Content-Length: {}", len),
         format!("Content-Type: {}", "application/octet-stream"),
-        format!("Content-Disposition: attachment; filename=\"{}\"", path),
+        format!("Content-Disposition: attachment; filename=\"{}\"", p.file_name().unwrap().to_string_lossy()),
         format!("Connection: {}", "Close"),
         format!("\r\n"),
     ];
     let data = lines.join("\r\n");
     conn.write_all(data.as_bytes())?;
-
-    let mut buf = vec![0u8; 16384];
-    loop {
-        let amnt = f.read(&mut buf)?;
-        conn.write_all(&buf[0..amnt])?;
-        if amnt != buf.len() {
-            break;
-        }
-    }
+    io::copy(&mut f, &mut conn)?;
     Ok(())
 }

@@ -108,7 +108,8 @@ fn main() {
                          .help("Name of torrent to download. A fuzzy match will be attempted and ambiguities displayed.")
                          .short("t")
                          .long("torrent")
-                         .index(1))
+                         .index(1)
+                         .required(true))
                    )
         .get_matches();
 
@@ -157,7 +158,12 @@ fn main() {
             }
         }
         "dl" => {
-            cmd::dl(client);
+            let args = matches.subcommand_matches("dl").unwrap();
+            let res = cmd::dl(client, url.as_str(), args.value_of("torrent").unwrap());
+            if res.is_err() {
+                eprintln!("Failed to download torrent: {:?}", res.err().unwrap());
+                process::exit(1);
+            }
         }
         "list" => {
             cmd::list(client);

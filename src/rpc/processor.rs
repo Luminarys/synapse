@@ -362,7 +362,7 @@ impl Processor {
         self.filter_subs.retain(|&(c, _), _| c != client);
     }
 
-    /// Produces a map of the form Map<ClientId, Map<FilterSerial, Vec<ID>>>.
+    /// Produces a map of the form Map<Serial, (Client ID, messages)>.
     fn get_matching_filters<'a, I: Iterator<Item = &'a str>>(
         &'a self,
         ids: I,
