@@ -83,7 +83,7 @@ pub struct Error {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use super::super::criterion;
+    use super::super::{resource, criterion};
     use serde_json;
 
     #[test]
@@ -99,7 +99,7 @@ mod tests {
             "#;
         let m = serde_json::from_str(data).unwrap();
         if let CMessage::FilterSubscribe {
-            kind: criterion::ResourceKind::Torrent,
+            kind: resource::ResourceKind::Torrent,
             serial: 0,
             criteria: c,
         } = m
