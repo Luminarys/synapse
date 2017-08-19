@@ -12,3 +12,6 @@ serde_derive = "1"
 version = "0.4"
 default-features = false
 features = ["serde"]
+
+[dev-dependencies]
+serde_json = "1"

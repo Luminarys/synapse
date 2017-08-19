@@ -86,9 +86,9 @@ pub struct Error {
 
 #[cfg(test)]
 mod tests {
+    extern crate serde_json;
     use super::*;
     use super::super::{resource, criterion};
-    use serde_json;
 
     #[test]
     fn test_json_repr() {
