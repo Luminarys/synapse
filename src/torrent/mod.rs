@@ -361,6 +361,7 @@ impl<T: cio::CIO> Torrent<T> {
                         }
                         self.request_all();
                     }
+                    self.set_status(Status::Pending);
                 }
                 // update the RPC stats once done
                 self.update_rpc_transfer();

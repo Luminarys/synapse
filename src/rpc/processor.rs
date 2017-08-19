@@ -15,7 +15,7 @@ use util::random_string;
 
 pub struct Processor {
     subs: HashMap<String, HashSet<usize>>,
-    filter_subs: HashMap<u64, Filter>,
+    filter_subs: HashMap<(usize, u64), Filter>,
     resources: HashMap<String, Resource>,
     // Index by resource kind
     kinds: Vec<HashSet<String>>,
@@ -27,7 +27,6 @@ pub struct Processor {
 struct Filter {
     kind: ResourceKind,
     criteria: Vec<Criterion>,
-    client: usize,
 }
 
 struct BearerToken {
@@ -203,7 +202,6 @@ impl Processor {
                 let f = Filter {
                     criteria,
                     kind,
-                    client,
                 };
                 {
                     let valid = &self.kinds[kind as usize];
@@ -234,10 +232,10 @@ impl Processor {
                     }
                     resp.push(SMessage::ResourcesExtant { serial, ids });
                 }
-                self.filter_subs.insert(serial, f);
+                self.filter_subs.insert((client, serial), f);
             }
             CMessage::FilterUnsubscribe { filter_serial, .. } => {
-                self.filter_subs.remove(&filter_serial);
+                self.filter_subs.remove(&(client, filter_serial));
             }
 
             CMessage::UploadTorrent { serial, size, path } => {
@@ -305,10 +303,8 @@ impl Processor {
                     rids.push(self.resources.get(&id).unwrap().id());
                 }
 
-                for (c, filters) in self.get_matching_filters(rids.into_iter()) {
-                    for (serial, ids) in filters {
-                        msgs.push((c, SMessage::ResourcesExtant { serial, ids }));
-                    }
+                for (serial, (c, ids)) in self.get_matching_filters(rids.into_iter()) {
+                    msgs.push((c, SMessage::ResourcesExtant { serial, ids }));
                 }
             }
             CtlMessage::Update(updates) => {
@@ -330,16 +326,14 @@ impl Processor {
                 }
             }
             CtlMessage::Removed(r) => {
-                for (c, filters) in self.get_matching_filters(r.iter().map(|s| s.as_str())) {
-                    for (serial, ids) in filters {
-                        msgs.push((
-                            c,
-                            SMessage::ResourcesRemoved {
-                                serial,
-                                ids: ids.into_iter().map(|s| s.to_owned()).collect(),
-                            },
-                        ));
-                    }
+                for (serial, (client, ids)) in self.get_matching_filters(r.iter().map(|s| s.as_str())) {
+                     msgs.push((
+                         client,
+                         SMessage::ResourcesRemoved {
+                             serial,
+                             ids: ids.into_iter().map(|s| s.to_owned()).collect(),
+                         },
+                     ));
                 }
 
                 for id in r {
@@ -365,30 +359,25 @@ impl Processor {
         for (_, sub) in self.subs.iter_mut() {
             sub.remove(&client);
         }
-        self.filter_subs.retain(|_, f| f.client != client);
+        self.filter_subs.retain(|&(c, _), _| c != client);
     }
 
     /// Produces a map of the form Map<ClientId, Map<FilterSerial, Vec<ID>>>.
     fn get_matching_filters<'a, I: Iterator<Item = &'a str>>(
         &'a self,
         ids: I,
-    ) -> HashMap<usize, HashMap<u64, Vec<&'a str>>> {
+    ) -> HashMap<u64, (usize, Vec<&'a str>)> {
         let mut matched = HashMap::new();
         for id in ids {
             let res = self.resources.get(id).expect(
                 "Bad resource requested from a CtlMessage",
             );
-            for (s, f) in self.filter_subs.iter() {
-                let c = f.client;
+            for (&(c, s), f) in self.filter_subs.iter() {
                 if f.kind == res.kind() && f.matches(&res) {
-                    if !matched.contains_key(&c) {
-                        matched.insert(c, HashMap::new());
+                    if !matched.contains_key(&s) {
+                        matched.insert(s, (c, Vec::new()));
                     }
-                    let filters = matched.get_mut(&c).unwrap();
-                    if !filters.contains_key(s) {
-                        filters.insert(*s, Vec::new());
-                    }
-                    filters.get_mut(s).unwrap().push(id);
+                    matched.get_mut(&s).unwrap().1.push(id);
                 }
             }
         }
