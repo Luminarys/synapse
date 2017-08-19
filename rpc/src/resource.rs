@@ -246,6 +246,48 @@ impl Resource {
         }
     }
 
+    pub fn as_server(&self) -> &Server {
+        match self {
+            &Resource::Server(ref s) => s,
+            _ => panic!(),
+        }
+    }
+
+    pub fn as_torrent(&self) -> &Torrent {
+        match self {
+            &Resource::Torrent(ref t) => t,
+            _ => panic!(),
+        }
+    }
+
+    pub fn as_file(&self) -> &File {
+        match self {
+            &Resource::File(ref f) => f,
+            _ => panic!(),
+        }
+    }
+
+    pub fn as_piece(&self) -> &Piece {
+        match self {
+            &Resource::Piece(ref p) => p,
+            _ => panic!(),
+        }
+    }
+
+    pub fn as_peer(&self) -> &Peer {
+        match self {
+            &Resource::Peer(ref p) => p,
+            _ => panic!(),
+        }
+    }
+
+    pub fn as_tracker(&self) -> &Tracker {
+        match self {
+            &Resource::Tracker(ref t) => t,
+            _ => panic!(),
+        }
+    }
+
     pub fn update(&mut self, update: SResourceUpdate) {
         match (self, update) {
             (&mut Resource::Torrent(ref mut t),

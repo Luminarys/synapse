@@ -12,6 +12,7 @@ serde_derive = "1"
 reqwest = "0.7"
 url = "1.5.1"
 error-chain = "0.10"
+prettytable-rs = "0.6.7"
 
 [dependencies.websocket]
 version = "0.20"

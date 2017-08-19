@@ -1,5 +1,7 @@
 #[macro_use]
 extern crate error_chain;
+#[macro_use]
+extern crate prettytable;
 extern crate clap;
 extern crate rpc;
 extern crate serde;
@@ -58,11 +60,18 @@ fn main() {
                          .index(1))
                    )
         .subcommand(SubCommand::with_name("list")
-                    .about("Lists torrents in synapse.")
-                    .arg(Arg::with_name("active")
-                         .help("Only display non idle and pending torrents.")
-                         .short("a")
-                         .long("active"))
+                    .about("Lists resources of a given type in synapse.")
+                    .arg(Arg::with_name("filter")
+                         .help("Apply an array of json formatted criterion to the resources.")
+                         .short("f")
+                         .long("filter")
+                         .takes_value(true))
+                    .arg(Arg::with_name("kind")
+                        .help("The kind of resource to list.")
+                        .possible_values(&["torrent", "peer", "file", "server", "tracker", "piece"])
+                        .default_value("torrent")
+                        .short("k")
+                        .long("kind"))
                     .arg(Arg::with_name("output")
                          .help("Output the results in the specified format.")
                          .short("o")
@@ -166,7 +175,18 @@ fn main() {
             }
         }
         "list" => {
-            cmd::list(client);
+            let args = matches.subcommand_matches("list").unwrap();
+            let crit = args.value_of("filter").and_then(|f| {
+                let single_crit = serde_json::from_str(f).map(|c| vec![c]).ok();
+                single_crit.or_else(|| serde_json::from_str(f).ok())
+            }).unwrap_or(vec![]);
+            let kind = args.value_of("kind").unwrap();
+            let output = args.value_of("output").unwrap();
+            let res = cmd::list(client, kind, crit, output);
+            if res.is_err() {
+                eprintln!("Failed to list torrents: {:?}", res.err().unwrap());
+                process::exit(1);
+            }
         }
         "rate" => {
             cmd::rate(client);
