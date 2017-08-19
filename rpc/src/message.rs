@@ -49,6 +49,7 @@ pub enum CMessage {
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 #[serde(tag = "type")]
+#[serde(deny_unknown_fields)]
 pub enum SMessage<'a> {
     // Standard messages
     #[serde(skip_deserializing)]
@@ -79,6 +80,7 @@ pub enum SMessage<'a> {
 }
 
 #[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Error {
     pub serial: Option<u64>,
     pub reason: String,

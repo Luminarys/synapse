@@ -33,6 +33,7 @@ pub enum ResourceKind {
 /// this enum.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
+#[serde(deny_unknown_fields)]
 pub enum SResourceUpdate<'a> {
     #[serde(skip_deserializing)]
     Resource(&'a Resource),
