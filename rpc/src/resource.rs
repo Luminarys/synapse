@@ -37,6 +37,7 @@ pub enum SResourceUpdate<'a> {
     #[serde(skip_deserializing)]
     Resource(&'a Resource),
     #[serde(skip_serializing)]
+    #[serde(rename = "RESOURCE")]
     OResource(Resource),
     Throttle {
         id: String,

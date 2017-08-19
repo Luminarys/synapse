@@ -342,11 +342,11 @@ impl Disk {
                     let tid = r.tid();
                     match r.execute(self.files.clone()) {
                         Ok(Some(r)) => {
-                            self.ch.send(r).unwrap();
+                            self.ch.send(r).ok();
                         }
                         Ok(None) => {}
                         Err(e) => {
-                            self.ch.send(Response::error(tid, e)).unwrap();
+                            self.ch.send(Response::error(tid, e)).ok();
                         }
                     }
                 }
