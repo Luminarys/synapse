@@ -350,8 +350,7 @@ impl<T: cio::CIO> Torrent<T> {
                             for piece in invalid {
                                 self.pieces.unset_bit(piece as u64);
                             }
-                            let seq = self.picker.is_sequential();
-                            self.change_picker(seq);
+                            self.picker.refresh_picker(&self.pieces);
                         }
                         self.announce_start();
                     } else {

@@ -233,6 +233,15 @@ impl Picker {
             }
         }
     }
+
+    pub fn refresh_picker(&mut self, pieces: &Bitfield) {
+        self.unpicked = pieces.clone();
+        self.picker = if self.is_sequential() {
+            PickerKind::Sequential(sequential::Picker::new(&self.unpicked))
+        } else {
+            PickerKind::Rarest(rarest::Picker::new(&self.unpicked))
+        };
+    }
 }
 
 impl Block {
