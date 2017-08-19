@@ -4,7 +4,7 @@ use super::resource::{ResourceKind, CResourceUpdate, SResourceUpdate};
 use super::criterion::Criterion;
 
 /// Client -> server messages, deserialize only
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 #[serde(tag = "type")]
 #[serde(deny_unknown_fields)]
@@ -46,12 +46,16 @@ pub enum CMessage {
 }
 
 /// Server -> client message, serialize only
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 #[serde(tag = "type")]
 pub enum SMessage<'a> {
     // Standard messages
+    #[serde(skip_deserializing)]
     ResourcesExtant { serial: u64, ids: Vec<&'a str> },
+    #[serde(skip_serializing)]
+    #[serde(rename = "RESOURCES_EXTANT")]
+    OResourcesExtant { serial: u64, ids: Vec<String> },
     ResourcesRemoved { serial: u64, ids: Vec<String> },
     UpdateResources { resources: Vec<SResourceUpdate<'a>> },
 
@@ -74,7 +78,7 @@ pub enum SMessage<'a> {
     // ServerError(Error),
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 pub struct Error {
     pub serial: Option<u64>,
     pub reason: String,

@@ -6,3 +6,4 @@ extern crate chrono;
 
 pub mod resource;
 pub mod criterion;
+pub mod message;
