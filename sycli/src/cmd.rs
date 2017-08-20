@@ -343,6 +343,7 @@ pub fn list<S: Stream>(
         }
         table.printstd();
     } else {
+        println!("{}", serde_json::to_string_pretty(&results).chain_err(|| ErrorKind::Serialization)?);
     }
     Ok(())
 }
