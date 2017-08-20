@@ -8,3 +8,4 @@ perf*
 *.iso
 *.swp
 *.bk
+rr.sh
