@@ -13,6 +13,7 @@ Install dependencies:
 - openssl **
 
 _\*Only required for synapse_
+
 _\**Only required for sycli_
 
 Synapse and sycli can be installed with:
@@ -37,3 +38,4 @@ These defaults are given in `example_config.toml`.
 ## Development
 
 Please see [this issue](https://github.com/Luminarys/synapse/issues/1) for details on development status.
+If you're interested in developing a client for synapse, see `doc/RPC` for the current RPC spec.
