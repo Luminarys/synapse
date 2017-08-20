@@ -1,0 +1,432 @@
+                                  Synapse RPC
+
+Protocol assumptions: message based, full duplex, persistent connections, SSL
+optional (i.e. websockets). Websocket text frames with JSON encoding are used
+currently by the server. This is subject to change.
+
+                                 AUTHENTICATION
+
+By default synapse will bind its RPC port to localhost; in this mode, authentication
+is not required. However, if synapse is configured to bind to 0.0.0.0, it will require
+authentication to be used to connect. Authentication is performed using the url
+query parameter password on upgrade.
+
+                                    DATETIME
+
+Datetimes are encoded in RFC 3339 and ISO 8601, in UTC.
+
+                                   RESOURCES
+
+The server exposes resources and updates to those resources to the client. A
+resource might be a torrent, tracker, peer, etc, as indicated by the type
+field, and the server assigns a ID to each resource. IDs are deterministic
+and can be expected to be consistent across sessions and for the same resource
+(i.e. the same given torrent will have the same ID on several different
+machines). Fields marked with * mutable via UPDATE_RESOURCE messages.
+
+server
+
+    {
+        "id": ID,
+        "type": "server",
+        "rate_up": number,
+        "rate_down": number,
+        "throttle_up": number*,
+        "throttle_down": number*,
+        "started": datetime,
+    }
+
+torrent
+
+    {
+        "id": ID,
+        "type": "torrent",
+        "name": string,
+        "path": string*,
+        "created": datetime,
+        "modified": datetime,
+        "status": status enum*,
+        "error": string OR null,
+        "size": number OR null,     bytes or null if DHT and unknown
+        "progress": number,         0..1
+        "priority": number*,         1..5 default 3
+        "availability": number,     0..1
+        "sequential": boolean*,      true if downloading sequentially
+        "rate_up": number,          bit/sec
+        "rate_down": number,        bit/sec
+        "throttle_up": number*,      bit/sec OR 0 to use global limit
+        "throttle_down": number*,    bit/sec OR 0 to use global limit
+        "transferred_up": number,   total bytes seeded
+        "transferred_down": number, total bytes leeched
+        "peers": number,            # of peers
+        "trackers": number,         # of trackers
+        "pieces": number,           # of pieces
+        "files": number,            # of files
+    }
+
+Status enum:
+    "paused": paused by a client
+    "pending": waiting to begin downloading
+    "leeching": leeching
+    "idle": completely downloaded but not seeding
+    "seeding": seeding
+    "hashing": hash check in progress
+    "error": see "error" field for details
+
+The semantics of updating the Status enum are special.
+Clients must only send status updates of value "paused" and "hashing".
+Pausing will toggle the pause state on the torrent, and hashing will trigger
+a re-verification of all the torrent's files.
+
+piece
+
+    {
+        "id": ID,
+        "type": "piece",
+        "torrent_id": ID,
+        "available": boolean,
+        "downloaded": boolean,
+    }
+
+file
+
+    {
+        "id": ID,
+        "type": "file",
+        "torrent_id": ID,
+        "path": string,             Relative to torrent path
+        "progress": number,
+        "priority": number*,         1..5 default 3
+        "availability": number,     0..1
+    }
+
+peer
+
+    {
+        "id": ID,
+        "type": "peer",
+        "torrent_id": ID,
+        "client_id": [byte],
+        "ip": string,
+        "rate_up": number,      bit/sec,
+        "rate_down": number,    bit/sec,
+        "availability": number,     0..1
+    }
+
+tracker
+
+    {
+        "id": ID,
+        "type": "tracker",
+        "torrent_id": ID,
+        "url": string,
+        "error": string or null,
+        "last_report": datetime,
+    }
+
+                               CRITERION OBJECTS
+
+Criteria is supported in some places to do server-side filtering of resources.
+A criterion can be specified like so:
+
+    {
+        "field": string,            Field to filter for
+        "op": operation enum,
+        "value": *,                 Value to test against
+    }
+
+Operation enum:
+    "==": equal to
+    "!=": not equal to
+    ">": greater than
+    ">=": greater than or equal to
+    "<": less than
+    "<=": less than or equal to
+    "like": value is a LIKE test with SQL syntax
+    "ilike": value is an ILIKE test with SQL syntax
+    "in": value is an array of values for equality test
+    "!in": value is an array of values for non-equality test
+
+                                    MESSAGES
+
+A message sent from either the client->server or server->client will take this
+format:
+
+    {
+        "type": string,
+        "serial": number,
+        .
+        .
+        .
+    }
+
+The type field is a unique identifier for the message type, and defines the
+schema of the remaining fields. The serial is a number allocated by the client
+that increments for each message, but may be omitted from server messages. The
+server may include a serial in its messages to indicate which message from the
+client it pertains to.
+
+                               RESOURCE MESSAGES
+
+If you know a resource ID is extant, you can query the server for information
+about it with these messages.
+
+GET_RESOURCES           client->server
+
+Fetches a resource or resources by ID. The server responds with RESOURCES
+messages.
+
+    {
+        "type": "GET_RESOURCES",
+        "ids": [
+            IDs,
+            .
+            .
+            .
+        ]
+    }
+
+SUBSCRIBE               client->server
+
+Subscribes to changes on a resource or resources. The server will respond with
+RESOURCES message(s) to populate the initial set of resources, and will
+periodically send additional RESOURCES message(s) to update the client as the
+state of these resources changes.
+
+    {
+        "type": "SUBSCRIBE",
+        "ids": [
+            IDs,
+            .
+            .
+            .
+        ]
+    }
+
+UNSUBSCRIBE             client->server
+
+Used by the client to indicate it no longer wants updates for these resources.
+
+    {
+        "type": "UNSUBSCRIBE",
+        "ids": [
+            IDs,
+            .
+            .
+            .
+        ]
+    }
+
+UPDATE_RESOURCES        server->client
+
+Indicates that the client should update its internal representation of some
+resources. Note that the only constraint on the resource type is that
+an id field and at least one other data field be present. This is done to
+increase efficiency of server->client message transmission.
+
+    {
+        "type": "UPDATE_RESOURCES",
+        "resources": [
+            { ...resource type...  },
+            .
+            .
+            .
+        ]
+    }
+
+FILTER_SUBSCRIBE        client->server
+
+Indicates that the client would like to receive updates for all new resources
+matching a given criteria. The server will send RESOURCES_EXTANT messages for
+any resources that already match, as well as RESOURCES_EXTANT for any resources
+that match this criteria in the future and RESOURCES_REMOVED for matching
+resources that are made invalid.
+
+    {
+        "type": "FILTER_SUBSCRIBE",
+        "kind": string,            The kind of resource to filter for, defaults to "torrent"
+        "criteria": [
+            { ...criterion object... },
+            .
+            .
+            .
+        ]
+    }
+
+Because the default kind of criterion is "torrent", a client can receive the
+list of valid torrent IDs and subscribe to new/removed torrents by sending
+FILTER_SUBSCRIBE upfront. The "order" field will be used for the initial set of
+RESOURCES_EXTANT, but will be disregarded for future updates.
+
+FILTER_UNSUBSCRIBE      client->server
+
+Indicates that the client would no longer like to be subscribed to a filter.
+
+    {
+        "type": "FILTER_UNSUBSCRIBE",
+        "filter_serial": number,
+    }
+
+"filter_serial" should be set to the serial of the FILTER_SUBSCRIBE message the
+client wishes to cease its subscription for. Upon unsubscribing, all resource
+IDs associated with this filter (and no other active filters) become invalid.
+
+RESOURCES_EXTANT        server->client
+
+Sent by the server to indicate that new resources are available.
+
+    {
+        "type": "RESOURCES_EXTANT",
+        "serial": number,           the serial of the relevant client message
+        "ids": [
+            IDs,
+            .
+            .
+            .
+        ]
+    }
+
+RESOURCES_REMOVED       server->client
+
+Sent by the server to indicate that some resources are no longer available.
+
+    {
+        "type": "RESOURCES_REMOVED",
+        "serial": number,           the serial of the relevant client message
+        "ids": [
+            IDs,
+            .
+            .
+            .
+        ]
+    }
+
+UPDATE_RESOURCE         client->server
+
+The client wishes to make a change to a resource.
+
+    {
+        "type": "UPDATE_RESOURCE",
+        "resource": { ...resource object... }
+    }
+
+The client should only send updated fields for mutable resource
+fields. The server will follow up with an UPDATE_RESOURCES message
+to confirm the changes.
+
+REMOVE_RESOURCE         client->server
+
+The client wishes to delete a resource.
+
+    {
+        "type": "REMOVE_RESOURCE",
+        "id": ID
+    }
+
+The semantics of this message vary based on the resource type.
+For a torrent, the torrent is deleted from the client. For a peer, the
+peer will be removed. For a tracker, the tracker is removed from the torrent.
+For other resources, there is no effect(this is subject to change).
+As with UPDATE_RESOURCE, the client should wait for a corresponding
+RESOURCES_REMOVED message (assuming it is subscribed appropriately).
+
+                                SPECIAL MESSAGES
+
+TRANSFER_OFFER          server->client
+
+Indicates that the server will allow a file transfer over HTTP.
+The path to use will be assumed to be known by the client, rather than given
+by synapse. By default, synapse will listen for HTTP requests over its RPC port,
+and if a websocket upgrade is not initiated, a transfer request is assumed.
+The client should initiate an http request using bearer authorization or
+by specifying the "token" query parameter in the url
+with the provided token within the time limit defined by the expires field.
+If the transfer offer is for downloading a file, the token may be reused any number
+of times so long as it is not expired. If the transfer offer is for uploading a file,
+the client should send a POST request containing the binary encoded data.
+The client should not attempt to resend this request, even if an error response
+is later received. On failure, an error message is issued for the original
+message's serial. Successful behavior is dependent on the type of transfer
+occurring.
+
+    {
+        "type": "OPEN_TRANSFER",
+        "serial": number,           message serial this is in response to
+        "expires": datetime,
+        "token": string,          bearer token that should be used to authorize the request
+        "size": number,             bytes, expected size of transfer
+    }
+
+UPLOAD_TORRENT          client->server
+
+Indicates that the client would like to upload a .torrent file to the server.
+The server will respond with a TRANSFER_OFFER message. If successful the server
+will add the torrent and the client will be notified via RESOURCES_EXTANT with
+the serial set to the initial request's serial. Note that if the client is already subscribed
+to torrent updates, it will receive the RESOURCES_EXTANT message twice.
+The serial should be used to distinguish the two. 
+
+    {
+        "type": "UPLOAD_TORRENT",
+        "size": number,             bytes, size of .torrent file
+        "path": string,             optional download path
+    }
+
+UPLOAD_MAGNET           client->server
+
+Adds a torrent via its magnet link. If successful the server will add the
+torrent and the client will be notified via RESOURCES_EXTANT with the serial set
+to the initial request's serial.
+
+    {
+        "type": "UPLOAD_MAGNET",
+        "uri": string,
+        "path": string,             optional download path
+    }
+
+UPLOAD_FILES            client->server
+
+Uploads a file or group of files to the server, presumably for seeding. The
+server will issue a TRANSFER_OFFER and the client should upload a tarball.
+
+    {
+        "type": "UPLOAD_FILES",
+        "size": number,             bytes, size of tarball
+        "path": string              absolute or relative to download directory
+    }
+
+DOWNLOAD_FILE          client->server
+
+Requests a file to be downloaded. The server will
+respond with a TRANSFER_OFFER request and send along the file.
+
+    {
+        "type": "DOWNLOAD_FILE",
+        "id": ID
+    }
+
+                                 ERROR MESSAGES
+
+All error messages share a common format and are only sent from server->client.
+
+    {
+        "type": *,
+        "serial": number,           The serial of the offending message
+        "reason": string,           User-friendly error message
+    }
+
+The various error types are:
+
+UNKNOWN_RESOURCE: the client used a resource ID the server does not recognize
+INVALID_RESOURCE: the client an inappropriate resource type for the operation
+INVALID_MESSAGE: the client used an invalid message type
+INVALID_SCHEMA: the schema of the message was invalid
+INVALID_REQUEST: the message was logically invalid (i.e. string > number)
+TRANSFER_FAILED: a transfer initiated by the client failed
+PERMISSION_DENIED: the server does not allow this request (i.e. add torrents)
+SERVER_ERROR: something went wrong on the server's side, client is not at fault
+
+Note that error handling is not guaranteed to occur if any form of error is detected at
+the transport (i.e. WebSocket) or encoding (i.e. JSON) level. Should errors occur
+for either the client or server here, the connection may be immediately and uncleanly
+closed.
