@@ -11,7 +11,7 @@ use prettytable::Table;
 
 use rpc::message::{CMessage, SMessage};
 use rpc::criterion::{Criterion, Value, Operation};
-use rpc::resource::{Resource, ResourceKind, SResourceUpdate};
+use rpc::resource::{Resource, ResourceKind, SResourceUpdate, CResourceUpdate, Status};
 
 error_chain! {
     errors {
@@ -348,11 +348,45 @@ pub fn list<S: Stream>(
     Ok(())
 }
 
-pub fn rate<S: Stream>(c: WClient<S>) {}
+pub fn pause<S: Stream>(mut c: WClient<S>, torrents: Vec<&str>) -> Result<()> {
+    let mut serial = Serial(0);
+    for torrent in torrents {
+        pause_torrent(&mut c, &mut serial, torrent)?;
+    }
+    Ok(())
+}
 
-pub fn start<S: Stream>(c: WClient<S>) {}
-
-pub fn stop<S: Stream>(c: WClient<S>) {}
+fn pause_torrent<S: Stream>(c: &mut WClient<S>, serial: &mut Serial, torrent: &str) -> Result<()> {
+    let resources = search_torrent_name(c, serial, torrent)?;
+    if resources.len() == 1 {
+        let mut resource = CResourceUpdate::default();
+        resource.id = resources[0].id().to_owned();
+        resource.status = Some(Status::Paused);
+        let msg = CMessage::UpdateResource {
+            serial: serial.next(),
+            resource,
+        };
+        let msg_data = serde_json::to_string(&msg).chain_err(
+            || ErrorKind::Serialization,
+        )?;
+        c.send_message(&WSMessage::Text(msg_data)).chain_err(|| {
+            ErrorKind::Websocket
+        })?;
+    } else if resources.is_empty() {
+        eprintln!("Could not find any matching torrents for {}", torrent);
+    } else {
+        eprintln!(
+            "Ambiguous results searching for {}. Potential alternatives include: ",
+            torrent
+        );
+        for res in resources.into_iter().take(3) {
+            if let Resource::Torrent(t) = res {
+                eprintln!("{}", t.name);
+            }
+        }
+    }
+    Ok(())
+}
 
 fn search_torrent_name<S: Stream>(
     c: &mut WClient<S>,

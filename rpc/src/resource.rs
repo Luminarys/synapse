@@ -87,7 +87,7 @@ pub enum SResourceUpdate<'a> {
 
 /// Collection of mutable fields that clients
 /// can modify. Due to shared field names, all fields are aggregated
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CResourceUpdate {
     pub id: String,

@@ -80,32 +80,10 @@ fn main() {
                          .default_value("text")
                         )
                    )
-        .subcommand(SubCommand::with_name("rate")
-                    .about("Rate limits synapse.")
-                    .arg(Arg::with_name("up")
-                         .help("Global upload rate.")
-                         .short("u")
-                         .long("upload")
-                         .index(1))
-                    .arg(Arg::with_name("down")
-                         .help("Global download rate.")
-                         .short("d")
-                         .long("download")
-                         .index(2))
-                   )
-        .subcommand(SubCommand::with_name("start")
-                    .about("Starts torrents in synapse.")
+        .subcommand(SubCommand::with_name("pause")
+                    .about("Toggles the pause state of the given torrents.")
                     .arg(Arg::with_name("torrents")
-                         .help("Names of torrents to start. A fuzzy match will be attempted and ambiguities displayed.")
-                         .multiple(true)
-                         .short("t")
-                         .long("torrents")
-                         .index(1))
-                   )
-        .subcommand(SubCommand::with_name("stop")
-                    .about("Stops torrents in synapse.")
-                    .arg(Arg::with_name("torrents")
-                         .help("Names of torrents to stop. A fuzzy match will be attempted and ambiguities displayed.")
+                         .help("Names of torrents to pause/unpause. A fuzzy match will be attempted and ambiguities displayed.")
                          .multiple(true)
                          .short("t")
                          .long("torrents")
@@ -153,24 +131,24 @@ fn main() {
                 files.push(file)
             }
             let res = cmd::add(client, url.as_str(), files, args.value_of("directory"));
-            if res.is_err() {
-                eprintln!("Failed to add torrents: {:?}", res.err().unwrap());
+            if let Err(e) = res {
+                eprintln!("Failed to add torrents: {:?}", e);
                 process::exit(1);
             }
         }
         "del" => {
             let args = matches.subcommand_matches("del").unwrap();
             let res = cmd::del(client, args.values_of("torrents").unwrap().collect());
-            if res.is_err() {
-                eprintln!("Failed to delete torrents: {:?}", res.err().unwrap());
+            if let Err(e) = res {
+                eprintln!("Failed to delete torrents: {:?}", e);
                 process::exit(1);
             }
         }
         "dl" => {
             let args = matches.subcommand_matches("dl").unwrap();
             let res = cmd::dl(client, url.as_str(), args.value_of("torrent").unwrap());
-            if res.is_err() {
-                eprintln!("Failed to download torrent: {:?}", res.err().unwrap());
+            if let Err(e) = res {
+                eprintln!("Failed to download torrent: {:?}", e);
                 process::exit(1);
             }
         }
@@ -183,19 +161,18 @@ fn main() {
             let kind = args.value_of("kind").unwrap();
             let output = args.value_of("output").unwrap();
             let res = cmd::list(client, kind, crit, output);
-            if res.is_err() {
-                eprintln!("Failed to list torrents: {:?}", res.err().unwrap());
+            if let Err(e) = res {
+                eprintln!("Failed to list torrents: {:?}", e);
                 process::exit(1);
             }
         }
-        "rate" => {
-            cmd::rate(client);
-        }
-        "start" => {
-            cmd::start(client);
-        }
-        "stop" => {
-            cmd::stop(client);
+        "pause" => {
+            let args = matches.subcommand_matches("pause").unwrap();
+            let res = cmd::pause(client, args.values_of("torrents").unwrap().collect());
+            if let Err(e) = res {
+                eprintln!("Failed to pause torrents: {:?}", e);
+                process::exit(1);
+            }
         }
         _ => { },
     }
