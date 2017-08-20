@@ -6,7 +6,8 @@ use super::criterion::{Criterion, Filter, match_n, match_f, match_s, match_b};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-#[serde(untagged)]
+#[serde(tag = "type")]
+#[serde(rename_all = "lowercase")]
 pub enum Resource {
     Server(Server),
     Torrent(Torrent),
