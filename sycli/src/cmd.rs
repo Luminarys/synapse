@@ -267,8 +267,8 @@ pub fn list<S: Stream>(
     };
     let mut serial = Serial(0);
     let results = search(&mut c, &mut serial, k, crit)?;
-    let mut table = Table::new();
     if output == "text" {
+        let mut table = Table::new();
         match k {
             ResourceKind::Torrent => {
                 table.add_row(row!["Name", "Done", "DL", "UL", "DL RT", "UL RT", "Peers"]);
@@ -289,58 +289,61 @@ pub fn list<S: Stream>(
                 table.add_row(row!["DL RT", "UL RT"]);
             }
         }
-    }
-    for res in results {
-        match k {
-            ResourceKind::Torrent => {
-                let t = res.as_torrent();
-                table.add_row(row![
-                    t.name,
-                    format!("{:.2}%", t.progress * 100.),
-                    fmt_bytes(t.transferred_down as f64),
-                    fmt_bytes(t.transferred_up as f64),
-                    fmt_bytes(t.rate_down as f64) + "/s",
-                    fmt_bytes(t.rate_up as f64) + "/s",
-                    t.peers
-                ]);
-            }
-            ResourceKind::Tracker => {
-                let t = res.as_tracker();
-                table.add_row(row![
-                    t.url,
-                    t.torrent_id,
-                    t.error.as_ref().map(|s| s.as_str()).unwrap_or("")
-                ]);
-            }
-            ResourceKind::Peer => {
-                let p = res.as_peer();
-                let rd = fmt_bytes(p.rate_down as f64) + "/s";
-                let ru = fmt_bytes(p.rate_up as f64) + "/s";
-                table.add_row(row![p.ip, p.torrent_id, rd, ru]);
-            }
-            ResourceKind::Piece => {
-                let p = res.as_piece();
-                table.add_row(row![p.torrent_id, p.downloaded, p.available]);
-            }
-            ResourceKind::File => {
-                let f = res.as_file();
-                table.add_row(row![
-                    f.path,
-                    f.torrent_id,
-                    format!("{:.2}%", f.progress as f64 * 100.),
-                    f.priority,
-                    format!("{:.2}%", f.availability as f64 * 100.)
-                ]);
-            }
-            ResourceKind::Server => {
-                let s = res.as_server();
-                let rd = fmt_bytes(s.rate_down as f64) + "/s";
-                let ru = fmt_bytes(s.rate_up as f64) + "/s";
-                table.add_row(row![rd, ru]);
+
+        #[cfg_attr(rustfmt, rustfmt_skip)]
+        for res in results {
+            match k {
+                ResourceKind::Torrent => {
+                    let t = res.as_torrent();
+                    table.add_row(row![
+                        t.name,
+                        format!("{:.2}%", t.progress * 100.),
+                        fmt_bytes(t.transferred_down as f64),
+                        fmt_bytes(t.transferred_up as f64),
+                        fmt_bytes(t.rate_down as f64) + "/s",
+                        fmt_bytes(t.rate_up as f64) + "/s",
+                        t.peers
+                    ]);
+                }
+                ResourceKind::Tracker => {
+                    let t = res.as_tracker();
+                    table.add_row(row![
+                        t.url,
+                        t.torrent_id,
+                        t.error.as_ref().map(|s| s.as_str()).unwrap_or("")
+                    ]);
+                }
+                ResourceKind::Peer => {
+                    let p = res.as_peer();
+                    let rd = fmt_bytes(p.rate_down as f64) + "/s";
+                    let ru = fmt_bytes(p.rate_up as f64) + "/s";
+                    table.add_row(row![p.ip, p.torrent_id, rd, ru]);
+                }
+                ResourceKind::Piece => {
+                    let p = res.as_piece();
+                    table.add_row(row![p.torrent_id, p.downloaded, p.available]);
+                }
+                ResourceKind::File => {
+                    let f = res.as_file();
+                    table.add_row(row![
+                        f.path,
+                        f.torrent_id,
+                        format!("{:.2}%", f.progress as f64 * 100.),
+                        f.priority,
+                        format!("{:.2}%", f.availability as f64 * 100.)
+                    ]);
+                }
+                ResourceKind::Server => {
+                    let s = res.as_server();
+                    let rd = fmt_bytes(s.rate_down as f64) + "/s";
+                    let ru = fmt_bytes(s.rate_up as f64) + "/s";
+                    table.add_row(row![rd, ru]);
+                }
             }
         }
+        table.printstd();
+    } else {
     }
-    table.printstd();
     Ok(())
 }
 
