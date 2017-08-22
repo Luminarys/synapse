@@ -2,9 +2,6 @@ use std::{fs, cmp};
 use std::path::Path;
 use std::io::{self, Read};
 
-use websocket::client::sync::Client as WClient;
-use websocket::stream::Stream;
-use websocket::message::OwnedMessage as WSMessage;
 use reqwest::{Client as HClient, header};
 use serde_json;
 use prettytable::Table;
@@ -13,69 +10,27 @@ use rpc::message::{CMessage, SMessage};
 use rpc::criterion::{Criterion, Value, Operation};
 use rpc::resource::{Resource, ResourceKind, SResourceUpdate, CResourceUpdate, Status};
 
-error_chain! {
-    errors {
-        FileIO {
-            description("Failed to perform file IO")
-                display("Failed to perform file IO")
-        }
-        Serialization {
-            description("Failed to serialize structure")
-                display("Failed to serialize structure")
-        }
-        Deserialization {
-            description("Failed to deserialize structure")
-                display("Failed to deserialize structure")
-        }
-        Websocket {
-            description("Failed to handle websocket client")
-                display("Failed to handle websocket client")
-        }
-        HTTP {
-            description("HTTP transfer failed")
-                display("HTTP transfer failed")
-        }
-    }
-}
+use client::Client;
+use error::{Result, ResultExt, ErrorKind};
 
-struct Serial(u64);
-impl Serial {
-    fn next(&mut self) -> u64 {
-        self.0 += 1;
-        self.0 - 1
-    }
-}
-
-pub fn add<S: Stream>(
-    mut c: WClient<S>,
-    url: &str,
-    files: Vec<&str>,
-    dir: Option<&str>,
-) -> Result<()> {
-    let mut serial = Serial(0);
+pub fn add(mut c: Client, url: &str, files: Vec<&str>, dir: Option<&str>) -> Result<()> {
     for file in files {
-        add_file(&mut c, &mut serial, url, file, dir)?;
+        add_file(&mut c, url, file, dir)?;
     }
     Ok(())
 }
 
-fn add_file<S: Stream>(
-    c: &mut WClient<S>,
-    serial: &mut Serial,
-    url: &str,
-    file: &str,
-    dir: Option<&str>,
-) -> Result<()> {
+fn add_file(c: &mut Client, url: &str, file: &str, dir: Option<&str>) -> Result<()> {
     let mut torrent = Vec::new();
     let mut f = fs::File::open(file).chain_err(|| ErrorKind::FileIO)?;
     f.read_to_end(&mut torrent).chain_err(|| ErrorKind::FileIO)?;
 
     let msg = CMessage::UploadTorrent {
-        serial: serial.next(),
+        serial: c.next_serial(),
         size: torrent.len() as u64,
         path: dir.as_ref().map(|d| format!("{}", d)),
     };
-    let token = if let SMessage::TransferOffer { token, .. } = send_req(c, msg)? {
+    let token = if let SMessage::TransferOffer { token, .. } = c.rr(msg)? {
         token
     } else {
         bail!("Failed to receieve transfer offer from synapse!");
@@ -89,15 +44,7 @@ fn add_file<S: Stream>(
         .send()
         .chain_err(|| ErrorKind::HTTP)?;
 
-    let smsg = match c.recv_message().chain_err(|| ErrorKind::Websocket)? {
-        WSMessage::Text(s) => {
-            serde_json::from_str(&s).chain_err(
-                || ErrorKind::Deserialization,
-            )?
-        }
-        _ => unimplemented!(),
-    };
-    if let SMessage::OResourcesExtant { .. } = smsg {
+    if let SMessage::OResourcesExtant { .. } = c.recv()? {
     } else {
         bail!("Failed to receieve upload acknowledgement from synapse!");
     };
@@ -105,27 +52,21 @@ fn add_file<S: Stream>(
     Ok(())
 }
 
-pub fn del<S: Stream>(mut c: WClient<S>, torrents: Vec<&str>) -> Result<()> {
-    let mut serial = Serial(0);
+pub fn del(mut c: Client, torrents: Vec<&str>) -> Result<()> {
     for torrent in torrents {
-        del_torrent(&mut c, &mut serial, torrent)?;
+        del_torrent(&mut c, torrent)?;
     }
     Ok(())
 }
 
-fn del_torrent<S: Stream>(c: &mut WClient<S>, serial: &mut Serial, torrent: &str) -> Result<()> {
-    let resources = search_torrent_name(c, serial, torrent)?;
+fn del_torrent(c: &mut Client, torrent: &str) -> Result<()> {
+    let resources = search_torrent_name(c, torrent)?;
     if resources.len() == 1 {
         let msg = CMessage::RemoveResource {
-            serial: serial.next(),
+            serial: c.next_serial(),
             id: resources[0].id().to_owned(),
         };
-        let msg_data = serde_json::to_string(&msg).chain_err(
-            || ErrorKind::Serialization,
-        )?;
-        c.send_message(&WSMessage::Text(msg_data)).chain_err(|| {
-            ErrorKind::Websocket
-        })?;
+        c.send(msg)?;
     } else if resources.is_empty() {
         eprintln!("Could not find any matching torrents for {}", torrent);
     } else {
@@ -142,12 +83,11 @@ fn del_torrent<S: Stream>(c: &mut WClient<S>, serial: &mut Serial, torrent: &str
     Ok(())
 }
 
-pub fn dl<S: Stream>(mut c: WClient<S>, url: &str, name: &str) -> Result<()> {
-    let mut serial = Serial(0);
-    let resources = search_torrent_name(&mut c, &mut serial, name)?;
+pub fn dl(mut c: Client, url: &str, name: &str) -> Result<()> {
+    let resources = search_torrent_name(&mut c, name)?;
     let files = if resources.len() == 1 {
         let msg = CMessage::FilterSubscribe {
-            serial: serial.next(),
+            serial: c.next_serial(),
             kind: ResourceKind::File,
             criteria: vec![
                 Criterion {
@@ -157,8 +97,8 @@ pub fn dl<S: Stream>(mut c: WClient<S>, url: &str, name: &str) -> Result<()> {
                 },
             ],
         };
-        if let SMessage::OResourcesExtant { ids, .. } = send_req(&mut c, msg)? {
-            get_resources(&mut c, &mut serial, ids)?
+        if let SMessage::OResourcesExtant { ids, .. } = c.rr(msg)? {
+            get_resources(&mut c, ids)?
         } else {
             bail!("Could not get files for torrent!");
         }
@@ -180,10 +120,10 @@ pub fn dl<S: Stream>(mut c: WClient<S>, url: &str, name: &str) -> Result<()> {
 
     for file in files {
         let msg = CMessage::DownloadFile {
-            serial: serial.next(),
+            serial: c.next_serial(),
             id: file.id().to_owned(),
         };
-        if let SMessage::TransferOffer { token, .. } = send_req(&mut c, msg)? {
+        if let SMessage::TransferOffer { token, .. } = c.rr(msg)? {
             let client = HClient::new().chain_err(|| ErrorKind::HTTP)?;
             let mut resp = client
                 .get(url)
@@ -206,12 +146,7 @@ pub fn dl<S: Stream>(mut c: WClient<S>, url: &str, name: &str) -> Result<()> {
     Ok(())
 }
 
-pub fn list<S: Stream>(
-    mut c: WClient<S>,
-    kind: &str,
-    crit: Vec<Criterion>,
-    output: &str,
-) -> Result<()> {
+pub fn list(mut c: Client, kind: &str, crit: Vec<Criterion>, output: &str) -> Result<()> {
     let k = match kind {
         "torrent" => ResourceKind::Torrent,
         "tracker" => ResourceKind::Tracker,
@@ -221,8 +156,7 @@ pub fn list<S: Stream>(
         "server" => ResourceKind::Server,
         _ => bail!("Unexpected resource kind {}", kind),
     };
-    let mut serial = Serial(0);
-    let results = search(&mut c, &mut serial, k, crit)?;
+    let results = search(&mut c, k, crit)?;
     if output == "text" {
         let mut table = Table::new();
         match k {
@@ -309,30 +243,24 @@ pub fn list<S: Stream>(
     Ok(())
 }
 
-pub fn pause<S: Stream>(mut c: WClient<S>, torrents: Vec<&str>) -> Result<()> {
-    let mut serial = Serial(0);
+pub fn pause(mut c: Client, torrents: Vec<&str>) -> Result<()> {
     for torrent in torrents {
-        pause_torrent(&mut c, &mut serial, torrent)?;
+        pause_torrent(&mut c, torrent)?;
     }
     Ok(())
 }
 
-fn pause_torrent<S: Stream>(c: &mut WClient<S>, serial: &mut Serial, torrent: &str) -> Result<()> {
-    let resources = search_torrent_name(c, serial, torrent)?;
+fn pause_torrent(c: &mut Client, torrent: &str) -> Result<()> {
+    let resources = search_torrent_name(c, torrent)?;
     if resources.len() == 1 {
         let mut resource = CResourceUpdate::default();
         resource.id = resources[0].id().to_owned();
         resource.status = Some(Status::Paused);
         let msg = CMessage::UpdateResource {
-            serial: serial.next(),
+            serial: c.next_serial(),
             resource,
         };
-        let msg_data = serde_json::to_string(&msg).chain_err(
-            || ErrorKind::Serialization,
-        )?;
-        c.send_message(&WSMessage::Text(msg_data)).chain_err(|| {
-            ErrorKind::Websocket
-        })?;
+        c.send(msg)?;
     } else if resources.is_empty() {
         eprintln!("Could not find any matching torrents for {}", torrent);
     } else {
@@ -349,14 +277,9 @@ fn pause_torrent<S: Stream>(c: &mut WClient<S>, serial: &mut Serial, torrent: &s
     Ok(())
 }
 
-fn search_torrent_name<S: Stream>(
-    c: &mut WClient<S>,
-    serial: &mut Serial,
-    name: &str,
-) -> Result<Vec<Resource>> {
+fn search_torrent_name(c: &mut Client, name: &str) -> Result<Vec<Resource>> {
     search(
         c,
-        serial,
         ResourceKind::Torrent,
         vec![
             Criterion {
@@ -368,60 +291,26 @@ fn search_torrent_name<S: Stream>(
     )
 }
 
-fn search<S: Stream>(
-    c: &mut WClient<S>,
-    serial: &mut Serial,
-    kind: ResourceKind,
-    criteria: Vec<Criterion>,
-) -> Result<Vec<Resource>> {
-    let s = serial.next();
+fn search(c: &mut Client, kind: ResourceKind, criteria: Vec<Criterion>) -> Result<Vec<Resource>> {
+    let s = c.next_serial();
     let msg = CMessage::FilterSubscribe {
         serial: s,
         kind,
         criteria,
     };
-    let msg_data = serde_json::to_string(&msg).chain_err(
-        || ErrorKind::Serialization,
-    )?;
-    c.send_message(&WSMessage::Text(msg_data)).chain_err(|| {
-        ErrorKind::Websocket
-    })?;
-    let smsg = match c.recv_message().chain_err(|| ErrorKind::Websocket)? {
-        WSMessage::Text(s) => {
-            serde_json::from_str(&s).chain_err(
-                || ErrorKind::Deserialization,
-            )?
-        }
-        _ => unimplemented!(),
-    };
-    if let SMessage::OResourcesExtant { ids, .. } = smsg {
-        get_resources(c, serial, ids)
+    if let SMessage::OResourcesExtant { ids, .. } = c.rr(msg)? {
+        get_resources(c, ids)
     } else {
         bail!("Failed to receive extant resource list!");
     }
 }
 
-fn get_resources<S: Stream>(
-    c: &mut WClient<S>,
-    serial: &mut Serial,
-    ids: Vec<String>,
-) -> Result<Vec<Resource>> {
-    let msg_data = serde_json::to_string(&CMessage::Subscribe {
-        serial: serial.next(),
+fn get_resources(c: &mut Client, ids: Vec<String>) -> Result<Vec<Resource>> {
+    let msg = CMessage::Subscribe {
+        serial: c.next_serial(),
         ids,
-    }).chain_err(|| ErrorKind::Serialization)?;
-    c.send_message(&WSMessage::Text(msg_data)).chain_err(|| {
-        ErrorKind::Websocket
-    })?;
-    let smsg = match c.recv_message().chain_err(|| ErrorKind::Websocket)? {
-        WSMessage::Text(s) => {
-            serde_json::from_str(&s).chain_err(
-                || ErrorKind::Deserialization,
-            )?
-        }
-        _ => unimplemented!(),
     };
-    let resources = if let SMessage::UpdateResources { resources } = smsg {
+    let resources = if let SMessage::UpdateResources { resources } = c.rr(msg)? {
         resources
     } else {
         bail!("Failed to received torrent resource list!");
@@ -436,28 +325,6 @@ fn get_resources<S: Stream>(
         }
     }
     Ok(results)
-}
-
-fn send_req<S: Stream>(
-    c: &mut WClient<S>,
-    msg: CMessage
-    ) -> Result<SMessage<'static>> {
-    let msg_data = serde_json::to_string(&msg).chain_err(
-        || ErrorKind::Serialization,
-    )?;
-    c.send_message(&WSMessage::Text(msg_data)).chain_err(|| {
-        ErrorKind::Websocket
-    })?;
-    loop {
-        match c.recv_message().chain_err(|| ErrorKind::Websocket)? {
-            WSMessage::Text(s) => {
-                return serde_json::from_str(&s).chain_err(
-                    || ErrorKind::Deserialization,
-                );
-            }
-            _ => { },
-        };
-    }
 }
 
 fn fmt_bytes(num: f64) -> String {

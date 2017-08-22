@@ -12,13 +12,16 @@ extern crate reqwest;
 extern crate url;
 extern crate websocket;
 
+mod cmd;
+mod client;
+mod error;
+
 use std::process;
 
 use url::Url;
 use clap::{App, AppSettings, Arg, SubCommand};
-use websocket::ClientBuilder;
 
-mod cmd;
+use self::client::Client;
 
 fn main() {
     let matches = App::new("sycli")
@@ -138,13 +141,7 @@ fn main() {
     if let Some(password) = matches.value_of("password") {
         url.query_pairs_mut().append_pair("password", password);
     }
-    let client = match ClientBuilder::new(url.as_str()).unwrap().connect(None) {
-        Ok(c) => c,
-        Err(_) => {
-            eprintln!("Couldn't connect to synapse!");
-            process::exit(1);
-        }
-    };
+    let client = Client::new(url.as_str());
     if url.scheme() == "wss" {
         url.set_scheme("https").unwrap();
     } else {
