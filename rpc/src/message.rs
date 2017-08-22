@@ -3,7 +3,7 @@ use chrono::{DateTime, Utc};
 use super::resource::{ResourceKind, CResourceUpdate, SResourceUpdate};
 use super::criterion::Criterion;
 
-/// Client -> server messages, deserialize only
+/// Client -> server messages
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 #[serde(tag = "type")]
@@ -46,7 +46,7 @@ pub enum CMessage {
     DownloadFile { serial: u64, id: String },
 }
 
-/// Server -> client message, serialize only
+/// Server -> client message
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 #[serde(tag = "type")]

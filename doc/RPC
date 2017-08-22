@@ -221,8 +221,8 @@ UPDATE_RESOURCES        server->client
 
 Indicates that the client should update its internal representation of some
 resources. Note that the only constraint on the resource type is that
-an id field and at least one other data field be present. This is done to
-increase efficiency of server->client message transmission.
+an id field, type field, and at least one other data field be present.
+This is done to increase efficiency of server->client message transmission.
 
     {
         "type": "UPDATE_RESOURCES",
