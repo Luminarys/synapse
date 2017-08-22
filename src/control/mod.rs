@@ -20,7 +20,7 @@ const TRK_JOB_SECS: u64 = 60;
 /// Unchoke rotation job interval
 const UNCHK_JOB_SECS: u64 = 15;
 /// Session serialization job interval
-const SES_JOB_SECS: u64 = 10;
+const SES_JOB_SECS: u64 = 60;
 /// Interval to update RPC of transfer stats
 const TX_JOB_MS: u64 = 500;
 
