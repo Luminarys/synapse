@@ -23,7 +23,7 @@ impl Writer {
                 if e.kind() == io::ErrorKind::WouldBlock {
                     Ok(None)
                 } else {
-                    return Err(ErrorKind::IO.into());
+                    Err(ErrorKind::IO.into())
                 }
             }
         }

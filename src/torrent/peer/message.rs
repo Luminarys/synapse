@@ -24,13 +24,13 @@ pub enum Message {
         index: u32,
         begin: u32,
         length: u32,
-        data: Box<[u8; 16384]>,
+        data: Box<[u8; 16_384]>,
     },
     SharedPiece {
         index: u32,
         begin: u32,
         length: u32,
-        data: Arc<Box<[u8; 16384]>>,
+        data: Arc<Box<[u8; 16_384]>>,
     },
     Cancel { index: u32, begin: u32, length: u32 },
     Port(u16),
@@ -112,7 +112,7 @@ impl Clone for Message {
                 length,
                 ref data,
             } => {
-                let mut nd = Box::new([0u8; 16384]);
+                let mut nd = Box::new([0u8; 16_384]);
                 for i in 0..length {
                     nd[i as usize] = data[i as usize];
                 }
@@ -222,7 +222,7 @@ impl Message {
         }
     }
 
-    pub fn s_piece(index: u32, begin: u32, length: u32, data: Arc<Box<[u8; 16384]>>) -> Message {
+    pub fn s_piece(index: u32, begin: u32, length: u32, data: Arc<Box<[u8; 16_384]>>) -> Message {
         Message::SharedPiece {
             index,
             begin,

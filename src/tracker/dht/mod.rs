@@ -50,7 +50,7 @@ impl Manager {
             let mut t = rt::RoutingTable::new();
             if let Some(addr) = CONFIG.dht.bootstrap_node {
                 info!(l, "Using bootstrap node!");
-                let (msg, _) = t.add_addr(addr.clone());
+                let (msg, _) = t.add_addr(addr);
                 sock.send_to(&msg.encode(), addr)?;
             }
             t

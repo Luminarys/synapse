@@ -23,18 +23,15 @@ impl Socket {
                     })?;
         let conn = sock.to_tcp_stream()?;
         conn.set_nonblocking(true)?;
-        match conn.connect(addr) {
-            Err(e) => {
-                if Some(EINPROGRESS) != e.raw_os_error() {
-                    return Err(e);
-                }
+        if let Err(e) = conn.connect(addr) {
+            if Some(EINPROGRESS) != e.raw_os_error() {
+                return Err(e);
             }
-            _ => {}
         }
         Ok(Socket {
             conn,
             throttle: None,
-            addr: addr.clone(),
+            addr: *addr,
         })
     }
 
@@ -141,13 +138,10 @@ impl TSocket {
     }
 
     pub fn connect(&self, addr: SocketAddr) -> io::Result<()> {
-        match self.conn.connect(addr) {
-            Err(e) => {
-                if Some(EINPROGRESS) != e.raw_os_error() {
-                    return Err(e);
-                }
+        if let Err(e) = self.conn.connect(addr) {
+            if Some(EINPROGRESS) != e.raw_os_error() {
+                return Err(e);
             }
-            _ => {}
         }
         Ok(())
     }
@@ -155,7 +149,7 @@ impl TSocket {
 
 impl Drop for TSocket {
     fn drop(&mut self) {
-        if let Err(_) = self.reg.deregister(&self.conn) {
+        if self.reg.deregister(&self.conn).is_err() {
             // TODO: idk? does it matter?
         }
     }

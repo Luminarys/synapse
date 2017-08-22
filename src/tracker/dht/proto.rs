@@ -200,53 +200,52 @@ impl Request {
         let b: BEncode = bencode::decode_buf(buf).chain_err(|| {
             ErrorKind::InvalidRequest("Invalid BEncoded data")
         })?;
-        let mut d = b.to_dict().ok_or::<Error>(
+        let mut d = b.into_dict().ok_or_else(||
             ErrorKind::InvalidRequest(
                 "Invalid BEncoded data(must be dict)",
-            ).into(),
+            )
         )?;
-        let transaction = d.remove("t").and_then(|b| b.to_bytes()).ok_or::<Error>(
-            ErrorKind::InvalidRequest("Invalid BEncoded data(dict must have t field)").into(),
+        let transaction = d.remove("t").and_then(|b| b.into_bytes()).ok_or_else(||
+            ErrorKind::InvalidRequest("Invalid BEncoded data(dict must have t field)"),
         )?;
-        let version = d.remove("v").and_then(|b| b.to_string());
-        let y = d.remove("y").and_then(|b| b.to_string()).ok_or::<Error>(
-            ErrorKind::InvalidRequest("Invalid BEncoded data(dict must have y field)").into(),
+        let version = d.remove("v").and_then(|b| b.into_string());
+        let y = d.remove("y").and_then(|b| b.into_string()).ok_or_else(||
+            Error::from(ErrorKind::InvalidRequest("Invalid BEncoded data(dict must have y field)")),
         )?;
         if y != "q" {
             return Err(
-                ErrorKind::InvalidRequest("Invalid BEncoded data(request must have y: q field)")
-                    .into(),
+                Error::from(ErrorKind::InvalidRequest("Invalid BEncoded data(request must have y: q field)")),
             );
         }
-        let q = d.remove("q").and_then(|b| b.to_string()).ok_or::<Error>(
-            ErrorKind::InvalidRequest("Invalid BEncoded data(dict must have q field)").into(),
+        let q = d.remove("q").and_then(|b| b.into_string()).ok_or_else(||
+            Error::from(ErrorKind::InvalidRequest("Invalid BEncoded data(dict must have q field)")),
         )?;
-        let mut a = d.remove("a").and_then(|b| b.to_dict()).ok_or::<Error>(
-            ErrorKind::InvalidRequest("Invalid BEncoded data(dict must have a field)").into(),
+        let mut a = d.remove("a").and_then(|b| b.into_dict()).ok_or_else(||
+            Error::from(ErrorKind::InvalidRequest("Invalid BEncoded data(dict must have a field)")),
         )?;
         let id = a.remove("id")
-            .and_then(|b| b.to_bytes())
+            .and_then(|b| b.into_bytes())
             .map(|b| BigUint::from_bytes_be(&b[..]))
-            .ok_or::<Error>(
-                ErrorKind::InvalidRequest("Invalid BEncoded data(ping must have id field)").into(),
+            .ok_or_else(||
+                Error::from(ErrorKind::InvalidRequest("Invalid BEncoded data(ping must have id field)"))
             )?;
         let kind = match &q[..] {
             "ping" => RequestKind::Ping(id),
             "find_node" => {
                 let target = a.remove("target")
-                    .and_then(|b| b.to_bytes())
+                    .and_then(|b| b.into_bytes())
                     .map(|b| BigUint::from_bytes_be(&b[..]))
-                    .ok_or::<Error>(
-                        ErrorKind::InvalidRequest(
+                    .ok_or_else(||
+                        Error::from(ErrorKind::InvalidRequest(
                             "Invalid BEncoded data(find_node must have target field)",
-                        ).into(),
+                        )),
                     )?;
                 RequestKind::FindNode { id, target }
             }
             "get_peers" => {
                 let mut hash = [0u8; 20];
                 a.remove("info_hash")
-                    .and_then(|b| b.to_bytes())
+                    .and_then(|b| b.into_bytes())
                     .and_then(|b| {
                         if b.len() != 20 {
                             return None;
@@ -254,17 +253,17 @@ impl Request {
                         hash.copy_from_slice(&b[..]);
                         Some(())
                     })
-                    .ok_or::<Error>(
-                        ErrorKind::InvalidRequest(
+                    .ok_or_else(||
+                        Error::from(ErrorKind::InvalidRequest(
                             "Invalid BEncoded data(get_peers must have hash field)",
-                        ).into(),
+                        )),
                     )?;
                 RequestKind::GetPeers { id, hash }
             }
             "announce_peer" => {
                 let mut hash = [0u8; 20];
                 a.remove("info_hash")
-                    .and_then(|b| b.to_bytes())
+                    .and_then(|b| b.into_bytes())
                     .and_then(|b| {
                         if b.len() != 20 {
                             return None;
@@ -272,33 +271,33 @@ impl Request {
                         hash.copy_from_slice(&b[..]);
                         Some(())
                     })
-                    .ok_or::<Error>(
-                        ErrorKind::InvalidRequest(
+                    .ok_or_else(||
+                        Error::from(ErrorKind::InvalidRequest(
                             "Invalid BEncoded data(announce_peer must have hash field)",
-                        ).into(),
+                        )),
                     )?;
                 let implied_port = a.remove("implied_port")
-                    .and_then(|b| b.to_int())
-                    .map(|b| if b > 0 { true } else { false })
+                    .and_then(|b| b.into_int())
+                    .map(|b| b > 0)
                     .unwrap_or(false);
                 let port = a.remove("port")
-                    .and_then(|b| b.to_int())
-                    .and_then(|b| if b > 65535 || b < 0 {
+                    .and_then(|b| b.into_int())
+                    .and_then(|b| if b > 65_535 || b < 0 {
                         None
                     } else {
                         Some(b as u16)
                     })
-                    .ok_or::<Error>(
-                        ErrorKind::InvalidRequest(
+                    .ok_or_else(||
+                        Error::from(ErrorKind::InvalidRequest(
                             "Invalid BEncoded data(announce_peer must have port field)",
-                        ).into(),
+                        )),
                     )?;
                 let token = a.remove("token")
-                    .and_then(|b| b.to_bytes())
-                    .ok_or::<Error>(
-                        ErrorKind::InvalidRequest(
+                    .and_then(|b| b.into_bytes())
+                    .ok_or_else(||
+                        Error::from(ErrorKind::InvalidRequest(
                             "Invalid BEncoded data(announce_peer must have port field)",
-                        ).into(),
+                        )),
                     )?;
                 RequestKind::AnnouncePeer {
                     id,
@@ -442,23 +441,23 @@ impl Response {
         let b: BEncode = bencode::decode_buf(buf).chain_err(|| {
             ErrorKind::InvalidResponse("Invalid BEncoded data")
         })?;
-        let mut d = b.to_dict().ok_or::<Error>(
-            ErrorKind::InvalidResponse(
+        let mut d = b.into_dict().ok_or_else(||
+            Error::from(ErrorKind::InvalidResponse(
                 "Invalid BEncoded data(must be dict)",
-            ).into(),
+            )),
         )?;
-        let transaction = d.remove("t").and_then(|b| b.to_bytes()).ok_or::<Error>(
-            ErrorKind::InvalidResponse("Invalid BEncoded data(dict must have t field)").into(),
+        let transaction = d.remove("t").and_then(|b| b.into_bytes()).ok_or_else(||
+            Error::from(ErrorKind::InvalidResponse("Invalid BEncoded data(dict must have t field)")),
         )?;
-        let y = d.remove("y").and_then(|b| b.to_string()).ok_or::<Error>(
-            ErrorKind::InvalidResponse("Invalid BEncoded data(dict must have y field)").into(),
+        let y = d.remove("y").and_then(|b| b.into_string()).ok_or_else(||
+            Error::from(ErrorKind::InvalidResponse("Invalid BEncoded data(dict must have y field)")),
         )?;
         match &y[..] {
             "e" => {
-                let mut e = d.remove("e").and_then(|b| b.to_list()).ok_or::<Error>(
-                    ErrorKind::InvalidResponse(
+                let mut e = d.remove("e").and_then(|b| b.into_list()).ok_or_else(||
+                    Error::from(ErrorKind::InvalidResponse(
                         "Invalid BEncoded data(error resp must have e field)",
-                    ).into(),
+                    )),
                 )?;
                 if e.len() != 2 {
                     return Err(
@@ -467,15 +466,15 @@ impl Response {
                         ).into(),
                     );
                 }
-                let code = e.remove(0).to_int().ok_or::<Error>(
-                    ErrorKind::InvalidResponse(
+                let code = e.remove(0).into_int().ok_or_else(||
+                    Error::from(ErrorKind::InvalidResponse(
                         "Invalid BEncoded data(e field must start with integer code)",
-                    ).into(),
+                    )),
                 )?;
-                let msg = e.remove(0).to_string().ok_or::<Error>(
-                    ErrorKind::InvalidResponse(
+                let msg = e.remove(0).into_string().ok_or_else(||
+                    Error::from(ErrorKind::InvalidResponse(
                         "Invalid BEncoded data(e field must end with string data)",
-                    ).into(),
+                    )),
                 )?;
                 let err = match code {
                     201 => ErrorKind::Generic(msg),
@@ -496,22 +495,22 @@ impl Response {
                 })
             }
             "r" => {
-                let mut r = d.remove("r").and_then(|b| b.to_dict()).ok_or::<Error>(
-                    ErrorKind::InvalidResponse("Invalid BEncoded data(resp must have r field)")
-                        .into(),
+                let mut r = d.remove("r").and_then(|b| b.into_dict()).ok_or_else(||
+                    Error::from(ErrorKind::InvalidResponse("Invalid BEncoded data(resp must have r field)")
+                        ),
                 )?;
 
                 let id = r.remove("id")
-                    .and_then(|b| b.to_bytes())
+                    .and_then(|b| b.into_bytes())
                     .map(|b| BigUint::from_bytes_be(&b))
-                    .ok_or::<Error>(
-                        ErrorKind::InvalidResponse("Invalid BEncoded data(response must have id)")
-                            .into(),
+                    .ok_or_else(||
+                        Error::from(ErrorKind::InvalidResponse("Invalid BEncoded data(response must have id)")
+                            ),
                     )?;
 
                 let kind =
-                    if let Some(token) = r.remove("token").and_then(|b| b.to_bytes()) {
-                        if let Some(data) = r.remove("values").and_then(|b| b.to_bytes()) {
+                    if let Some(token) = r.remove("token").and_then(|b| b.into_bytes()) {
+                        if let Some(data) = r.remove("values").and_then(|b| b.into_bytes()) {
                             let mut peers = Vec::new();
                             for d in data.chunks(6) {
                                 peers.push(bytes_to_addr(d));
@@ -521,7 +520,7 @@ impl Response {
                                 token,
                                 resp: PeerResp::Values(peers),
                             }
-                        } else if let Some(ns) = r.remove("nodes").and_then(|b| b.to_bytes()) {
+                        } else if let Some(ns) = r.remove("nodes").and_then(|b| b.into_bytes()) {
                             let mut nodes = Vec::new();
                             for n in ns.chunks(26) {
                                 nodes.push(Node::new(n));
@@ -534,7 +533,7 @@ impl Response {
                         } else {
                             return Err(ErrorKind::InvalidResponse("Invalid BEncoded data(get_peers resp has no values/nodes fields)").into());
                         }
-                    } else if let Some(ns) = r.remove("nodes").and_then(|b| b.to_bytes()) {
+                    } else if let Some(ns) = r.remove("nodes").and_then(|b| b.into_bytes()) {
                         let mut nodes = Vec::new();
                         for n in ns.chunks(26) {
                             nodes.push(Node::new(n));

@@ -59,7 +59,6 @@ impl<T: cio::CIO> Control<T> {
         let job_timer = cio.set_timer(JOB_INT_MS).map_err(
             |_| io_err_val("timer failure!"),
         )?;
-        // 5 MiB max bucket
         Ok(Control {
             throttler,
             cio,
@@ -89,7 +88,7 @@ impl<T: cio::CIO> Control<T> {
                     return;
                 }
             }
-            if SHUTDOWN.load(atomic::Ordering::SeqCst) == true {
+            if SHUTDOWN.load(atomic::Ordering::SeqCst) {
                 break;
             }
         }
@@ -97,7 +96,7 @@ impl<T: cio::CIO> Control<T> {
 
     fn serialize(&mut self) {
         debug!(self.l, "Serializing torrents!");
-        for (_, torrent) in self.torrents.iter_mut() {
+        for torrent in self.torrents.values_mut() {
             torrent.serialize();
         }
     }
@@ -204,7 +203,7 @@ impl<T: cio::CIO> Control<T> {
         }
         trace!(self.l, "Adding peers!");
         if let Ok(r) = resp {
-            for ip in r.peers.iter() {
+            for ip in &r.peers {
                 trace!(self.l, "Adding peer({:?})!", ip);
                 if let Ok(peer) = peer::PeerConn::new_outgoing(ip) {
                     trace!(self.l, "Added peer({:?})!", ip);
@@ -229,10 +228,12 @@ impl<T: cio::CIO> Control<T> {
         }
     }
 
-    fn handle_lst_ev(&mut self, msg: listener::Message) {
+    fn handle_lst_ev(&mut self, msg: Box<listener::Message>) {
         debug!(self.l, "Adding peer for torrent with hash {:?}!", msg.hash);
         if let Some(tid) = self.hash_idx.get(&msg.hash).cloned() {
-            self.add_inc_peer(tid, msg.peer, msg.id, msg.rsv);
+            let id = msg.id;
+            let rsv = msg.rsv;
+            self.add_inc_peer(tid, msg.peer, id, rsv);
         } else {
             warn!(
                 self.l,
@@ -243,8 +244,8 @@ impl<T: cio::CIO> Control<T> {
     }
 
     fn handle_peer_ev(&mut self, peer: cio::PID, ev: cio::Result<torrent::Message>) {
-        let ref mut p = self.peers;
-        let ref mut t = self.torrents;
+        let p = &mut self.peers;
+        let t = &mut self.torrents;
 
         p.get(&peer).cloned().and_then(|id| t.get_mut(&id)).map(
             |torrent| if torrent.peer_ev(peer, ev).is_err() {

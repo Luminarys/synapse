@@ -326,7 +326,7 @@ impl<T: cio::CIO> Peer<T> {
                         if let Message::Piece { index: i, begin: b, .. } = *m {
                             return !(i == index && b == begin);
                         }
-                        return true;
+                        true
                     });
                 });
             }
@@ -374,9 +374,9 @@ impl<T: cio::CIO> Peer<T> {
     }
 
     pub fn send_message(&mut self, msg: Message) {
-        match &msg {
-            &Message::SharedPiece { length, .. } |
-            &Message::Piece { length, .. } => {
+        match msg {
+            Message::SharedPiece { length, .. } |
+            Message::Piece { length, .. } => {
                 self.uploaded += 1;
                 self.uploaded_bytes += length as u64;
             }
@@ -443,20 +443,20 @@ mod tests {
         let p1 = Message::Piece {
             index: 0,
             begin: 0,
-            data: Box::new([0u8; 16384]),
-            length: 16384,
+            data: Box::new([0u8; 16_384]),
+            length: 16_384,
         };
         let p2 = Message::Piece {
             index: 1,
             begin: 1,
-            data: Box::new([0u8; 16384]),
-            length: 16384,
+            data: Box::new([0u8; 16_384]),
+            length: 16_384,
         };
         let p3 = Message::Piece {
             index: 2,
             begin: 2,
-            data: Box::new([0u8; 16384]),
-            length: 16384,
+            data: Box::new([0u8; 16_384]),
+            length: 16_384,
         };
         peer.send_message(Message::KeepAlive);
         peer.send_message(p1.clone());
@@ -466,7 +466,7 @@ mod tests {
         let mut c = Message::Cancel {
             index: 1,
             begin: 1,
-            length: 16384,
+            length: 16_384,
         };
         peer.handle_msg(&mut c).unwrap();
         let wq = tcio.get_peer(peer.id, |p| p.writer.write_queue.clone())

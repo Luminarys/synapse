@@ -12,9 +12,9 @@ use rand::random;
 
 // We're not going to bother with backoff, if the tracker/network aren't working now
 // the torrent can just resend a request later.
-const TIMEOUT_MS: u64 = 15000;
-const RETRANS_MS: u64 = 5000;
-const MAGIC_NUM: u64 = 0x41727101980;
+const TIMEOUT_MS: u64 = 15_000;
+const RETRANS_MS: u64 = 5_000;
+const MAGIC_NUM: u64 = 0x417_2710_1980;
 
 pub struct Handler {
     id: usize,
@@ -81,15 +81,15 @@ impl Handler {
     ) -> Result<()> {
         // TODO: Attempt to parse into an IP address first, then perform dns res
         debug!(self.l, "Received a new announce req for {:?}", url);
-        let host = url.host_str().ok_or::<Error>(
-            ErrorKind::InvalidRequest(
-                format!("Tracker announce url has no host!"),
-            ).into(),
+        let host = url.host_str().ok_or_else(||
+            Error::from(ErrorKind::InvalidRequest(
+                "Tracker announce url has no host!".to_owned(),
+            )),
         )?;
-        let port = url.port().ok_or::<Error>(
-            ErrorKind::InvalidRequest(
-                format!("Tracker announce url has no port!"),
-            ).into(),
+        let port = url.port().ok_or_else(||
+            Error::from(ErrorKind::InvalidRequest(
+                "Tracker announce url has no port!".to_owned(),
+            )),
         )?;
 
         let id = self.new_conn();
@@ -154,37 +154,25 @@ impl Handler {
 
     pub fn readable(&mut self) -> Vec<Response> {
         let mut resps = Vec::new();
-        loop {
-            match self.sock.recv_from(&mut self.buf[..]) {
-                Ok((v, _)) => {
-                    let action = (&self.buf[0..4]).read_u32::<BigEndian>().unwrap();
-                    match action {
-                        0 if v == 16 => {
-                            if let Some(r) = self.process_connect() {
-                                resps.push(r);
-                            }
-                        }
-                        1 if v >= 20 => {
-                            if let Some(r) = self.process_announce(v) {
-                                resps.push(r);
-                            }
-                        }
-                        3 if v >= 8 => {
-                            if let Some(r) = self.process_error(v) {
-                                resps.push(r);
-                            }
-                        }
-                        _ => debug!(self.l, "Received invalid response from tracker!"),
+        while let Ok((v, _)) = self.sock.recv_from(&mut self.buf[..]) {
+            let action = (&self.buf[0..4]).read_u32::<BigEndian>().unwrap();
+            match action {
+                0 if v == 16 => {
+                    if let Some(r) = self.process_connect() {
+                        resps.push(r);
                     }
                 }
-                Err(e) => {
-                    if e.kind() == io::ErrorKind::WouldBlock {
-                        break;
-                    } else {
-                        // TODO: Handle this, could be some odd sort of failure
-                        break;
+                1 if v >= 20 => {
+                    if let Some(r) = self.process_announce(v) {
+                        resps.push(r);
                     }
                 }
+                3 if v >= 8 => {
+                    if let Some(r) = self.process_error(v) {
+                        resps.push(r);
+                    }
+                }
+                _ => debug!(self.l, "Received invalid response from tracker!"),
             }
         }
         resps
@@ -194,7 +182,7 @@ impl Handler {
         let mut resps = Vec::new();
         let mut retrans = Vec::new();
         {
-            let ref l = self.l;
+            let l = &self.l;
 
             self.connections.retain(
                 |id, conn| if conn.last_updated.elapsed() >
@@ -289,7 +277,7 @@ impl Handler {
                 // IP
                 announce_req.write_u32::<BigEndian>(0).unwrap();
                 // Key - TODO: randomly generate this
-                announce_req.write_u32::<BigEndian>(0xF00BA).unwrap();
+                announce_req.write_u32::<BigEndian>(0xFFFF_00BA).unwrap();
                 // Num want
                 let nw = conn.announce.num_want.map(|nw| nw as i32).unwrap_or(-1);
                 announce_req.write_i32::<BigEndian>(nw).unwrap();

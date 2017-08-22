@@ -316,11 +316,9 @@ impl RPC {
                     return;
                 }
             }
-            if not.event.writable() {
-                if c.write().is_err() {
-                    self.remove_client(not.id, c);
-                    return;
-                }
+            if not.event.writable() && c.write().is_err() {
+                self.remove_client(not.id, c);
+                return;
             }
             self.clients.insert(not.id, c);
         }

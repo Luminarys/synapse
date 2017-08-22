@@ -9,11 +9,11 @@ pub(super) struct Reader {
 }
 
 enum ReadState {
-    ParsingHeaderR1,
-    ParsingHeaderN1,
-    ParsingHeaderR2,
-    ParsingHeaderN2,
-    ParsingResponse,
+    HeaderR1,
+    HeaderN1,
+    HeaderR2,
+    HeaderN2,
+    Response,
 }
 
 enum ReadRes {
@@ -24,30 +24,32 @@ enum ReadRes {
 
 impl ReadState {
     fn handle(&mut self, byte: u8) -> bool {
-        let s = mem::replace(self, ReadState::ParsingHeaderR1);
+        let s = mem::replace(self, ReadState::HeaderR1);
         mem::replace(self, s.next(byte));
         self.ready()
     }
 
     fn next(self, byte: u8) -> ReadState {
+        // We organize like this to make the state machine more clear
+        #[cfg_attr(feature = "cargo-clippy", allow(match_same_arms))]
         match (self, byte) {
-            (ReadState::ParsingHeaderR1, b'\r') => ReadState::ParsingHeaderN1,
+            (ReadState::HeaderR1, b'\r') => ReadState::HeaderN1,
 
-            (ReadState::ParsingHeaderN1, b'\r') => ReadState::ParsingHeaderN1,
-            (ReadState::ParsingHeaderN1, b'\n') => ReadState::ParsingHeaderR2,
+            (ReadState::HeaderN1, b'\r') => ReadState::HeaderN1,
+            (ReadState::HeaderN1, b'\n') => ReadState::HeaderR2,
 
-            (ReadState::ParsingHeaderR2, b'\r') => ReadState::ParsingHeaderN2,
+            (ReadState::HeaderR2, b'\r') => ReadState::HeaderN2,
 
-            (ReadState::ParsingHeaderN2, b'\r') => ReadState::ParsingHeaderN1,
-            (ReadState::ParsingHeaderN2, b'\n') => ReadState::ParsingResponse,
+            (ReadState::HeaderN2, b'\r') => ReadState::HeaderN1,
+            (ReadState::HeaderN2, b'\n') => ReadState::Response,
 
-            _ => ReadState::ParsingHeaderR1,
+            _ => ReadState::HeaderR1,
         }
     }
 
     fn ready(&self) -> bool {
         match *self {
-            ReadState::ParsingResponse => true,
+            ReadState::Response => true,
             _ => false,
         }
     }
@@ -58,7 +60,7 @@ impl Reader {
         Reader {
             data: vec![0; 75],
             idx: 0,
-            state: ReadState::ParsingHeaderN1,
+            state: ReadState::HeaderN1,
         }
     }
 
@@ -92,7 +94,7 @@ impl Reader {
                 if e.kind() == io::ErrorKind::WouldBlock {
                     Ok(ReadRes::Empty)
                 } else {
-                    return Err(ErrorKind::IO.into());
+                    Err(ErrorKind::IO.into())
                 }
             }
         }

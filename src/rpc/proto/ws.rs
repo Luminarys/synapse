@@ -114,7 +114,7 @@ impl Message {
         let hb2;
         if self.len < 126 {
             hb2 = self.len as u8;
-        } else if self.len <= 65535 {
+        } else if self.len <= 65_535 {
             hb2 = 126;
         } else {
             hb2 = 127;

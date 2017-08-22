@@ -61,7 +61,7 @@ impl Picker {
     /// Creates a new rarest picker, which will select over
     /// the given pieces
     pub fn new_rarest(info: &Info, pieces: &Bitfield) -> Picker {
-        let scale = info.piece_len / 16384;
+        let scale = info.piece_len / 16_384;
         let picker = rarest::Picker::new(pieces);
         Picker {
             picker: PickerKind::Rarest(picker),
@@ -75,7 +75,7 @@ impl Picker {
     /// Creates a new sequential picker, which will select over
     /// the given pieces
     pub fn new_sequential(info: &Info, pieces: &Bitfield) -> Picker {
-        let scale = info.piece_len / 16384;
+        let scale = info.piece_len / 16_384;
         let picker = sequential::Picker::new(pieces);
         Picker {
             picker: PickerKind::Sequential(picker),
@@ -118,11 +118,9 @@ impl Picker {
 
     /// Picks a block from a given piece for a peer
     fn pick_piece(&mut self, piece: u32, id: usize) -> Option<Block> {
-        if !self.downloading.contains_key(&piece) {
-            self.downloading.insert(piece, vec![]);
-        }
+        self.downloading.entry(piece).or_insert_with(|| vec![]);
         let dl = self.downloading.get_mut(&piece).unwrap();
-        let offset = dl.len() as u32* 16384;
+        let offset = dl.len() as u32* 16_384;
         dl.push(
             Downloading {
                 offset,
@@ -145,7 +143,7 @@ impl Picker {
 
     /// Attempts to pick an already requested block
     fn pick_downloading<T: cio::CIO>(&mut self, peer: &Peer<T>) -> Option<Block> {
-        for (idx, dl) in self.downloading.iter_mut() {
+        for (idx, dl) in &mut self.downloading {
             if peer.pieces().has_bit(*idx as u64) {
                 let r = dl.iter_mut()
                     .find(|r| !r.completed && r.requested.len() < MAX_DUP_REQS)
@@ -226,10 +224,9 @@ impl Picker {
         } else {
             PickerKind::Rarest(rarest::Picker::new(&self.unpicked))
         };
-        for (i, _) in self.downloading.iter() {
-            match self.picker {
-                PickerKind::Rarest(ref mut p) => p.dec_avail(*i),
-                _ => { }
+        for i in self.downloading.keys() {
+            if let PickerKind::Rarest(ref mut p) = self.picker {
+                p.dec_avail(*i);
             }
         }
     }
@@ -265,54 +262,3 @@ impl Downloading {
         mem::replace(&mut self.requested, Vec::with_capacity(0))
     }
 }
-
-/*
-impl Common {
-    pub fn new(info: &Info) -> Common {
-        let scale = info.piece_len / 16384;
-        // The n - 1 piece length, since the last one is (usually) shorter.
-        let compl_piece_len = scale * (info.pieces() - 1);
-        // the nth piece length
-        let mut last_piece_len = info.total_len -
-            info.piece_len as u64 * (info.pieces() as u64 - 1) as u64;
-        if last_piece_len % 16384 == 0 {
-            last_piece_len /= 16384;
-        } else {
-            last_piece_len /= 16384;
-            last_piece_len += 1;
-        }
-        let len = compl_piece_len as u64 + last_piece_len;
-        let blocks = Bitfield::new(len as u64);
-        Common {
-            blocks,
-            scale: scale as u64,
-            waiting: HashSet::new(),
-            endgame_cnt: len,
-            waiting_peers: HashMap::new(),
-        }
-    }
-
-    pub fn invalidate_piece(&mut self, idx: u32) {
-        let mut unset = false;
-        for i in 0..self.scale {
-            let bit = idx as u64 * self.scale + i;
-            if self.blocks.has_bit(bit) {
-                unset = true;
-                self.blocks.unset_bit(bit);
-            }
-        }
-        if unset {
-            self.endgame_cnt += idx as u64 * self.scale;
-        }
-    }
-
-    fn unset_waiting(&mut self) {
-        for piece in self.waiting.iter() {
-            self.blocks.unset_bit(*piece);
-        }
-        self.endgame_cnt = 0;
-        self.waiting.clear();
-        self.waiting_peers.clear();
-    }
-}
-*/

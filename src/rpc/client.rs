@@ -118,12 +118,11 @@ impl Client {
         if self.last_action.elapsed().as_secs() > CONN_TIMEOUT {
             return true;
         }
-        if self.last_action.elapsed().as_secs() > CONN_PING {
-            if self.send_msg(Message::ping(vec![0xDE, 0xAD])).is_err() {
-                return true;
-            }
+        if self.last_action.elapsed().as_secs() > CONN_PING && self.send_msg(Message::ping(vec![0xDE, 0xAD])).is_err() {
+            true
+        } else {
+            false
         }
-        false
     }
 }
 
@@ -214,7 +213,7 @@ impl Incoming {
         let mut headers = [httparse::EMPTY_HEADER; 24];
         let mut req = httparse::Request::new(&mut headers);
         match req.parse(&self.buf[..self.pos]) {
-            Ok(httparse::Status::Partial) => return Ok(None),
+            Ok(httparse::Status::Partial) => Ok(None),
             Ok(httparse::Status::Complete(idx)) => {
                 if let Ok(k) = validate_upgrade(&req) {
                     self.key = Some(k);
@@ -243,10 +242,10 @@ impl Incoming {
                     if self.conn.write(data.as_bytes()).is_err() {
                         // Ignore error, we're DCing anyways
                     };
-                    return Err(io::ErrorKind::InvalidData.into());
+                    Err(io::ErrorKind::InvalidData.into())
                 }
             }
-            Err(_) => return Err(io::ErrorKind::InvalidData.into()),
+            Err(_) => Err(io::ErrorKind::InvalidData.into()),
         }
     }
 }
@@ -365,7 +364,8 @@ fn validate_upgrade(req: &httparse::Request) -> result::Result<String, ()> {
     }
 
     if let Some(k) = key {
-        return Ok(k.to_owned());
+        Ok(k.to_owned())
+    } else {
+        Err(())
     }
-    return Err(());
 }

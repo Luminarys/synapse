@@ -102,8 +102,8 @@ impl TrackerState {
                     Ok(TrackerState::Reading { sock, reader })
                 }
             }
-            (s @ TrackerState::Writing { .. }, _) => Ok(s),
-            (s @ TrackerState::Reading { .. }, _) => Ok(s),
+            (s @ TrackerState::Writing { .. }, _) |
+            (s @ TrackerState::Reading { .. }, _) |
             (s @ TrackerState::ResolvingDNS { .. }, _) => Ok(s),
             _ => bail!("Unknown state transition encountered!"),
         }
@@ -175,7 +175,7 @@ impl Handler {
                         "Announce response received for {:?} succesfully",
                         id
                     );
-                    Some(((trk.torrent, Ok(r))))
+                    Some((trk.torrent, Ok(r)))
                 }
                 Ok(None) => None,
                 Err(e) => Some((trk.torrent, Err(e))),
@@ -191,7 +191,7 @@ impl Handler {
 
     pub fn tick(&mut self) -> Vec<Response> {
         let mut resps = Vec::new();
-        let ref l = self.l;
+        let l = &self.l;
         self.connections.retain(
             |id, trk| if trk.last_updated.elapsed() >
                 Duration::from_millis(TIMEOUT_MS)
@@ -220,7 +220,7 @@ impl Handler {
 
         // Encode the URL
         http_req.extend_from_slice(url.path().as_bytes());
-        http_req.extend_from_slice("?".as_bytes());
+        http_req.extend_from_slice(b"?");
         append_query_pair(&mut http_req, "info_hash", &encode_param(&req.hash));
         append_query_pair(&mut http_req, "peer_id", &encode_param(&PEER_ID[..]));
         append_query_pair(&mut http_req, "uploaded", &req.uploaded.to_string());
@@ -236,7 +236,7 @@ impl Handler {
                 append_query_pair(&mut http_req, "event", "started");
             }
             Some(tracker::Event::Stopped) => {
-                append_query_pair(&mut http_req, "event", "started");
+                append_query_pair(&mut http_req, "event", "stopped");
             }
             Some(tracker::Event::Completed) => {
                 append_query_pair(&mut http_req, "event", "completed");
@@ -248,10 +248,10 @@ impl Handler {
         http_req.extend_from_slice(b" HTTP/1.1\r\n");
         // Encode host header
         http_req.extend_from_slice(b"Host: ");
-        let host = url.host_str().ok_or::<Error>(
-            ErrorKind::InvalidRequest(
-                format!("Tracker announce url has no host!"),
-            ).into(),
+        let host = url.host_str().ok_or_else(||
+            Error::from(ErrorKind::InvalidRequest(
+                "Tracker announce url has no host!".to_owned()
+            )),
         )?;
         let port = url.port().unwrap_or(80);
         http_req.extend_from_slice(host.as_bytes());
@@ -279,9 +279,9 @@ impl Handler {
 
 fn append_query_pair(s: &mut Vec<u8>, k: &str, v: &str) {
     s.extend_from_slice(k.as_bytes());
-    s.extend_from_slice("=".as_bytes());
+    s.extend_from_slice(b"=");
     s.extend_from_slice(v.as_bytes());
-    s.extend_from_slice("&".as_bytes());
+    s.extend_from_slice(b"&");
 }
 
 fn encode_param(data: &[u8]) -> String {

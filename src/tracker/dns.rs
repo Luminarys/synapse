@@ -96,7 +96,7 @@ impl Resolver {
             c_ares::AddressFamily::INET,
             move |res| {
                 let res = res.chain_err(|| ErrorKind::DNS).and_then(|ips| {
-                    ips.addresses().next().ok_or(ErrorKind::DNS.into())
+                    ips.addresses().next().ok_or_else(|| ErrorKind::DNS.into())
                 });
                 let resp = QueryResponse { id, res };
                 if s.lock().unwrap().send(resp).is_err() {

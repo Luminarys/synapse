@@ -396,7 +396,6 @@ impl<T: cio::CIO> Torrent<T> {
     pub fn handle_msg(&mut self, msg: Message, peer: &mut Peer<T>) -> Result<(), ()> {
         trace!(self.l, "Received {:?} from peer", msg);
         match msg {
-            Message::Handshake { .. } => { }
             Message::Bitfield(_) => {
                 if self.pieces.usable(peer.pieces()) {
                     peer.interested();
@@ -480,7 +479,7 @@ impl<T: cio::CIO> Torrent<T> {
 
                     // Tell all relevant peers we got the piece
                     let m = Message::Have(index);
-                    for pid in self.leechers.iter() {
+                    for pid in &self.leechers {
                         if let Some(peer) = self.peers.get_mut(pid) {
                             if !peer.pieces().has_bit(index as u64) {
                                 peer.send_message(m.clone());
@@ -493,7 +492,7 @@ impl<T: cio::CIO> Torrent<T> {
                     }
 
                     // Mark uninteresting peers
-                    for (_, peer) in self.peers.iter_mut() {
+                    for peer in self.peers.values_mut() {
                         if !self.pieces.usable(peer.pieces()) {
                             peer.uninterested();
                         }
@@ -529,7 +528,7 @@ impl<T: cio::CIO> Torrent<T> {
                     if length != self.info.block_len(index, begin) {
                         return Err(());
                     } else {
-                        self.request_read(peer.id(), index, begin, Box::new([0u8; 16384]));
+                        self.request_read(peer.id(), index, begin, Box::new([0u8; 16_384]));
                     }
                 } else {
                     // TODO: add this to a queue to fulfill later
@@ -547,6 +546,7 @@ impl<T: cio::CIO> Torrent<T> {
             Message::KeepAlive |
             Message::Choke |
             Message::Cancel { .. } |
+            Message::Handshake { .. } |
             Message::Port(_) => {}
 
             Message::SharedPiece { .. } => unreachable!(),
@@ -573,7 +573,6 @@ impl<T: cio::CIO> Torrent<T> {
                 (resource::Status::Paused, _) => {
                     self.pause();
                 }
-                (resource::Status::Hashing, Status::Validating) => {}
                 (resource::Status::Hashing, _) => {
                     self.validate();
                 }
@@ -721,7 +720,7 @@ impl<T: cio::CIO> Torrent<T> {
             }
         }
 
-        for f in self.info.files.iter() {
+        for f in &self.info.files {
             let id =
                 util::file_rpc_id(&self.info.hash, f.path.as_path().to_string_lossy().as_ref());
             r.push(resource::Resource::File(resource::File {
@@ -752,7 +751,7 @@ impl<T: cio::CIO> Torrent<T> {
             let id = util::piece_rpc_id(&self.info.hash, i as u64);
             r.push(id)
         }
-        for f in self.info.files.iter() {
+        for f in &self.info.files {
             let id =
                 util::file_rpc_id(&self.info.hash, f.path.as_path().to_string_lossy().as_ref());
             r.push(id)
@@ -803,13 +802,13 @@ impl<T: cio::CIO> Torrent<T> {
     /// Writes a piece of torrent info, with piece index idx,
     /// piece offset begin, piece length of len, and data bytes.
     /// The disk send handle is also provided.
-    fn write_piece(&mut self, index: u32, begin: u32, data: Box<[u8; 16384]>) {
+    fn write_piece(&mut self, index: u32, begin: u32, data: Box<[u8; 16_384]>) {
         let locs = self.info.block_disk_locs(index, begin);
         self.cio.msg_disk(disk::Request::write(self.id, data, locs, self.path.clone()));
     }
 
     /// Issues a read request of the given torrent
-    fn request_read(&mut self, id: usize, index: u32, begin: u32, data: Box<[u8; 16384]>) {
+    fn request_read(&mut self, id: usize, index: u32, begin: u32, data: Box<[u8; 16_384]>) {
         let locs = self.info.block_disk_locs(index, begin);
         let len = self.info.block_len(index, begin);
         let ctx = disk::Ctx::new(id, self.id, index, begin, len);
@@ -901,9 +900,9 @@ impl<T: cio::CIO> Torrent<T> {
 
     pub fn update_rpc_tracker(&mut self) {
         let id = util::trk_rpc_id(&self.info.hash, &self.info.announce);
-        let error = match &self.tracker {
-            &TrackerStatus::Failure(ref r) => Some(r.clone()),
-            &TrackerStatus::Error => Some(
+        let error = match self.tracker {
+            TrackerStatus::Failure(ref r) => Some(r.clone()),
+            TrackerStatus::Error => Some(
                 "Failed to query tracker for an unknown reason.".to_owned(),
             ),
             _ => None,
@@ -942,7 +941,7 @@ impl<T: cio::CIO> Torrent<T> {
                 }
             }
         } else {
-            for (pid, p) in self.peers.iter_mut() {
+            for (pid, p) in &mut self.peers {
                 if p.remote_status().choked || !p.ready() {
                     continue;
                 }
@@ -964,7 +963,7 @@ impl<T: cio::CIO> Torrent<T> {
                 files.get_mut(&loc.file).unwrap().0 += loc.end - loc.start;
             }
         }
-        for f in self.info.files.iter() {
+        for f in &self.info.files {
             files.get_mut(&f.path).map(|v| v.1 = f.length);
         }
         for (p, d) in files {
@@ -979,7 +978,7 @@ impl<T: cio::CIO> Torrent<T> {
         trace!(self.l, "Removing {:?}!", peer);
         self.choker.remove_peer(peer, &mut self.peers);
         self.leechers.remove(&peer.id());
-        self.picker.remove_peer(&peer);
+        self.picker.remove_peer(peer);
     }
 
     pub fn pause(&mut self) {
@@ -1041,7 +1040,7 @@ impl<T: cio::CIO> Torrent<T> {
     pub fn change_picker(&mut self, sequential: bool) {
         debug!(self.l, "Swapping pickers!");
         self.picker.change_picker(sequential);
-        for (_, peer) in self.peers.iter() {
+        for peer in self.peers.values() {
             self.picker.add_peer(peer);
         }
         let id = self.rpc_id();

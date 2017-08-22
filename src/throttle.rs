@@ -212,7 +212,7 @@ impl ThrottleData {
         if self.tokens >= self.max_tokens {
             self.tokens = self.max_tokens;
         }
-        return drained / URATE as u64 * 1000;
+        drained / URATE as u64 * 1000
     }
 
     /// Attempt to extract amnt tokens from the throttler.

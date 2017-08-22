@@ -27,7 +27,7 @@ pub struct Message {
 impl fmt::Debug for Message {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "listener msg for torrent: ")?;
-        for &byte in self.hash.iter() {
+        for byte in &self.hash {
             write!(f, "{:X}", byte)?;
         }
         Ok(())
@@ -42,29 +42,33 @@ pub enum Request {
 const POLL_INT_MS: usize = 1000;
 
 impl Listener {
-    pub fn new(
-        poll: amy::Poller,
-        reg: amy::Registrar,
-        listener: TcpListener,
-        lid: usize,
-        ch: handle::Handle<Request, Message>,
-        l: Logger,
-    ) -> Listener {
-
-        Listener {
-            listener,
-            lid,
-            incoming: HashMap::new(),
-            poll,
-            reg,
-            ch,
-            l,
-        }
+    pub fn start(creg: &mut amy::Registrar) -> io::Result<handle::Handle<Message, Request>> {
+        let poll = Poller::new()?;
+        let mut reg = poll.get_registrar()?;
+        let ip = Ipv4Addr::new(0, 0, 0, 0);
+        let port = CONFIG.port;
+        let listener = TcpListener::bind(SocketAddrV4::new(ip, port))?;
+        listener.set_nonblocking(true)?;
+        let lid = reg.register(&listener, amy::Event::Both)?;
+    
+        let (ch, dh) = handle::Handle::new(creg, &mut reg)?;
+        dh.run("listener", move |h, l| {
+            Listener {
+                listener,
+                lid,
+                incoming: HashMap::new(),
+                poll,
+                reg,
+                ch: h,
+                l,
+            }.run()
+        });
+        Ok(ch)
     }
 
     pub fn run(&mut self) {
         debug!(self.l, "Accepting connections!");
-        'outer: while let Ok(res) = self.poll.wait(POLL_INT_MS) {
+        while let Ok(res) = self.poll.wait(POLL_INT_MS) {
             for not in res {
                 match not.id {
                     id if id == self.lid => self.handle_conn(),
@@ -129,20 +133,4 @@ impl Listener {
             }
         }
     }
-}
-
-pub fn start(creg: &mut amy::Registrar) -> io::Result<handle::Handle<Message, Request>> {
-    let poll = Poller::new()?;
-    let mut reg = poll.get_registrar()?;
-    let ip = Ipv4Addr::new(0, 0, 0, 0);
-    let port = CONFIG.port;
-    let listener = TcpListener::bind(SocketAddrV4::new(ip, port))?;
-    listener.set_nonblocking(true)?;
-    let lid = reg.register(&listener, amy::Event::Both)?;
-
-    let (ch, dh) = handle::Handle::new(creg, &mut reg)?;
-    dh.run("listener", move |h, l| {
-        Listener::new(poll, reg, listener, lid, h, l).run()
-    });
-    Ok(ch)
 }

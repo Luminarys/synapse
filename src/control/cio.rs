@@ -36,7 +36,7 @@ pub enum Event {
     RPC(Result<rpc::Message>),
     Tracker(Result<tracker::Response>),
     Disk(Result<disk::Response>),
-    Listener(Result<listener::Message>),
+    Listener(Result<Box<listener::Message>>),
 }
 
 /// Control IO trait used as an abstraction boundary between

@@ -70,7 +70,7 @@ impl ACIO {
             }
         } else if self.d().chans.lst_rx.get_id() == id {
             while let Ok(t) = self.d().chans.lst_rx.try_recv() {
-                events.push(cio::Event::Listener(Ok(t)));
+                events.push(cio::Event::Listener(Ok(Box::new(t))));
             }
         } else if self.d().peers.contains_key(&id) {
             if let Err(e) = self.process_peer_ev(not, events) {
@@ -134,7 +134,7 @@ impl cio::CIO for ACIO {
     fn add_peer(&mut self, mut peer: torrent::PeerConn) -> Result<cio::PID> {
         if self.d().peers.len() > CONFIG.net.max_open_sockets {
             let mut pruned = Vec::new();
-            for (id, peer) in self.d().peers.iter() {
+            for (id, peer) in &self.d().peers {
                 if peer.last_action().elapsed() >
                     time::Duration::from_secs(CONFIG.peer.prune_timeout)
                 {
@@ -146,7 +146,7 @@ impl cio::CIO for ACIO {
             }
             // We couldn't even prune anything, this client must be really busy...
             // Either way just return an error
-            if pruned.len() == 0 {
+            if pruned.is_empty() {
                 return Err(ErrorKind::Full.into());
             }
 

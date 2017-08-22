@@ -83,30 +83,32 @@ pub struct TrackerResponse {
 const POLL_INT_MS: usize = 1000;
 
 impl Tracker {
-    pub fn new(
-        poll: amy::Poller,
-        ch: handle::Handle<Request, Response>,
-        udp: udp::Handler,
-        dht: dht::Manager,
-        http: http::Handler,
-        dns: dns::Resolver,
-        dns_res: amy::Receiver<dns::QueryResponse>,
-        timer: usize,
-        l: Logger,
-    ) -> Tracker {
-        Tracker {
-            ch,
-            http,
-            udp,
-            dht,
-            l,
-            poll,
-            dns,
-            dns_res,
-            timer,
-            queue: VecDeque::new(),
-            shutting_down: false,
-        }
+    pub fn start(creg: &mut amy::Registrar) -> io::Result<handle::Handle<Response, Request>> {
+        let poll = amy::Poller::new()?;
+        let mut reg = poll.get_registrar()?;
+        let (ch, dh) = handle::Handle::new(creg, &mut reg)?;
+        let timer = reg.set_interval(150)?;
+        let (dtx, drx) = reg.channel()?;
+        let udp = udp::Handler::new(&reg, LOG.new(o!("trk" => "udp")))?;
+        let dht = dht::Manager::new(&reg, LOG.new(o!("trk" => "dht")))?;
+        let http = http::Handler::new(&reg, LOG.new(o!("trk" => "http")))?;
+        let dns = dns::Resolver::new(reg, dtx);
+        dh.run("trk", move |h, l| {
+            Tracker {
+                poll,
+                ch: h,
+                udp,
+                dht,
+                http,
+                dns,
+                dns_res: drx,
+                timer,
+                l,
+                queue: VecDeque::new(),
+                shutting_down: false,
+            }.run()
+        });
+        Ok(ch)
     }
 
     pub fn run(&mut self) {
@@ -323,7 +325,7 @@ impl TrackerResponse {
     }
 
     pub fn from_bencode(data: BEncode) -> Result<TrackerResponse> {
-        let mut d = data.to_dict().ok_or(ErrorKind::InvalidResponse(
+        let mut d = data.into_dict().ok_or(ErrorKind::InvalidResponse(
             "Tracker response must be a dictionary type!",
         ))?;
         if let Some(BEncode::String(data)) = d.remove("failure reason") {
@@ -359,20 +361,4 @@ impl TrackerResponse {
         };
         Ok(resp)
     }
-}
-
-pub fn start(creg: &mut amy::Registrar) -> io::Result<handle::Handle<Response, Request>> {
-    let poll = amy::Poller::new()?;
-    let mut reg = poll.get_registrar()?;
-    let (ch, dh) = handle::Handle::new(creg, &mut reg)?;
-    let timer = reg.set_interval(150)?;
-    let (dtx, drx) = reg.channel()?;
-    let udp = udp::Handler::new(&reg, LOG.new(o!("trk" => "udp")))?;
-    let dht = dht::Manager::new(&reg, LOG.new(o!("trk" => "dht")))?;
-    let http = http::Handler::new(&reg, LOG.new(o!("trk" => "http")))?;
-    let dns = dns::Resolver::new(reg, dtx);
-    dh.run("trk", move |h, l| {
-        Tracker::new(poll, h, udp, dht, http, dns, drx, timer, l).run()
-    });
-    Ok(ch)
 }

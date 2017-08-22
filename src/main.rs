@@ -1,4 +1,5 @@
 #![allow(unused_doc_comment)]
+#![cfg_attr(feature="clippy", feature(plugin))]
 
 extern crate amy;
 extern crate byteorder;
@@ -130,9 +131,9 @@ fn init() -> io::Result<()> {
     let cpoll = amy::Poller::new()?;
     let mut creg = cpoll.get_registrar()?;
     let dh = disk::start(&mut creg)?;
-    let lh = listener::start(&mut creg)?;
+    let lh = listener::Listener::start(&mut creg)?;
     let rh = rpc::RPC::start(&mut creg)?;
-    let th = tracker::start(&mut creg)?;
+    let th = tracker::Tracker::start(&mut creg)?;
     let chans = acio::ACChans {
         disk_tx: dh.tx,
         disk_rx: dh.rx,

@@ -27,12 +27,12 @@ struct FileCache {
 pub enum Request {
     Write {
         tid: usize,
-        data: Box<[u8; 16384]>,
+        data: Box<[u8; 16_384]>,
         locations: Vec<Location>,
         path: Option<String>,
     },
     Read {
-        data: Box<[u8; 16384]>,
+        data: Box<[u8; 16_384]>,
         locations: Vec<Location>,
         context: Ctx,
         path: Option<String>,
@@ -101,7 +101,7 @@ impl FileCache {
 impl Request {
     pub fn write(
         tid: usize,
-        data: Box<[u8; 16384]>,
+        data: Box<[u8; 16_384]>,
         locations: Vec<Location>,
         path: Option<String>,
     ) -> Request {
@@ -115,7 +115,7 @@ impl Request {
 
     pub fn read(
         context: Ctx,
-        data: Box<[u8; 16384]>,
+        data: Box<[u8; 16_384]>,
         locations: Vec<Location>,
         path: Option<String>,
     ) -> Request {
@@ -153,7 +153,7 @@ impl Request {
                     pb.push(&loc.file);
                     fc.get_file(&pb, |f| {
                         f.seek(SeekFrom::Start(loc.offset))?;
-                        f.write(&data[loc.start..loc.end])?;
+                        f.write_all(&data[loc.start..loc.end])?;
                         Ok(())
                     })?;
                     pb.pop();
@@ -171,7 +171,7 @@ impl Request {
                     pb.push(&loc.file);
                     fc.get_file(&pb, |f| {
                         f.seek(SeekFrom::Start(loc.offset))?;
-                        f.read(&mut data[loc.start..loc.end])?;
+                        f.read_exact(&mut data[loc.start..loc.end])?;
                         Ok(())
                     })?;
                     pb.pop();
@@ -183,7 +183,7 @@ impl Request {
                 let mut pb = path::PathBuf::from(sd);
                 pb.push(hash_to_id(&hash));
                 let mut f = fs::OpenOptions::new().write(true).create(true).open(&pb)?;
-                f.write(&data)?;
+                f.write_all(&data)?;
             }
             Request::Delete { hash, .. } => {
                 let mut pb = path::PathBuf::from(sd);
@@ -205,7 +205,7 @@ impl Request {
                     let mut ctx = digest::Context::new(&digest::SHA1);
                     let locs = info.piece_disk_locs(i);
                     for loc in locs {
-                        if &loc.file != &cf {
+                        if loc.file != cf {
                             pb.pop();
                             pb.push(&loc.file);
                             f = fs::OpenOptions::new().read(true).open(&pb);
@@ -268,14 +268,14 @@ impl Location {
 pub enum Response {
     Read {
         context: Ctx,
-        data: Arc<Box<[u8; 16384]>>,
+        data: Arc<Box<[u8; 16_384]>>,
     },
     ValidationComplete { tid: usize, invalid: Vec<u32> },
     Error { tid: usize, err: io::Error },
 }
 
 impl Response {
-    pub fn read(context: Ctx, data: Arc<Box<[u8; 16384]>>) -> Response {
+    pub fn read(context: Ctx, data: Arc<Box<[u8; 16_384]>>) -> Response {
         Response::Read { context, data }
     }
 

@@ -42,23 +42,23 @@ pub struct File {
 
 impl File {
     fn from_bencode(data: BEncode) -> Result<File, &'static str> {
-        let mut d = data.to_dict().ok_or("File must be a dictionary type!")?;
+        let mut d = data.into_dict().ok_or("File must be a dictionary type!")?;
         match (d.remove("name"), d.remove("path"), d.remove("length")) {
             (Some(v), None, Some(l)) => {
                 let f = File {
-                    path: PathBuf::from(v.to_string().ok_or("Path must be a valid string.")?),
-                    length: l.to_int().ok_or("File length must be a valid int")? as usize,
+                    path: PathBuf::from(v.into_string().ok_or("Path must be a valid string.")?),
+                    length: l.into_int().ok_or("File length must be a valid int")? as usize,
                 };
                 Ok(f)
             }
             (None, Some(path), Some(l)) => {
                 let mut p = PathBuf::new();
-                for dir in path.to_list().ok_or("File path should be a list")? {
-                    p.push(dir.to_string().ok_or("File path parts should be strings")?);
+                for dir in path.into_list().ok_or("File path should be a list")? {
+                    p.push(dir.into_string().ok_or("File path parts should be strings")?);
                 }
                 let f = File {
                     path: p,
-                    length: l.to_int().ok_or("File length must be a valid int")? as usize,
+                    length: l.into_int().ok_or("File length must be a valid int")? as usize,
                 };
                 Ok(f)
             }
@@ -82,9 +82,9 @@ impl Info {
     }
 
     pub fn from_bencode(data: BEncode) -> Result<Info, &'static str> {
-        data.to_dict()
+        data.into_dict()
             .and_then(|mut d| {
-                d.remove("info").and_then(|i| i.to_dict()).map(|i| (d, i))
+                d.remove("info").and_then(|i| i.into_dict()).map(|i| (d, i))
             })
             .ok_or("invalid info field")
             .and_then(|(mut d, mut i)| {
@@ -96,14 +96,14 @@ impl Info {
                 let mut hash = [0u8; 20];
                 hash.copy_from_slice(digest.as_ref());
 
-                let a = d.remove("announce").and_then(|a| a.to_string()).ok_or(
+                let a = d.remove("announce").and_then(|a| a.into_string()).ok_or(
                     "Info must have announce url",
                 )?;
-                let pl = i.remove("piece length").and_then(|i| i.to_int()).ok_or(
+                let pl = i.remove("piece length").and_then(|i| i.into_int()).ok_or(
                     "Info must specify piece length",
                 )?;
                 let hashes = i.remove("pieces")
-                    .and_then(|p| p.to_bytes())
+                    .and_then(|p| p.into_bytes())
                     .map(|mut p| {
                         let mut v = Vec::new();
                         while !p.is_empty() {
@@ -116,7 +116,7 @@ impl Info {
                     .ok_or("Info must provide valid hashes")?;
 
                 let private = i.remove("private")
-                    .and_then(|v| v.to_int())
+                    .and_then(|v| v.into_int())
                     .map(|p| p == 1)
                     .unwrap_or(false);
 
@@ -160,8 +160,8 @@ impl Info {
         Info {
             name: String::from(""),
             announce: String::from(""),
-            piece_len: 16384,
-            total_len: 16384 * pieces as u64,
+            piece_len: 16_384,
+            total_len: 16_384 * pieces as u64,
             hashes: vec![vec![0u8]; pieces],
             hash: [0u8; 20],
             files: vec![],
@@ -171,17 +171,17 @@ impl Info {
 
     pub fn block_len(&self, idx: u32, offset: u32) -> u32 {
         if idx != self.pieces() - 1 {
-            16384
+            16_384
         } else {
             let last_piece_len =
                 (self.total_len - self.piece_len as u64 * (self.pieces() as u64 - 1)) as u32;
             // Note this is not the real last block len, just what it will be IF the offset really
             // is for the last block
             let last_block_len = last_piece_len - offset;
-            if offset < last_piece_len && last_block_len <= 16384 {
+            if offset < last_piece_len && last_block_len <= 16_384 {
                 last_block_len
             } else {
-                16384
+                16_384
             }
         }
     }
@@ -222,7 +222,7 @@ impl Info {
         // idx than cur_start, write from cur_start..cur_start + file_write_len for that file
         // and continue if we're now at the end of the file.
         let mut locs = Vec::new();
-        for f in self.files.iter() {
+        for f in &self.files {
             fidx += f.length;
             if (cur_start as usize) < fidx {
                 let file_write_len = cmp::min(fidx - cur_start as usize, len as usize);
@@ -256,10 +256,10 @@ impl Info {
 }
 
 fn parse_bencode_files(mut data: BTreeMap<String, BEncode>) -> Result<Vec<File>, &'static str> {
-    match data.remove("files").and_then(|l| l.to_list()) {
+    match data.remove("files").and_then(|l| l.into_list()) {
         Some(fs) => {
             let mut path = PathBuf::new();
-            path.push(data.remove("name").and_then(|v| v.to_string()).ok_or(
+            path.push(data.remove("name").and_then(|v| v.into_string()).ok_or(
                 "Multifile mode must have a name field",
             )?);
             let mut files = Vec::new();

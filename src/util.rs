@@ -25,7 +25,7 @@ pub enum IOR {
 
 /// Do an async read, returning the appropriate IOR.
 pub fn aread<R: io::Read>(b: &mut [u8], r: &mut R) -> IOR {
-    if b.len() == 0 {
+    if b.is_empty() {
         return IOR::Complete;
     }
     match r.read(b) {
@@ -121,8 +121,8 @@ pub fn trk_rpc_id(torrent: &[u8; 20], url: &str) -> String {
 
 pub fn hash_to_id(hash: &[u8]) -> String {
     let mut hash_str = String::new();
-    for i in 0..20 {
-        write!(&mut hash_str, "{:02X}", hash[i]).unwrap();
+    for i in hash {
+        write!(&mut hash_str, "{:02X}", i).unwrap();
     }
     hash_str
 }
@@ -133,9 +133,9 @@ pub fn id_to_hash(s: &str) -> Option<[u8; 20]> {
         return None;
     }
     let mut c = s.chars();
-    for i in 0..20 {
+    for i in &mut data {
         if let (Some(a), Some(b)) = (hex_to_bit(c.next().unwrap()), hex_to_bit(c.next().unwrap())) {
-            data[i] = a << 4 | b
+            *i = a << 4 | b
         } else {
             return None;
         }

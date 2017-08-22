@@ -51,7 +51,7 @@ enum ReadState {
     ReadingMsg { data: [u8; 17], idx: u8, len: u32 },
     ReadingPiece {
         prefix: [u8; 17],
-        data: Box<[u8; 16384]>,
+        data: Box<[u8; 16_384]>,
         len: u32,
         idx: usize,
     },
@@ -295,14 +295,14 @@ impl ReadState {
                 }.next_state(conn)
             }
             7 => {
-                if len > 16393 {
+                if len > 16_393 {
                     return ReadRes::Err(
-                        io_err_val("Only piece sizes of 16384 or less are accepted"),
+                        io_err_val("Only piece sizes of 16_384 or less are accepted"),
                     );
                 }
                 ReadState::ReadingPiece {
                     prefix: buf,
-                    data: Box::new([0u8; 16384]),
+                    data: Box::new([0u8; 16_384]),
                     len: len - 9,
                     idx: 5,
                 }.next_state(conn)
@@ -522,7 +522,7 @@ mod tests {
         let mut r = Reader::new();
         r.state = ReadState::Idle;
         let mut info = Cursor::new(vec![0u8, 0, 0x40, 0x09, 7, 0, 0, 0, 1, 0, 0, 0, 1]);
-        let mut data = Cursor::new(vec![1u8; 16384]);
+        let mut data = Cursor::new(vec![1u8; 16_384]);
         // Test partial read
         assert!(r.readable(&mut info).unwrap().is_none());
         match r.readable(&mut data).unwrap().unwrap() {
@@ -534,8 +534,8 @@ mod tests {
             } => {
                 assert_eq!(index, 1);
                 assert_eq!(begin, 1);
-                assert_eq!(length, 16384);
-                for i in 0..16384 {
+                assert_eq!(length, 16_384);
+                for i in 0..16_384 {
                     assert_eq!(1, data[i]);
                 }
             }

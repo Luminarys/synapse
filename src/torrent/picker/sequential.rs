@@ -59,7 +59,7 @@ impl Picker {
                     self.c.endgame_cnt = self.c.endgame_cnt.saturating_sub(1);
                     return Some(picker::Block {
                         index: idx as u32,
-                        offset: (i * 16384) as u32 }
+                        offset: (i * 16_384) as u32 }
                     );
                 }
             }
@@ -76,7 +76,7 @@ impl Picker {
                 self.c.waiting_peers.get_mut(&i).unwrap().insert(peer.id());
                 return Some(picker::Block {
                     index: (i / self.c.scale) as u32,
-                    offset: ((i % self.c.scale) * 16384) as u32,
+                    offset: ((i % self.c.scale) * 16_384) as u32,
                 });
             }
         }
@@ -94,7 +94,7 @@ impl Picker {
             .find(|p| peer.pieces().has_bit(p.pos))
         let mut idx = idx as u64;
         let mut offset = offset as u64;
-        offset /= 16384;
+        offset /= 16_384;
         idx *= self.c.scale;
         self.c.waiting.remove(&(idx + offset));
         let peers = self.c

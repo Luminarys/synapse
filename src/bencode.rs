@@ -46,39 +46,40 @@ impl BEncode {
         BEncode::Int(i)
     }
 
+    #[cfg_attr(feature = "cargo-clippy", allow(should_implement_trait))]
     pub fn from_str(s: &str) -> BEncode {
         BEncode::String(Vec::from(s))
     }
 
-    pub fn to_int(self) -> Option<i64> {
+    pub fn into_int(self) -> Option<i64> {
         match self {
             BEncode::Int(v) => Some(v),
             _ => None,
         }
     }
 
-    pub fn to_bytes(self) -> Option<Vec<u8>> {
+    pub fn into_bytes(self) -> Option<Vec<u8>> {
         match self {
             BEncode::String(v) => Some(v),
             _ => None,
         }
     }
 
-    pub fn to_string(self) -> Option<String> {
+    pub fn into_string(self) -> Option<String> {
         match self {
             BEncode::String(v) => String::from_utf8(v).ok(),
             _ => None,
         }
     }
 
-    pub fn to_list(self) -> Option<Vec<BEncode>> {
+    pub fn into_list(self) -> Option<Vec<BEncode>> {
         match self {
             BEncode::List(v) => Some(v),
             _ => None,
         }
     }
 
-    pub fn to_dict(self) -> Option<BTreeMap<String, BEncode>> {
+    pub fn into_dict(self) -> Option<BTreeMap<String, BEncode>> {
         match self {
             BEncode::Dict(v) => Some(v),
             _ => None,

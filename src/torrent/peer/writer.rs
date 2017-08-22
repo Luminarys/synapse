@@ -20,7 +20,7 @@ enum WriteState {
     WritingOther { data: Vec<u8>, idx: u16 },
     WritingPiece {
         prefix: [u8; 17],
-        data: Arc<Box<[u8; 16384]>>,
+        data: Arc<Box<[u8; 16_384]>>,
         idx: u16,
     },
 }
@@ -275,19 +275,19 @@ mod tests {
     fn test_write_piece() {
         use std::io::Cursor;
         let mut w = Writer::new();
-        let piece = Arc::new(Box::new([1u8; 16384]));
-        let mut sbuf = [0u8; 16384 + 13];
+        let piece = Arc::new(Box::new([1u8; 16_384]));
+        let mut sbuf = [0u8; 16_384 + 13];
         let mut buf = Cursor::new(&mut sbuf[..]);
         let m = Message::SharedPiece {
             index: 1,
             begin: 1,
-            length: 16384,
+            length: 16_384,
             data: piece,
         };
         w.write_message(m, &mut buf).unwrap();
         let buf = buf.into_inner();
         assert_eq!(buf[0..13], [0, 0, 0x40, 0x09, 7, 0, 0, 0, 1, 0, 0, 0, 1]);
-        for i in 0..16384 {
+        for i in 0..16_384 {
             assert_eq!(buf[i + 13], 1);
         }
     }

@@ -135,7 +135,7 @@ impl Picker {
                         self.c.endgame_cnt = self.c.endgame_cnt.saturating_sub(1);
                         return Some(picker::Block {
                             index: *pidx as u32,
-                            offset: bidx as u32 * 16384,
+                            offset: bidx as u32 * 16_384,
                         });
                     }
                 }
@@ -157,7 +157,7 @@ impl Picker {
             self.piece_available(piece);
         }
         //let idx: u64 = oidx as u64 * self.c.scale;
-        //let offset: u64 = offset as u64 / 16384;
+        //let offset: u64 = offset as u64 / 16_384;
         //let block = idx + offset;
         //self.c.waiting.remove(&block);
         //let peers = self.c.waiting_peers.remove(&block).unwrap_or_else(|| {

@@ -31,7 +31,7 @@ impl<T: cio::CIO> JobManager<T> {
     }
 
     pub fn update(&mut self, torrents: &mut HashMap<usize, Torrent<T>>) {
-        for j in self.jobs.iter_mut() {
+        for j in &mut self.jobs {
             if j.last_updated.elapsed() > j.interval {
                 j.job.update(torrents);
                 j.last_updated = time::Instant::now();

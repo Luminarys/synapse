@@ -111,16 +111,16 @@ impl Config {
 }
 
 fn default_port() -> u16 {
-    16384
+    16_384
 }
 fn default_trk_port() -> u16 {
-    16362
+    16_362
 }
 fn default_dht_port() -> u16 {
-    6881
+    6_881
 }
 fn default_rpc_port() -> u16 {
-    8412
+    8_412
 }
 fn default_local() -> bool {
     true
@@ -187,7 +187,7 @@ impl Default for TrkConfig {
 impl Default for DhtConfigFile {
     fn default() -> DhtConfigFile {
         DhtConfigFile {
-            port: 14831,
+            port: default_dht_port(),
             bootstrap_node: default_bootstrap_node(),
         }
     }

@@ -74,8 +74,8 @@ impl RoutingTable {
     pub fn new() -> RoutingTable {
         let mut id = [0u8; 20];
         let mut rng = rand::thread_rng();
-        for i in 0..20 {
-            id[i] = rng.gen::<u8>();
+        for i in &mut id {
+            *i = rng.gen::<u8>();
         }
 
         RoutingTable {
@@ -101,7 +101,7 @@ impl RoutingTable {
 
     pub fn add_addr(&mut self, addr: SocketAddr) -> (proto::Request, SocketAddr) {
         let tx = self.new_init_tx();
-        ((proto::Request::ping(tx, self.id.clone()), addr))
+        (proto::Request::ping(tx, self.id.clone()), addr)
     }
 
     pub fn get_peers(
@@ -113,7 +113,7 @@ impl RoutingTable {
         let idx = self.bucket_idx(&tid);
         let mut nodes: Vec<proto::Node> = Vec::new();
 
-        for node in self.buckets[idx].nodes.iter() {
+        for node in &self.buckets[idx].nodes {
             nodes.push(node.into());
         }
 
@@ -128,8 +128,8 @@ impl RoutingTable {
 
     pub fn announce(&mut self, hash: [u8; 20]) -> Vec<(proto::Request, SocketAddr)> {
         let mut nodes: Vec<(proto::Node, Vec<u8>)> = Vec::new();
-        for bucket in self.buckets.iter() {
-            for node in bucket.nodes.iter() {
+        for bucket in &self.buckets {
+            for node in &bucket.nodes {
                 if let Some(ref tok) = node.rem_token {
                     nodes.push((node.into(), tok.clone()))
                 }
@@ -164,7 +164,7 @@ impl RoutingTable {
                     nodes.push(self.get_node(&target).into())
                 } else {
                     let b = self.bucket_idx(&target);
-                    for node in self.buckets[b].nodes.iter() {
+                    for node in &self.buckets[b].nodes {
                         nodes.push(node.into());
                     }
                 }
@@ -193,9 +193,7 @@ impl RoutingTable {
                     }
                     node.update();
                 }
-                if !self.torrents.contains_key(&hash) {
-                    self.torrents.insert(hash, Torrent { peers: Vec::new() });
-                }
+                self.torrents.entry(hash).or_insert(Torrent { peers: Vec::new() });
                 if !implied_port {
                     addr.set_port(port);
                 }
@@ -216,7 +214,7 @@ impl RoutingTable {
                 } else {
                     let mut nodes = Vec::new();
                     let b = self.bucket_idx(&BigUint::from_bytes_be(&hash[..]));
-                    for node in self.buckets[b].nodes.iter() {
+                    for node in &self.buckets[b].nodes {
                         nodes.push(node.into());
                     }
                     proto::Response::nodes(req.transaction, self.id.clone(), token, nodes)
@@ -289,7 +287,7 @@ impl RoutingTable {
                 for node in nodes.drain(..) {
                     if !self.contains_id(&node.id) {
                         let id = node.id.clone();
-                        let addr = node.addr.clone();
+                        let addr = node.addr;
                         if self.add_node(node.into()).is_ok() {
                             let tx = self.new_query_tx(id);
                             reqs.push((proto::Request::ping(tx, self.id.clone()), addr));
@@ -348,7 +346,7 @@ impl RoutingTable {
                     for node in nodes.drain(..) {
                         if !self.contains_id(&node.id) {
                             let id = node.id.clone();
-                            let addr = node.addr.clone();
+                            let addr = node.addr;
                             if self.add_node(node.into()).is_ok() {
                                 let tx = self.new_tsearch_tx(id.clone(), torrent, hash);
                                 reqs.push((proto::Request::ping(tx, id), addr));
@@ -369,16 +367,13 @@ impl RoutingTable {
             (TransactionKind::Query(id), proto::ResponseKind::ID(_)) |
             (TransactionKind::Query(id), proto::ResponseKind::FindNode { .. }) |
             (TransactionKind::Query(id), proto::ResponseKind::GetPeers { .. }) |
-            (TransactionKind::TSearch { id, .. }, proto::ResponseKind::GetPeers { .. }) => {
+            (TransactionKind::TSearch { id, .. }, proto::ResponseKind::GetPeers { .. }) |
+            (TransactionKind::TSearch { id, .. }, _) => {
                 self.remove_node(&id);
             }
 
             (TransactionKind::Initialization, _) => {
                 unreachable!();
-            }
-
-            (TransactionKind::TSearch { id, .. }, _) => {
-                self.remove_node(&id);
             }
         }
         Err(reqs)
@@ -404,8 +399,8 @@ impl RoutingTable {
         let dur = self.last_token_refresh.signed_duration_since(Utc::now());
         let tok_refresh = dur.num_minutes() > 5;
 
-        for bucket in self.buckets.iter_mut() {
-            for node in bucket.nodes.iter_mut() {
+        for bucket in &mut self.buckets {
+            for node in &mut bucket.nodes {
                 if tok_refresh {
                     node.new_token();
                 }
@@ -441,8 +436,8 @@ impl RoutingTable {
     /// Send a bogus get_peers query and internally refresh our token.
     fn refresh_tokens(&mut self) -> Vec<(proto::Request, SocketAddr)> {
         let mut nodes: Vec<proto::Node> = Vec::new();
-        for bucket in self.buckets.iter_mut() {
-            for node in bucket.nodes.iter_mut() {
+        for bucket in &mut self.buckets {
+            for node in &mut bucket.nodes {
                 node.new_token();
                 nodes.push((&*node).into());
             }
@@ -543,7 +538,7 @@ impl RoutingTable {
         let midpoint = self.buckets[idx].midpoint();
         let mut nb;
         {
-            let pb = self.buckets.get_mut(idx).unwrap();
+            let pb = &mut self.buckets[idx];
             nb = Bucket::new(midpoint.clone(), pb.end.clone());
             pb.end = midpoint;
             let nodes = mem::replace(&mut pb.nodes, Vec::with_capacity(BUCKET_MAX));
@@ -584,7 +579,7 @@ impl Bucket {
         if self.nodes.len() < BUCKET_MAX {
             self.nodes.push(node);
         } else {
-            for n in self.nodes.iter_mut() {
+            for n in &mut self.nodes {
                 if !n.good() {
                     mem::swap(n, &mut node);
                 }
@@ -601,7 +596,7 @@ impl Bucket {
     }
 
     fn midpoint(&self) -> ID {
-        self.start.clone() + ((&self.end - &self.start)) / BigUint::from(2u8)
+        self.start.clone() + (&self.end - &self.start) / BigUint::from(2u8)
     }
 
     fn contains(&self, id: &ID) -> bool {
@@ -674,7 +669,7 @@ impl<'a> Into<proto::Node> for &'a Node {
     fn into(self) -> proto::Node {
         proto::Node {
             id: self.id.clone(),
-            addr: self.addr.clone(),
+            addr: self.addr,
         }
     }
 }
