@@ -225,7 +225,10 @@ impl Tracker {
     }
 
     fn handle_timer(&mut self) {
-        for r in self.http.tick().into_iter().chain(self.udp.tick().into_iter()) {
+        for r in self.http.tick().into_iter().chain(
+            self.udp.tick().into_iter(),
+        )
+        {
             self.send_response(r);
         }
 
@@ -269,9 +272,9 @@ impl Tracker {
             debug!(self.l, "Sending trk response to control!");
             self.ch.send(r).unwrap();
         }
-        // TODO: The active announce queue could grow with DHT usage, since DHT stuff doesn't go into
-        // the announce queue, but still triggers send_response. Not a big deal, but worth
-        // thinking about for later.
+        // TODO: The active announce queue could grow with DHT usage,
+        // since DHT stuff doesn't go into the announce queue, but still triggers send_response.
+        // Not a big deal, but worth thinking about for later.
         self.dequeue_req();
     }
 }

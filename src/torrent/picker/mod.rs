@@ -104,8 +104,11 @@ impl Picker {
             PickerKind::Sequential(ref mut p) => p.pick(peer),
             PickerKind::Rarest(ref mut p) => p.pick(peer),
         };
-        piece.and_then(|p| self.pick_piece(p, peer.id()))
-            .or_else(|| self.pick_downloading(peer))
+        piece.and_then(|p| self.pick_piece(p, peer.id())).or_else(
+            || {
+                self.pick_downloading(peer)
+            },
+        )
     }
 
     /// Attempts to pick an expired block
@@ -120,13 +123,12 @@ impl Picker {
     fn pick_piece(&mut self, piece: u32, id: usize) -> Option<Block> {
         self.downloading.entry(piece).or_insert_with(|| vec![]);
         let dl = self.downloading.get_mut(&piece).unwrap();
-        let offset = dl.len() as u32* 16_384;
-        dl.push(
-            Downloading {
-                offset,
-                completed: false,
-                requested: vec![Request::new(id)],
-            });
+        let offset = dl.len() as u32 * 16_384;
+        dl.push(Downloading {
+            offset,
+            completed: false,
+            requested: vec![Request::new(id)],
+        });
 
         if dl.len() == self.scale as usize {
             match self.picker {
@@ -166,17 +168,22 @@ impl Picker {
     pub fn completed(&mut self, b: Block) -> Result<(bool, Vec<usize>), ()> {
         // Find the block in our downloading blocks, mark as true,
         // and extract the current peer list for return.
-        let res = self.downloading.get_mut(&b.index)
-            .and_then(|dl| dl.iter_mut()
-                             .find(|r| r.offset == b.offset)
-                             .map(|r| r.complete()))
+        let res = self.downloading
+            .get_mut(&b.index)
+            .and_then(|dl| {
+                dl.iter_mut().find(|r| r.offset == b.offset).map(
+                    |r| r.complete(),
+                )
+            })
             .map(|r| r.into_iter().map(|e| e.peer).collect());
 
         // If we've requested every single block for this piece and they're all complete, remove it
         // and report completion
         let scale = self.scale;
-        let complete = self.downloading.get_mut(&b.index)
-            .map(|r| r.len() as u32 == scale && r.iter().all(|d| d.completed)).unwrap_or(false);
+        let complete = self.downloading
+            .get_mut(&b.index)
+            .map(|r| r.len() as u32 == scale && r.iter().all(|d| d.completed))
+            .unwrap_or(false);
 
         if complete {
             self.downloading.remove(&b.index);

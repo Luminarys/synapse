@@ -296,9 +296,9 @@ impl ReadState {
             }
             7 => {
                 if len > 16_393 {
-                    return ReadRes::Err(
-                        io_err_val("Only piece sizes of 16_384 or less are accepted"),
-                    );
+                    return ReadRes::Err(io_err_val(
+                        "Only piece sizes of 16_384 or less are accepted",
+                    ));
                 }
                 ReadState::ReadingPiece {
                     prefix: buf,

@@ -5,6 +5,8 @@ use std::{time, thread, fs};
 use std::path::Path;
 
 use super::proto::message::Error;
+use super::EMPTY_HTTP_RESP;
+
 use util::{aread, IOR};
 
 pub struct Transfers {
@@ -41,9 +43,7 @@ const CONN_TIMEOUT: u64 = 2;
 
 impl Transfers {
     pub fn new() -> Transfers {
-        Transfers {
-            torrents: HashMap::new(),
-        }
+        Transfers { torrents: HashMap::new() }
     }
 
     pub fn add_torrent(
@@ -93,20 +93,7 @@ impl Transfers {
         match self.torrents.get_mut(&id).map(|tx| tx.readable()) {
             Some(Ok(true)) => {
                 let mut tx = self.torrents.remove(&id).unwrap();
-                // Send the OK message
-                let lines = vec![
-                    format!("HTTP/1.1 204 NO CONTENT"),
-                    format!("Access-Control-Allow-Origin: {}", "*"),
-                    format!("Access-Control-Allow-Methods: {}", "OPTIONS, POST, GET"),
-                    format!(
-                        "Access-Control-Allow-Headers: {}",
-                        "Access-Control-Allow-Headers, Origin, Accept, X-Requested-With, Content-Type, Access-Control-Request-Method, Access-Control-Request-Headers, Authorization"
-                    ),
-                    format!("Connection: {}", "Close"),
-                    format!("\r\n"),
-                ];
-                let data = lines.join("\r\n");
-                if tx.conn.write(data.as_bytes()).is_err() {
+                if tx.conn.write(&EMPTY_HTTP_RESP).is_err() {
                     // Do nothing, we got the data, so who cares.
                 }
 
@@ -182,15 +169,12 @@ fn handle_dl(mut conn: TcpStream, path: String) -> io::Result<()> {
     let p = Path::new(&path);
     let lines = vec![
         format!("HTTP/1.1 200 OK"),
-        format!("Access-Control-Allow-Origin: {}", "*"),
-        format!("Access-Control-Allow-Methods: {}", "OPTIONS, POST, GET"),
-        format!(
-            "Access-Control-Allow-Headers: {}",
-            "Access-Control-Allow-Headers, Origin, Accept, X-Requested-With, Content-Type, Access-Control-Request-Method, Access-Control-Request-Headers, Authorization"
-        ),
         format!("Content-Length: {}", len),
         format!("Content-Type: {}", "application/octet-stream"),
-        format!("Content-Disposition: attachment; filename=\"{}\"", p.file_name().unwrap().to_string_lossy()),
+        format!(
+            "Content-Disposition: attachment; filename=\"{}\"",
+            p.file_name().unwrap().to_string_lossy()
+        ),
         format!("Connection: {}", "Close"),
         format!("\r\n"),
     ];

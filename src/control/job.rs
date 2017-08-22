@@ -93,7 +93,14 @@ impl<T: cio::CIO> Job<T> for TorrentTxUpdate {
         for (id, torrent) in torrents.iter_mut() {
             let (ul, dl) = torrent.get_last_tx_rate();
             if !self.speeds.contains_key(id) {
-                self.speeds.insert(*id, Speed { dl: 0, ul: 0, linger: 0 });
+                self.speeds.insert(
+                    *id,
+                    Speed {
+                        dl: 0,
+                        ul: 0,
+                        linger: 0,
+                    },
+                );
             }
             let ls = self.speeds.get_mut(id).unwrap();
             // TODO: Use this result to get a better estimate
@@ -105,7 +112,7 @@ impl<T: cio::CIO> Job<T> for TorrentTxUpdate {
                 if ls.linger == 0 {
                     ls.linger = 2;
                 } else {
-                    ls.linger -=1;
+                    ls.linger -= 1;
                 }
             }
         }

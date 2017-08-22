@@ -30,6 +30,31 @@ use CONFIG;
 const POLL_INT_MS: usize = 1000;
 const CLEANUP_INT_MS: usize = 2000;
 
+lazy_static! {
+    pub static ref EMPTY_HTTP_RESP: Vec<u8> = {
+        let lines =
+            vec![
+                format!("HTTP/1.1 {} {}", 204, "NO CONTENT"),
+                format!("Connection: {}", "Close"),
+                format!("Access-Control-Allow-Origin: {}", "*"),
+                format!("Access-Control-Allow-Methods: {}", "OPTIONS, POST, GET"),
+                format!(
+                    "Access-Control-Allow-Headers: {}, {}, {}, {}, {}, {}, {}, {}",
+                    "Access-Control-Allow-Headers",
+                    "Origin",
+                    "Accept",
+                    "X-Requested-With",
+                    "Content-Type",
+                    "Access-Control-Request-Method",
+                    "Access-Control-Request-Headers",
+                    "Authorization"
+                ),
+                format!("\r\n"),
+            ];
+        lines.join("\r\n").into_bytes()
+    };
+}
+
 #[derive(Debug)]
 pub enum CtlMessage {
     Extant(Vec<resource::Resource>),
@@ -54,7 +79,10 @@ pub enum Message {
     RemoveTorrent(String),
     RemovePeer { id: String, torrent_id: String },
     RemoveTracker { id: String, torrent_id: String },
-    Torrent { info: torrent::Info, path: Option<String> },
+    Torrent {
+        info: torrent::Info,
+        path: Option<String>,
+    },
 }
 
 #[allow(dead_code)]
@@ -143,10 +171,7 @@ impl RPC {
                         let res = match self.clients.get_mut(&c) {
                             Some(client) => client.send(ws::Frame::Text(m)),
                             None => {
-                                warn!(
-                                    self.l,
-                                    "Processor requested a message transfer to a nonexistent client!"
-                                );
+                                warn!(self.l, "Processor referenced a nonexistent client!");
                                 Ok(())
                             }
                         };
@@ -190,7 +215,13 @@ impl RPC {
                                 let client = self.clients.remove(&id).unwrap();
                                 self.remove_client(id, client);
                             }
-                            if self.ch.send(Message::Torrent { info: i, path: path }).is_err() {
+                            if self.ch
+                                .send(Message::Torrent {
+                                    info: i,
+                                    path: path,
+                                })
+                                .is_err()
+                            {
                                 crit!(self.l, "Failed to pass message to ctrl!");
                             }
                         } else {

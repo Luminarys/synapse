@@ -104,7 +104,7 @@ impl<T: cio::CIO> Torrent<T> {
         info: Info,
         throttle: Throttle,
         cio: T,
-        l: Logger
+        l: Logger,
     ) -> Torrent<T> {
         debug!(l, "Creating {:?}", info);
         let peers = HashMap::new();
@@ -804,7 +804,12 @@ impl<T: cio::CIO> Torrent<T> {
     /// The disk send handle is also provided.
     fn write_piece(&mut self, index: u32, begin: u32, data: Box<[u8; 16_384]>) {
         let locs = self.info.block_disk_locs(index, begin);
-        self.cio.msg_disk(disk::Request::write(self.id, data, locs, self.path.clone()));
+        self.cio.msg_disk(disk::Request::write(
+            self.id,
+            data,
+            locs,
+            self.path.clone(),
+        ));
     }
 
     /// Issues a read request of the given torrent
@@ -812,7 +817,12 @@ impl<T: cio::CIO> Torrent<T> {
         let locs = self.info.block_disk_locs(index, begin);
         let len = self.info.block_len(index, begin);
         let ctx = disk::Ctx::new(id, self.id, index, begin, len);
-        self.cio.msg_disk(disk::Request::read(ctx, data, locs, self.path.clone()));
+        self.cio.msg_disk(disk::Request::read(
+            ctx,
+            data,
+            locs,
+            self.path.clone(),
+        ));
     }
 
     fn make_requests_pid(&mut self, pid: usize) {
@@ -824,7 +834,11 @@ impl<T: cio::CIO> Torrent<T> {
         }
         while peer.can_queue_req() {
             if let Some(block) = self.picker.pick(peer) {
-                peer.request_piece(block.index, block.offset, self.info.block_len(block.index, block.offset));
+                peer.request_piece(
+                    block.index,
+                    block.offset,
+                    self.info.block_len(block.index, block.offset),
+                );
             } else {
                 break;
             }
@@ -837,7 +851,11 @@ impl<T: cio::CIO> Torrent<T> {
         }
         while peer.can_queue_req() {
             if let Some(block) = self.picker.pick(peer) {
-                peer.request_piece(block.index, block.offset, self.info.block_len(block.index, block.offset));
+                peer.request_piece(
+                    block.index,
+                    block.offset,
+                    self.info.block_len(block.index, block.offset),
+                );
             } else {
                 break;
             }
@@ -967,9 +985,11 @@ impl<T: cio::CIO> Torrent<T> {
             files.get_mut(&f.path).map(|v| v.1 = f.length);
         }
         for (p, d) in files {
-            let id =
-                util::file_rpc_id(&self.info.hash, p.as_path().to_string_lossy().as_ref());
-            updates.push(SResourceUpdate::FileProgress { id, progress: (d.0 as f32 / d.1 as f32) });
+            let id = util::file_rpc_id(&self.info.hash, p.as_path().to_string_lossy().as_ref());
+            updates.push(SResourceUpdate::FileProgress {
+                id,
+                progress: (d.0 as f32 / d.1 as f32),
+            });
         }
         self.cio.msg_rpc(rpc::CtlMessage::Update(updates));
     }

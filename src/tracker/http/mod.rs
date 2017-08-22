@@ -248,11 +248,11 @@ impl Handler {
         http_req.extend_from_slice(b" HTTP/1.1\r\n");
         // Encode host header
         http_req.extend_from_slice(b"Host: ");
-        let host = url.host_str().ok_or_else(||
+        let host = url.host_str().ok_or_else(|| {
             Error::from(ErrorKind::InvalidRequest(
-                "Tracker announce url has no host!".to_owned()
-            )),
-        )?;
+                "Tracker announce url has no host!".to_owned(),
+            ))
+        })?;
         let port = url.port().unwrap_or(80);
         http_req.extend_from_slice(host.as_bytes());
         http_req.extend_from_slice(b"\r\n");

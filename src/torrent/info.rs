@@ -23,7 +23,14 @@ impl fmt::Debug for Info {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
             f,
-            "Torrent Info {{ name: {:?}, announce: {:?}, piece_len: {:?}, total_len: {:?}, hash: {:?}, files: {:?} }}",
+            "Torrent Info {{
+                name: {:?},
+                announce: {:?},
+                piece_len: {:?},
+                total_len: {:?},
+                hash: {:?},
+                files: {:?}
+            }}",
             self.name,
             self.announce,
             self.piece_len,
@@ -54,7 +61,9 @@ impl File {
             (None, Some(path), Some(l)) => {
                 let mut p = PathBuf::new();
                 for dir in path.into_list().ok_or("File path should be a list")? {
-                    p.push(dir.into_string().ok_or("File path parts should be strings")?);
+                    p.push(
+                        dir.into_string().ok_or("File path parts should be strings")?,
+                    );
                 }
                 let f = File {
                     path: p,

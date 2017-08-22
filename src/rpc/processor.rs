@@ -199,10 +199,7 @@ impl Processor {
                 kind,
                 criteria,
             } => {
-                let f = Filter {
-                    criteria,
-                    kind,
-                };
+                let f = Filter { criteria, kind };
                 {
                     let valid = &self.kinds[kind as usize];
                     let crit_res = f.criteria
@@ -326,14 +323,16 @@ impl Processor {
                 }
             }
             CtlMessage::Removed(r) => {
-                for (serial, (client, ids)) in self.get_matching_filters(r.iter().map(|s| s.as_str())) {
-                     msgs.push((
-                         client,
-                         SMessage::ResourcesRemoved {
-                             serial,
-                             ids: ids.into_iter().map(|s| s.to_owned()).collect(),
-                         },
-                     ));
+                for (serial, (client, ids)) in
+                    self.get_matching_filters(r.iter().map(|s| s.as_str()))
+                {
+                    msgs.push((
+                        client,
+                        SMessage::ResourcesRemoved {
+                            serial,
+                            ids: ids.into_iter().map(|s| s.to_owned()).collect(),
+                        },
+                    ));
                 }
 
                 for id in r {

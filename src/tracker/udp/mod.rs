@@ -81,16 +81,16 @@ impl Handler {
     ) -> Result<()> {
         // TODO: Attempt to parse into an IP address first, then perform dns res
         debug!(self.l, "Received a new announce req for {:?}", url);
-        let host = url.host_str().ok_or_else(||
+        let host = url.host_str().ok_or_else(|| {
             Error::from(ErrorKind::InvalidRequest(
                 "Tracker announce url has no host!".to_owned(),
-            )),
-        )?;
-        let port = url.port().ok_or_else(||
+            ))
+        })?;
+        let port = url.port().ok_or_else(|| {
             Error::from(ErrorKind::InvalidRequest(
                 "Tracker announce url has no port!".to_owned(),
-            )),
-        )?;
+            ))
+        })?;
 
         let id = self.new_conn();
         self.connections.insert(

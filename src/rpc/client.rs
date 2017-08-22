@@ -10,6 +10,7 @@ use super::reader::Reader;
 use super::writer::Writer;
 use super::proto::ws::{Message, Frame, Opcode};
 use super::{Result, ResultExt, ErrorKind};
+use super::EMPTY_HTTP_RESP;
 use util::{IOR, aread, sha1_hash};
 use CONFIG;
 
@@ -118,7 +119,9 @@ impl Client {
         if self.last_action.elapsed().as_secs() > CONN_TIMEOUT {
             return true;
         }
-        if self.last_action.elapsed().as_secs() > CONN_PING && self.send_msg(Message::ping(vec![0xDE, 0xAD])).is_err() {
+        if self.last_action.elapsed().as_secs() > CONN_PING &&
+            self.send_msg(Message::ping(vec![0xDE, 0xAD])).is_err()
+        {
             true
         } else {
             false
@@ -224,22 +227,7 @@ impl Incoming {
                         token,
                     }));
                 } else {
-                    // Probably some dumb CORS OPTION shit, just tell the client
-                    // everyting's cool and close up
-                    let lines =
-                        vec![
-                            format!("HTTP/1.1 204 NO CONTENT"),
-                            format!("Connection: {}", "Close"),
-                            format!("Access-Control-Allow-Origin: {}", "*"),
-                            format!("Access-Control-Allow-Methods: {}", "OPTIONS, POST, GET"),
-                            format!(
-                                "Access-Control-Allow-Headers: {}",
-                                "Access-Control-Allow-Headers, Origin, Accept, X-Requested-With, Content-Type, Access-Control-Request-Method, Access-Control-Request-Headers, Authorization"
-                            ),
-                            format!("\r\n"),
-                        ];
-                    let data = lines.join("\r\n");
-                    if self.conn.write(data.as_bytes()).is_err() {
+                    if self.conn.write(&EMPTY_HTTP_RESP).is_err() {
                         // Ignore error, we're DCing anyways
                     };
                     Err(io::ErrorKind::InvalidData.into())
@@ -316,9 +304,12 @@ fn validate_tx(req: &httparse::Request) -> Option<String> {
     // Check ?token=blah too
     req.path
         .and_then(|path| Url::parse(&format!("http://localhost{}", path)).ok())
-        .and_then(|url| url.query_pairs()
-                  .find(|&(ref k, _)| k == "token")
-                  .map(|(_, v)| format!("{}", v)))
+        .and_then(|url| {
+            url.query_pairs().find(|&(ref k, _)| k == "token").map(|(_,
+              v)| {
+                format!("{}", v)
+            })
+        })
 }
 
 fn validate_upgrade(req: &httparse::Request) -> result::Result<String, ()> {
@@ -353,10 +344,12 @@ fn validate_upgrade(req: &httparse::Request) -> result::Result<String, ()> {
     if CONFIG.rpc.auth {
         let auth = req.path
             .and_then(|path| Url::parse(&format!("http://localhost{}", path)).ok())
-            .and_then(|url| url.query_pairs()
-                  .find(|&(ref k, _)| k == "password")
-                  .map(|(_, v)| format!("{}", v))
-                  .map(|p| p == CONFIG.rpc.password))
+            .and_then(|url| {
+                url.query_pairs()
+                    .find(|&(ref k, _)| k == "password")
+                    .map(|(_, v)| format!("{}", v))
+                    .map(|p| p == CONFIG.rpc.password)
+            })
             .unwrap_or(false);
         if !auth {
             return Err(());

@@ -289,7 +289,7 @@ impl<T: cio::CIO> Control<T> {
                     t.rpc_update(u);
                 }
             }
-            rpc::Message::Torrent{ info, path } => self.add_torrent(info, path),
+            rpc::Message::Torrent { info, path } => self.add_torrent(info, path),
             rpc::Message::UpdateFile {
                 id,
                 torrent_id,

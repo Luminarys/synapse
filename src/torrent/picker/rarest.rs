@@ -110,9 +110,12 @@ impl Picker {
     pub fn pick<T: cio::CIO>(&mut self, peer: &Peer<T>) -> Option<u32> {
         // Find the first matching piece which is not complete,
         // and that the peer also has
-        self.pieces.iter()
+        self.pieces
+            .iter()
             .cloned()
-            .filter(|p| self.piece_idx[*p as usize].status == PieceStatus::Incomplete)
+            .filter(|p| {
+                self.piece_idx[*p as usize].status == PieceStatus::Incomplete
+            })
             .find(|p| peer.pieces().has_bit(*p as u64))
             .map(|p| {
                 if (self.piece_idx[p as usize].availability % 2) == 0 {
@@ -120,7 +123,7 @@ impl Picker {
                 }
                 p
             })
-                /*
+        /*
                 or bidx in 0..self.c.scale {
                     let block = *pidx as u64 * self.c.scale + bidx;
                     if !self.c.blocks.has_bit(block) {
@@ -192,7 +195,6 @@ impl Picker {
         self.piece_idx[self.pieces[b] as usize].idx = a;
         self.pieces.swap(a, b);
     }
-
 }
 
 #[cfg(test)]

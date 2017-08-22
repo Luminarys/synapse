@@ -77,14 +77,12 @@ impl Resolver {
         let csocks = &mut self.csocks;
         let marked = &self.marked;
         let reg = &self.reg;
-        socks.retain(|id, fd| {
-            if marked.contains(id) {
-                true
-            } else {
-                csocks.remove(fd);
-                reg.deregister(&CSockWrapper(*fd)).ok();
-                false
-            }
+        socks.retain(|id, fd| if marked.contains(id) {
+            true
+        } else {
+            csocks.remove(fd);
+            reg.deregister(&CSockWrapper(*fd)).ok();
+            false
         });
     }
 

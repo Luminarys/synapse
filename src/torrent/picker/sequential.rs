@@ -23,13 +23,21 @@ enum PieceStatus {
 impl Picker {
     pub fn new(pieces: &Bitfield) -> Picker {
         let mut p = (0..pieces.len())
-                      .filter(|p| pieces.has_bit(*p))
-                      .map(|p| Piece { pos: p as u32, status: PieceStatus::Complete })
-                      .collect::<Vec<_>>();
+            .filter(|p| pieces.has_bit(*p))
+            .map(|p| {
+                Piece {
+                    pos: p as u32,
+                    status: PieceStatus::Complete,
+                }
+            })
+            .collect::<Vec<_>>();
         let il = p.len();
-        p.extend((0..pieces.len())
-                      .filter(|p| !pieces.has_bit(*p))
-                      .map(|p| Piece { pos: p as u32, status: PieceStatus::Incomplete }));
+        p.extend((0..pieces.len()).filter(|p| !pieces.has_bit(*p)).map(|p| {
+            Piece {
+                pos: p as u32,
+                status: PieceStatus::Incomplete,
+            }
+        }));
 
         Picker {
             piece_idx: il,
@@ -38,11 +46,12 @@ impl Picker {
     }
 
     pub fn pick<T: cio::CIO>(&mut self, peer: &Peer<T>) -> Option<u32> {
-        self.pieces[self.piece_idx..].iter()
+        self.pieces[self.piece_idx..]
+            .iter()
             .find(|p| peer.pieces().has_bit(p.pos as u64))
             .map(|p| p.pos)
 
-            /*
+        /*
         for idx in peer.pieces().iter_from(self.piece_idx) {
             let start = idx * self.c.scale;
             for i in 0..self.c.scale {
@@ -86,7 +95,8 @@ impl Picker {
 
     /// Returns whether or not the whole piece is complete.
     pub fn completed(&mut self, idx: u32) {
-        self.pieces[self.piece_idx..].iter_mut()
+        self.pieces[self.piece_idx..]
+            .iter_mut()
             .find(|p| p.pos == idx)
             .map(|p| p.status = PieceStatus::Complete);
         /*
@@ -114,7 +124,8 @@ impl Picker {
 
     pub fn incomplete(&mut self, idx: u32) {
         let piece_idx = &mut self.piece_idx;
-        self.pieces.iter_mut()
+        self.pieces
+            .iter_mut()
             .enumerate()
             .find(|&(_, ref p)| p.pos == idx)
             .map(|(idx, p)| {

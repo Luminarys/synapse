@@ -193,7 +193,9 @@ impl RoutingTable {
                     }
                     node.update();
                 }
-                self.torrents.entry(hash).or_insert(Torrent { peers: Vec::new() });
+                self.torrents.entry(hash).or_insert(
+                    Torrent { peers: Vec::new() },
+                );
                 if !implied_port {
                     addr.set_port(port);
                 }
