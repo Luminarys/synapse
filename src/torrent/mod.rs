@@ -609,6 +609,7 @@ impl<T: cio::CIO> Torrent<T> {
         // Update RPC of the torrent, tracker, files, and peers
         let resources = self.rpc_info();
         self.cio.msg_rpc(rpc::CtlMessage::Extant(resources));
+        self.update_rpc_transfer();
         self.serialize();
     }
 
