@@ -75,21 +75,7 @@ fn add_file<S: Stream>(
         size: torrent.len() as u64,
         path: dir.as_ref().map(|d| format!("{}", d)),
     };
-    let msg_data = serde_json::to_string(&msg).chain_err(
-        || ErrorKind::Serialization,
-    )?;
-    let wsmsg = WSMessage::Text(msg_data);
-    c.send_message(&wsmsg).chain_err(|| ErrorKind::Websocket)?;
-    let mut smsg = match c.recv_message().chain_err(|| ErrorKind::Websocket)? {
-        WSMessage::Text(s) => {
-            serde_json::from_str(&s).chain_err(
-                || ErrorKind::Deserialization,
-            )?
-        }
-        // TODO: Handle Ping here
-        _ => unimplemented!(),
-    };
-    let token = if let SMessage::TransferOffer { token, .. } = smsg {
+    let token = if let SMessage::TransferOffer { token, .. } = send_req(c, msg)? {
         token
     } else {
         bail!("Failed to receieve transfer offer from synapse!");
@@ -103,7 +89,7 @@ fn add_file<S: Stream>(
         .send()
         .chain_err(|| ErrorKind::HTTP)?;
 
-    smsg = match c.recv_message().chain_err(|| ErrorKind::Websocket)? {
+    let smsg = match c.recv_message().chain_err(|| ErrorKind::Websocket)? {
         WSMessage::Text(s) => {
             serde_json::from_str(&s).chain_err(
                 || ErrorKind::Deserialization,
@@ -171,22 +157,7 @@ pub fn dl<S: Stream>(mut c: WClient<S>, url: &str, name: &str) -> Result<()> {
                 },
             ],
         };
-        let msg_data = serde_json::to_string(&msg).chain_err(
-            || ErrorKind::Serialization,
-        )?;
-        c.send_message(&WSMessage::Text(msg_data)).chain_err(|| {
-            ErrorKind::Websocket
-        })?;
-
-        let smsg = match c.recv_message().chain_err(|| ErrorKind::Websocket)? {
-            WSMessage::Text(s) => {
-                serde_json::from_str(&s).chain_err(
-                    || ErrorKind::Deserialization,
-                )?
-            }
-            _ => unimplemented!(),
-        };
-        if let SMessage::OResourcesExtant { ids, .. } = smsg {
+        if let SMessage::OResourcesExtant { ids, .. } = send_req(&mut c, msg)? {
             get_resources(&mut c, &mut serial, ids)?
         } else {
             bail!("Could not get files for torrent!");
@@ -212,22 +183,7 @@ pub fn dl<S: Stream>(mut c: WClient<S>, url: &str, name: &str) -> Result<()> {
             serial: serial.next(),
             id: file.id().to_owned(),
         };
-        let msg_data = serde_json::to_string(&msg).chain_err(
-            || ErrorKind::Serialization,
-        )?;
-        c.send_message(&WSMessage::Text(msg_data)).chain_err(|| {
-            ErrorKind::Websocket
-        })?;
-
-        let smsg = match c.recv_message().chain_err(|| ErrorKind::Websocket)? {
-            WSMessage::Text(s) => {
-                serde_json::from_str(&s).chain_err(
-                    || ErrorKind::Deserialization,
-                )?
-            }
-            _ => unimplemented!(),
-        };
-        if let SMessage::TransferOffer { token, .. } = smsg {
+        if let SMessage::TransferOffer { token, .. } = send_req(&mut c, msg)? {
             let client = HClient::new().chain_err(|| ErrorKind::HTTP)?;
             let mut resp = client
                 .get(url)
@@ -480,6 +436,28 @@ fn get_resources<S: Stream>(
         }
     }
     Ok(results)
+}
+
+fn send_req<S: Stream>(
+    c: &mut WClient<S>,
+    msg: CMessage
+    ) -> Result<SMessage<'static>> {
+    let msg_data = serde_json::to_string(&msg).chain_err(
+        || ErrorKind::Serialization,
+    )?;
+    c.send_message(&WSMessage::Text(msg_data)).chain_err(|| {
+        ErrorKind::Websocket
+    })?;
+    loop {
+        match c.recv_message().chain_err(|| ErrorKind::Websocket)? {
+            WSMessage::Text(s) => {
+                return serde_json::from_str(&s).chain_err(
+                    || ErrorKind::Deserialization,
+                );
+            }
+            _ => { },
+        };
+    }
 }
 
 fn fmt_bytes(num: f64) -> String {
