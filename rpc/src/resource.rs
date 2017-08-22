@@ -372,20 +372,13 @@ impl Resource {
                 mem::swap(&mut t.last_report, last_report);
                 mem::swap(&mut t.error, error);
             }
-            (&mut Resource::File(ref mut f), SResourceUpdate::FilePriority {
-                priority,
-                ..
-            }) => {
+            (&mut Resource::File(ref mut f), SResourceUpdate::FilePriority { priority, .. }) => {
                 f.priority = priority;
             }
-            (&mut Resource::File(ref mut f), SResourceUpdate::FileProgress {
-                progress,
-                ..
-            }) => {
+            (&mut Resource::File(ref mut f), SResourceUpdate::FileProgress { progress, .. }) => {
                 f.progress = progress;
             }
-            _ => {
-            },
+            _ => {}
         }
     }
 }
