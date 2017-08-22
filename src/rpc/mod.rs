@@ -353,8 +353,18 @@ impl RPC {
                     return Err(());
                 }
                 if e.is_data() {
+                    #[derive(Deserialize)]
+                    struct Serial {
+                        serial: u64,
+                    }
+
+                    let serial = match serde_json::from_str::<Serial>(data) {
+                        Ok(s) => Some(s.serial),
+                        Err(_) => None,
+                    };
+
                     let msg = SMessage::InvalidSchema(message::Error {
-                        serial: None,
+                        serial,
                         reason: format!("Invalid message format: {}", e),
                     });
                     if c.send(ws::Frame::Text(serde_json::to_string(&msg).unwrap()))
