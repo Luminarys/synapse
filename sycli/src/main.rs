@@ -1,3 +1,5 @@
+#![allow(unused_doc_comment)]
+
 #[macro_use]
 extern crate error_chain;
 #[macro_use]

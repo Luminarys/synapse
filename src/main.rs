@@ -146,27 +146,18 @@ fn init() -> io::Result<()> {
     let (tx, rx) = mpsc::channel();
     thread::spawn(move || {
         let throttler = throttle::Throttler::new(0, 0, THROT_TOKS, &creg);
-        if let Ok(acio) = acio::ACIO::new(cpoll, creg, chans, LOG.new(o!("ctrl" => "acio"))) {
-            if let Ok(mut ctrl) = control::Control::new(
-                acio,
-                throttler,
-                LOG.new(o!("thread" => "ctrl")),
-            )
-            {
-                tx.send(true).unwrap();
-                ctrl.run();
-            } else {
-                tx.send(false).unwrap();
+        let acio = acio::ACIO::new(cpoll, creg, chans, LOG.new(o!("ctrl" => "acio")));
+        match control::Control::new(acio, throttler, LOG.new(o!("thread" => "ctrl"))) {
+            Ok(mut c) => {
+                tx.send(Ok(())).unwrap();
+                c.run();
             }
-        } else {
-            tx.send(false).unwrap();
+            Err(e) => {
+                tx.send(Err(e)).unwrap();
+            }
         }
     });
-    if rx.recv().unwrap() {
-        Ok(())
-    } else {
-        util::io_err("Failed to intialize control thread!")
-    }
+    rx.recv().unwrap()
 }
 
 fn main() {

@@ -42,7 +42,7 @@ struct ACIOData {
 }
 
 impl ACIO {
-    pub fn new(poll: amy::Poller, reg: amy::Registrar, chans: ACChans, l: Logger) -> Result<ACIO> {
+    pub fn new(poll: amy::Poller, reg: amy::Registrar, chans: ACChans, l: Logger) -> ACIO {
         let data = ACIOData {
             poll,
             reg,
@@ -51,7 +51,7 @@ impl ACIO {
             peers: HashMap::new(),
             events: Vec::new(),
         };
-        Ok(ACIO { data: Rc::new(UnsafeCell::new(data)) })
+        ACIO { data: Rc::new(UnsafeCell::new(data)) }
     }
 
     fn process_event(&mut self, not: amy::Notification, events: &mut Vec<cio::Event>) {

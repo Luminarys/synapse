@@ -45,7 +45,6 @@ impl<T: cio::CIO> Control<T> {
         let torrents = HashMap::new();
         let peers = HashMap::new();
         let hash_idx = HashMap::new();
-        // Every minute check to update trackers;
         let mut jobs = job::JobManager::new();
         jobs.add_job(job::TrackerUpdate, time::Duration::from_secs(TRK_JOB_SECS));
         jobs.add_job(
