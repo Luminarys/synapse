@@ -316,6 +316,7 @@ impl<T: cio::CIO> Control<T> {
                 self.cio.msg_rpc(rpc::CtlMessage::Update(vec![
                     rpc::resource::SResourceUpdate::Throttle {
                         id,
+                        kind: rpc::resource::ResourceKind::Server,
                         throttle_up: tu,
                         throttle_down: td,
                     },
@@ -372,6 +373,7 @@ impl<T: cio::CIO> Control<T> {
             self.cio.msg_rpc(rpc::CtlMessage::Update(vec![
                 rpc::resource::SResourceUpdate::Rate {
                     id: hash_to_id(&PEER_ID[..]),
+                    kind: rpc::resource::ResourceKind::Server,
                     rate_up,
                     rate_down,
                 },

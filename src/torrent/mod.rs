@@ -466,6 +466,7 @@ impl<T: cio::CIO> Torrent<T> {
                     self.cio.msg_rpc(rpc::CtlMessage::Update(vec![
                         resource::SResourceUpdate::PieceDownloaded {
                             id: util::piece_rpc_id(&self.info.hash, index as u64),
+                            kind: resource::ResourceKind::Piece,
                             downloaded: true,
                         },
                     ]));
@@ -643,6 +644,7 @@ impl<T: cio::CIO> Torrent<T> {
         self.cio.msg_rpc(rpc::CtlMessage::Update(vec![
             resource::SResourceUpdate::Throttle {
                 id,
+                kind: resource::ResourceKind::Torrent,
                 throttle_up: ul,
                 throttle_down: dl,
             },
@@ -660,6 +662,7 @@ impl<T: cio::CIO> Torrent<T> {
         self.cio.msg_rpc(rpc::CtlMessage::Update(vec![
             resource::SResourceUpdate::TorrentPriority {
                 id,
+                kind: resource::ResourceKind::Torrent,
                 priority,
             },
         ]));
@@ -668,7 +671,11 @@ impl<T: cio::CIO> Torrent<T> {
     fn set_file_priority(&mut self, id: String, priority: u8) {
         // TODO: Implement file priority in picker
         self.cio.msg_rpc(rpc::CtlMessage::Update(vec![
-            resource::SResourceUpdate::FilePriority { id, priority },
+            resource::SResourceUpdate::FilePriority {
+                id,
+                kind: resource::ResourceKind::File,
+                priority
+            },
         ]));
     }
 
@@ -896,6 +903,7 @@ impl<T: cio::CIO> Torrent<T> {
         self.cio.msg_rpc(rpc::CtlMessage::Update(vec![
             SResourceUpdate::TorrentStatus {
                 id,
+                kind: resource::ResourceKind::Torrent,
                 error: match status {
                     Status::DiskError => Some("Disk error".to_owned()),
                     _ => None,
@@ -911,6 +919,7 @@ impl<T: cio::CIO> Torrent<T> {
         self.cio.msg_rpc(rpc::CtlMessage::Update(vec![
             SResourceUpdate::TorrentPeers {
                 id,
+                kind: resource::ResourceKind::Torrent,
                 peers: self.peers.len() as u16,
                 availability,
             },
@@ -929,6 +938,7 @@ impl<T: cio::CIO> Torrent<T> {
         self.cio.msg_rpc(rpc::CtlMessage::Update(vec![
             SResourceUpdate::TrackerStatus {
                 id,
+                kind: resource::ResourceKind::Tracker,
                 last_report: Utc::now(),
                 error,
             },
@@ -942,6 +952,7 @@ impl<T: cio::CIO> Torrent<T> {
         let mut updates = Vec::new();
         updates.push(SResourceUpdate::TorrentTransfer {
             id,
+            kind: resource::ResourceKind::Torrent,
             rate_up,
             rate_down,
             transferred_up: self.uploaded,
@@ -954,6 +965,7 @@ impl<T: cio::CIO> Torrent<T> {
                     let (rate_up, rate_down) = p.get_tx_rates();
                     updates.push(SResourceUpdate::Rate {
                         id: util::peer_rpc_id(&self.info.hash, *pid as u64),
+                        kind: resource::ResourceKind::Peer,
                         rate_up,
                         rate_down,
                     });
@@ -968,6 +980,7 @@ impl<T: cio::CIO> Torrent<T> {
                 let id = util::peer_rpc_id(&self.info.hash, *pid as u64);
                 updates.push(SResourceUpdate::Rate {
                     id,
+                    kind: resource::ResourceKind::Peer,
                     rate_up,
                     rate_down,
                 });
@@ -989,6 +1002,7 @@ impl<T: cio::CIO> Torrent<T> {
             let id = util::file_rpc_id(&self.info.hash, p.as_path().to_string_lossy().as_ref());
             updates.push(SResourceUpdate::FileProgress {
                 id,
+                kind: resource::ResourceKind::File,
                 progress: (d.0 as f32 / d.1 as f32),
             });
         }
@@ -1067,7 +1081,11 @@ impl<T: cio::CIO> Torrent<T> {
         let id = self.rpc_id();
         let sequential = self.picker.is_sequential();
         self.cio.msg_rpc(rpc::CtlMessage::Update(
-            vec![SResourceUpdate::TorrentPicker { id, sequential }],
+            vec![SResourceUpdate::TorrentPicker {
+                id,
+                kind: resource::ResourceKind::Torrent,
+                sequential
+            }],
         ));
     }
 }

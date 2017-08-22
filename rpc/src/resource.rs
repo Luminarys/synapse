@@ -43,22 +43,30 @@ pub enum SResourceUpdate<'a> {
     OResource(Resource),
     Throttle {
         id: String,
+        #[serde(rename = "type")]
+        kind: ResourceKind,
         throttle_up: u32,
         throttle_down: u32,
     },
     Rate {
         id: String,
+        #[serde(rename = "type")]
+        kind: ResourceKind,
         rate_up: u64,
         rate_down: u64,
     },
 
     TorrentStatus {
         id: String,
+        #[serde(rename = "type")]
+        kind: ResourceKind,
         error: Option<String>,
         status: Status,
     },
     TorrentTransfer {
         id: String,
+        #[serde(rename = "type")]
+        kind: ResourceKind,
         rate_up: u64,
         rate_down: u64,
         transferred_up: u64,
@@ -67,23 +75,57 @@ pub enum SResourceUpdate<'a> {
     },
     TorrentPeers {
         id: String,
+        #[serde(rename = "type")]
+        kind: ResourceKind,
         peers: u16,
         availability: f32,
     },
-    TorrentPicker { id: String, sequential: bool },
-    TorrentPriority { id: String, priority: u8 },
+    TorrentPicker {
+        id: String,
+        #[serde(rename = "type")]
+        kind: ResourceKind,
+        sequential: bool
+    },
+    TorrentPriority {
+        id: String,
+        #[serde(rename = "type")]
+        kind: ResourceKind,
+        priority: u8
+    },
 
     TrackerStatus {
         id: String,
+        #[serde(rename = "type")]
+        kind: ResourceKind,
         last_report: DateTime<Utc>,
         error: Option<String>,
     },
 
-    FilePriority { id: String, priority: u8 },
-    FileProgress { id: String, progress: f32 },
+    FilePriority {
+        id: String,
+        #[serde(rename = "type")]
+        kind: ResourceKind,
+        priority: u8
+    },
+    FileProgress {
+        id: String,
+        #[serde(rename = "type")]
+        kind: ResourceKind,
+        progress: f32
+    },
 
-    PieceAvailable { id: String, available: bool },
-    PieceDownloaded { id: String, downloaded: bool },
+    PieceAvailable {
+        id: String,
+        #[serde(rename = "type")]
+        kind: ResourceKind,
+        available: bool
+    },
+    PieceDownloaded {
+        id: String,
+        #[serde(rename = "type")]
+        kind: ResourceKind,
+        downloaded: bool
+    },
 }
 
 /// Collection of mutable fields that clients
