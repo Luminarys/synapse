@@ -50,7 +50,7 @@ impl Listener {
         let listener = TcpListener::bind(SocketAddrV4::new(ip, port))?;
         listener.set_nonblocking(true)?;
         let lid = reg.register(&listener, amy::Event::Both)?;
-    
+
         let (ch, dh) = handle::Handle::new(creg, &mut reg)?;
         dh.run("listener", move |h, l| {
             Listener {

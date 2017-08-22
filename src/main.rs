@@ -80,7 +80,7 @@ lazy_static! {
                         Ok(cf) => {
                             let mut c = config::Config::from_file(cf);
                             if !c.rpc.local && !c.rpc.auth {
-                                error!(LOG, "Synapse must use authentication for a non local config!");
+                                error!(LOG, "Authentication required for a non local config!");
                                 error!(LOG, "Overriding config to use local RPC!");
                                 c.rpc.local = true
                             }

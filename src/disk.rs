@@ -147,7 +147,12 @@ impl Request {
         let sd = &CONFIG.disk.session;
         let dd = &CONFIG.disk.directory;
         match self {
-            Request::Write { data, locations, path, .. } => {
+            Request::Write {
+                data,
+                locations,
+                path,
+                ..
+            } => {
                 let mut pb = path::PathBuf::from(path.as_ref().unwrap_or(dd));
                 for loc in locations {
                     pb.push(&loc.file);
