@@ -84,13 +84,13 @@ pub enum SResourceUpdate<'a> {
         id: String,
         #[serde(rename = "type")]
         kind: ResourceKind,
-        sequential: bool
+        sequential: bool,
     },
     TorrentPriority {
         id: String,
         #[serde(rename = "type")]
         kind: ResourceKind,
-        priority: u8
+        priority: u8,
     },
 
     TrackerStatus {
@@ -105,26 +105,26 @@ pub enum SResourceUpdate<'a> {
         id: String,
         #[serde(rename = "type")]
         kind: ResourceKind,
-        priority: u8
+        priority: u8,
     },
     FileProgress {
         id: String,
         #[serde(rename = "type")]
         kind: ResourceKind,
-        progress: f32
+        progress: f32,
     },
 
     PieceAvailable {
         id: String,
         #[serde(rename = "type")]
         kind: ResourceKind,
-        available: bool
+        available: bool,
     },
     PieceDownloaded {
         id: String,
         #[serde(rename = "type")]
         kind: ResourceKind,
-        downloaded: bool
+        downloaded: bool,
     },
 }
 
