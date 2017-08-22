@@ -22,7 +22,7 @@ resource might be a torrent, tracker, peer, etc, as indicated by the type
 field, and the server assigns a ID to each resource. IDs are deterministic
 and can be expected to be consistent across sessions and for the same resource
 (i.e. the same given torrent will have the same ID on several different
-machines). Fields marked with * mutable via UPDATE_RESOURCE messages.
+machines). Fields marked with * are mutable via UPDATE_RESOURCE messages.
 
 server
 
@@ -339,8 +339,8 @@ The path to use will be assumed to be known by the client, rather than given
 by synapse. By default, synapse will listen for HTTP requests over its RPC port,
 and if a websocket upgrade is not initiated, a transfer request is assumed.
 The client should initiate an http request using bearer authorization or
-by specifying the "token" query parameter in the url
-with the provided token within the time limit defined by the expires field.
+by specifying the "token" query parameter in the url.
+This transfer must be initiated wihin the time limit defined by the expires field.
 If the transfer offer is for downloading a file, the token may be reused any number
 of times so long as it is not expired. If the transfer offer is for uploading a file,
 the client should send a POST request containing the binary encoded data.
