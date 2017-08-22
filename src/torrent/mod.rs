@@ -674,7 +674,7 @@ impl<T: cio::CIO> Torrent<T> {
             resource::SResourceUpdate::FilePriority {
                 id,
                 kind: resource::ResourceKind::File,
-                priority
+                priority,
             },
         ]));
     }
@@ -1080,13 +1080,13 @@ impl<T: cio::CIO> Torrent<T> {
         }
         let id = self.rpc_id();
         let sequential = self.picker.is_sequential();
-        self.cio.msg_rpc(rpc::CtlMessage::Update(
-            vec![SResourceUpdate::TorrentPicker {
+        self.cio.msg_rpc(rpc::CtlMessage::Update(vec![
+            SResourceUpdate::TorrentPicker {
                 id,
                 kind: resource::ResourceKind::Torrent,
-                sequential
-            }],
-        ));
+                sequential,
+            },
+        ]));
     }
 }
 
