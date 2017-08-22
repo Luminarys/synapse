@@ -22,6 +22,7 @@ pub enum CMessage {
         serial: u64,
         #[serde(default)]
         kind: ResourceKind,
+        #[serde(default)]
         criteria: Vec<Criterion>,
     },
     FilterUnsubscribe { serial: u64, filter_serial: u64 },
