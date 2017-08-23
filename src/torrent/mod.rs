@@ -562,22 +562,6 @@ impl<T: cio::CIO> Torrent<T> {
     }
 
     pub fn rpc_update(&mut self, u: rpc::proto::resource::CResourceUpdate) {
-        if let Some(status) = u.status {
-            match (status, self.status) {
-                (resource::Status::Paused, Status::Paused) => {
-                    self.resume();
-                }
-                (resource::Status::Paused, _) => {
-                    self.pause();
-                }
-                (resource::Status::Hashing, _) => {
-                    self.validate();
-                }
-                // The rpc module should handle invalid status requests.
-                _ => {}
-            }
-        }
-
         if u.throttle_up.is_some() || u.throttle_down.is_some() {
             let tu = u.throttle_up.unwrap_or(self.throttle.ul_rate() as u32);
             let td = u.throttle_down.unwrap_or(self.throttle.dl_rate() as u32);
@@ -1051,7 +1035,7 @@ impl<T: cio::CIO> Torrent<T> {
         }
     }
 
-    fn validate(&mut self) {
+    pub fn validate(&mut self) {
         self.cio.msg_disk(
             disk::Request::validate(self.id, self.info.clone()),
         );

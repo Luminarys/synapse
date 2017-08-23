@@ -45,7 +45,7 @@ torrent
         "path": string*,
         "created": datetime,
         "modified": datetime,
-        "status": status enum*,
+        "status": status enum,
         "error": string OR null,
         "size": number OR null,     bytes or null if DHT and unknown
         "progress": number,         0..1
@@ -72,11 +72,6 @@ Status enum:
     "seeding": seeding
     "hashing": hash check in progress
     "error": see "error" field for details
-
-The semantics of updating the Status enum are special.
-Clients must only send status updates of value "paused" and "hashing".
-Pausing will toggle the pause state on the torrent, and hashing will trigger
-a re-verification of all the torrent's files.
 
 piece
 
@@ -405,6 +400,39 @@ respond with a TRANSFER_OFFER request and send along the file.
     {
         "type": "DOWNLOAD_FILE",
         "id": ID
+    }
+
+PAUSE_TORRENT          client->server
+
+Pauses a torrent.
+
+    {
+        "type": "PAUSE_TORRENT",
+        "id": ID
+    }
+
+RESUME_TORRENT          client->server
+
+Resumes a torrent.
+
+    {
+        "type": "RESUME_TORRENT",
+        "id": ID
+    }
+
+VALIDATE_RESOURCES      client->server
+
+Validates a list of resources. At the moment only torrents will be
+validated, however this may be expanded to includes files in the future.
+
+    {
+        "type": "VALIDATE_RESOURCES",
+        "ids": [
+            IDs,
+            .
+            .
+            .
+        ]
     }
 
                                  ERROR MESSAGES

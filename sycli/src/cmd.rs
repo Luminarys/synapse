@@ -8,7 +8,7 @@ use prettytable::Table;
 
 use rpc::message::{CMessage, SMessage};
 use rpc::criterion::{Criterion, Value, Operation};
-use rpc::resource::{Resource, ResourceKind, SResourceUpdate, CResourceUpdate, Status};
+use rpc::resource::{Resource, ResourceKind, SResourceUpdate};
 
 use client::Client;
 use error::{Result, ResultExt, ErrorKind};
@@ -253,12 +253,40 @@ pub fn pause(mut c: Client, torrents: Vec<&str>) -> Result<()> {
 fn pause_torrent(c: &mut Client, torrent: &str) -> Result<()> {
     let resources = search_torrent_name(c, torrent)?;
     if resources.len() == 1 {
-        let mut resource = CResourceUpdate::default();
-        resource.id = resources[0].id().to_owned();
-        resource.status = Some(Status::Paused);
-        let msg = CMessage::UpdateResource {
+        let msg = CMessage::PauseTorrent {
             serial: c.next_serial(),
-            resource,
+            id: resources[0].id().to_owned(),
+        };
+        c.send(msg)?;
+    } else if resources.is_empty() {
+        eprintln!("Could not find any matching torrents for {}", torrent);
+    } else {
+        eprintln!(
+            "Ambiguous results searching for {}. Potential alternatives include: ",
+            torrent
+        );
+        for res in resources.into_iter().take(3) {
+            if let Resource::Torrent(t) = res {
+                eprintln!("{}", t.name);
+            }
+        }
+    }
+    Ok(())
+}
+
+pub fn resume(mut c: Client, torrents: Vec<&str>) -> Result<()> {
+    for torrent in torrents {
+        resume_torrent(&mut c, torrent)?;
+    }
+    Ok(())
+}
+
+fn resume_torrent(c: &mut Client, torrent: &str) -> Result<()> {
+    let resources = search_torrent_name(c, torrent)?;
+    if resources.len() == 1 {
+        let msg = CMessage::ResumeTorrent {
+            serial: c.next_serial(),
+            id: resources[0].id().to_owned(),
         };
         c.send(msg)?;
     } else if resources.is_empty() {

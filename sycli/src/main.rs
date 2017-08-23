@@ -107,10 +107,22 @@ fn main() {
         )
         .subcommand(
             SubCommand::with_name("pause")
-                .about("Toggles the pause state of the given torrents.")
+                .about("Pauses the given torrents.")
                 .arg(
                     Arg::with_name("torrents")
-                        .help("Names of torrents to pause/unpause.")
+                        .help("Names of torrents to pause.")
+                        .multiple(true)
+                        .short("t")
+                        .long("torrents")
+                        .index(1),
+                ),
+        )
+        .subcommand(
+            SubCommand::with_name("resume")
+                .about("Resumes the given torrents.")
+                .arg(
+                    Arg::with_name("torrents")
+                        .help("Names of torrents to resume.")
                         .multiple(true)
                         .short("t")
                         .long("torrents")
@@ -198,6 +210,14 @@ fn main() {
             let res = cmd::pause(client, args.values_of("torrents").unwrap().collect());
             if let Err(e) = res {
                 eprintln!("Failed to pause torrents: {:?}", e);
+                process::exit(1);
+            }
+        }
+        "resume" => {
+            let args = matches.subcommand_matches("resume").unwrap();
+            let res = cmd::resume(client, args.values_of("torrents").unwrap().collect());
+            if let Err(e) = res {
+                eprintln!("Failed to resume torrents: {:?}", e);
                 process::exit(1);
             }
         }

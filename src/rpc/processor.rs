@@ -235,6 +235,60 @@ impl Processor {
                 self.filter_subs.remove(&(client, filter_serial));
             }
 
+            CMessage::PauseTorrent { serial, id } => {
+                match self.resources.get(&id) {
+                    Some(&Resource::Torrent(_)) => rmsg = Some(Message::Pause(id)),
+                    Some(_) => {
+                        resp.push(SMessage::InvalidResource(Error {
+                            serial: Some(serial),
+                            reason: "Only torrents can be paused".to_owned(),
+                        }))
+                    }
+                    None => {
+                        resp.push(SMessage::UnknownResource(Error {
+                            serial: Some(serial),
+                            reason: format!("Unknown resource {}", id),
+                        }))
+                    }
+                }
+            }
+            CMessage::ResumeTorrent { serial, id } => {
+                match self.resources.get(&id) {
+                    Some(&Resource::Torrent(_)) => rmsg = Some(Message::Resume(id)),
+                    Some(_) => {
+                        resp.push(SMessage::InvalidResource(Error {
+                            serial: Some(serial),
+                            reason: "Only torrents can be resumed".to_owned(),
+                        }))
+                    }
+                    None => {
+                        resp.push(SMessage::UnknownResource(Error {
+                            serial: Some(serial),
+                            reason: format!("Unknown resource {}", id),
+                        }))
+                    }
+                }
+            }
+            CMessage::ValidateResources { serial, mut ids } => {
+                ids.retain(|id| match self.resources.get(id) {
+                    Some(&Resource::Torrent(_)) => true,
+                    Some(_) => {
+                        resp.push(SMessage::InvalidResource(Error {
+                            serial: Some(serial),
+                            reason: "Only torrents can be validated".to_owned(),
+                        }));
+                        false
+                    }
+                    None => {
+                        resp.push(SMessage::UnknownResource(Error {
+                            serial: Some(serial),
+                            reason: format!("Unknown resource {}", id),
+                        }));
+                        false
+                    }
+                });
+                rmsg = Some(Message::Validate(ids));
+            }
             CMessage::UploadTorrent { serial, size, path } => {
                 resp.push(self.new_transfer(
                     client,

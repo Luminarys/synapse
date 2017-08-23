@@ -77,6 +77,9 @@ pub enum Message {
         priority: u8,
     },
     RemoveTorrent(String),
+    Pause(String),
+    Resume(String),
+    Validate(Vec<String>),
     RemovePeer { id: String, torrent_id: String },
     RemoveTracker { id: String, torrent_id: String },
     Torrent {

@@ -134,7 +134,6 @@ pub enum SResourceUpdate<'a> {
 #[serde(deny_unknown_fields)]
 pub struct CResourceUpdate {
     pub id: String,
-    pub status: Option<Status>,
     pub path: Option<String>,
     pub priority: Option<u8>,
     pub sequential: Option<bool>,

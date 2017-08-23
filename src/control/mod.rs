@@ -330,6 +330,32 @@ impl<T: cio::CIO> Control<T> {
                     .and_then(|i| torrents.remove(&i))
                     .map(|mut t| t.delete());
             }
+            rpc::Message::Pause(id) => {
+                let hash_idx = &mut self.hash_idx;
+                let torrents = &mut self.torrents;
+                id_to_hash(&id)
+                    .and_then(|d| hash_idx.get(d.as_ref()))
+                    .and_then(|i| torrents.get_mut(&i))
+                    .map(|t| t.pause());
+            }
+            rpc::Message::Resume(id) => {
+                let hash_idx = &mut self.hash_idx;
+                let torrents = &mut self.torrents;
+                id_to_hash(&id)
+                    .and_then(|d| hash_idx.get(d.as_ref()))
+                    .and_then(|i| torrents.get_mut(&i))
+                    .map(|t| t.resume());
+            }
+            rpc::Message::Validate(ids) => {
+                let hash_idx = &mut self.hash_idx;
+                let torrents = &mut self.torrents;
+                for id in ids {
+                    id_to_hash(&id)
+                        .and_then(|d| hash_idx.get(d.as_ref()))
+                        .and_then(|i| torrents.get_mut(&i))
+                        .map(|t| t.validate());
+                }
+            }
             rpc::Message::RemovePeer { id, torrent_id } => {
                 let hash_idx = &self.hash_idx;
                 let torrents = &mut self.torrents;
