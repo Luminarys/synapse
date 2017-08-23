@@ -89,7 +89,7 @@ impl Simulation {
                         peer.requests.remove(b.ind_sample(&mut rng))
                     };
                     let ref mut received = self.peers()[req.peer];
-                    received.picker.completed(Block::new(req.piece, 0));
+                    received.picker.completed(Block::new(req.piece, 0)).unwrap();
                     received.data.pieces_mut().set_bit(req.piece as u64);
                     if received.data.pieces().complete() {
                         received.compl = Some(self.ticks);

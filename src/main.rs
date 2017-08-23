@@ -55,8 +55,6 @@ pub const DHT_EXT: (usize, u8) = (7, 1);
 /// Throttler max token amount
 pub const THROT_TOKS: usize = 2 * 1024 * 1024;
 
-pub const RAREST_PKR: bool = true;
-
 lazy_static! {
     pub static ref TC: atomic::AtomicUsize = {
         atomic::AtomicUsize::new(0)

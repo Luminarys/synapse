@@ -18,7 +18,7 @@ pub use self::peer::{Peer, PeerConn};
 pub use self::peer::Message;
 
 use self::picker::Picker;
-use {bincode, rpc, disk, util, RAREST_PKR, CONFIG};
+use {bincode, rpc, disk, util, CONFIG};
 use control::cio;
 use rpc::resource::{self, Resource, SResourceUpdate};
 use throttle::Throttle;
@@ -109,11 +109,7 @@ impl<T: cio::CIO> Torrent<T> {
         debug!(l, "Creating {:?}", info);
         let peers = HashMap::new();
         let pieces = Bitfield::new(info.pieces() as u64);
-        let picker = if RAREST_PKR {
-            Picker::new_rarest(&info, &pieces)
-        } else {
-            Picker::new_sequential(&info, &pieces)
-        };
+        let picker = Picker::new(&info, &pieces);
         let leechers = HashSet::new();
         let status = Status::Pending;
         let mut t = Torrent {
@@ -156,7 +152,7 @@ impl<T: cio::CIO> Torrent<T> {
         debug!(l, "Torrent data deserialized!");
         let peers = HashMap::new();
         let leechers = HashSet::new();
-        let picker = picker::Picker::new_rarest(&d.info, &d.pieces);
+        let picker = picker::Picker::new(&d.info, &d.pieces);
         let mut t = Torrent {
             id,
             info: Arc::new(d.info),

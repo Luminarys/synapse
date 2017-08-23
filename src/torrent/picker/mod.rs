@@ -58,27 +58,15 @@ struct Request {
 const MAX_DUP_REQS: usize = 3;
 
 impl Picker {
-    /// Creates a new rarest picker, which will select over
-    /// the given pieces
-    pub fn new_rarest(info: &Info, pieces: &Bitfield) -> Picker {
+    /// Creates a new picker, which will select over
+    /// the given pieces. The algorithm used for selection
+    /// will vary based on the current swarm state, but
+    /// will default to rarest first.
+    pub fn new(info: &Info, pieces: &Bitfield) -> Picker {
         let scale = info.piece_len / 16_384;
         let picker = rarest::Picker::new(pieces);
         Picker {
             picker: PickerKind::Rarest(picker),
-            scale,
-            seeders: 0,
-            unpicked: pieces.clone(),
-            downloading: HashMap::new(),
-        }
-    }
-
-    /// Creates a new sequential picker, which will select over
-    /// the given pieces
-    pub fn new_sequential(info: &Info, pieces: &Bitfield) -> Picker {
-        let scale = info.piece_len / 16_384;
-        let picker = sequential::Picker::new(pieces);
-        Picker {
-            picker: PickerKind::Sequential(picker),
             scale,
             seeders: 0,
             unpicked: pieces.clone(),
@@ -248,6 +236,32 @@ impl Picker {
     }
 }
 
+#[cfg(test)]
+impl Picker {
+    pub fn new_rarest(info: &Info, pieces: &Bitfield) -> Picker {
+        let scale = info.piece_len / 16_384;
+        let picker = rarest::Picker::new(pieces);
+        Picker {
+            picker: PickerKind::Rarest(picker),
+            scale,
+            seeders: 0,
+            unpicked: pieces.clone(),
+            downloading: HashMap::new(),
+        }
+    }
+
+    pub fn new_sequential(info: &Info, pieces: &Bitfield) -> Picker {
+        let scale = info.piece_len / 16_384;
+        let picker = sequential::Picker::new(pieces);
+        Picker {
+            picker: PickerKind::Sequential(picker),
+            scale,
+            seeders: 0,
+            unpicked: pieces.clone(),
+            downloading: HashMap::new(),
+        }
+    }
+}
 impl Block {
     pub fn new(index: u32, offset: u32) -> Block {
         Block { index, offset }
