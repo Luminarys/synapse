@@ -218,7 +218,7 @@ pub struct File {
 pub struct Peer {
     pub id: String,
     pub torrent_id: String,
-    pub client_id: [u8; 20],
+    pub client_id: String,
     pub ip: String,
     pub rate_up: u64,
     pub rate_down: u64,

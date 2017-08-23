@@ -106,7 +106,7 @@ peer
         "id": ID,
         "type": "peer",
         "torrent_id": ID,
-        "client_id": [byte],
+        "client_id": string,    hex string
         "ip": string,
         "rate_up": number,      bit/sec,
         "rate_down": number,    bit/sec,
