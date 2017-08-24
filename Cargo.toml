@@ -44,7 +44,7 @@ features = ["bigint", "serde"]
 [dependencies.slog]
 version = "2"
 default-features = false
-features = ["max_level_debug"]
+features = ["max_level_debug", "release_max_level_info"]
 
 [profile.bench]
 opt-level = 3
@@ -54,7 +54,7 @@ panic = 'unwind'
 
 [profile.release]
 opt-level = 3
-debug-assertions = true
+debug-assertions = false
 panic = 'unwind'
 
 [features]

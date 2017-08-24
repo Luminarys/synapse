@@ -246,7 +246,7 @@ impl<T: cio::CIO> Torrent<T> {
                 self.tracker = TrackerStatus::Failure(s.clone());
             }
             Err(ref e) => {
-                warn!(self.l, "Failed to query tracker: {:?}", e);
+                warn!(self.l, "Failed to query tracker: {}", e);
                 self.tracker = TrackerStatus::Error;
             }
         }
