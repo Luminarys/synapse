@@ -105,13 +105,18 @@ impl<T: cio::CIO> Torrent<T> {
         throttle: Throttle,
         cio: T,
         l: Logger,
+        start: bool,
     ) -> Torrent<T> {
         debug!(l, "Creating {:?}", info);
         let peers = HashMap::new();
         let pieces = Bitfield::new(info.pieces() as u64);
         let picker = Picker::new(&info, &pieces);
         let leechers = HashSet::new();
-        let status = Status::Pending;
+        let status = if start {
+            Status::Pending
+        } else {
+            Status::Paused
+        };
         let mut t = Torrent {
             id,
             info: Arc::new(info),
@@ -356,7 +361,9 @@ impl<T: cio::CIO> Torrent<T> {
                         }
                         self.request_all();
                     }
-                    self.set_status(Status::Pending);
+                    if !self.status.stopped() {
+                        self.set_status(Status::Pending);
+                    }
                 }
                 // update the RPC stats once done
                 self.update_rpc_transfer();
@@ -595,6 +602,10 @@ impl<T: cio::CIO> Torrent<T> {
     }
 
     fn announce_start(&mut self) {
+        if self.status.stopped() {
+            return;
+        }
+
         let req = tracker::Request::started(self);
         self.cio.msg_trk(req);
         // TODO: Consider repeatedly sending out these during annoucne intervals
@@ -1043,6 +1054,9 @@ impl<T: cio::CIO> Torrent<T> {
     }
 
     fn request_all(&mut self) {
+        if self.status.stopped() {
+            return;
+        }
         for pid in self.pids() {
             self.make_requests_pid(pid);
         }

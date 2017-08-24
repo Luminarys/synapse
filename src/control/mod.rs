@@ -261,7 +261,7 @@ impl<T: cio::CIO> Control<T> {
         self.cio.flush_peers(self.throttler.flush_ul());
     }
 
-    fn add_torrent(&mut self, info: torrent::Info, path: Option<String>) {
+    fn add_torrent(&mut self, info: torrent::Info, path: Option<String>, start: bool) {
         debug!(self.l, "Adding {:?}!", info);
         if self.hash_idx.contains_key(&info.hash) {
             warn!(self.l, "Torrent already exists!");
@@ -270,7 +270,7 @@ impl<T: cio::CIO> Control<T> {
         let tid = self.tid_cnt;
         let throttle = self.throttler.get_throttle(tid);
         let log = self.l.new(o!("torrent" => tid));
-        let t = Torrent::new(tid, path, info, throttle, self.cio.new_handle(), log);
+        let t = Torrent::new(tid, path, info, throttle, self.cio.new_handle(), log, start);
         self.hash_idx.insert(t.info().hash, tid);
         self.tid_cnt += 1;
         self.torrents.insert(tid, t);
@@ -289,7 +289,7 @@ impl<T: cio::CIO> Control<T> {
                     t.rpc_update(u);
                 }
             }
-            rpc::Message::Torrent { info, path } => self.add_torrent(info, path),
+            rpc::Message::Torrent { info, path, start } => self.add_torrent(info, path, start),
             rpc::Message::UpdateFile {
                 id,
                 torrent_id,

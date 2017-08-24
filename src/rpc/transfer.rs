@@ -16,6 +16,7 @@ pub struct Transfers {
 pub enum TransferResult {
     Torrent {
         conn: TcpStream,
+        start: bool,
         data: Vec<u8>,
         path: Option<String>,
         client: usize,
@@ -35,6 +36,7 @@ struct TorrentTx {
     serial: u64,
     pos: usize,
     buf: Vec<u8>,
+    start: bool,
     path: Option<String>,
     last_action: time::Instant,
 }
@@ -55,6 +57,7 @@ impl Transfers {
         mut data: Vec<u8>,
         path: Option<String>,
         size: u64,
+        start: bool,
     ) {
         let pos = data.len();
         data.reserve(size as usize);
@@ -68,6 +71,7 @@ impl Transfers {
                 pos,
                 buf: data,
                 path,
+                start,
                 last_action: time::Instant::now(),
             },
         );
@@ -103,6 +107,7 @@ impl Transfers {
                     path: tx.path,
                     client: tx.client,
                     serial: tx.serial,
+                    start: tx.start,
                 }
             }
             Some(Ok(false)) => TransferResult::Incomplete,

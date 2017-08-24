@@ -38,7 +38,11 @@ struct BearerToken {
 
 #[derive(Clone)]
 pub enum TransferKind {
-    UploadTorrent { size: u64, path: Option<String> },
+    UploadTorrent {
+        size: u64,
+        path: Option<String>,
+        start: bool,
+    },
     UploadFiles { size: u64, path: String },
     DownloadFile { path: String },
 }
@@ -289,14 +293,24 @@ impl Processor {
                 });
                 rmsg = Some(Message::Validate(ids));
             }
-            CMessage::UploadTorrent { serial, size, path } => {
+            CMessage::UploadTorrent {
+                serial,
+                size,
+                path,
+                start,
+            } => {
                 resp.push(self.new_transfer(
                     client,
                     serial,
-                    TransferKind::UploadTorrent { size, path },
+                    TransferKind::UploadTorrent { size, path, start },
                 ));
             }
-            CMessage::UploadMagnet { serial, uri, path } => {}
+            CMessage::UploadMagnet {
+                serial,
+                uri,
+                path,
+                start,
+            } => {}
             CMessage::UploadFiles { serial, size, path } => {
                 resp.push(self.new_transfer(
                     client,

@@ -367,6 +367,7 @@ The serial should be used to distinguish the two.
         "type": "UPLOAD_TORRENT",
         "size": number,             bytes, size of .torrent file
         "path": string,             optional download path
+        "start": boolean,           optional, if false torrent will start paused
     }
 
 UPLOAD_MAGNET           client->server
@@ -379,6 +380,7 @@ to the initial request's serial.
         "type": "UPLOAD_MAGNET",
         "uri": string,
         "path": string,             optional download path
+        "start": boolean,           optional, if false torrent will start paused
     }
 
 UPLOAD_FILES            client->server

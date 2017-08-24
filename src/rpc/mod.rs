@@ -85,6 +85,7 @@ pub enum Message {
     Torrent {
         info: torrent::Info,
         path: Option<String>,
+        start: bool,
     },
 }
 
@@ -198,6 +199,7 @@ impl RPC {
                 path,
                 client,
                 serial,
+                start,
             } => {
                 debug!(self.l, "Got torrent via HTTP transfer!");
                 self.reg.deregister(&conn).unwrap();
@@ -221,7 +223,8 @@ impl RPC {
                             if self.ch
                                 .send(Message::Torrent {
                                     info: i,
-                                    path: path,
+                                    path,
+                                    start,
                                 })
                                 .is_err()
                             {
@@ -290,7 +293,9 @@ impl RPC {
                 Ok(IncomingStatus::Transfer { data, token }) => {
                     debug!(self.l, "File transfer requested, validating");
                     match self.processor.get_transfer(token) {
-                        Some((client, serial, TransferKind::UploadTorrent { path, size })) => {
+                        Some((client,
+                              serial,
+                              TransferKind::UploadTorrent { path, size, start })) => {
                             debug!(self.l, "Torrent transfer initiated");
                             self.transfers.add_torrent(
                                 id,
@@ -300,6 +305,7 @@ impl RPC {
                                 data,
                                 path,
                                 size,
+                                start,
                             );
                             // Since a succesful result means the buffer hasn't been flushed,
                             // immediatly attempt to handle the transfer as if it was ready

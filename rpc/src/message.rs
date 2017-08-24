@@ -32,11 +32,15 @@ pub enum CMessage {
         serial: u64,
         size: u64,
         path: Option<String>,
+        #[serde(default = "default_start")]
+        start: bool,
     },
     UploadMagnet {
         serial: u64,
         uri: String,
         path: Option<String>,
+        #[serde(default = "default_start")]
+        start: bool,
     },
     UploadFiles {
         serial: u64,
@@ -88,6 +92,10 @@ pub enum SMessage<'a> {
 pub struct Error {
     pub serial: Option<u64>,
     pub reason: String,
+}
+
+fn default_start() -> bool {
+    true
 }
 
 #[cfg(test)]
