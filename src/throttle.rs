@@ -37,6 +37,20 @@ impl Throttler {
         }
     }
 
+    #[cfg(test)]
+    pub fn test(dl_rate: usize, ul_rate: usize, max_tokens: usize) -> Throttler {
+        let ut = ThrottleData::new(ul_rate, max_tokens);
+        let dt = ThrottleData::new(dl_rate, max_tokens);
+        Throttler {
+            id: 0,
+            fid: 0,
+            last_ul: 0,
+            last_dl: 0,
+            ul_data: Rc::new(UnsafeCell::new(ut)),
+            dl_data: Rc::new(UnsafeCell::new(dt)),
+        }
+    }
+
     pub fn update(&mut self) -> Option<(u64, u64)> {
         let ul = self.ul_data().add_tokens();
         let dl = self.dl_data().add_tokens();

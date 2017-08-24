@@ -88,7 +88,7 @@ pub mod test {
     use super::{CIO, PID, TID, Event, Result};
     use {rpc, tracker, disk, listener, torrent};
     use std::collections::HashMap;
-    use std::sync::{Arc, Mutex};
+    use std::sync::{Arc, Mutex, MutexGuard};
 
     pub struct TCIO {
         data: Arc<Mutex<TCIOD>>,
@@ -121,6 +121,20 @@ pub mod test {
                 peer_cnt: 0,
             };
             TCIO { data: Arc::new(Mutex::new(d)) }
+        }
+
+        pub fn clear(&mut self) {
+            let mut d = self.data.lock().unwrap();
+            d.peer_msgs.clear();
+            d.flushed_peers.clear();
+            d.rpc_msgs.clear();
+            d.trk_msgs.clear();
+            d.disk_msgs.clear();
+            d.listener_msgs.clear();
+        }
+
+        pub fn data(&mut self) -> MutexGuard<TCIOD> {
+            self.data.lock().unwrap()
         }
     }
 

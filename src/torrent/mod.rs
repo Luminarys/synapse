@@ -351,14 +351,30 @@ impl<T: cio::CIO> Torrent<T> {
                             for piece in invalid {
                                 self.pieces.unset_bit(piece as u64);
                             }
+                            let mut rpc_updates = vec![];
+                            for i in self.pieces.iter() {
+                                rpc_updates.push(SResourceUpdate::PieceDownloaded {
+                                    id: util::piece_rpc_id(&self.info.hash, i),
+                                    kind: resource::ResourceKind::Piece,
+                                    downloaded: true,
+                                });
+                            }
+                            self.cio.msg_rpc(rpc::CtlMessage::Update(rpc_updates));
                             self.picker.refresh_picker(&self.pieces);
                         }
                         self.announce_start();
                     } else {
+                        let mut rpc_updates = vec![];
                         for piece in invalid {
                             self.picker.invalidate_piece(piece);
                             self.pieces.unset_bit(piece as u64);
+                            rpc_updates.push(SResourceUpdate::PieceDownloaded {
+                                id: util::piece_rpc_id(&self.info.hash, piece as u64),
+                                kind: resource::ResourceKind::Piece,
+                                downloaded: false,
+                            });
                         }
+                        self.cio.msg_rpc(rpc::CtlMessage::Update(rpc_updates));
                         self.request_all();
                     }
                     if !self.status.stopped() {
@@ -1124,6 +1140,54 @@ impl Into<rpc::resource::Status> for Status {
             Status::Seeding => rpc::resource::Status::Seeding,
             Status::Validating => rpc::resource::Status::Hashing,
             Status::DiskError => rpc::resource::Status::Error,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use LOG;
+    use super::*;
+    use control::cio::{CIO, test};
+    use throttle::*;
+
+    fn test_piece_update() {
+        let mut tcio = test::TCIO::new();
+        let mut t = Torrent::new(
+            0,
+            None,
+            Info::with_pieces(10),
+            Throttler::test(0, 0, 0).get_throttle(1),
+            tcio.new_handle(),
+            LOG.clone(),
+            true,
+        );
+        tcio.clear();
+        assert_eq!(t.pieces.iter().count(), 0);
+
+        t.handle_disk_resp(disk::Response::ValidationComplete {
+            tid: 0,
+            invalid: vec![0],
+        });
+        let mut d = tcio.data();
+        assert_eq!(d.rpc_msgs.len(), 1);
+        match d.rpc_msgs.remove(0) {
+            rpc::CtlMessage::Update(v) => {
+                assert_eq!(v.len(), 9);
+                let mut idx = 1;
+                for msg in v {
+                    assert_eq!(
+                        msg,
+                        SResourceUpdate::PieceDownloaded {
+                            id: util::piece_rpc_id(&t.info.hash, idx),
+                            kind: resource::ResourceKind::Piece,
+                            downloaded: true,
+                        }
+                    );
+                    idx += 1;
+                }
+            }
+            _ => panic!(),
         }
     }
 }
