@@ -29,6 +29,7 @@ fn add_file(c: &mut Client, url: &str, file: &str, dir: Option<&str>) -> Result<
         serial: c.next_serial(),
         size: torrent.len() as u64,
         path: dir.as_ref().map(|d| format!("{}", d)),
+        start: true,
     };
     let token = if let SMessage::TransferOffer { token, .. } = c.rr(msg)? {
         token
