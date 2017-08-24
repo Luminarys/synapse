@@ -266,7 +266,7 @@ impl<T: cio::CIO> Peer<T> {
     }
 
     pub fn can_queue_req(&mut self) -> bool {
-        !self.remote_status.choked && self.queued < 5
+        !self.remote_status.choked && self.queued < 30
     }
 
     pub fn handle_msg(&mut self, msg: &mut Message) -> Result<()> {
