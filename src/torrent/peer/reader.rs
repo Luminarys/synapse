@@ -135,7 +135,7 @@ impl ReadState {
             ReadState::ReadingLen { mut data, mut idx } => {
                 match conn.read(&mut data[(idx as usize)..4]) {
                     Ok(0) => ReadRes::EOF,
-                    Ok(4) => ReadState::process_len(data, conn),
+                    Ok(amnt) if idx + amnt as u8 == 4 => ReadState::process_len(data, conn),
                     Ok(amnt) => {
                         idx += amnt as u8;
                         ReadState::ReadingLen { data, idx }.next_state(conn)
@@ -152,7 +152,7 @@ impl ReadState {
                     Ok(1) => ReadState::process_id(data, len, conn),
                     Ok(_) => unreachable!(),
                     Err(ref e) if e.kind() == ErrorKind::WouldBlock => {
-                        ReadRes::Incomplete(ReadState::Idle)
+                        ReadRes::Incomplete(ReadState::ReadingId { data, len })
                     }
                     Err(e) => ReadRes::Err(e),
                 }
@@ -186,14 +186,6 @@ impl ReadState {
                 if idx < 13 {
                     match conn.read(&mut prefix[idx as usize..13]) {
                         Ok(0) => ReadRes::EOF,
-                        Ok(13) => {
-                            ReadState::ReadingPiece {
-                                prefix,
-                                data,
-                                len,
-                                idx,
-                            }.next_state(conn)
-                        }
                         Ok(amnt) => {
                             idx += amnt;
                             ReadState::ReadingPiece {
@@ -393,18 +385,18 @@ mod tests {
     use std::io::{self, Read};
 
     /// Cursor to emulate a mio socket using readv.
-    struct Cursor {
-        data: Vec<u8>,
+    struct Cursor<'a> {
+        data: &'a [u8],
         idx: usize,
     }
 
-    impl Cursor {
-        fn new(data: Vec<u8>) -> Cursor {
+    impl<'a> Cursor<'a> {
+        fn new(data: &'a [u8]) -> Cursor {
             Cursor { data, idx: 0 }
         }
     }
 
-    impl Read for Cursor {
+    impl<'a> Read for Cursor<'a> {
         fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
             if self.idx >= self.data.len() {
                 return Err(io::Error::new(io::ErrorKind::WouldBlock, ""));
@@ -425,7 +417,7 @@ mod tests {
     fn test_message(data: Vec<u8>, msg: Message) {
         let mut r = Reader::new();
         r.state = ReadState::Idle;
-        let mut data = Cursor::new(data);
+        let mut data = Cursor::new(&data);
         assert_eq!(msg, r.readable(&mut data).unwrap().unwrap())
     }
 
@@ -481,7 +473,8 @@ mod tests {
     fn test_read_bitfield() {
         let mut r = Reader::new();
         r.state = ReadState::Idle;
-        let mut data = Cursor::new(vec![0u8, 0, 0, 5, 5, 0xff, 0xff, 0xff, 0xff]);
+        let v = vec![0u8, 0, 0, 5, 5, 0xff, 0xff, 0xff, 0xff];
+        let mut data = Cursor::new(&v);
         // Test one shot
         match r.readable(&mut data).unwrap().unwrap() {
             Message::Bitfield(ref pf) => {
@@ -499,7 +492,8 @@ mod tests {
     fn test_read_request() {
         let mut r = Reader::new();
         r.state = ReadState::Idle;
-        let mut data = Cursor::new(vec![0u8, 0, 0, 13, 6, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1]);
+        let v = vec![0u8, 0, 0, 13, 6, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1];
+        let mut data = Cursor::new(&v);
         // Test one shot
         match r.readable(&mut data).unwrap().unwrap() {
             Message::Request {
@@ -521,11 +515,36 @@ mod tests {
     fn test_read_piece() {
         let mut r = Reader::new();
         r.state = ReadState::Idle;
-        let mut info = Cursor::new(vec![0u8, 0, 0x40, 0x09, 7, 0, 0, 0, 1, 0, 0, 0, 1]);
-        let mut data = Cursor::new(vec![1u8; 16_384]);
+        let mut v = vec![0u8, 0, 0x40, 0x09, 7, 0, 0, 0, 1, 0, 0, 0, 1];
+        v.extend(vec![1u8; 16_384]);
+        v.extend(vec![0u8, 0, 0x40, 0x09, 7, 0, 0, 0, 1, 0, 0, 0, 1]);
+        v.extend(vec![1u8; 16_384]);
+
+        let mut p1 = Cursor::new(&v[0..10]);
+        let mut p2 = Cursor::new(&v[10..100]);
+        let mut p3 = Cursor::new(&v[100..]);
         // Test partial read
-        assert!(r.readable(&mut info).unwrap().is_none());
-        match r.readable(&mut data).unwrap().unwrap() {
+        assert_eq!(r.readable(&mut p1).unwrap(), None);
+        assert_eq!(r.readable(&mut p2).unwrap(), None);
+        match r.readable(&mut p3).unwrap().unwrap() {
+            Message::Piece {
+                index,
+                begin,
+                length,
+                ref data,
+            } => {
+                assert_eq!(index, 1);
+                assert_eq!(begin, 1);
+                assert_eq!(length, 16_384);
+                for i in 0..16_384 {
+                    assert_eq!(1, data[i]);
+                }
+            }
+            _ => {
+                unreachable!();
+            }
+        }
+        match r.readable(&mut p3).unwrap().unwrap() {
             Message::Piece {
                 index,
                 begin,
@@ -549,7 +568,8 @@ mod tests {
     fn test_read_cancel() {
         let mut r = Reader::new();
         r.state = ReadState::Idle;
-        let mut data = Cursor::new(vec![0u8, 0, 0, 13, 8, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1]);
+        let v = vec![0u8, 0, 0, 13, 8, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1];
+        let mut data = Cursor::new(&v);
         // Test one shot
         match r.readable(&mut data).unwrap().unwrap() {
             Message::Cancel {
@@ -586,7 +606,7 @@ mod tests {
         };
         let mut data = vec![0; 68];
         m.encode(&mut data[..]).unwrap();
-        let mut c = Cursor::new(data);
+        let mut c = Cursor::new(&data);
         assert_eq!(r.readable(&mut c).unwrap().unwrap(), m);
     }
 }

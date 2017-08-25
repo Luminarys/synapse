@@ -394,20 +394,24 @@ impl<T: cio::CIO> Torrent<T> {
     pub fn peer_ev(&mut self, pid: cio::PID, evt: cio::Result<Message>) -> Result<(), ()> {
         // TODO: Consider Boxing peers so it's just pointer insert/removal
         let mut peer = self.peers.remove(&pid).ok_or(())?;
-        if let Ok(mut msg) = evt {
-            if peer.handle_msg(&mut msg).is_ok() && self.handle_msg(msg, &mut peer).is_ok() {
-                self.peers.insert(pid, peer);
-                return Ok(());
-            } else {
-                // In order to ensure there's only one source of truth,
-                // we instruct the CIO to remove the peer and let the event bubble up.
-                // We then will receieve it later and call cleanup_peer as needed.
-                // This ensures that events flow from control -> torrent and get
-                // properly processed
-                self.cio.remove_peer(self.id);
+        match evt {
+            Ok(mut msg) => {
+                if peer.handle_msg(&mut msg).is_ok() && self.handle_msg(msg, &mut peer).is_ok() {
+                    self.peers.insert(pid, peer);
+                    return Ok(());
+                } else {
+                    // In order to ensure there's only one source of truth,
+                    // we instruct the CIO to remove the peer and let the event bubble up.
+                    // We then will receieve it later and call cleanup_peer as needed.
+                    // This ensures that events flow from control -> torrent and get
+                    // properly processed
+                    self.cio.remove_peer(self.id);
+                }
             }
-        } else {
-            self.cleanup_peer(&mut peer);
+            Err(e) => {
+                debug!(self.l, "Removing peer: {:?}, {:?}", e, e.backtrace());
+                self.cleanup_peer(&mut peer);
+            }
         }
         Err(())
     }
