@@ -337,7 +337,7 @@ impl<T: cio::CIO> Control<T> {
                 let torrents = &mut self.torrents;
                 id_to_hash(&id)
                     .and_then(|d| hash_idx.get(d.as_ref()))
-                    .and_then(|i| torrents.get_mut(&i))
+                    .and_then(|i| torrents.get_mut(i))
                     .map(|t| t.pause());
             }
             rpc::Message::Resume(id) => {
@@ -345,7 +345,7 @@ impl<T: cio::CIO> Control<T> {
                 let torrents = &mut self.torrents;
                 id_to_hash(&id)
                     .and_then(|d| hash_idx.get(d.as_ref()))
-                    .and_then(|i| torrents.get_mut(&i))
+                    .and_then(|i| torrents.get_mut(i))
                     .map(|t| t.resume());
             }
             rpc::Message::Validate(ids) => {
@@ -354,7 +354,7 @@ impl<T: cio::CIO> Control<T> {
                 for id in ids {
                     id_to_hash(&id)
                         .and_then(|d| hash_idx.get(d.as_ref()))
-                        .and_then(|i| torrents.get_mut(&i))
+                        .and_then(|i| torrents.get_mut(i))
                         .map(|t| t.validate());
                 }
             }

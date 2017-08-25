@@ -65,7 +65,7 @@ impl Reader {
                             let mut id = [0; 20];
                             id.clone_from_slice(&data[48..68]);
 
-                            return Ok(Some((Message::Handshake { rsv, hash, id })));
+                            return Ok(Some(Message::Handshake { rsv, hash, id }));
                         }
                         IOR::Incomplete(a) => self.idx += a,
                         IOR::Blocked => return Ok(None),
@@ -247,17 +247,16 @@ impl Reader {
 
 impl State {
     fn len(&self) -> usize {
-        match self {
-            &State::Len => 4,
-            &State::ID => 5,
-            &State::Have => 9,
-            &State::Request => 17,
-            &State::Cancel => 17,
-            &State::PiecePrefix => 13,
-            &State::Port => 7,
-            &State::Handshake { .. } => 68,
-            &State::Piece { len, .. } => len as usize,
-            &State::Bitfield { ref data, .. } => data.len(),
+        match *self {
+            State::Len => 4,
+            State::ID => 5,
+            State::Have => 9,
+            State::Request | State::Cancel => 17,
+            State::PiecePrefix => 13,
+            State::Port => 7,
+            State::Handshake { .. } => 68,
+            State::Piece { len, .. } => len as usize,
+            State::Bitfield { ref data, .. } => data.len(),
         }
     }
 }
