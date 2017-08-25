@@ -27,7 +27,7 @@ impl fmt::Display for BError {
         match *self {
             BError::UTF8Decode => write!(f, "UTF8 Decoding Error"),
             BError::InvalidDict => write!(f, "Invalid BEncoded dictionary"),
-            BError::InvalidChar(c) => write!(f, "Invalid character: {}", c),
+            BError::InvalidChar(c) => write!(f, "Invalid character: {}", char::from(c)),
             BError::ParseInt => write!(f, "Invalid integer value encountered"),
             BError::EOF => write!(f, "Unexpected EOF in data"),
             BError::IO => write!(f, "IO error"),
