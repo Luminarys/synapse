@@ -368,8 +368,8 @@ impl Processor {
                     rids.push(self.resources.get(&id).unwrap().id());
                 }
 
-                for (serial, (c, ids)) in self.get_matching_filters(rids.into_iter()) {
-                    msgs.push((c, SMessage::ResourcesExtant { serial, ids }));
+                for ((client, serial), ids) in self.get_matching_filters(rids.into_iter()) {
+                    msgs.push((client, SMessage::ResourcesExtant { serial, ids }));
                 }
             }
             CtlMessage::Update(updates) => {
@@ -391,7 +391,7 @@ impl Processor {
                 }
             }
             CtlMessage::Removed(r) => {
-                for (serial, (client, ids)) in
+                for ((client, serial), ids) in
                     self.get_matching_filters(r.iter().map(|s| s.as_str()))
                 {
                     msgs.push((
@@ -429,22 +429,22 @@ impl Processor {
         self.filter_subs.retain(|&(c, _), _| c != client);
     }
 
-    /// Produces a map of the form Map<Serial, (Client ID, messages)>.
+    /// Produces a map of the form Map<(Client ID, Serial), messages)>.
     fn get_matching_filters<'a, I: Iterator<Item = &'a str>>(
         &'a self,
         ids: I,
-    ) -> HashMap<u64, (usize, Vec<&'a str>)> {
+    ) -> HashMap<(usize, u64), Vec<&'a str>> {
         let mut matched = HashMap::new();
         for id in ids {
             let res = self.resources.get(id).expect(
                 "Bad resource requested from a CtlMessage",
             );
-            for (&(c, s), f) in self.filter_subs.iter() {
+            for (k, f) in self.filter_subs.iter() {
                 if f.kind == res.kind() && f.matches(&res) {
-                    if !matched.contains_key(&s) {
-                        matched.insert(s, (c, Vec::new()));
+                    if !matched.contains_key(k) {
+                        matched.insert(k.clone(), Vec::new());
                     }
-                    matched.get_mut(&s).unwrap().1.push(id);
+                    matched.get_mut(&k).unwrap().push(id);
                 }
             }
         }

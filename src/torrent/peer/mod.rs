@@ -276,7 +276,10 @@ impl<T: cio::CIO> Peer<T> {
         // Taken from rtorrent's pipeline calculation
         let nmq = if rate < 20 { rate + 2 } else { rate / 5 + 18 };
         // Clamp between -5 / +30 for queue len changes
-        self.max_queue = cmp::min(cmp::max(nmq, self.max_queue - 5), self.max_queue + 30);
+        self.max_queue = cmp::min(
+            cmp::max(nmq, self.max_queue.saturating_sub(5)),
+            self.max_queue + 30,
+        );
         // Keep it under the max cap
         self.max_queue = cmp::min(self.max_queue, MAX_QUEUE_CAP);
         (ul, dl)

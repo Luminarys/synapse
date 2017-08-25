@@ -55,7 +55,7 @@ struct Request {
     requested_at: time::Instant,
 }
 
-const MAX_DUP_REQS: usize = 3;
+const MAX_DUP_REQS: usize = 5;
 
 impl Picker {
     /// Creates a new picker, which will select over
