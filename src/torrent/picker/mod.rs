@@ -211,6 +211,12 @@ impl Picker {
         if let PickerKind::Rarest(ref mut p) = self.picker {
             p.remove_peer(peer);
         }
+
+        for piece in self.downloading.values_mut() {
+            for block in piece {
+                block.requested.retain(|req| req.peer != peer.id())
+            }
+        }
     }
 
     /// Alters the picker to sequential/non sequential. If changing
