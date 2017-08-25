@@ -1,4 +1,4 @@
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::collections::HashMap;
 use std::{fs, fmt, path};
 use std::io::{self, Seek, SeekFrom, Write, Read};
@@ -19,9 +19,8 @@ pub struct Disk {
     files: FileCache,
 }
 
-#[derive(Clone)]
 struct FileCache {
-    files: Arc<Mutex<HashMap<path::PathBuf, fs::File>>>,
+    files: HashMap<path::PathBuf, fs::File>,
 }
 
 pub enum Request {
@@ -42,7 +41,13 @@ pub enum Request {
         data: Vec<u8>,
         hash: [u8; 20],
     },
-    Delete { tid: usize, hash: [u8; 20] },
+    Delete {
+        tid: usize,
+        hash: [u8; 20],
+        files: Vec<PathBuf>,
+        path: Option<String>,
+    },
+
     Validate { tid: usize, info: Arc<Info> },
     Shutdown,
 }
@@ -69,22 +74,21 @@ impl Ctx {
 
 impl FileCache {
     pub fn new() -> FileCache {
-        FileCache { files: Arc::new(Mutex::new(HashMap::new())) }
+        FileCache { files: HashMap::new() }
     }
 
     pub fn get_file<F: FnOnce(&mut fs::File) -> io::Result<()>>(
-        &self,
+        &mut self,
         path: &path::Path,
         f: F,
     ) -> io::Result<()> {
-        let mut d = self.files.lock().unwrap();
-        if d.contains_key(path) {
-            f(d.get_mut(path).unwrap())?;
+        if self.files.contains_key(path) {
+            f(self.files.get_mut(path).unwrap())?;
         } else {
             // TODO: LRU maybe?
-            if d.len() >= CONFIG.net.max_open_files {
-                let removal = d.iter().map(|(id, _)| id.clone()).next().unwrap();
-                d.remove(&removal);
+            if self.files.len() >= CONFIG.net.max_open_files {
+                let removal = self.files.iter().map(|(id, _)| id.clone()).next().unwrap();
+                self.files.remove(&removal);
             }
             let mut file = fs::OpenOptions::new()
                 .write(true)
@@ -92,9 +96,13 @@ impl FileCache {
                 .read(true)
                 .open(path)?;
             f(&mut file)?;
-            d.insert(path.to_path_buf(), file);
+            self.files.insert(path.to_path_buf(), file);
         }
         Ok(())
+    }
+
+    pub fn remove_file(&mut self, path: &path::Path) {
+        self.files.remove(path);
     }
 }
 
@@ -135,15 +143,25 @@ impl Request {
         Request::Validate { tid, info }
     }
 
-    pub fn delete(tid: usize, hash: [u8; 20]) -> Request {
-        Request::Delete { tid, hash }
+    pub fn delete(
+        tid: usize,
+        hash: [u8; 20],
+        files: Vec<PathBuf>,
+        path: Option<String>,
+    ) -> Request {
+        Request::Delete {
+            tid,
+            hash,
+            files,
+            path,
+        }
     }
 
     pub fn shutdown() -> Request {
         Request::Shutdown
     }
 
-    fn execute(self, fc: FileCache) -> io::Result<Option<Response>> {
+    fn execute(self, fc: &mut FileCache) -> io::Result<Option<Response>> {
         let sd = &CONFIG.disk.session;
         let dd = &CONFIG.disk.directory;
         match self {
@@ -153,15 +171,14 @@ impl Request {
                 path,
                 ..
             } => {
-                let mut pb = path::PathBuf::from(path.as_ref().unwrap_or(dd));
                 for loc in locations {
+                    let mut pb = path::PathBuf::from(path.as_ref().unwrap_or(dd));
                     pb.push(&loc.file);
                     fc.get_file(&pb, |f| {
                         f.seek(SeekFrom::Start(loc.offset))?;
                         f.write_all(&data[loc.start..loc.end])?;
                         Ok(())
                     })?;
-                    pb.pop();
                 }
             }
             Request::Read {
@@ -171,15 +188,14 @@ impl Request {
                 path,
                 ..
             } => {
-                let mut pb = path::PathBuf::from(path.as_ref().unwrap_or(dd));
                 for loc in locations {
+                    let mut pb = path::PathBuf::from(path.as_ref().unwrap_or(dd));
                     pb.push(&loc.file);
                     fc.get_file(&pb, |f| {
                         f.seek(SeekFrom::Start(loc.offset))?;
                         f.read_exact(&mut data[loc.start..loc.end])?;
                         Ok(())
                     })?;
-                    pb.pop();
                 }
                 let data = Arc::new(data);
                 return Ok(Some(Response::read(context, data)));
@@ -190,10 +206,16 @@ impl Request {
                 let mut f = fs::OpenOptions::new().write(true).create(true).open(&pb)?;
                 f.write_all(&data)?;
             }
-            Request::Delete { hash, .. } => {
-                let mut pb = path::PathBuf::from(sd);
-                pb.push(hash_to_id(&hash));
-                fs::remove_file(pb)?;
+            Request::Delete { hash, files, path, .. } => {
+                let mut spb = path::PathBuf::from(sd);
+                spb.push(hash_to_id(&hash));
+                fs::remove_file(spb)?;
+
+                for file in files {
+                    let mut pb = path::PathBuf::from(path.as_ref().unwrap_or(dd));
+                    pb.push(&file);
+                    fc.remove_file(&pb);
+                }
             }
             Request::Validate { tid, info } => {
                 let mut invalid = Vec::new();
@@ -345,7 +367,7 @@ impl Disk {
                 Ok(r) => {
                     trace!(self.l, "Handling disk job!");
                     let tid = r.tid();
-                    match r.execute(self.files.clone()) {
+                    match r.execute(&mut self.files) {
                         Ok(Some(r)) => {
                             self.ch.send(r).ok();
                         }

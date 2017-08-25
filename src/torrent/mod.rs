@@ -224,9 +224,16 @@ impl<T: cio::CIO> Torrent<T> {
 
     pub fn delete(&mut self) {
         debug!(self.l, "Sending file deletion request!");
-        self.cio.msg_disk(
-            disk::Request::delete(self.id, self.info.hash),
-        );
+        let mut files = Vec::new();
+        for file in &self.info.files {
+            files.push(file.path.clone());
+        }
+        self.cio.msg_disk(disk::Request::delete(
+            self.id,
+            self.info.hash,
+            files,
+            self.path.clone(),
+        ));
     }
 
     pub fn set_tracker_response(&mut self, resp: &tracker::Result<TrackerResponse>) {
