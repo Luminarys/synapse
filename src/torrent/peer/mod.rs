@@ -289,7 +289,10 @@ impl<T: cio::CIO> Peer<T> {
         if self.remote_status.choked || self.queued > self.max_queue / 2 {
             None
         } else {
-            Some(cmp::min(cmp::max(self.max_queue - self.queued, 1), 75))
+            Some(cmp::min(
+                cmp::max(self.max_queue.saturating_sub(self.queued), 1),
+                50,
+            ))
         }
     }
 
