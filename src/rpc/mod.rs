@@ -34,20 +34,20 @@ lazy_static! {
     pub static ref EMPTY_HTTP_RESP: Vec<u8> = {
         let lines =
             vec![
-                format!("HTTP/1.1 {} {}", 204, "NO CONTENT"),
-                format!("Connection: {}", "Close"),
-                format!("Access-Control-Allow-Origin: {}", "*"),
-                format!("Access-Control-Allow-Methods: {}", "OPTIONS, POST, GET"),
-                format!(
-                    "Access-Control-Allow-Headers: {}, {}, {}, {}, {}, {}, {}, {}",
-                    "Access-Control-Allow-Headers",
-                    "Origin",
-                    "Accept",
-                    "X-Requested-With",
-                    "Content-Type",
-                    "Access-Control-Request-Method",
-                    "Access-Control-Request-Headers",
-                    "Authorization"
+            format!("HTTP/1.1 {} {}", 204, "NO CONTENT"),
+            format!("Connection: {}", "Close"),
+            format!("Access-Control-Allow-Origin: {}", "*"),
+            format!("Access-Control-Allow-Methods: {}", "OPTIONS, POST, GET"),
+            format!(
+                "Access-Control-Allow-Headers: {}, {}, {}, {}, {}, {}, {}, {}",
+                "Access-Control-Allow-Headers",
+                "Origin",
+                "Accept",
+                "X-Requested-With",
+                "Content-Type",
+                "Access-Control-Request-Method",
+                "Access-Control-Request-Headers",
+                "Authorization"
                 ),
                 format!("\r\n"),
             ];
@@ -206,36 +206,65 @@ impl RPC {
                 // TODO: Send this to the client in an error msg
                 match bencode::decode_buf(&data) {
                     Ok(b) => {
-                        if let Ok(i) = torrent::info::Info::from_bencode(b) {
-                            let res = self.clients.get_mut(&client).map(|c| {
-                                let tid = util::hash_to_id(&i.hash[..]);
-                                c.send(ws::Frame::Text(
-                                    serde_json::to_string(&SMessage::ResourcesExtant {
-                                        serial,
-                                        ids: vec![&tid],
-                                    }).unwrap(),
-                                ))
-                            });
-                            if res.unwrap_or(Ok(())).is_err() {
-                                let client = self.clients.remove(&id).unwrap();
-                                self.remove_client(id, client);
+                        match torrent::info::Info::from_bencode(b) {
+                            Ok(i) => {
+                                let res = self.clients.get_mut(&client).map(|c| {
+                                    let tid = util::hash_to_id(&i.hash[..]);
+                                    c.send(ws::Frame::Text(
+                                        serde_json::to_string(&SMessage::ResourcesExtant {
+                                            serial,
+                                            ids: vec![&tid],
+                                        }).unwrap(),
+                                    ))
+                                });
+                                if res.unwrap_or(Ok(())).is_err() {
+                                    let client = self.clients.remove(&id).unwrap();
+                                    self.remove_client(id, client);
+                                }
+                                if self.ch
+                                    .send(Message::Torrent {
+                                        info: i,
+                                        path,
+                                        start,
+                                    })
+                                    .is_err()
+                                {
+                                    crit!(self.l, "Failed to pass message to ctrl!");
+                                }
                             }
-                            if self.ch
-                                .send(Message::Torrent {
-                                    info: i,
-                                    path,
-                                    start,
-                                })
-                                .is_err()
-                            {
-                                crit!(self.l, "Failed to pass message to ctrl!");
+                            Err(e) => {
+                                warn!(self.l, "Failed to parse torrent data: {}!", e);
+                                self.clients.get_mut(&client).map(|c| {
+                                    c.send(ws::Frame::Text(
+                                        serde_json::to_string(
+                                            &SMessage::TransferFailed(message::Error {
+                                                serial: Some(serial),
+                                                reason: format!(
+                                                    "Invalid torrent file uploaded, {}.",
+                                                    e
+                                                ),
+                                            }),
+                                        ).unwrap(),
+                                    ))
+                                });
                             }
-                        } else {
-                            warn!(self.l, "Failed to parse torrent!");
                         }
                     }
                     Err(e) => {
                         warn!(self.l, "Failed to decode BE data: {}!", e);
+                        self.clients.get_mut(&client).map(|c| {
+                            c.send(ws::Frame::Text(
+                                serde_json::to_string(
+                                    &SMessage::TransferFailed(message::Error {
+                                        serial: Some(serial),
+                                        reason: format!(
+                                            "Invalid torrent file uploaded, bad bencoded data: {}.",
+                                            e
+                                        ),
+                                    }),
+                                ).unwrap(),
+                            ))
+                        });
                     }
                 }
             }
