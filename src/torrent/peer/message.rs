@@ -231,14 +231,6 @@ impl Message {
         }
     }
 
-    pub fn is_piece(&self) -> bool {
-        match *self {
-            Message::Piece { .. } |
-            Message::SharedPiece { .. } => true,
-            _ => false,
-        }
-    }
-
     pub fn get_handshake_data(&self) -> ([u8; 20], [u8; 20], [u8; 8]) {
         match *self {
             Message::Handshake { hash, id, rsv } => (hash, id, rsv),

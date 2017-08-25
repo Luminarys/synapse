@@ -54,6 +54,7 @@ panic = 'unwind'
 
 [profile.release]
 opt-level = 3
+debug = true
 debug-assertions = false
 panic = 'unwind'
 

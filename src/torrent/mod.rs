@@ -409,7 +409,7 @@ impl<T: cio::CIO> Torrent<T> {
                 }
             }
             Err(e) => {
-                debug!(self.l, "Removing peer: {:?}, {:?}", e, e.backtrace());
+                debug!(self.l, "Removing peer: {:?}", e);
                 self.cleanup_peer(&mut peer);
             }
         }
