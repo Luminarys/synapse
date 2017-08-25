@@ -3,7 +3,7 @@ mod writer;
 mod message;
 
 use std::net::SocketAddr;
-use std::{io, fmt, mem, time};
+use std::{io, fmt, mem, time, cmp};
 use std::net::TcpStream;
 
 use chrono::{DateTime, Utc};
@@ -29,6 +29,9 @@ error_chain! {
     }
 }
 
+const INIT_MAX_QUEUE: u16 = 15;
+const MAX_QUEUE_CAP: u16 = 400;
+
 /// Peer connection and associated metadata.
 pub struct Peer<T: cio::CIO> {
     id: usize,
@@ -36,7 +39,11 @@ pub struct Peer<T: cio::CIO> {
     pieces: Bitfield,
     remote_status: Status,
     local_status: Status,
+    /// Current number of queued requests
     queued: u16,
+    /// Maximum number of requests that can be queued
+    /// at a time.
+    max_queue: u16,
     tid: usize,
     downloaded: u32,
     uploaded: u32,
@@ -158,6 +165,7 @@ impl Peer<cio::test::TCIO> {
             addr: "127.0.0.1:0".parse().unwrap(),
             cio: cio::test::TCIO::new(),
             queued,
+            max_queue: queued,
             pieces,
             tid: 0,
             t_hash: [0u8; 20],
@@ -207,6 +215,7 @@ impl<T: cio::CIO> Peer<T> {
             downloaded_bytes: 0,
             cio: t.cio.new_handle(),
             queued: 0,
+            max_queue: INIT_MAX_QUEUE,
             pieces: Bitfield::new(t.info.hashes.len() as u64),
             tid: t.id,
             t_hash: t.info.hash,
@@ -262,11 +271,23 @@ impl<T: cio::CIO> Peer<T> {
         let ul = (1000 * ub) / dur;
         let dl = (1000 * db) / dur;
         self.last_flush = Utc::now();
+
+        let rate = (dl / 1024) as u16;
+        // Taken from rtorrent's pipeline calculation
+        let nmq = if rate < 20 { rate + 2 } else { rate / 5 + 18 };
+        // Clamp between -5 / +30 for queue len changes
+        self.max_queue = cmp::min(cmp::max(nmq, self.max_queue - 5), self.max_queue + 30);
+        // Keep it under the max cap
+        self.max_queue = cmp::min(self.max_queue, MAX_QUEUE_CAP);
         (ul, dl)
     }
 
-    pub fn can_queue_req(&mut self) -> bool {
-        !self.remote_status.choked && self.queued < 30
+    pub fn queue_reqs(&mut self) -> Option<u16> {
+        if self.remote_status.choked || self.queued > self.max_queue / 2 {
+            None
+        } else {
+            Some(cmp::min(cmp::max(self.max_queue - self.queued, 1), 75))
+        }
     }
 
     pub fn handle_msg(&mut self, msg: &mut Message) -> Result<()> {

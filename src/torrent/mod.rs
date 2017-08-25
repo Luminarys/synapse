@@ -441,7 +441,9 @@ impl<T: cio::CIO> Torrent<T> {
                 }
             }
             Message::Unchoke => {
-                self.make_requests(peer);
+                if !self.status.stopped() {
+                    Torrent::make_requests(peer, &mut self.picker, &self.info);
+                }
             }
             Message::Piece {
                 index,
@@ -533,8 +535,8 @@ impl<T: cio::CIO> Torrent<T> {
                     }
                 }
 
-                if !self.pieces.complete() {
-                    self.make_requests(peer);
+                if !self.pieces.complete() && !self.status.stopped() {
+                    Torrent::make_requests(peer, &mut self.picker, &self.info);
                 }
             }
             Message::Request {
@@ -841,38 +843,27 @@ impl<T: cio::CIO> Torrent<T> {
     }
 
     fn make_requests_pid(&mut self, pid: usize) {
+        if self.status.stopped() {
+            return;
+        }
         let peer = self.peers.get_mut(&pid).expect(
             "Expected peer id not present",
         );
-        if self.status.stopped() {
-            return;
-        }
-        while peer.can_queue_req() {
-            if let Some(block) = self.picker.pick(peer) {
-                peer.request_piece(
-                    block.index,
-                    block.offset,
-                    self.info.block_len(block.index, block.offset),
-                );
-            } else {
-                break;
-            }
-        }
+        Torrent::make_requests(peer, &mut self.picker, &self.info);
     }
 
-    fn make_requests(&mut self, peer: &mut Peer<T>) {
-        if self.status.stopped() {
-            return;
-        }
-        while peer.can_queue_req() {
-            if let Some(block) = self.picker.pick(peer) {
-                peer.request_piece(
-                    block.index,
-                    block.offset,
-                    self.info.block_len(block.index, block.offset),
-                );
-            } else {
-                break;
+    fn make_requests(peer: &mut Peer<T>, picker: &mut Picker, info: &Info) {
+        if let Some(m) = peer.queue_reqs() {
+            for _ in 0..m {
+                if let Some(block) = picker.pick(peer) {
+                    peer.request_piece(
+                        block.index,
+                        block.offset,
+                        info.block_len(block.index, block.offset),
+                    );
+                } else {
+                    break;
+                }
             }
         }
     }
