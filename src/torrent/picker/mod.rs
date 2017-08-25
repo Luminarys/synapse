@@ -136,7 +136,10 @@ impl Picker {
         for (idx, dl) in &mut self.downloading {
             if peer.pieces().has_bit(*idx as u64) {
                 let r = dl.iter_mut()
-                    .find(|r| !r.completed && r.requested.len() < MAX_DUP_REQS)
+                    .find(|r| {
+                        !r.completed && r.requested.len() < MAX_DUP_REQS &&
+                            r.requested.iter().all(|req| req.peer != peer.id())
+                    })
                     .map(|r| {
                         r.requested.push(Request::new(peer.id()));
                         Block::new(*idx, r.offset)
