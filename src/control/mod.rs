@@ -33,6 +33,7 @@ pub struct Control<T: cio::CIO> {
     tid_cnt: usize,
     job_timer: usize,
     tx_rates: Option<(u64, u64)>,
+    last_tx_rates: (u64, u64),
     jobs: job::JobManager<T>,
     torrents: HashMap<usize, Torrent<T>>,
     peers: HashMap<usize, usize>,
@@ -69,6 +70,7 @@ impl<T: cio::CIO> Control<T> {
             peers,
             hash_idx,
             tx_rates: None,
+            last_tx_rates: (0, 0),
             l,
         })
     }
@@ -396,6 +398,13 @@ impl<T: cio::CIO> Control<T> {
 
     fn update_rpc_tx(&mut self) {
         if let Some((rate_up, rate_down)) = self.tx_rates {
+            self.tx_rates = None;
+            if rate_up == self.last_tx_rates.0 && rate_down == self.last_tx_rates.1 {
+                return;
+            } else {
+                self.last_tx_rates.0 = rate_up;
+                self.last_tx_rates.1 = rate_down;
+            }
             self.cio.msg_rpc(rpc::CtlMessage::Update(vec![
                 rpc::resource::SResourceUpdate::Rate {
                     id: hash_to_id(&PEER_ID[..]),
@@ -404,7 +413,6 @@ impl<T: cio::CIO> Control<T> {
                     rate_down,
                 },
             ]));
-            self.tx_rates = None;
         }
     }
 
