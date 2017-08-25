@@ -802,8 +802,17 @@ impl<T: cio::CIO> Torrent<T> {
         0.
     }
 
+    /// Resets the last upload/download statistics, adjusting the internal
+    /// status if nothing has been uploaded/downloaded in the interval.
     pub fn reset_last_tx_rate(&mut self) -> (u64, u64) {
         let res = self.get_last_tx_rate();
+        // TODO: Maybe move this to another function, it could be too
+        // variable atm.
+        if res.0 == 0 && self.status == Status::Leeching {
+            self.status = Status::Pending;
+        } else if res.1 == 0 && self.status == Status::Seeding {
+            self.status = Status::Idle;
+        }
         self.last_clear = Utc::now();
         self.last_ul = 0;
         self.last_dl = 0;
