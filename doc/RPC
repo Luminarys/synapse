@@ -81,6 +81,7 @@ piece
         "torrent_id": ID,
         "available": boolean,
         "downloaded": boolean,
+        "index": number,
     }
 
 file

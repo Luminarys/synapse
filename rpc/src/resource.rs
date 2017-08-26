@@ -199,6 +199,7 @@ pub struct Piece {
     pub torrent_id: String,
     pub available: bool,
     pub downloaded: bool,
+    pub index: u32,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]

@@ -737,6 +737,7 @@ impl<T: cio::CIO> Torrent<T> {
                     torrent_id: self.rpc_id(),
                     available: true,
                     downloaded: true,
+                    index: i,
                 }))
             } else {
                 r.push(Resource::Piece(resource::Piece {
@@ -744,6 +745,7 @@ impl<T: cio::CIO> Torrent<T> {
                     torrent_id: self.rpc_id(),
                     available: true,
                     downloaded: false,
+                    index: i,
                 }))
             }
         }
