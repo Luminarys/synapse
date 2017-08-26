@@ -94,6 +94,7 @@ file
         "progress": number,
         "priority": number*,         1..5 default 3
         "availability": number,     0..1
+        "size": number,
     }
 
 peer

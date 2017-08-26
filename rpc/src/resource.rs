@@ -211,6 +211,7 @@ pub struct File {
     pub progress: f32,
     pub availability: f32,
     pub priority: u8,
+    pub size: u64,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]

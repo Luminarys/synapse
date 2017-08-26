@@ -416,7 +416,7 @@ impl<T: cio::CIO> Torrent<T> {
                 }
             }
             Err(e) => {
-                debug!(self.l, "Removing peer: {:?}", e);
+                debug!(self.l, "Removing peer: {}", e);
                 self.cleanup_peer(&mut peer);
             }
         }
@@ -760,6 +760,7 @@ impl<T: cio::CIO> Torrent<T> {
                 progress: 0.,
                 priority: 3,
                 path: f.path.as_path().to_string_lossy().into_owned(),
+                size: f.length,
             }))
         }
 

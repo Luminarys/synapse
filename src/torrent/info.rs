@@ -44,7 +44,7 @@ impl fmt::Debug for Info {
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct File {
     pub path: PathBuf,
-    pub length: usize,
+    pub length: u64,
 }
 
 impl File {
@@ -54,7 +54,7 @@ impl File {
             (Some(v), None, Some(l)) => {
                 let f = File {
                     path: PathBuf::from(v.into_string().ok_or("Path must be a valid string.")?),
-                    length: l.into_int().ok_or("File length must be a valid int")? as usize,
+                    length: l.into_int().ok_or("File length must be a valid int")? as u64,
                 };
                 Ok(f)
             }
@@ -67,7 +67,7 @@ impl File {
                 }
                 let f = File {
                     path: p,
-                    length: l.into_int().ok_or("File length must be a valid int")? as usize,
+                    length: l.into_int().ok_or("File length must be a valid int")? as u64,
                 };
                 Ok(f)
             }
@@ -150,7 +150,7 @@ impl Info {
                     unreachable!();
                 };
 
-                let total_len = files.iter().map(|f| f.length as u64).sum();
+                let total_len = files.iter().map(|f| f.length).sum();
                 Ok(Info {
                     name,
                     announce: a,
@@ -220,9 +220,10 @@ impl Info {
     }
 
     /// Calculates the file offsets for a given index, begin, and block length.
-    fn calc_disk_locs(&self, index: u32, begin: u32, mut len: u32) -> Vec<disk::Location> {
+    fn calc_disk_locs(&self, index: u32, begin: u32, len: u32) -> Vec<disk::Location> {
+        let mut len = len as u64;
         // The absolute byte offset where we start processing data.
-        let mut cur_start = index * self.piece_len as u32 + begin;
+        let mut cur_start = index as u64 * self.piece_len as u64 + begin as u64;
         // Current index of the data block we're writing
         let mut data_start = 0;
         // The current file end length.
@@ -233,10 +234,10 @@ impl Info {
         let mut locs = Vec::new();
         for f in &self.files {
             fidx += f.length;
-            if (cur_start as usize) < fidx {
-                let file_write_len = cmp::min(fidx - cur_start as usize, len as usize);
-                let offset = (cur_start - (fidx - f.length) as u32) as u64;
-                if file_write_len == len as usize {
+            if cur_start < fidx {
+                let file_write_len = cmp::min(fidx - cur_start, len);
+                let offset = cur_start - (fidx - f.length);
+                if file_write_len == len {
                     // The file is longer than our len, just write to it,
                     // exit loop
                     locs.push(disk::Location::new(
@@ -252,10 +253,10 @@ impl Info {
                         f.path.clone(),
                         offset,
                         data_start,
-                        data_start + file_write_len as usize,
+                        data_start + file_write_len,
                     ));
-                    len -= file_write_len as u32;
-                    cur_start += file_write_len as u32;
+                    len -= file_write_len;
+                    cur_start += file_write_len;
                     data_start += file_write_len;
                 }
             }

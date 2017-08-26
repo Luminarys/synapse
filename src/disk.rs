@@ -282,12 +282,12 @@ pub struct Location {
 }
 
 impl Location {
-    pub fn new(file: PathBuf, offset: u64, start: usize, end: usize) -> Location {
+    pub fn new(file: PathBuf, offset: u64, start: u64, end: u64) -> Location {
         Location {
             file,
             offset,
-            start,
-            end,
+            start: start as usize,
+            end: end as usize,
         }
     }
 }
