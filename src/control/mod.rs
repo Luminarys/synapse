@@ -2,12 +2,14 @@ use std::{fs, io, time};
 use std::io::Read;
 use std::sync::atomic;
 use std::collections::HashMap;
+use std::path::PathBuf;
 
 use slog::Logger;
 use chrono::Utc;
+use bincode;
 
-use {rpc, tracker, disk, listener, CONFIG, SHUTDOWN, PEER_ID};
-use util::{io_err, io_err_val, id_to_hash, hash_to_id};
+use {rpc, tracker, disk, listener, CONFIG, SHUTDOWN};
+use util::{io_err, io_err_val, id_to_hash, random_string};
 use torrent::{self, peer, Torrent};
 use throttle::Throttler;
 
@@ -39,6 +41,16 @@ pub struct Control<T: cio::CIO> {
     peers: HashMap<usize, usize>,
     hash_idx: HashMap<[u8; 20], usize>,
     l: Logger,
+    data: ServerData,
+}
+
+#[derive(Serialize, Deserialize, Default)]
+struct ServerData {
+    id: String,
+    ul: u64,
+    dl: u64,
+    session_ul: u64,
+    session_dl: u64,
 }
 
 impl<T: cio::CIO> Control<T> {
@@ -72,6 +84,7 @@ impl<T: cio::CIO> Control<T> {
             tx_rates: None,
             last_tx_rates: (0, 0),
             l,
+            data: Default::default(),
         })
     }
 
@@ -91,12 +104,25 @@ impl<T: cio::CIO> Control<T> {
                 }
             }
             if SHUTDOWN.load(atomic::Ordering::SeqCst) {
+                self.serialize();
                 break;
             }
         }
     }
 
     fn serialize(&mut self) {
+        let sd = &CONFIG.disk.session;
+        debug!(self.l, "Serializing server data!");
+        let mut pb = PathBuf::from(sd);
+        pb.push("syn_data");
+        if let Ok(Ok(_)) = fs::File::create(pb).map(|mut f| {
+            bincode::serialize_into(&mut f, &self.data, bincode::Infinite)
+        })
+        {
+        } else {
+            error!(self.l, "Failed to serialize");
+        }
+
         debug!(self.l, "Serializing torrents!");
         for torrent in self.torrents.values_mut() {
             torrent.serialize();
@@ -104,8 +130,21 @@ impl<T: cio::CIO> Control<T> {
     }
 
     fn deserialize(&mut self) -> io::Result<()> {
-        debug!(self.l, "Deserializing torrents!");
         let sd = &CONFIG.disk.session;
+        debug!(self.l, "Deserializing server data!");
+        let mut pb = PathBuf::from(sd);
+        pb.push("syn_data");
+        if let Ok(Ok(data)) = fs::File::open(pb).map(|mut f| {
+            bincode::deserialize_from(&mut f, bincode::Infinite)
+        })
+        {
+            self.data = data;
+        } else {
+            warn!(self.l, "No server data found, regenerating!");
+            self.data = ServerData::new();
+        }
+
+        debug!(self.l, "Deserializing torrents!");
         for entry in fs::read_dir(sd)? {
             if let Err(e) = self.deserialize_torrent(entry) {
                 warn!(self.l, "Failed to deserialize torrent file: {:?}!", e);
@@ -407,7 +446,7 @@ impl<T: cio::CIO> Control<T> {
             }
             self.cio.msg_rpc(rpc::CtlMessage::Update(vec![
                 rpc::resource::SResourceUpdate::Rate {
-                    id: hash_to_id(&PEER_ID[..]),
+                    id: self.data.id.clone(),
                     kind: rpc::resource::ResourceKind::Server,
                     rate_up,
                     rate_down,
@@ -418,7 +457,7 @@ impl<T: cio::CIO> Control<T> {
 
     fn send_rpc_info(&mut self) {
         let res = rpc::resource::Resource::Server(rpc::resource::Server {
-            id: hash_to_id(&PEER_ID[..]),
+            id: self.data.id.clone(),
             rate_up: 0,
             rate_down: 0,
             throttle_up: 0,
@@ -436,5 +475,17 @@ impl<T: cio::CIO> Drop for Control<T> {
         self.cio.msg_rpc(rpc::CtlMessage::Shutdown);
         self.cio.msg_trk(tracker::Request::Shutdown);
         self.cio.msg_listener(listener::Request::Shutdown);
+    }
+}
+
+impl ServerData {
+    pub fn new() -> ServerData {
+        ServerData {
+            id: random_string(15),
+            ul: 0,
+            dl: 0,
+            session_ul: 0,
+            session_dl: 0,
+        }
     }
 }
