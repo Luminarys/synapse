@@ -266,27 +266,13 @@ impl Picker {
 #[cfg(test)]
 impl Picker {
     pub fn new_rarest(info: &Info, pieces: &Bitfield) -> Picker {
-        let scale = info.piece_len / 16_384;
-        let picker = rarest::Picker::new(pieces);
-        Picker {
-            picker: PickerKind::Rarest(picker),
-            scale,
-            seeders: 0,
-            unpicked: pieces.clone(),
-            downloading: HashMap::new(),
-        }
+        Picker::new(info, pieces)
     }
 
     pub fn new_sequential(info: &Info, pieces: &Bitfield) -> Picker {
-        let scale = info.piece_len / 16_384;
-        let picker = sequential::Picker::new(pieces);
-        Picker {
-            picker: PickerKind::Sequential(picker),
-            scale,
-            seeders: 0,
-            unpicked: pieces.clone(),
-            downloading: HashMap::new(),
-        }
+        let mut p = Picker::new(info, pieces);
+        p.change_picker(true);
+        p
     }
 }
 impl Block {
