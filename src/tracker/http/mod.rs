@@ -15,7 +15,7 @@ use url::Url;
 use slog::Logger;
 use socket::TSocket;
 
-const TIMEOUT_MS: u64 = 2500;
+const TIMEOUT_MS: u64 = 15_000;
 
 pub struct Handler {
     reg: amy::Registrar,

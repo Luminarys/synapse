@@ -329,8 +329,7 @@ impl RoutingTable {
              }) if id1 == id2 => {
                 if !self.contains_id(id1) {
                     return Err(reqs);
-                }
-                {
+                } else {
                     let node = self.get_node_mut(id1);
                     node.update();
                     if let Some(ref mut rt) = node.rem_token {
@@ -346,13 +345,11 @@ impl RoutingTable {
                     return Ok((torrent, Ok(r)));
                 } else if let proto::PeerResp::Nodes(ref mut nodes) = *pr {
                     for node in nodes.drain(..) {
+                        let id = node.id.clone();
+                        let addr = node.addr;
                         if !self.contains_id(&node.id) {
-                            let id = node.id.clone();
-                            let addr = node.addr;
-                            if self.add_node(node.into()).is_ok() {
-                                let tx = self.new_tsearch_tx(id.clone(), torrent, hash);
-                                reqs.push((proto::Request::ping(tx, id), addr));
-                            }
+                            let tx = self.new_tsearch_tx(id.clone(), torrent, hash);
+                            reqs.push((proto::Request::get_peers(tx, self.id.clone(), hash), addr));
                         }
                     }
                 }

@@ -82,7 +82,7 @@ impl Manager {
         loop {
             match self.sock.recv_from(&mut self.buf[..]) {
                 Ok((v, addr)) => {
-                    trace!(self.l, "Processing msg from {:?}!", addr);
+                    trace!(self.l, "Processing msg from {}", addr);
                     if let Ok(req) = proto::Request::decode(&self.buf[..v]) {
                         let resp = self.table.handle_req(req, addr).encode();
                         self.send_msg(&resp, addr);
@@ -96,7 +96,7 @@ impl Manager {
                             }
                         }
                     } else {
-                        trace!(self.l, "Received invalid message from {:?}!", addr);
+                        debug!(self.l, "Received invalid message from {:?}!", addr);
                     }
                 }
                 Err(e) => {

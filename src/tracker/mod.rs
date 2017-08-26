@@ -163,7 +163,7 @@ impl Tracker {
                     self.dht.add_addr(addr);
                 }
                 Request::DHTAnnounce(hash) => {
-                    debug!(self.l, "Handling dht node addition req!");
+                    debug!(self.l, "Handling dht announce req!");
                     self.dht.announce(hash);
                 }
                 Request::Shutdown => {

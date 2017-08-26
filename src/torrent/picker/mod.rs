@@ -13,6 +13,8 @@ mod tests;
 pub struct Picker {
     /// Number of blocks per piece
     scale: u32,
+    last_piece_scale: u32,
+    last_piece: u32,
     /// Number of detected seeders
     seeders: u16,
     /// Set of pieces which have blocks waiting. These should be prioritized.
@@ -65,9 +67,18 @@ impl Picker {
     pub fn new(info: &Info, pieces: &Bitfield) -> Picker {
         let scale = info.piece_len / 16_384;
         let picker = rarest::Picker::new(pieces);
+        let last_piece = info.pieces() - 1;
+        let lpl = info.piece_len(last_piece);
+        let last_piece_scale = if lpl % 16_384 == 0 {
+            lpl / 16_384
+        } else {
+            lpl / 16_384 + 1
+        };
         Picker {
             picker: PickerKind::Rarest(picker),
             scale,
+            last_piece,
+            last_piece_scale,
             seeders: 0,
             unpicked: pieces.clone(),
             downloading: HashMap::new(),
@@ -118,7 +129,9 @@ impl Picker {
             requested: vec![Request::new(id)],
         });
 
-        if dl.len() == self.scale as usize {
+        if dl.len() == self.scale as usize ||
+            (piece == self.last_piece && dl.len() == self.last_piece_scale as usize)
+        {
             match self.picker {
                 PickerKind::Sequential(ref mut p) => p.completed(piece),
                 PickerKind::Rarest(ref mut p) => p.completed(piece),
@@ -171,9 +184,14 @@ impl Picker {
         // If we've requested every single block for this piece and they're all complete, remove it
         // and report completion
         let scale = self.scale;
+        let lp = self.last_piece;
+        let lps = self.last_piece_scale;
         let complete = self.downloading
             .get_mut(&b.index)
-            .map(|r| r.len() as u32 == scale && r.iter().all(|d| d.completed))
+            .map(|r| {
+                (r.len() as u32 == scale || (b.index == lp && r.len() as u32 == lps)) &&
+                    r.iter().all(|d| d.completed)
+            })
             .unwrap_or(false);
 
         if complete {

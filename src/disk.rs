@@ -90,6 +90,7 @@ impl FileCache {
                 let removal = self.files.iter().map(|(id, _)| id.clone()).next().unwrap();
                 self.files.remove(&removal);
             }
+            fs::create_dir_all(path.parent().unwrap())?;
             let mut file = fs::OpenOptions::new()
                 .write(true)
                 .create(true)
@@ -221,25 +222,25 @@ impl Request {
                 let mut invalid = Vec::new();
                 let mut buf = vec![0u8; info.piece_len as usize];
                 let mut pb = path::PathBuf::from(dd);
+                let mut cf = pb.clone();
 
-                let mut init_locs = info.piece_disk_locs(0);
-                let mut cf = init_locs.remove(0).file;
-                pb.push(&cf);
                 let mut f = fs::OpenOptions::new().read(true).open(&pb);
 
                 for i in 0..info.pieces() {
                     let mut valid = true;
                     let mut ctx = digest::Context::new(&digest::SHA1);
                     let locs = info.piece_disk_locs(i);
+                    let mut pos = 0;
                     for loc in locs {
                         if loc.file != cf {
-                            pb.pop();
+                            pb = path::PathBuf::from(dd);
                             pb.push(&loc.file);
                             f = fs::OpenOptions::new().read(true).open(&pb);
                             cf = loc.file;
                         }
-                        if let Ok(Ok(amnt)) = f.as_mut().map(|file| file.read(&mut buf)) {
-                            ctx.update(&buf[0..amnt]);
+                        if let Ok(Ok(amnt)) = f.as_mut().map(|file| file.read(&mut buf[pos..])) {
+                            ctx.update(&buf[pos..pos + amnt]);
+                            pos += amnt;
                         } else {
                             valid = false;
                         }

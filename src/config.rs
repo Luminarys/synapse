@@ -117,7 +117,7 @@ fn default_trk_port() -> u16 {
     16_362
 }
 fn default_dht_port() -> u16 {
-    6_881
+    16_309
 }
 fn default_rpc_port() -> u16 {
     8_412

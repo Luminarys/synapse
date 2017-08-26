@@ -17,7 +17,7 @@ port = 16362
 
 [dht]
 # UDP port used for DHT interaction
-port = 6881
+port = 16309
 # Node to use for DHT bootstrapping
 bootstrap_node = "router.bittorrent.com:6881"
 
