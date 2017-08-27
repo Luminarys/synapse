@@ -33,6 +33,10 @@ server
         "rate_down": number,
         "throttle_up": number*,
         "throttle_down": number*,
+        "transferred_up": number,
+        "transferred_down": number,
+        "ses_transferred_up": number,
+        "ses_transferred_down": number,
         "started": datetime,
     }
 

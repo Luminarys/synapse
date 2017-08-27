@@ -49,7 +49,9 @@ struct ServerData {
     id: String,
     ul: u64,
     dl: u64,
+    #[serde(skip)]
     session_ul: u64,
+    #[serde(skip)]
     session_dl: u64,
 }
 
@@ -212,8 +214,12 @@ impl<T: cio::CIO> Control<T> {
             }
             cio::Event::Timer(t) => {
                 if t == self.throttler.id() {
-                    if let Some(p) = self.throttler.update() {
-                        self.tx_rates = Some(p);
+                    if let Some(((ulr, ul), (dlr, dl))) = self.throttler.update() {
+                        self.tx_rates = Some((ulr, dlr));
+                        self.data.ul += ul;
+                        self.data.dl += dl;
+                        self.data.session_ul += ul;
+                        self.data.session_dl += dl;
                     }
                 } else if t == self.throttler.fid() {
                     self.flush_blocked_peers();
@@ -445,11 +451,15 @@ impl<T: cio::CIO> Control<T> {
                 self.last_tx_rates.1 = rate_down;
             }
             self.cio.msg_rpc(rpc::CtlMessage::Update(vec![
-                rpc::resource::SResourceUpdate::Rate {
+                rpc::resource::SResourceUpdate::ServerTransfer {
                     id: self.data.id.clone(),
                     kind: rpc::resource::ResourceKind::Server,
                     rate_up,
                     rate_down,
+                    transferred_up: self.data.ul,
+                    transferred_down: self.data.dl,
+                    ses_transferred_up: self.data.session_ul,
+                    ses_transferred_down: self.data.session_dl,
                 },
             ]));
         }
@@ -462,6 +472,10 @@ impl<T: cio::CIO> Control<T> {
             rate_down: 0,
             throttle_up: 0,
             throttle_down: 0,
+            transferred_up: self.data.ul,
+            transferred_down: self.data.dl,
+            ses_transferred_up: self.data.session_ul,
+            ses_transferred_down: self.data.session_dl,
             started: Utc::now(),
         });
         self.cio.msg_rpc(rpc::CtlMessage::Extant(vec![res]));

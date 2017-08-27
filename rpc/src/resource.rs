@@ -56,6 +56,18 @@ pub enum SResourceUpdate<'a> {
         rate_down: u64,
     },
 
+    ServerTransfer {
+        id: String,
+        #[serde(rename = "type")]
+        kind: ResourceKind,
+        rate_up: u64,
+        rate_down: u64,
+        transferred_up: u64,
+        transferred_down: u64,
+        ses_transferred_up: u64,
+        ses_transferred_down: u64,
+    },
+
     TorrentStatus {
         id: String,
         #[serde(rename = "type")]
@@ -149,6 +161,10 @@ pub struct Server {
     pub rate_down: u64,
     pub throttle_up: u32,
     pub throttle_down: u32,
+    pub transferred_up: u64,
+    pub transferred_down: u64,
+    pub ses_transferred_up: u64,
+    pub ses_transferred_down: u64,
     pub started: DateTime<Utc>,
 }
 
@@ -243,6 +259,7 @@ impl<'a> SResourceUpdate<'a> {
             &SResourceUpdate::OResource(ref r) => r.id(),
             &SResourceUpdate::Throttle { ref id, .. } |
             &SResourceUpdate::Rate { ref id, .. } |
+            &SResourceUpdate::ServerTransfer { ref id, .. } |
             &SResourceUpdate::TorrentStatus { ref id, .. } |
             &SResourceUpdate::TorrentTransfer { ref id, .. } |
             &SResourceUpdate::TorrentPeers { ref id, .. } |
