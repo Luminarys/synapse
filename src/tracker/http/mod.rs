@@ -10,7 +10,7 @@ use self::reader::Reader;
 use std::io;
 use std::collections::HashMap;
 use std::net::SocketAddr;
-use url::percent_encoding::percent_encode_byte;
+use url::percent_encoding::{percent_encode, DEFAULT_ENCODE_SET};
 use url::Url;
 use slog::Logger;
 use socket::TSocket;
@@ -285,9 +285,5 @@ fn append_query_pair(s: &mut Vec<u8>, k: &str, v: &str) {
 }
 
 fn encode_param(data: &[u8]) -> String {
-    let mut resp = String::new();
-    for byte in data {
-        resp.push_str(percent_encode_byte(*byte));
-    }
-    resp
+    percent_encode(data, DEFAULT_ENCODE_SET).to_string()
 }
