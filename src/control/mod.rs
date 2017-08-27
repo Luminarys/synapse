@@ -481,7 +481,7 @@ impl<T: cio::CIO> Drop for Control<T> {
 impl ServerData {
     pub fn new() -> ServerData {
         ServerData {
-            id: random_string(15),
+            id: env!("CARGO_PKG_VERSION").to_owned() + "-" + &random_string(15),
             ul: 0,
             dl: 0,
             session_ul: 0,
