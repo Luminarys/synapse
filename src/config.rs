@@ -1,5 +1,28 @@
-use std::env;
 use std::net::{SocketAddr, ToSocketAddrs};
+use std::fs;
+use std::io::Read;
+
+use toml;
+use shellexpand;
+
+error_chain! {
+    errors {
+        Env {
+            description("bad env var")
+                display("bad env var")
+        }
+
+        IO {
+            description("IO failed")
+                display("IO failed")
+        }
+
+        Format {
+            description("invalid config format")
+                display("invalid config format")
+        }
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct Config {
@@ -86,6 +109,28 @@ pub struct PeerConfig {
     pub prune_timeout: u64,
 }
 
+impl ConfigFile {
+    pub fn try_load() -> Result<ConfigFile> {
+        let files = [
+            "$XDG_CONFIG_HOME/synapse.toml",
+            "~/.config/synapse.toml",
+            "./config.toml",
+        ];
+        for file in &files {
+            let mut s = String::new();
+            let res = shellexpand::full(&file)
+                .chain_err(|| ErrorKind::Env)
+                .and_then(|p| fs::File::open(&*p).chain_err(|| ErrorKind::IO))
+                .and_then(|mut f| f.read_to_string(&mut s).chain_err(|| ErrorKind::IO))
+                .and_then(|_| toml::from_str(&s).chain_err(|| ErrorKind::Format));
+            if let Ok(cfg) = res {
+                return Ok(cfg);
+            }
+        }
+        bail!("Failed to find a suitable config!");
+    }
+}
+
 impl Config {
     pub fn from_file(mut file: ConfigFile) -> Config {
         let addr = file.dht
@@ -96,8 +141,8 @@ impl Config {
             port: file.dht.port,
             bootstrap_node: addr,
         };
-        file.disk.session = expand_tilde(&file.disk.session);
-        file.disk.directory = expand_tilde(&file.disk.directory);
+        file.disk.session = shellexpand::tilde(&file.disk.session).into();
+        file.disk.directory = shellexpand::tilde(&file.disk.directory).into();
         Config {
             port: file.port,
             trk: file.tracker,
@@ -135,10 +180,12 @@ fn default_bootstrap_node() -> Option<String> {
     None
 }
 fn default_session_dir() -> String {
-    expand_tilde("~/.syn_session")
+    shellexpand::full("$XDG_DATA_HOME/synapse")
+        .unwrap_or_else(|_| shellexpand::tilde("~/.local/share/synapse"))
+        .into()
 }
 fn default_directory_dir() -> String {
-    expand_tilde("./")
+    "./".into()
 }
 fn default_max_files() -> usize {
     500
@@ -225,15 +272,4 @@ impl Default for PeerConfig {
     fn default() -> PeerConfig {
         PeerConfig { prune_timeout: default_prune_timeout() }
     }
-}
-
-fn expand_tilde(s: &str) -> String {
-    s.replace(
-        '~',
-        &env::home_dir()
-            .unwrap()
-            .into_os_string()
-            .into_string()
-            .unwrap(),
-    )
 }

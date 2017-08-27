@@ -26,8 +26,9 @@ extern crate c_ares;
 extern crate httparse;
 extern crate base64;
 extern crate base32;
-
+extern crate shellexpand;
 extern crate chrono;
+
 // TODO: Get rid of this
 extern crate num;
 
@@ -44,9 +45,9 @@ mod rpc;
 mod throttle;
 mod config;
 
-use std::{time, env, thread};
+use std::{time, thread};
 use std::sync::{atomic, mpsc};
-use std::io::{self, Read};
+use std::io;
 use slog::Drain;
 use control::acio;
 
@@ -65,36 +66,9 @@ lazy_static! {
     };
 
     pub static ref CONFIG: config::Config = {
-        let args: Vec<_> = env::args().collect();
-        if args.len() >= 2 {
-            info!(LOG, "Using config file!");
-            let mut s = String::new();
-            let contents = std::fs::File::open(&args[1]).and_then(|mut f| {
-                f.read_to_string(&mut s).map(|_| s)
-            });
-            match contents {
-                Ok(s) => {
-                    match toml::from_str(&s) {
-                        Ok(cf) => {
-                            let mut c = config::Config::from_file(cf);
-                            if !c.rpc.local && !c.rpc.auth {
-                                error!(LOG, "Authentication required for a non local config!");
-                                error!(LOG, "Overriding config to use local RPC!");
-                                c.rpc.local = true
-                            }
-                            c
-                        }
-                        Err(e) => {
-                            error!(LOG, "Failed to parse config: {}. Falling back to default.", e);
-                            Default::default()
-                        }
-                    }
-                }
-                Err(e) => {
-                    error!(LOG, "Failed to open config: {}. Falling back to default.", e);
-                    Default::default()
-                }
-            }
+        if let Ok(cfg)  = config::ConfigFile::try_load() {
+            info!(LOG, "Loaded config file");
+            config::Config::from_file(cfg)
         } else {
             info!(LOG, "Using default config");
             Default::default()

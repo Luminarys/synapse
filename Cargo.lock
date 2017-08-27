@@ -21,6 +21,7 @@ dependencies = [
  "serde 1.0.10 (registry+https://github.com/rust-lang/crates.io-index)",
  "serde_derive 1.0.10 (registry+https://github.com/rust-lang/crates.io-index)",
  "serde_json 1.0.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "shellexpand 1.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "signal 0.3.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "slog 2.0.6 (registry+https://github.com/rust-lang/crates.io-index)",
  "slog-async 2.0.1 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -1056,6 +1057,11 @@ version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 
 [[package]]
+name = "shellexpand"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+
+[[package]]
 name = "signal"
 version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1536,6 +1542,7 @@ dependencies = [
 "checksum serde_json 1.0.2 (registry+https://github.com/rust-lang/crates.io-index)" = "48b04779552e92037212c3615370f6bd57a40ebba7f20e554ff9f55e41a69a7b"
 "checksum serde_urlencoded 0.5.1 (registry+https://github.com/rust-lang/crates.io-index)" = "ce0fd303af908732989354c6f02e05e2e6d597152870f2c6990efb0577137480"
 "checksum sha1 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)" = "cc30b1e1e8c40c121ca33b86c23308a090d19974ef001b4bf6e61fd1a0fb095c"
+"checksum shellexpand 1.0.0 (registry+https://github.com/rust-lang/crates.io-index)" = "de7a5b5a9142fd278a10e0209b021a1b85849352e6951f4f914735c976737564"
 "checksum signal 0.3.2 (registry+https://github.com/rust-lang/crates.io-index)" = "904a4bba60e8e7a53b7a7eec8f59084a9ceafe3df5aa9d24846a83a5e351aa34"
 "checksum slab 0.3.0 (registry+https://github.com/rust-lang/crates.io-index)" = "17b4fcaed89ab08ef143da37bc52adbcc04d4a69014f4c1208d6b51f0c47bc23"
 "checksum slog 2.0.6 (registry+https://github.com/rust-lang/crates.io-index)" = "057f354e538bfb65380f06810d2ab85933872563b20f53daa8144e5beae3aa3b"
