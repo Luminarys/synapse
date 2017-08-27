@@ -153,7 +153,26 @@ fn main() {
     if let Some(password) = matches.value_of("password") {
         url.query_pairs_mut().append_pair("password", password);
     }
-    let client = Client::new(url.as_str());
+    let mut client = Client::new(url.as_str());
+    if let Ok(rpc::message::SMessage::RpcVersion(v)) = client.recv() {
+        if v.major != rpc::MAJOR_VERSION {
+            eprintln!(
+                "synapse RPC major version {} is not compatible with sycli RPC major version {}",
+                v.major,
+                rpc::MAJOR_VERSION
+            );
+            process::exit(1);
+        }
+        if v.minor < rpc::MINOR_VERSION {
+            eprintln!(
+                "synapse RPC minor version {} is not compatible with sycli RPC minor version {}",
+                v.minor,
+                rpc::MINOR_VERSION
+            );
+            process::exit(1);
+        }
+    }
+
     if url.scheme() == "wss" {
         url.set_scheme("https").unwrap();
     } else {

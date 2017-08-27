@@ -3,6 +3,12 @@ use chrono::{DateTime, Utc};
 use super::resource::{ResourceKind, CResourceUpdate, SResourceUpdate};
 use super::criterion::Criterion;
 
+#[derive(Debug, Serialize, Deserialize)]
+pub struct Version {
+    pub major: u16,
+    pub minor: u16,
+}
+
 /// Client -> server messages
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
@@ -69,6 +75,7 @@ pub enum SMessage<'a> {
     UpdateResources { resources: Vec<SResourceUpdate<'a>> },
 
     // Special messages
+    RpcVersion(Version),
     TransferOffer {
         serial: u64,
         expires: DateTime<Utc>,
@@ -92,6 +99,15 @@ pub enum SMessage<'a> {
 pub struct Error {
     pub serial: Option<u64>,
     pub reason: String,
+}
+
+impl Version {
+    pub fn current() -> Version {
+        Version {
+            major: ::MAJOR_VERSION,
+            minor: ::MINOR_VERSION,
+        }
+    }
 }
 
 fn default_start() -> bool {

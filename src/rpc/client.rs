@@ -4,11 +4,13 @@ use std::io::{self, Write};
 
 use base64;
 use httparse;
+use serde_json;
 use url::Url;
 
 use super::reader::Reader;
 use super::writer::Writer;
 use super::proto::ws::{Message, Frame, Opcode};
+use super::proto::message::{SMessage, Version};
 use super::{Result, ResultExt, ErrorKind};
 use super::EMPTY_HTTP_RESP;
 use util::{IOR, aread, sha1_hash};
@@ -148,17 +150,24 @@ impl Into<Client> for Incoming {
         ];
         let data = lines.join("\r\n") + "\r\n\r\n";
         // Ignore error, it'll pop up again anyways
-        if self.conn.write(data.as_bytes()).is_err() {};
+        self.conn.write(data.as_bytes()).ok();
         // Set TCP_NODELAY
         if self.conn.set_nodelay(true).is_err() {}
 
-        Client {
+        let mut c = Client {
             r: Reader::new(),
             w: Writer::new(),
             buf: FragBuf::None,
             conn: self.conn,
             last_action: time::Instant::now(),
-        }
+        };
+
+        c.send(Frame::Text(
+            serde_json::to_string(
+                &SMessage::RpcVersion(Version::current()),
+            ).unwrap(),
+        )).ok();
+        c
     }
 }
 

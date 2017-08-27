@@ -1,4 +1,4 @@
-                                  Synapse RPC
+                                  Synapse RPC v0.1
 
 Protocol assumptions: message based, full duplex, persistent connections, SSL
 optional (i.e. websockets). Websocket text frames with JSON encoding are used
@@ -330,6 +330,19 @@ As with UPDATE_RESOURCE, the client should wait for a corresponding
 RESOURCES_REMOVED message (assuming it is subscribed appropriately).
 
                                 SPECIAL MESSAGES
+
+RPC_VERSION          server->client
+
+The version of the RPC protocol being used by the synapse instance.
+Minor version differences indicate non breaking changes, while major
+version differences have no compatability guarantees. This message will
+be sent to clients when they connect.
+
+    {
+        "type": "RPC_VERSION",
+        "major": number,
+        "minor": datetime,
+    }
 
 TRANSFER_OFFER          server->client
 
