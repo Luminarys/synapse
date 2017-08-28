@@ -2,7 +2,7 @@ use std::io;
 use std::mem;
 use tracker::errors::{Result, ErrorKind};
 
-pub(super) struct Reader {
+pub struct Reader {
     data: Vec<u8>,
     idx: usize,
     state: ReadState,

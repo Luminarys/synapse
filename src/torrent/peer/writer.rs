@@ -4,7 +4,7 @@ use std::io::{self, Write, ErrorKind};
 use std::sync::Arc;
 use util::io_err;
 
-pub(super) struct Writer {
+pub struct Writer {
     // Needed so that the peer can filter out cancel'd messages.
     // The state of this isn't critical to any invariants of the Writer
     // so it shouldn't be an issue

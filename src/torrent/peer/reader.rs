@@ -5,7 +5,7 @@ use torrent::Bitfield;
 use byteorder::{BigEndian, ReadBytesExt};
 use util::{aread, IOR, io_err};
 
-pub(super) struct Reader {
+pub struct Reader {
     blocks_read: usize,
 
     state: State,

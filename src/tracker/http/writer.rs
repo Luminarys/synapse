@@ -1,7 +1,7 @@
 use std::io;
 use tracker::errors::{Result, ErrorKind};
 
-pub(super) struct Writer {
+pub struct Writer {
     data: Vec<u8>,
     idx: usize,
 }
