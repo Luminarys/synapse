@@ -410,7 +410,9 @@ impl<T: cio::CIO> Torrent<T> {
                     // We then will receieve it later and call cleanup_peer as needed.
                     // This ensures that events flow from control -> torrent and get
                     // properly processed
-                    self.cio.remove_peer(self.id);
+                    self.cio.remove_peer(pid);
+                    self.peers.insert(pid, peer);
+                    return Ok(());
                 }
             }
             Err(e) => {
