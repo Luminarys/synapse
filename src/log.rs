@@ -1,3 +1,5 @@
+use std::fmt;
+
 #[derive(PartialEq, PartialOrd)]
 pub enum LogLevel {
     Error = 0,
@@ -5,6 +7,18 @@ pub enum LogLevel {
     Debug,
     Trace,
 }
+
+impl fmt::Display for LogLevel {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match *self {
+            LogLevel::Error => write!(f, "E"),
+            LogLevel::Info => write!(f, "I"),
+            LogLevel::Debug => write!(f, "D"),
+            LogLevel::Trace => write!(f, "T"),
+        }
+    }
+}
+
 
 pub static mut LEVEL: LogLevel = LogLevel::Info;
 
@@ -63,7 +77,8 @@ macro_rules! log(
             if unsafe { $level <= $crate::log::LEVEL } {
                 let mut msg = Vec::with_capacity(25);
                 let time = Local::now();
-                write!(&mut msg, "{} - [{}:{}] ", time.format("%x %X"), file!(), line!()).unwrap();
+                write!(&mut msg, "{} [{}:{}] {}: ",
+                       time.format("%x %X"), module_path!(), line!(), $level).unwrap();
                 write!(&mut msg, $fmt).unwrap();
                 write!(&mut msg, "\n").unwrap();
                 let stderr = ::std::io::stderr();
@@ -80,7 +95,8 @@ macro_rules! log(
             if unsafe { $level <= $crate::log::LEVEL } {
                 let mut msg = Vec::with_capacity(25);
                 let time = Local::now();
-                write!(&mut msg, "{} - [{}:{}] ", time.format("%x %X"), file!(), line!()).unwrap();
+                write!(&mut msg, "{} [{}:{}] {}: ",
+                       time.format("%x %X"), module_path!(), line!(), $level).unwrap();
                 write!(&mut msg, $fmt, $($arg)*).unwrap();
                 write!(&mut msg, "\n").unwrap();
                 let stderr = ::std::io::stderr();
