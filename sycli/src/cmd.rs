@@ -5,6 +5,7 @@ use std::io::{self, Read};
 use reqwest::{Client as HClient, header};
 use serde_json;
 use prettytable::Table;
+use url::Url;
 
 use rpc::message::{CMessage, SMessage};
 use rpc::criterion::{Criterion, Value, Operation};
@@ -120,28 +121,25 @@ pub fn dl(mut c: Client, url: &str, name: &str) -> Result<()> {
     };
 
     for file in files {
-        let msg = CMessage::DownloadFile {
-            serial: c.next_serial(),
-            id: file.id().to_owned(),
-        };
-        if let SMessage::TransferOffer { token, .. } = c.rr(msg)? {
-            let client = HClient::new().chain_err(|| ErrorKind::HTTP)?;
-            let mut resp = client
-                .get(url)
-                .chain_err(|| ErrorKind::HTTP)?
-                .header(header::Authorization(header::Bearer { token }))
-                .send()
-                .chain_err(|| ErrorKind::HTTP)?;
-            if let Resource::File(f) = file {
-                let p = Path::new(&f.path);
-                if let Some(par) = p.parent() {
-                    fs::create_dir_all(par).chain_err(|| ErrorKind::FileIO)?;
-                }
-                let mut f = fs::File::create(p).chain_err(|| ErrorKind::FileIO)?;
-                io::copy(&mut resp, &mut f).chain_err(|| ErrorKind::FileIO)?;
-            } else {
-                bail!("Expected a file resource");
+        let mut dl_url = Url::parse(url).unwrap();
+        dl_url.path_segments_mut().unwrap().push("dl");
+        dl_url.query_pairs_mut().append_pair("id", file.id());
+
+        let client = HClient::new().chain_err(|| ErrorKind::HTTP)?;
+        let mut resp = client
+            .get(dl_url.as_str())
+            .chain_err(|| ErrorKind::HTTP)?
+            .send()
+            .chain_err(|| ErrorKind::HTTP)?;
+        if let Resource::File(f) = file {
+            let p = Path::new(&f.path);
+            if let Some(par) = p.parent() {
+                fs::create_dir_all(par).chain_err(|| ErrorKind::FileIO)?;
             }
+            let mut f = fs::File::create(p).chain_err(|| ErrorKind::FileIO)?;
+            io::copy(&mut resp, &mut f).chain_err(|| ErrorKind::FileIO)?;
+        } else {
+            bail!("Expected a file resource");
         }
     }
     Ok(())

@@ -23,7 +23,7 @@ bootstrap_node = "router.bittorrent.com:6881"
 
 [disk]
 # Location for storing session metadata
-session = "~/.syn_session"
+session = "~/.local/share/synapse/"
 # Default download directory
 directory = "./"
 

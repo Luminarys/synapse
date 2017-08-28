@@ -354,12 +354,9 @@ Indicates that the server will allow a file transfer over HTTP.
 The path to use will be assumed to be known by the client, rather than given
 by synapse. By default, synapse will listen for HTTP requests over its RPC port,
 and if a websocket upgrade is not initiated, a transfer request is assumed.
-The client should initiate an http request using bearer authorization or
-by specifying the "token" query parameter in the url.
+The client should initiate an http request using bearer authorization.
 This transfer must be initiated wihin the time limit defined by the expires field.
-If the transfer offer is for downloading a file, the token may be reused any number
-of times so long as it is not expired. If the transfer offer is for uploading a file,
-the client should send a POST request containing the binary encoded data.
+The client should send a POST request containing the binary encoded data.
 The client should not attempt to resend this request, even if an error response
 is later received. On failure, an error message is issued for the original
 message's serial. Successful behavior is dependent on the type of transfer
@@ -411,16 +408,6 @@ server will issue a TRANSFER_OFFER and the client should upload a tarball.
         "type": "UPLOAD_FILES",
         "size": number,             bytes, size of tarball
         "path": string              absolute or relative to download directory
-    }
-
-DOWNLOAD_FILE          client->server
-
-Requests a file to be downloaded. The server will
-respond with a TRANSFER_OFFER request and send along the file.
-
-    {
-        "type": "DOWNLOAD_FILE",
-        "id": ID
     }
 
 PAUSE_TORRENT          client->server
@@ -481,3 +468,12 @@ Note that error handling is not guaranteed to occur if any form of error is dete
 the transport (i.e. WebSocket) or encoding (i.e. JSON) level. Should errors occur
 for either the client or server here, the connection may be immediately and uncleanly
 closed.
+
+                                 HTTP DETAILS
+Synapse's RPC port services three types of HTTP requests: Upgrade, Transfer, and Download.
+Upgrade is used for a websocket upgrade and only requires that a query parameter 'password'
+be present if authentication is configured. Transfer is used for transfering files to synapse.
+It only requires that HTTP bearer authorization be present in the request.
+Download is a special request used to download files from synapse.
+It requires that the HTTP path end in '/dl', the RPC password is provided in the 'password'
+query parameter, and the id of the resource to download be in the 'id' query parameter.

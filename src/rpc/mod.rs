@@ -7,6 +7,7 @@ mod processor;
 mod transfer;
 
 use std::{io, str, result};
+use std::io::Write;
 use std::net::{TcpListener, TcpStream, Ipv4Addr, SocketAddrV4};
 use std::collections::HashMap;
 
@@ -14,8 +15,8 @@ use serde_json;
 use amy;
 
 pub use self::proto::resource;
-use self::proto::message::{self, SMessage};
 pub use self::errors::{Result, ResultExt, ErrorKind, Error};
+use self::proto::message::{self, SMessage};
 use self::proto::ws;
 use self::client::{Incoming, IncomingStatus, Client};
 use self::processor::{Processor, TransferKind};
@@ -31,8 +32,7 @@ const CLEANUP_INT_MS: usize = 2000;
 
 lazy_static! {
     pub static ref EMPTY_HTTP_RESP: Vec<u8> = {
-        let lines =
-            vec![
+        let lines = vec![
             format!("HTTP/1.1 {} {}", 204, "NO CONTENT"),
             format!("Connection: {}", "Close"),
             format!("Access-Control-Allow-Origin: {}", "*"),
@@ -47,9 +47,9 @@ lazy_static! {
                 "Access-Control-Request-Method",
                 "Access-Control-Request-Headers",
                 "Authorization"
-                ),
-                format!("\r\n"),
-            ];
+            ),
+            format!("\r\n"),
+        ];
         lines.join("\r\n").into_bytes()
     };
 }
@@ -337,15 +337,6 @@ impl RPC {
                             // immediatly attempt to handle the transfer as if it was ready
                             self.handle_transfer(id);
                         }
-                        Some((_, _, TransferKind::DownloadFile { path })) => {
-                            debug!("File download requested, validating");
-                            // The file transfer is going to be done in a new thread
-                            // with blocking ups, so deregister and set blocking.
-                            let conn: TcpStream = i.into();
-                            conn.set_nonblocking(false).is_ok();
-                            self.reg.deregister(&conn).is_ok();
-                            self.transfers.add_download(conn, path);
-                        }
                         Some(_) => {
                             error!("Unimplemented transfer type ignored");
                         }
@@ -353,6 +344,19 @@ impl RPC {
                             error!("Transfer used invalid token");
                             // TODO: Handle downloads and other uploads
                         }
+                    }
+                }
+                Ok(IncomingStatus::DL(id)) => {
+                    debug!("Attempting DL of {}", id);
+                    let mut conn: TcpStream = i.into();
+                    self.reg.deregister(&conn).is_ok();
+                    if let Some(path) = self.processor.get_dl(&id) {
+                        debug!("Initiating DL");
+                        conn.set_nonblocking(false).is_ok();
+                        self.transfers.add_download(conn, path);
+                    } else {
+                        debug!("ID {} invalid, stopping DL", id);
+                        conn.write(&EMPTY_HTTP_RESP).ok();
                     }
                 }
                 Err(e) => {
@@ -366,22 +370,22 @@ impl RPC {
     fn handle_conn(&mut self, not: amy::Notification) {
         if let Some(mut c) = self.clients.remove(&not.id) {
             if not.event.readable() {
-                let res = 'outer: loop {
+                loop {
                     match c.read() {
-                        Ok(None) => break true,
+                        Ok(None) => break,
                         Ok(Some(ws::Frame::Text(data))) => {
                             if self.process_frame(not.id, &mut c, &data).is_err() {
-                                break false;
+                                debug!("Client error, disconnecting");
+                                self.remove_client(not.id, c);
+                                return;
                             }
                         }
-                        Ok(Some(_)) => break false,
-                        Err(_) => break false,
+                        Ok(Some(_)) | Err(_) => {
+                            debug!("Client error, disconnecting");
+                            self.remove_client(not.id, c);
+                            return;
+                        }
                     }
-                };
-                if !res {
-                    debug!("Client error, disconnecting");
-                    self.remove_client(not.id, c);
-                    return;
                 }
             }
             if not.event.writable() && c.write().is_err() {

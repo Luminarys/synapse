@@ -81,8 +81,10 @@ impl Transfers {
         thread::spawn(move || {
             match handle_dl(conn, path) {
                 Ok(()) => {
+                    debug!("DL transfer succeeded");
                 }
-                Err(_) => {
+                Err(e) => {
+                    debug!("DL transfer failed: {:?}", e);
                     // TODO: ?
                 }
             }

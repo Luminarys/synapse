@@ -44,7 +44,7 @@ pub enum TransferKind {
         start: bool,
     },
     UploadFiles { size: u64, path: String },
-    DownloadFile { path: String },
+    UploadMagnet { url: String, path: Option<String> },
 }
 
 const EXPIRATION_DUR: i64 = 120;
@@ -63,6 +63,18 @@ impl Processor {
 
     pub fn remove_expired_tokens(&mut self) {
         self.tokens.retain(|_, tok| tok.expiration > Utc::now())
+    }
+
+    pub fn get_dl(&self, id: &str) -> Option<String> {
+        match self.resources.get(id) {
+            Some(&Resource::File(ref f)) => {
+                match self.resources.get(&f.torrent_id) {
+                    Some(&Resource::Torrent(ref t)) => Some(t.path.clone() + "/" + &f.path),
+                    _ => None,
+                }
+            }
+            _ => None,
+        }
     }
 
     pub fn get_transfer(&mut self, tok: String) -> Option<(usize, u64, TransferKind)> {
@@ -316,23 +328,6 @@ impl Processor {
                     client,
                     serial,
                     TransferKind::UploadFiles { size, path },
-                ));
-            }
-            CMessage::DownloadFile { serial, id } => {
-                let path = match self.resources.get(&id) {
-                    Some(&Resource::File(ref f)) => f.path.clone(),
-                    _ => {
-                        resp.push(SMessage::UnknownResource(Error {
-                            serial: Some(serial),
-                            reason: format!("unknown file id {}", id),
-                        }));
-                        return (resp, rmsg);
-                    }
-                };
-                resp.push(self.new_transfer(
-                    client,
-                    serial,
-                    TransferKind::DownloadFile { path },
                 ));
             }
         }

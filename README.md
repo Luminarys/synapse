@@ -7,8 +7,8 @@ Synapse is a flexible and lightweight BitTorrent daemon.
 
 Install dependencies:
 
-- rustc (stable 1.19)
-- cargo (stable 0.20)
+- rustc >= 1.17
+- cargo >= 0.18
 - c-ares *
 - openssl **
 

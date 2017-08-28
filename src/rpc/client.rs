@@ -36,6 +36,7 @@ pub enum IncomingStatus {
     Incomplete,
     Upgrade,
     Transfer { data: Vec<u8>, token: String },
+    DL(String),
 }
 
 enum FragBuf {
@@ -229,16 +230,17 @@ impl Incoming {
             Ok(httparse::Status::Complete(idx)) => {
                 if let Ok(k) = validate_upgrade(&req) {
                     self.key = Some(k);
-                    return Ok(Some(IncomingStatus::Upgrade));
+                    Ok(Some(IncomingStatus::Upgrade))
                 } else if let Some(token) = validate_tx(&req) {
-                    return Ok(Some(IncomingStatus::Transfer {
+                    Ok(Some(IncomingStatus::Transfer {
                         data: self.buf[idx..self.pos].to_owned(),
                         token,
-                    }));
+                    }))
+                } else if let Some(id) = validate_dl(&req) {
+                    Ok(Some(IncomingStatus::DL(id)))
                 } else {
-                    if self.conn.write(&EMPTY_HTTP_RESP).is_err() {
-                        // Ignore error, we're DCing anyways
-                    };
+                    // Ignore error, we're DCing anyways
+                    self.conn.write(&EMPTY_HTTP_RESP).ok();
                     Err(io::ErrorKind::InvalidData.into())
                 }
             }
@@ -292,6 +294,28 @@ impl FragBuf {
     }
 }
 
+fn validate_dl(req: &httparse::Request) -> Option<String> {
+    req.path
+        .and_then(|path| Url::parse(&format!("http://localhost{}", path)).ok())
+        .and_then(|url| {
+            if CONFIG.rpc.auth {
+                let pw = url.query_pairs()
+                    .find(|&(ref k, _)| k == "password")
+                    .map(|(_, v)| format!("{}", v))
+                    .map(|p| p == CONFIG.rpc.password)
+                    .unwrap_or(false);
+                if !pw {
+                    return None;
+                }
+            }
+            url.query_pairs().find(|&(ref k, _)| k == "id").map(
+                |(_, v)| {
+                    format!("{}", v)
+                },
+            )
+        })
+}
+
 // TODO: We're not really checking HTTP semantics here, might be worth
 // considering.
 fn validate_tx(req: &httparse::Request) -> Option<String> {
@@ -310,15 +334,7 @@ fn validate_tx(req: &httparse::Request) -> Option<String> {
             );
         }
     }
-    // Check ?token=blah too
-    req.path
-        .and_then(|path| Url::parse(&format!("http://localhost{}", path)).ok())
-        .and_then(|url| {
-            url.query_pairs().find(|&(ref k, _)| k == "token").map(|(_,
-              v)| {
-                format!("{}", v)
-            })
-        })
+    None
 }
 
 fn validate_upgrade(req: &httparse::Request) -> result::Result<String, ()> {

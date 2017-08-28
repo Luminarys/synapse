@@ -53,7 +53,6 @@ pub enum CMessage {
         size: u64,
         path: String,
     },
-    DownloadFile { serial: u64, id: String },
     PauseTorrent { serial: u64, id: String },
     ResumeTorrent { serial: u64, id: String },
     ValidateResources { serial: u64, ids: Vec<String> },
