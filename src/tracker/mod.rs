@@ -285,9 +285,12 @@ impl Request {
             port: CONFIG.port,
             uploaded: torrent.uploaded(),
             downloaded: torrent.downloaded(),
-            // This is naive, TODO: Reconsider
+            // This should be fine because the true len is usually slightly less than
+            // piece_len * pieces_dld (due to shorter last piece), so we always get
+            // either the correct amount left or 0.
             left: torrent.info().total_len.saturating_sub(
-                torrent.downloaded(),
+                torrent.pieces().iter().count() as u64 *
+                    torrent.info().piece_len as u64,
             ),
             // TODO: Develop better heuristics here.
             // For now, only request peers if we're leeching,

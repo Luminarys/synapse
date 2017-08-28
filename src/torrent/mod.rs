@@ -230,6 +230,10 @@ impl<T: cio::CIO> Torrent<T> {
         ));
     }
 
+    pub fn pieces(&self) -> &Bitfield {
+        &self.pieces
+    }
+
     pub fn set_tracker_response(&mut self, resp: &tracker::Result<TrackerResponse>) {
         debug!("Processing tracker response");
         match *resp {
