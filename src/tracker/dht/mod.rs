@@ -4,7 +4,6 @@ use self::io::{Read, Write};
 use num::bigint::BigUint;
 use {amy, tracker, CONFIG};
 use std::{thread, time};
-use slog::Logger;
 use std::fs::OpenOptions;
 use std::path::Path;
 
@@ -25,11 +24,10 @@ pub struct Manager {
     dht_flush: time::Instant,
     sock: UdpSocket,
     buf: Vec<u8>,
-    l: Logger,
 }
 
 impl Manager {
-    pub fn new(reg: &amy::Registrar, l: Logger) -> io::Result<Manager> {
+    pub fn new(reg: &amy::Registrar) -> io::Result<Manager> {
         let sock = UdpSocket::bind(("0.0.0.0", CONFIG.dht.port))?;
         sock.set_nonblocking(true)?;
         let id = reg.register(&sock, amy::Event::Read)?;
@@ -40,16 +38,13 @@ impl Manager {
             f.read_to_end(&mut data)?;
         }
         let table = if let Some(t) = rt::RoutingTable::deserialize(&data[..]) {
-            info!(l, "DHT table loaded from disk!");
+            info!("DHT table loaded from disk!");
             t
         } else {
-            info!(
-                l,
-                "DHT table could not be read from disk, creating new table!"
-            );
+            info!("DHT table could not be read from disk, creating new table!");
             let mut t = rt::RoutingTable::new();
             if let Some(addr) = CONFIG.dht.bootstrap_node {
-                info!(l, "Using bootstrap node!");
+                info!("Using bootstrap node!");
                 let (msg, _) = t.add_addr(addr);
                 sock.send_to(&msg.encode(), addr)?;
             }
@@ -62,12 +57,11 @@ impl Manager {
             id,
             buf: vec![0u8; 500],
             dht_flush: time::Instant::now(),
-            l,
         })
     }
 
     pub fn init(&mut self) {
-        debug!(self.l, "Initializing DHT nodes!");
+        debug!("Initializing DHT nodes!");
         for (q, a) in self.table.init() {
             self.send_msg(&q.encode(), a);
         }
@@ -82,7 +76,7 @@ impl Manager {
         loop {
             match self.sock.recv_from(&mut self.buf[..]) {
                 Ok((v, addr)) => {
-                    trace!(self.l, "Processing msg from {}", addr);
+                    trace!("Processing msg from {}", addr);
                     if let Ok(req) = proto::Request::decode(&self.buf[..v]) {
                         let resp = self.table.handle_req(req, addr).encode();
                         self.send_msg(&resp, addr);
@@ -96,15 +90,14 @@ impl Manager {
                             }
                         }
                     } else {
-                        debug!(self.l, "Received invalid message from {:?}!", addr);
+                        debug!("Received invalid message from {:?}!", addr);
                     }
                 }
                 Err(e) => {
                     if e.kind() == io::ErrorKind::WouldBlock {
                         break;
                     } else {
-                        warn!(
-                            self.l,
+                        error!(
                             "Encountered unexpected error reading from UDP socket: {:?}!",
                             e
                         );
@@ -156,7 +149,7 @@ impl Manager {
 
     fn send_msg(&mut self, msg: &[u8], addr: SocketAddr) {
         if let Err(e) = self.sock.send_to(msg, addr) {
-            warn!(self.l, "Failed to send message on UDP socket: {:?}", e);
+            error!("Failed to send message on UDP socket: {:?}", e);
         }
     }
 }

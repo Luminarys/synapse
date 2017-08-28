@@ -4,7 +4,6 @@ use std::{fs, fmt, path};
 use std::io::{self, Seek, SeekFrom, Write, Read};
 use std::path::PathBuf;
 use torrent::Info;
-use slog::Logger;
 use util::hash_to_id;
 use ring::digest;
 use amy;
@@ -15,7 +14,6 @@ const POLL_INT_MS: usize = 1000;
 pub struct Disk {
     poll: amy::Poller,
     ch: handle::Handle<Request, Response>,
-    l: Logger,
     files: FileCache,
 }
 
@@ -48,7 +46,11 @@ pub enum Request {
         path: Option<String>,
     },
 
-    Validate { tid: usize, info: Arc<Info> },
+    Validate {
+        tid: usize,
+        info: Arc<Info>,
+        path: Option<String>,
+    },
     Shutdown,
 }
 
@@ -140,8 +142,8 @@ impl Request {
         Request::Serialize { tid, data, hash }
     }
 
-    pub fn validate(tid: usize, info: Arc<Info>) -> Request {
-        Request::Validate { tid, info }
+    pub fn validate(tid: usize, info: Arc<Info>, path: Option<String>) -> Request {
+        Request::Validate { tid, info, path }
     }
 
     pub fn delete(
@@ -218,10 +220,10 @@ impl Request {
                     fc.remove_file(&pb);
                 }
             }
-            Request::Validate { tid, info } => {
+            Request::Validate { tid, info, path } => {
                 let mut invalid = Vec::new();
                 let mut buf = vec![0u8; info.piece_len as usize];
-                let mut pb = path::PathBuf::from(dd);
+                let mut pb = path::PathBuf::from(path.as_ref().unwrap_or(dd));
                 let mut cf = pb.clone();
 
                 let mut f = fs::OpenOptions::new().read(true).open(&pb);
@@ -233,7 +235,7 @@ impl Request {
                     let mut pos = 0;
                     for loc in locs {
                         if loc.file != cf {
-                            pb = path::PathBuf::from(dd);
+                            pb = path::PathBuf::from(path.as_ref().unwrap_or(dd));
                             pb.push(&loc.file);
                             f = fs::OpenOptions::new().read(true).open(&pb);
                             cf = loc.file;
@@ -331,11 +333,10 @@ impl fmt::Debug for Response {
 }
 
 impl Disk {
-    pub fn new(poll: amy::Poller, ch: handle::Handle<Request, Response>, l: Logger) -> Disk {
+    pub fn new(poll: amy::Poller, ch: handle::Handle<Request, Response>) -> Disk {
         Disk {
             poll,
             ch,
-            l,
             files: FileCache::new(),
         }
     }
@@ -352,7 +353,7 @@ impl Disk {
                     }
                 }
                 Err(e) => {
-                    warn!(self.l, "Failed to poll for events: {:?}", e);
+                    error!("Failed to poll for events: {:?}", e);
                 }
             }
         }
@@ -366,7 +367,7 @@ impl Disk {
                     return true;
                 }
                 Ok(r) => {
-                    trace!(self.l, "Handling disk job!");
+                    trace!("Handling disk job!");
                     let tid = r.tid();
                     match r.execute(&mut self.files) {
                         Ok(Some(r)) => {
@@ -389,6 +390,6 @@ pub fn start(creg: &mut amy::Registrar) -> io::Result<handle::Handle<Response, R
     let poll = amy::Poller::new()?;
     let mut reg = poll.get_registrar()?;
     let (ch, dh) = handle::Handle::new(creg, &mut reg)?;
-    dh.run("disk", move |h, l| Disk::new(poll, h, l).run());
+    dh.run("disk", move |h| Disk::new(poll, h).run());
     Ok(ch)
 }

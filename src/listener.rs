@@ -3,7 +3,6 @@ use std::io::{self, ErrorKind};
 use std::net::{SocketAddrV4, Ipv4Addr, TcpListener};
 use amy::{self, Poller, Registrar};
 use std::collections::HashMap;
-use slog::Logger;
 use torrent::peer::PeerConn;
 use {handle, CONFIG};
 
@@ -14,7 +13,6 @@ pub struct Listener {
     poll: Poller,
     reg: Registrar,
     ch: handle::Handle<Request, Message>,
-    l: Logger,
 }
 
 pub struct Message {
@@ -52,7 +50,7 @@ impl Listener {
         let lid = reg.register(&listener, amy::Event::Both)?;
 
         let (ch, dh) = handle::Handle::new(creg, &mut reg)?;
-        dh.run("listener", move |h, l| {
+        dh.run("listener", move |h| {
             Listener {
                 listener,
                 lid,
@@ -60,14 +58,13 @@ impl Listener {
                 poll,
                 reg,
                 ch: h,
-                l,
             }.run()
         });
         Ok(ch)
     }
 
     pub fn run(&mut self) {
-        debug!(self.l, "Accepting connections!");
+        debug!("Accepting connections!");
         while let Ok(res) = self.poll.wait(POLL_INT_MS) {
             for not in res {
                 match not.id {
@@ -86,8 +83,8 @@ impl Listener {
     fn handle_conn(&mut self) {
         loop {
             match self.listener.accept() {
-                Ok((conn, _ip)) => {
-                    debug!(self.l, "Accepted new connection from {:?}!", _ip);
+                Ok((conn, ip)) => {
+                    debug!("Accepted new connection from {:?}!", ip);
                     let peer = PeerConn::new_incoming(conn).unwrap();
                     let pid = self.reg.register(peer.sock(), amy::Event::Read).unwrap();
                     self.incoming.insert(pid, peer);
@@ -106,11 +103,7 @@ impl Listener {
         let pid = not.id;
         match self.incoming.get_mut(&pid).unwrap().readable() {
             Ok(Some(hs)) => {
-                debug!(
-                    self.l,
-                    "Completed handshake({:?}) with peer, transferring!",
-                    hs
-                );
+                debug!("Completed handshake({:?}) with peer, transferring!", hs);
                 let peer = self.incoming.remove(&pid).unwrap();
                 self.reg.deregister(peer.sock()).unwrap();
                 let hsd = hs.get_handshake_data();
@@ -123,12 +116,12 @@ impl Listener {
                     })
                     .is_err()
                 {
-                    error!(self.l, "failed to send peer to ctrl");
+                    error!("failed to send peer to ctrl");
                 }
             }
             Ok(None) => {}
             Err(_) => {
-                debug!(self.l, "Peer connection failed!");
+                debug!("Peer connection failed!");
                 self.incoming.remove(&pid);
             }
         }

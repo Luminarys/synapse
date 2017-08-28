@@ -9,7 +9,6 @@ use std::net::{SocketAddr, SocketAddrV4, Ipv4Addr};
 use std::{result, io};
 
 use byteorder::{BigEndian, ReadBytesExt};
-use slog::Logger;
 use url::Url;
 
 pub use self::errors::{Result, ResultExt, Error, ErrorKind};
@@ -18,7 +17,7 @@ use bencode::BEncode;
 use control::cio;
 use handle;
 use amy;
-use {CONFIG, LOG};
+use CONFIG;
 
 pub struct Tracker {
     poll: amy::Poller,
@@ -30,7 +29,6 @@ pub struct Tracker {
     dht: dht::Manager,
     dns: dns::Resolver,
     timer: usize,
-    l: Logger,
     shutting_down: bool,
 }
 
@@ -89,11 +87,11 @@ impl Tracker {
         let (ch, dh) = handle::Handle::new(creg, &mut reg)?;
         let timer = reg.set_interval(150)?;
         let (dtx, drx) = reg.channel()?;
-        let udp = udp::Handler::new(&reg, LOG.new(o!("trk" => "udp")))?;
-        let dht = dht::Manager::new(&reg, LOG.new(o!("trk" => "dht")))?;
-        let http = http::Handler::new(&reg, LOG.new(o!("trk" => "http")))?;
+        let udp = udp::Handler::new(&reg)?;
+        let dht = dht::Manager::new(&reg)?;
+        let http = http::Handler::new(&reg)?;
         let dns = dns::Resolver::new(reg, dtx);
-        dh.run("trk", move |h, l| {
+        dh.run("trk", move |h| {
             Tracker {
                 poll,
                 ch: h,
@@ -103,7 +101,6 @@ impl Tracker {
                 dns,
                 dns_res: drx,
                 timer,
-                l,
                 queue: VecDeque::new(),
                 shutting_down: false,
             }.run()
@@ -114,7 +111,7 @@ impl Tracker {
     pub fn run(&mut self) {
         self.dht.init();
 
-        debug!(self.l, "Initialized!");
+        debug!("Initialized!");
         'outer: loop {
             for event in self.poll.wait(POLL_INT_MS).unwrap() {
                 if self.handle_event(event).is_err() {
@@ -123,7 +120,7 @@ impl Tracker {
             }
         }
 
-        debug!(self.l, "Shutting down!");
+        debug!("Shutting down!");
         self.shutting_down = true;
 
         // Shutdown loop - wait for all requests to complete
@@ -155,15 +152,15 @@ impl Tracker {
             match r {
                 Request::Announce(req) => self.handle_announce(req),
                 Request::GetPeers(gp) => {
-                    debug!(self.l, "Handling dht peer find req!");
+                    debug!("Handling dht peer find req!");
                     self.dht.get_peers(gp.id, gp.hash);
                 }
                 Request::AddNode(addr) => {
-                    debug!(self.l, "Handling dht node addition req!");
+                    debug!("Handling dht node addition req!");
                     self.dht.add_addr(addr);
                 }
                 Request::DHTAnnounce(hash) => {
-                    debug!(self.l, "Handling dht announce req!");
+                    debug!("Handling dht announce req!");
                     self.dht.announce(hash);
                 }
                 Request::Shutdown => {
@@ -175,7 +172,7 @@ impl Tracker {
     }
 
     fn handle_announce(&mut self, req: Announce) {
-        debug!(self.l, "Handling announce request!");
+        debug!("Handling announce request!");
         if self.udp.active_requests() + self.http.active_requests() >
             CONFIG.net.max_open_announces
         {
@@ -269,7 +266,7 @@ impl Tracker {
 
     fn send_response(&mut self, r: Response) {
         if !self.shutting_down {
-            debug!(self.l, "Sending trk response to control!");
+            debug!("Sending trk response to control!");
             self.ch.send(r).unwrap();
         }
         // TODO: The active announce queue could grow with DHT usage,
@@ -346,11 +343,7 @@ impl TrackerResponse {
                     resp.peers.push(SocketAddr::V4(socket));
                 }
             }
-            _ => {
-                return Err(
-                    ErrorKind::InvalidResponse("Response must have peers field!").into(),
-                );
-            }
+            _ => {}
         };
         match d.remove("interval") {
             Some(BEncode::Int(ref i)) => {

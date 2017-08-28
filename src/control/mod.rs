@@ -4,7 +4,6 @@ use std::sync::atomic;
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-use slog::Logger;
 use chrono::Utc;
 use bincode;
 
@@ -40,7 +39,6 @@ pub struct Control<T: cio::CIO> {
     torrents: HashMap<usize, Torrent<T>>,
     peers: HashMap<usize, usize>,
     hash_idx: HashMap<[u8; 20], usize>,
-    l: Logger,
     data: ServerData,
 }
 
@@ -56,7 +54,7 @@ struct ServerData {
 }
 
 impl<T: cio::CIO> Control<T> {
-    pub fn new(mut cio: T, throttler: Throttler, l: Logger) -> io::Result<Control<T>> {
+    pub fn new(mut cio: T, throttler: Throttler) -> io::Result<Control<T>> {
         let torrents = HashMap::new();
         let peers = HashMap::new();
         let hash_idx = HashMap::new();
@@ -85,16 +83,15 @@ impl<T: cio::CIO> Control<T> {
             hash_idx,
             tx_rates: None,
             last_tx_rates: (0, 0),
-            l,
             data: Default::default(),
         })
     }
 
     pub fn run(&mut self) {
         if self.deserialize().is_err() {
-            warn!(self.l, "Session deserialization failed!");
+            error!("Session deserialization failed!");
         }
-        debug!(self.l, "Initialized!");
+        debug!("Initialized!");
         self.send_rpc_info();
         let mut events = Vec::with_capacity(20);
         loop {
@@ -114,7 +111,7 @@ impl<T: cio::CIO> Control<T> {
 
     fn serialize(&mut self) {
         let sd = &CONFIG.disk.session;
-        debug!(self.l, "Serializing server data!");
+        debug!("Serializing server data!");
         let mut pb = PathBuf::from(sd);
         pb.push("syn_data");
         if let Ok(Ok(_)) = fs::File::create(pb).map(|mut f| {
@@ -122,10 +119,10 @@ impl<T: cio::CIO> Control<T> {
         })
         {
         } else {
-            error!(self.l, "Failed to serialize");
+            error!("Failed to serialize");
         }
 
-        debug!(self.l, "Serializing torrents!");
+        debug!("Serializing torrents!");
         for torrent in self.torrents.values_mut() {
             torrent.serialize();
         }
@@ -133,7 +130,7 @@ impl<T: cio::CIO> Control<T> {
 
     fn deserialize(&mut self) -> io::Result<()> {
         let sd = &CONFIG.disk.session;
-        debug!(self.l, "Deserializing server data!");
+        debug!("Deserializing server data!");
         let mut pb = PathBuf::from(sd);
         pb.push("syn_data");
         if let Ok(Ok(data)) = fs::File::open(pb).map(|mut f| {
@@ -142,14 +139,14 @@ impl<T: cio::CIO> Control<T> {
         {
             self.data = data;
         } else {
-            warn!(self.l, "No server data found, regenerating!");
+            error!("No server data found, regenerating!");
             self.data = ServerData::new();
         }
 
-        debug!(self.l, "Deserializing torrents!");
+        debug!("Deserializing torrents!");
         for entry in fs::read_dir(sd)? {
             if let Err(e) = self.deserialize_torrent(entry) {
-                warn!(self.l, "Failed to deserialize torrent file: {:?}!", e);
+                error!("Failed to deserialize torrent file: {:?}!", e);
             }
         }
         Ok(())
@@ -162,17 +159,16 @@ impl<T: cio::CIO> Control<T> {
         if dir.file_name().len() != 40 {
             return Ok(());
         }
-        trace!(self.l, "Attempting to deserialize file {:?}", dir);
+        trace!("Attempting to deserialize file {:?}", dir);
         let mut f = fs::File::open(dir.path())?;
         let mut data = Vec::new();
         f.read_to_end(&mut data)?;
-        trace!(self.l, "Succesfully read file");
+        trace!("Succesfully read file");
 
         let tid = self.tid_cnt;
         let throttle = self.throttler.get_throttle(tid);
-        let log = self.l.new(o!("torrent" => tid));
-        if let Ok(t) = Torrent::deserialize(tid, &data, throttle, self.cio.new_handle(), log) {
-            trace!(self.l, "Succesfully parsed torrent file {:?}", dir.path());
+        if let Ok(t) = Torrent::deserialize(tid, &data, throttle, self.cio.new_handle()) {
+            trace!("Succesfully parsed torrent file {:?}", dir.path());
             self.hash_idx.insert(t.info().hash, tid);
             self.tid_cnt += 1;
             self.torrents.insert(tid, t);
@@ -188,29 +184,29 @@ impl<T: cio::CIO> Control<T> {
                 self.handle_trk_ev(e);
             }
             cio::Event::Tracker(Err(e)) => {
-                error!(self.l, "tracker error: {:?}", e);
-                trace!(self.l, "tracker error bt: {:?}", e.backtrace());
+                error!("tracker error: {:?}", e);
+                trace!("tracker error bt: {:?}", e.backtrace());
             }
             cio::Event::Disk(Ok(e)) => {
                 self.handle_disk_ev(e);
             }
             cio::Event::Disk(Err(e)) => {
-                error!(self.l, "disk error: {:?}", e);
-                trace!(self.l, "disk error: {:?}", e.backtrace());
+                error!("disk error: {:?}", e);
+                trace!("disk error: {:?}", e.backtrace());
             }
             cio::Event::RPC(Ok(e)) => {
                 return self.handle_rpc_ev(e);
             }
             cio::Event::RPC(Err(e)) => {
-                error!(self.l, "rpc error: {:?}", e);
-                trace!(self.l, "rpc error: {:?}", e.backtrace());
+                error!("rpc error: {:?}", e);
+                trace!("rpc error: {:?}", e.backtrace());
             }
             cio::Event::Listener(Ok(e)) => {
                 self.handle_lst_ev(e);
             }
             cio::Event::Listener(Err(e)) => {
-                error!(self.l, "listener error: {:?}", e);
-                trace!(self.l, "listener error: {:?}", e.backtrace());
+                error!("listener error: {:?}", e);
+                trace!("listener error: {:?}", e.backtrace());
             }
             cio::Event::Timer(t) => {
                 if t == self.throttler.id() {
@@ -227,7 +223,7 @@ impl<T: cio::CIO> Control<T> {
                     self.update_jobs();
                     self.update_rpc_tx();
                 } else {
-                    error!(self.l, "unknown timer id {} reported", t);
+                    error!("unknown timer id {} reported", t);
                 }
             }
             cio::Event::Peer { peer, event } => {
@@ -238,7 +234,7 @@ impl<T: cio::CIO> Control<T> {
     }
 
     fn handle_trk_ev(&mut self, tr: tracker::Response) {
-        debug!(self.l, "Handling tracker response");
+        debug!("Handling tracker response");
         let id = tr.0;
         let resp = tr.1;
         {
@@ -248,12 +244,12 @@ impl<T: cio::CIO> Control<T> {
                 return;
             }
         }
-        trace!(self.l, "Adding peers!");
+        trace!("Adding peers!");
         if let Ok(r) = resp {
             for ip in &r.peers {
-                trace!(self.l, "Adding peer({:?})!", ip);
+                trace!("Adding peer({:?})!", ip);
                 if let Ok(peer) = peer::PeerConn::new_outgoing(ip) {
-                    trace!(self.l, "Added peer({:?})!", ip);
+                    trace!("Added peer({:?})!", ip);
                     self.add_peer(id, peer);
                 }
             }
@@ -264,29 +260,26 @@ impl<T: cio::CIO> Control<T> {
     }
 
     fn update_jobs(&mut self) {
-        trace!(self.l, "Handling job timer");
+        trace!("Handling job timer");
         self.jobs.update(&mut self.torrents);
     }
 
     fn handle_disk_ev(&mut self, resp: disk::Response) {
-        trace!(self.l, "Got disk response {:?}!", resp);
+        trace!("Got disk response {:?}!", resp);
         if let Some(torrent) = self.torrents.get_mut(&resp.tid()) {
             torrent.handle_disk_resp(resp);
         }
     }
 
     fn handle_lst_ev(&mut self, msg: Box<listener::Message>) {
-        debug!(self.l, "Adding peer for torrent with hash {:?}!", msg.hash);
+        debug!("Adding peer for torrent with hash {:?}!", msg.hash);
         if let Some(tid) = self.hash_idx.get(&msg.hash).cloned() {
             let id = msg.id;
             let rsv = msg.rsv;
             self.add_inc_peer(tid, msg.peer, id, rsv);
         } else {
-            warn!(
-                self.l,
-                "Couldn't add peer, torrent with hash {:?} doesn't exist",
-                msg.hash
-            );
+            let h = msg.hash;
+            error!("Couldn't add peer, torrent with hash {:?} doesn't exist", h);
         }
     }
 
@@ -303,28 +296,27 @@ impl<T: cio::CIO> Control<T> {
     }
 
     fn flush_blocked_peers(&mut self) {
-        trace!(self.l, "Flushing blocked peers!");
+        trace!("Flushing blocked peers!");
         self.cio.flush_peers(self.throttler.flush_dl());
         self.cio.flush_peers(self.throttler.flush_ul());
     }
 
     fn add_torrent(&mut self, info: torrent::Info, path: Option<String>, start: bool) {
-        debug!(self.l, "Adding {:?}!", info);
+        debug!("Adding {:?}!", info);
         if self.hash_idx.contains_key(&info.hash) {
-            warn!(self.l, "Torrent already exists!");
+            error!("Torrent already exists!");
             return;
         }
         let tid = self.tid_cnt;
         let throttle = self.throttler.get_throttle(tid);
-        let log = self.l.new(o!("torrent" => tid));
-        let t = Torrent::new(tid, path, info, throttle, self.cio.new_handle(), log, start);
+        let t = Torrent::new(tid, path, info, throttle, self.cio.new_handle(), start);
         self.hash_idx.insert(t.info().hash, tid);
         self.tid_cnt += 1;
         self.torrents.insert(tid, t);
     }
 
     fn handle_rpc_ev(&mut self, req: rpc::Message) -> bool {
-        debug!(self.l, "Handling rpc reqest!");
+        debug!("Handling rpc reqest!");
         match req {
             rpc::Message::UpdateTorrent(u) => {
                 let hash_idx = &self.hash_idx;
@@ -424,7 +416,7 @@ impl<T: cio::CIO> Control<T> {
     }
 
     fn add_peer(&mut self, id: usize, peer: peer::PeerConn) {
-        trace!(self.l, "Adding peer to torrent {:?}!", id);
+        trace!("Adding peer to torrent {:?}!", id);
         if let Some(torrent) = self.torrents.get_mut(&id) {
             if let Some(pid) = torrent.add_peer(peer) {
                 self.peers.insert(pid, id);
@@ -433,7 +425,7 @@ impl<T: cio::CIO> Control<T> {
     }
 
     fn add_inc_peer(&mut self, id: usize, peer: peer::PeerConn, cid: [u8; 20], rsv: [u8; 8]) {
-        trace!(self.l, "Adding peer to torrent {:?}!", id);
+        trace!("Adding peer to torrent {:?}!", id);
         if let Some(torrent) = self.torrents.get_mut(&id) {
             if let Some(pid) = torrent.add_inc_peer(peer, cid, rsv) {
                 self.peers.insert(pid, id);
@@ -484,7 +476,7 @@ impl<T: cio::CIO> Control<T> {
 
 impl<T: cio::CIO> Drop for Control<T> {
     fn drop(&mut self) {
-        debug!(self.l, "Triggering thread shutdown sequence!");
+        debug!("Triggering thread shutdown sequence!");
         self.cio.msg_disk(disk::Request::shutdown());
         self.cio.msg_rpc(rpc::CtlMessage::Shutdown);
         self.cio.msg_trk(tracker::Request::Shutdown);

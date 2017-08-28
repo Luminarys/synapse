@@ -17,10 +17,6 @@ extern crate bincode;
 extern crate toml;
 extern crate signal;
 #[macro_use]
-extern crate slog;
-extern crate slog_term;
-extern crate slog_async;
-#[macro_use]
 extern crate error_chain;
 extern crate c_ares;
 extern crate httparse;
@@ -31,6 +27,9 @@ extern crate chrono;
 
 // TODO: Get rid of this
 extern crate num;
+
+#[macro_use]
+mod log;
 
 mod handle;
 mod bencode;
@@ -48,8 +47,9 @@ mod config;
 use std::{time, thread};
 use std::sync::{atomic, mpsc};
 use std::io;
-use slog::Drain;
+
 use control::acio;
+use log::LogLevel;
 
 pub const DHT_EXT: (usize, u8) = (7, 1);
 
@@ -67,10 +67,10 @@ lazy_static! {
 
     pub static ref CONFIG: config::Config = {
         if let Ok(cfg)  = config::ConfigFile::try_load() {
-            info!(LOG, "Loaded config file");
+            info!("Loaded config file");
             config::Config::from_file(cfg)
         } else {
-            info!(LOG, "Using default config");
+            info!("Using default config");
             Default::default()
         }
     };
@@ -89,13 +89,6 @@ lazy_static! {
             pid[i] = rng.gen::<u8>();
         }
         pid
-    };
-
-    pub static ref LOG: slog::Logger = {
-        let decorator = slog_term::TermDecorator::new().build();
-        let drain = slog_term::FullFormat::new(decorator).build().fuse();
-        let drain = slog_async::Async::new(drain).build().fuse();
-        slog::Logger::root(drain, o!())
     };
 }
 
@@ -119,8 +112,8 @@ fn init() -> io::Result<()> {
     let (tx, rx) = mpsc::channel();
     thread::spawn(move || {
         let throttler = throttle::Throttler::new(0, 0, THROT_TOKS, &creg);
-        let acio = acio::ACIO::new(cpoll, creg, chans, LOG.new(o!("ctrl" => "acio")));
-        match control::Control::new(acio, throttler, LOG.new(o!("thread" => "ctrl"))) {
+        let acio = acio::ACIO::new(cpoll, creg, chans);
+        match control::Control::new(acio, throttler) {
             Ok(mut c) => {
                 tx.send(Ok(())).unwrap();
                 c.run();
@@ -134,33 +127,38 @@ fn init() -> io::Result<()> {
 }
 
 fn main() {
-    info!(LOG, "Initializing!");
+    if cfg!(debug_assertions) {
+        log::log_init(log::LogLevel::Debug);
+    } else {
+        log::log_init(log::LogLevel::Info);
+    }
+    info!("Initializing!");
     if let Err(e) = init() {
-        error!(LOG, "Couldn't initialize synapse: {}", e);
+        error!("Couldn't initialize synapse: {}", e);
         thread::sleep(time::Duration::from_millis(50));
         return;
     }
 
-    info!(LOG, "Initialized!");
+    info!("Initialized!");
     // Catch SIGINT, then shutdown
     let t = signal::trap::Trap::trap(&[2]);
     let mut i = time::Instant::now();
     loop {
         i += time::Duration::from_secs(1);
         if t.wait(i).is_some() {
-            info!(LOG, "Shutting down!");
+            info!("Shutting down!");
             // TODO make this less hacky
             SHUTDOWN.store(true, atomic::Ordering::SeqCst);
             while TC.load(atomic::Ordering::SeqCst) != 0 {
                 thread::sleep(time::Duration::from_secs(1));
             }
-            info!(LOG, "Shutdown complete!");
+            info!("Shutdown complete!");
             // Let any residual logs flush
             thread::sleep(time::Duration::from_millis(50));
             break;
         }
         if TC.load(atomic::Ordering::SeqCst) == 0 {
-            info!(LOG, "Shutdown complete!");
+            info!("Shutdown complete!");
             break;
         }
     }

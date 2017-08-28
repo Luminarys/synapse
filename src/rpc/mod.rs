@@ -10,7 +10,6 @@ use std::{io, str, result};
 use std::net::{TcpListener, TcpStream, Ipv4Addr, SocketAddrV4};
 use std::collections::HashMap;
 
-use slog::Logger;
 use serde_json;
 use amy;
 
@@ -101,7 +100,6 @@ pub struct RPC {
     transfers: Transfers,
     clients: HashMap<usize, Client>,
     incoming: HashMap<usize, Incoming>,
-    l: Logger,
 }
 
 impl RPC {
@@ -121,7 +119,7 @@ impl RPC {
         listener.set_nonblocking(true)?;
         let lid = reg.register(&listener, amy::Event::Both)?;
 
-        dh.run("rpc", move |ch, l| {
+        dh.run("rpc", move |ch| {
             RPC {
                 ch,
                 poll,
@@ -133,14 +131,13 @@ impl RPC {
                 incoming: HashMap::new(),
                 processor: Processor::new(),
                 transfers: Transfers::new(),
-                l,
             }.run()
         });
         Ok(ch)
     }
 
     pub fn run(&mut self) {
-        debug!(self.l, "Running RPC!");
+        debug!("Running RPC!");
         'outer: while let Ok(res) = self.poll.wait(POLL_INT_MS) {
             for not in res {
                 match not.id {
@@ -175,7 +172,7 @@ impl RPC {
                         let res = match self.clients.get_mut(&c) {
                             Some(client) => client.send(ws::Frame::Text(m)),
                             None => {
-                                warn!(self.l, "Processor referenced a nonexistent client!");
+                                error!("Processor referenced a nonexistent client!");
                                 Ok(())
                             }
                         };
@@ -201,7 +198,7 @@ impl RPC {
                 serial,
                 start,
             } => {
-                debug!(self.l, "Got torrent via HTTP transfer!");
+                debug!("Got torrent via HTTP transfer!");
                 self.reg.deregister(&conn).unwrap();
                 // TODO: Send this to the client in an error msg
                 match bencode::decode_buf(&data) {
@@ -229,11 +226,11 @@ impl RPC {
                                     })
                                     .is_err()
                                 {
-                                    crit!(self.l, "Failed to pass message to ctrl!");
+                                    error!("Failed to pass message to ctrl!");
                                 }
                             }
                             Err(e) => {
-                                warn!(self.l, "Failed to parse torrent data: {}!", e);
+                                error!("Failed to parse torrent data: {}!", e);
                                 self.clients.get_mut(&client).map(|c| {
                                     c.send(ws::Frame::Text(
                                         serde_json::to_string(
@@ -251,7 +248,7 @@ impl RPC {
                         }
                     }
                     Err(e) => {
-                        warn!(self.l, "Failed to decode BE data: {}!", e);
+                        error!("Failed to decode BE data: {}!", e);
                         self.clients.get_mut(&client).map(|c| {
                             c.send(ws::Frame::Text(
                                 serde_json::to_string(
@@ -295,7 +292,7 @@ impl RPC {
         loop {
             match self.listener.accept() {
                 Ok((conn, ip)) => {
-                    debug!(self.l, "Accepted new connection from {:?}!", ip);
+                    debug!("Accepted new connection from {:?}!", ip);
                     let id = self.reg.register(&conn, amy::Event::Both).unwrap();
                     self.incoming.insert(id, Incoming::new(conn));
                 }
@@ -303,7 +300,7 @@ impl RPC {
                     break;
                 }
                 Err(e) => {
-                    error!(self.l, "Failed to accept conn: {}", e);
+                    error!("Failed to accept conn: {}", e);
                 }
             }
         }
@@ -313,19 +310,19 @@ impl RPC {
         if let Some(mut i) = self.incoming.remove(&id) {
             match i.readable() {
                 Ok(IncomingStatus::Upgrade) => {
-                    debug!(self.l, "Succesfully upgraded conn");
+                    debug!("Succesfully upgraded conn");
                     self.clients.insert(id, i.into());
                 }
                 Ok(IncomingStatus::Incomplete) => {
                     self.incoming.insert(id, i);
                 }
                 Ok(IncomingStatus::Transfer { data, token }) => {
-                    debug!(self.l, "File transfer requested, validating");
+                    debug!("File transfer requested, validating");
                     match self.processor.get_transfer(token) {
                         Some((client,
                               serial,
                               TransferKind::UploadTorrent { path, size, start })) => {
-                            debug!(self.l, "Torrent transfer initiated");
+                            debug!("Torrent transfer initiated");
                             self.transfers.add_torrent(
                                 id,
                                 client,
@@ -341,7 +338,7 @@ impl RPC {
                             self.handle_transfer(id);
                         }
                         Some((_, _, TransferKind::DownloadFile { path })) => {
-                            debug!(self.l, "File download requested, validating");
+                            debug!("File download requested, validating");
                             // The file transfer is going to be done in a new thread
                             // with blocking ups, so deregister and set blocking.
                             let conn: TcpStream = i.into();
@@ -349,15 +346,17 @@ impl RPC {
                             self.reg.deregister(&conn).is_ok();
                             self.transfers.add_download(conn, path);
                         }
-                        Some(_) => warn!(self.l, "Unimplemented transfer type ignored"),
+                        Some(_) => {
+                            error!("Unimplemented transfer type ignored");
+                        }
                         None => {
-                            warn!(self.l, "Transfer used invalid token");
+                            error!("Transfer used invalid token");
                             // TODO: Handle downloads and other uploads
                         }
                     }
                 }
                 Err(e) => {
-                    debug!(self.l, "Incoming ws upgrade failed: {}", e);
+                    debug!("Incoming ws upgrade failed: {}", e);
                     self.reg.deregister::<TcpStream>(&i.into()).unwrap();
                 }
             }
@@ -380,7 +379,7 @@ impl RPC {
                     }
                 };
                 if !res {
-                    debug!(self.l, "Client error, disconnecting");
+                    debug!("Client error, disconnecting");
                     self.remove_client(not.id, c);
                     return;
                 }
@@ -448,11 +447,10 @@ impl RPC {
     fn cleanup(&mut self) {
         self.processor.remove_expired_tokens();
         let reg = &self.reg;
-        let l = &self.l;
         self.clients.retain(|id, client| {
             let res = client.timed_out();
             if res {
-                info!(l, "client {} timed out", id);
+                info!("client {} timed out", id);
                 reg.deregister(&client.conn).unwrap();
             }
             !res

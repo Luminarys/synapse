@@ -6,7 +6,6 @@ use {CONFIG, PEER_ID, amy};
 use util::bytes_to_addr;
 use std::io::{self, Write, Read, Cursor};
 use byteorder::{ReadBytesExt, WriteBytesExt, BigEndian};
-use slog::Logger;
 use url::Url;
 use rand::random;
 
@@ -22,7 +21,6 @@ pub struct Handler {
     connections: HashMap<usize, Connection>,
     transactions: HashMap<u32, usize>,
     conn_count: usize,
-    l: Logger,
     buf: Vec<u8>,
 }
 
@@ -41,7 +39,7 @@ enum State {
 }
 
 impl Handler {
-    pub fn new(reg: &amy::Registrar, l: Logger) -> io::Result<Handler> {
+    pub fn new(reg: &amy::Registrar) -> io::Result<Handler> {
         let port = CONFIG.trk.port;
         let sock = UdpSocket::bind(("0.0.0.0", port))?;
         sock.set_nonblocking(true)?;
@@ -51,7 +49,6 @@ impl Handler {
             sock,
             connections: HashMap::new(),
             transactions: HashMap::new(),
-            l,
             conn_count: 0,
             buf: vec![0u8; 350],
         })
@@ -80,7 +77,7 @@ impl Handler {
         dns: &mut dns::Resolver,
     ) -> Result<()> {
         // TODO: Attempt to parse into an IP address first, then perform dns res
-        debug!(self.l, "Received a new announce req for {:?}", url);
+        debug!("Received a new announce req for {:?}", url);
         let host = url.host_str().ok_or_else(|| {
             Error::from(ErrorKind::InvalidRequest(
                 "Tracker announce url has no host!".to_owned(),
@@ -103,7 +100,7 @@ impl Handler {
                 announce: req,
             },
         );
-        debug!(self.l, "Dispatching DNS req for {:?}, url: {:?}", id, host);
+        debug!("Dispatching DNS req for {:?}, url: {:?}", id, host);
         dns.new_query(id, host);
         Ok(())
     }
@@ -111,7 +108,7 @@ impl Handler {
     pub fn dns_resolved(&mut self, resp: dns::QueryResponse) -> Option<Response> {
         let id = resp.id;
         let mut success = false;
-        debug!(self.l, "Received a DNS resp for {:?}", id);
+        debug!("Received a DNS resp for {:?}", id);
         let resp = if let Some(conn) = self.connections.get_mut(&id) {
             match conn.state {
                 State::ResolvingDNS { port } => {
@@ -172,7 +169,9 @@ impl Handler {
                         resps.push(r);
                     }
                 }
-                _ => debug!(self.l, "Received invalid response from tracker!"),
+                _ => {
+                    debug!("Received invalid response from tracker!");
+                }
             }
         }
         resps
@@ -182,8 +181,6 @@ impl Handler {
         let mut resps = Vec::new();
         let mut retrans = Vec::new();
         {
-            let l = &self.l;
-
             self.connections.retain(
                 |id, conn| if conn.last_updated.elapsed() >
                     time::Duration::from_millis(
@@ -191,11 +188,11 @@ impl Handler {
                     )
                 {
                     resps.push((conn.torrent, Err(ErrorKind::Timeout.into())));
-                    debug!(l, "Announce {:?} timed out", id);
+                    debug!("Announce {:?} timed out", id);
                     false
                 } else {
                     if conn.last_retrans.elapsed() > time::Duration::from_millis(RETRANS_MS) {
-                        debug!(l, "Retransmiting req {:?}", id);
+                        debug!("Retransmiting req {:?}", id);
                         retrans.push(*id);
                     }
                     true

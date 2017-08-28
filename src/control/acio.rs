@@ -2,7 +2,6 @@ use std::collections::HashMap;
 use std::cell::UnsafeCell;
 use std::rc::Rc;
 use std::time;
-use slog::Logger;
 
 use amy;
 
@@ -37,17 +36,15 @@ struct ACIOData {
     reg: amy::Registrar,
     peers: HashMap<usize, torrent::PeerConn>,
     events: Vec<cio::Event>,
-    l: Logger,
     chans: ACChans,
 }
 
 impl ACIO {
-    pub fn new(poll: amy::Poller, reg: amy::Registrar, chans: ACChans, l: Logger) -> ACIO {
+    pub fn new(poll: amy::Poller, reg: amy::Registrar, chans: ACChans) -> ACIO {
         let data = ACIOData {
             poll,
             reg,
             chans,
-            l,
             peers: HashMap::new(),
             events: Vec::new(),
         };
@@ -126,7 +123,7 @@ impl cio::CIO for ACIO {
                 }
             }
             Err(e) => {
-                warn!(self.d().l, "Failed to poll for events: {:?}", e);
+                error!("Failed to poll for events: {:?}", e);
             }
         }
     }
@@ -206,7 +203,7 @@ impl cio::CIO for ACIO {
             peer.write_message(msg).chain_err(|| ErrorKind::IO).err()
         } else {
             // might happen if removed but still present in a torrent
-            debug!(d.l, "Tried to message peer which has been removed!");
+            debug!("Tried to message peer which has been removed!");
             None
         };
         if let Some(e) = err {
@@ -265,7 +262,7 @@ impl ACIOData {
     fn remove_peer(&mut self, pid: cio::PID) {
         if let Some(p) = self.peers.remove(&pid) {
             if let Err(e) = self.reg.deregister(p.sock()) {
-                warn!(self.l, "Failed to deregister sock: {:?}", e);
+                error!("Failed to deregister sock: {:?}", e);
             }
             self.events.push(cio::Event::Peer {
                 peer: pid,

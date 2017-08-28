@@ -1,8 +1,8 @@
 use std::{io, thread};
 use std::sync::atomic;
 use std::fmt::Debug;
-use {amy, slog};
-use {TC, LOG};
+use amy;
+use TC;
 
 pub struct Handle<I, O> {
     pub tx: amy::Sender<O>,
@@ -21,17 +21,12 @@ impl<I: Debug + Send + 'static, O: Debug + Send + 'static> Handle<I, O> {
         Ok((ch, hh))
     }
 
-    pub fn run<F: FnOnce(Handle<I, O>, slog::Logger) + Send + 'static>(
-        self,
-        thread: &'static str,
-        f: F,
-    ) {
+    pub fn run<F: FnOnce(Handle<I, O>) + Send + 'static>(self, thread: &'static str, f: F) {
         thread::spawn(move || {
-            let log = LOG.new(o!("thread" => thread));
             TC.fetch_add(1, atomic::Ordering::SeqCst);
-            debug!(log, "started");
-            f(self, log.clone());
-            debug!(log, "shutdown");
+            debug!("{} thread started", thread);
+            f(self);
+            debug!("{} thread completed", thread);
             TC.fetch_sub(1, atomic::Ordering::SeqCst);
         });
     }

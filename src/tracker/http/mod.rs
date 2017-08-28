@@ -12,7 +12,6 @@ use std::collections::HashMap;
 use std::net::SocketAddr;
 use url::percent_encoding::{percent_encode, DEFAULT_ENCODE_SET};
 use url::Url;
-use slog::Logger;
 use socket::TSocket;
 
 const TIMEOUT_MS: u64 = 5_000;
@@ -20,7 +19,6 @@ const TIMEOUT_MS: u64 = 5_000;
 pub struct Handler {
     reg: amy::Registrar,
     connections: HashMap<usize, Tracker>,
-    l: Logger,
 }
 
 enum Event {
@@ -111,11 +109,10 @@ impl TrackerState {
 }
 
 impl Handler {
-    pub fn new(reg: &amy::Registrar, l: Logger) -> io::Result<Handler> {
+    pub fn new(reg: &amy::Registrar) -> io::Result<Handler> {
         Ok(Handler {
             reg: reg.try_clone()?,
             connections: HashMap::new(),
-            l,
         })
     }
 
@@ -133,7 +130,7 @@ impl Handler {
 
     pub fn dns_resolved(&mut self, resp: dns::QueryResponse) -> Option<Response> {
         let id = resp.id;
-        debug!(self.l, "Received a DNS resp for {:?}", id);
+        debug!("Received a DNS resp for {:?}", id);
         let resp = if let Some(trk) = self.connections.get_mut(&id) {
             trk.last_updated = Instant::now();
             match trk.state.handle(Event::DNSResolved(resp)) {
@@ -170,11 +167,7 @@ impl Handler {
             trk.last_updated = Instant::now();
             match trk.state.handle(Event::Readable) {
                 Ok(Some(r)) => {
-                    debug!(
-                        self.l,
-                        "Announce response received for {:?} succesfully",
-                        id
-                    );
+                    debug!("Announce response received for {:?} succesfully", id);
                     Some((trk.torrent, Ok(r)))
                 }
                 Ok(None) => None,
@@ -191,13 +184,12 @@ impl Handler {
 
     pub fn tick(&mut self) -> Vec<Response> {
         let mut resps = Vec::new();
-        let l = &self.l;
         self.connections.retain(
             |id, trk| if trk.last_updated.elapsed() >
                 Duration::from_millis(TIMEOUT_MS)
             {
                 resps.push((trk.torrent, Err(ErrorKind::Timeout.into())));
-                debug!(l, "Announce {:?} timed out", id);
+                debug!("Announce {:?} timed out", id);
                 false
             } else {
                 true
@@ -213,7 +205,7 @@ impl Handler {
         url: &Url,
         dns: &mut dns::Resolver,
     ) -> Result<()> {
-        debug!(self.l, "Received a new announce req for {:?}", url);
+        debug!("Received a new announce req for {:?}", url);
         let mut http_req = Vec::with_capacity(50);
         // Encode GET req
         http_req.extend_from_slice(b"GET ");
@@ -270,7 +262,7 @@ impl Handler {
             },
         );
 
-        debug!(self.l, "Dispatching DNS req, id {:?}", id);
+        debug!("Dispatching DNS req, id {:?}", id);
         dns.new_query(id, host);
 
         Ok(())
