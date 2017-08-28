@@ -87,6 +87,13 @@ impl Status {
         }
     }
 
+    pub fn validating(&self) -> bool {
+        match *self {
+            Status::Validating => true,
+            _ => false,
+        }
+    }
+
     pub fn stopped(&self) -> bool {
         match *self {
             Status::Paused | Status::DiskError => true,
@@ -750,17 +757,29 @@ impl<T: cio::CIO> Torrent<T> {
             }
         }
 
+        let mut files = HashMap::new();
+        for p in self.pieces.iter() {
+            for loc in self.info.piece_disk_locs(p as u32) {
+                if !files.contains_key(&loc.file) {
+                    files.insert(loc.file.clone(), (0, 0));
+                }
+                files.get_mut(&loc.file).unwrap().0 += loc.end - loc.start;
+            }
+        }
         for f in &self.info.files {
-            let id =
-                util::file_rpc_id(&self.info.hash, f.path.as_path().to_string_lossy().as_ref());
+            files.get_mut(&f.path).map(|v| v.1 = f.length);
+        }
+
+        for (p, d) in files {
+            let id = util::file_rpc_id(&self.info.hash, p.as_path().to_string_lossy().as_ref());
             r.push(resource::Resource::File(resource::File {
                 id,
                 torrent_id: self.rpc_id(),
                 availability: 0.,
-                progress: 0.,
+                progress: (d.0 as f32 / d.1 as f32),
                 priority: 3,
-                path: f.path.as_path().to_string_lossy().into_owned(),
-                size: f.length,
+                path: p.as_path().to_string_lossy().into_owned(),
+                size: d.1,
             }))
         }
 
@@ -1006,7 +1025,8 @@ impl<T: cio::CIO> Torrent<T> {
                     rate_down,
                 });
             }
-
+        }
+        if self.status.leeching() || self.status.validating() {
             let mut files = HashMap::new();
             for p in self.pieces.iter() {
                 for loc in self.info.piece_disk_locs(p as u32) {
