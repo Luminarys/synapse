@@ -130,7 +130,7 @@ fn main() {
     if cfg!(debug_assertions) {
         log::log_init(log::LogLevel::Debug);
     } else {
-        log::log_init(log::LogLevel::Info);
+        log::log_init(log::LogLevel::Error);
     }
     info!("Initializing!");
     if let Err(e) = init() {
