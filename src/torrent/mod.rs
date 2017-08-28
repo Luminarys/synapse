@@ -838,9 +838,9 @@ impl<T: cio::CIO> Torrent<T> {
         // TODO: Maybe move this to another function, it could be too
         // variable atm.
         if res.0 == 0 && self.status == Status::Leeching {
-            self.status = Status::Pending;
+            self.set_status(Status::Pending);
         } else if res.1 == 0 && self.status == Status::Seeding {
-            self.status = Status::Idle;
+            self.set_status(Status::Idle);
         }
         self.last_clear = Utc::now();
         self.last_ul = 0;
