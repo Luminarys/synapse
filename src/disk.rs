@@ -1,5 +1,5 @@
 use std::sync::Arc;
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::{fs, fmt, path};
 use std::io::{self, Seek, SeekFrom, Write, Read};
 use std::path::PathBuf;
@@ -15,6 +15,7 @@ pub struct Disk {
     poll: amy::Poller,
     ch: handle::Handle<Request, Response>,
     files: FileCache,
+    active: VecDeque<Request>,
 }
 
 struct FileCache {
@@ -50,6 +51,8 @@ pub enum Request {
         tid: usize,
         info: Arc<Info>,
         path: Option<String>,
+        idx: u32,
+        invalid: Vec<u32>,
     },
     Shutdown,
 }
@@ -143,7 +146,13 @@ impl Request {
     }
 
     pub fn validate(tid: usize, info: Arc<Info>, path: Option<String>) -> Request {
-        Request::Validate { tid, info, path }
+        Request::Validate {
+            tid,
+            info,
+            path,
+            idx: 0,
+            invalid: Vec::new(),
+        }
     }
 
     pub fn delete(
@@ -164,7 +173,7 @@ impl Request {
         Request::Shutdown
     }
 
-    fn execute(self, fc: &mut FileCache) -> io::Result<Option<Response>> {
+    fn execute(self, fc: &mut FileCache) -> io::Result<Result<Response, Option<Self>>> {
         let sd = &CONFIG.disk.session;
         let dd = &CONFIG.disk.directory;
         match self {
@@ -201,7 +210,7 @@ impl Request {
                     })?;
                 }
                 let data = Arc::new(data);
-                return Ok(Some(Response::read(context, data)));
+                return Ok(Ok(Response::read(context, data)));
             }
             Request::Serialize { data, hash, .. } => {
                 let mut pb = path::PathBuf::from(sd);
@@ -220,26 +229,38 @@ impl Request {
                     fc.remove_file(&pb);
                 }
             }
-            Request::Validate { tid, info, path } => {
-                let mut invalid = Vec::new();
+            Request::Validate {
+                tid,
+                info,
+                path,
+                mut idx,
+                mut invalid,
+            } => {
                 let mut buf = vec![0u8; info.piece_len as usize];
                 let mut pb = path::PathBuf::from(path.as_ref().unwrap_or(dd));
                 let mut cf = pb.clone();
 
                 let mut f = fs::OpenOptions::new().read(true).open(&pb);
 
-                for i in 0..info.pieces() {
+                let mut max = 0;
+
+                while idx < info.pieces() && max < 10 {
                     let mut valid = true;
                     let mut ctx = digest::Context::new(&digest::SHA1);
-                    let locs = info.piece_disk_locs(i);
+                    let locs = info.piece_disk_locs(idx);
                     let mut pos = 0;
                     for loc in locs {
                         if loc.file != cf {
                             pb = path::PathBuf::from(path.as_ref().unwrap_or(dd));
                             pb.push(&loc.file);
                             f = fs::OpenOptions::new().read(true).open(&pb);
-                            cf = loc.file;
+                            cf = loc.file.clone();
                         }
+                        // Because this is pausable/resumable, we need to seek to the proper
+                        // file position.
+                        f.as_mut()
+                            .map(|file| file.seek(SeekFrom::Start(loc.offset)))
+                            .ok();
                         if let Ok(Ok(amnt)) = f.as_mut().map(|file| file.read(&mut buf[pos..])) {
                             ctx.update(&buf[pos..pos + amnt]);
                             pos += amnt;
@@ -248,15 +269,28 @@ impl Request {
                         }
                     }
                     let digest = ctx.finish();
-                    if !valid || digest.as_ref() != &info.hashes[i as usize][..] {
-                        invalid.push(i);
+                    if !valid || digest.as_ref() != &info.hashes[idx as usize][..] {
+                        invalid.push(idx);
                     }
+
+                    max += 1;
+                    idx += 1;
                 }
-                return Ok(Some(Response::validation_complete(tid, invalid)));
+                if idx == info.pieces() {
+                    return Ok(Ok(Response::validation_complete(tid, invalid)));
+                } else {
+                    return Ok(Err(Some(Request::Validate {
+                        tid,
+                        info,
+                        path,
+                        idx,
+                        invalid,
+                    })));
+                }
             }
             Request::Shutdown => unreachable!(),
         }
-        Ok(None)
+        Ok(Err(None))
     }
 
     pub fn tid(&self) -> usize {
@@ -338,6 +372,7 @@ impl Disk {
             poll,
             ch,
             files: FileCache::new(),
+            active: VecDeque::new(),
         }
     }
 
@@ -356,8 +391,41 @@ impl Disk {
                     error!("Failed to poll for events: {:?}", e);
                 }
             }
+            if !self.active.is_empty() {
+                if self.handle_active() {
+                    break;
+                }
+            }
         }
+    }
 
+    fn handle_active(&mut self) -> bool {
+        while let Some(j) = self.active.pop_front() {
+            let tid = j.tid();
+            match j.execute(&mut self.files) {
+                Ok(Ok(r)) => {
+                    self.ch.send(r).ok();
+                }
+                Ok(Err(Some(s))) => {
+                    self.active.push_front(s);
+                }
+                Ok(Err(None)) => {}
+                Err(e) => {
+                    self.ch.send(Response::error(tid, e)).ok();
+                }
+            }
+            match self.poll.wait(10) {
+                Ok(_) => {
+                    if self.handle_events() {
+                        return true;
+                    }
+                }
+                Err(e) => {
+                    error!("Failed to poll for events: {:?}", e);
+                }
+            }
+        }
+        false
     }
 
     pub fn handle_events(&mut self) -> bool {
@@ -370,10 +438,13 @@ impl Disk {
                     trace!("Handling disk job!");
                     let tid = r.tid();
                     match r.execute(&mut self.files) {
-                        Ok(Some(r)) => {
+                        Ok(Ok(r)) => {
                             self.ch.send(r).ok();
                         }
-                        Ok(None) => {}
+                        Ok(Err(Some(s))) => {
+                            self.active.push_back(s);
+                        }
+                        Ok(Err(None)) => {}
                         Err(e) => {
                             self.ch.send(Response::error(tid, e)).ok();
                         }
