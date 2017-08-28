@@ -1,3 +1,4 @@
+#![allow(unknown_lints)]
 #![allow(unused_doc_comment)]
 #![cfg_attr(feature="clippy", feature(plugin))]
 
