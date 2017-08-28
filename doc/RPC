@@ -475,5 +475,5 @@ Upgrade is used for a websocket upgrade and only requires that a query parameter
 be present if authentication is configured. Transfer is used for transfering files to synapse.
 It only requires that HTTP bearer authorization be present in the request.
 Download is a special request used to download files from synapse.
-It requires that the HTTP path end in '/dl', the RPC password is provided in the 'password'
-query parameter, and the id of the resource to download be in the 'id' query parameter.
+It requires that the HTTP path be of the form '/dl/:id?password=hackme',
+password only being required if authentication is enabled for synapse.

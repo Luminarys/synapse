@@ -308,11 +308,11 @@ fn validate_dl(req: &httparse::Request) -> Option<String> {
                     return None;
                 }
             }
-            url.query_pairs().find(|&(ref k, _)| k == "id").map(
-                |(_, v)| {
-                    format!("{}", v)
-                },
-            )
+            if url.path().contains("/dl/") {
+                url.path_segments().unwrap().last().map(|v| v.to_owned())
+            } else {
+                None
+            }
         })
 }
 

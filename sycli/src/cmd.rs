@@ -122,8 +122,9 @@ pub fn dl(mut c: Client, url: &str, name: &str) -> Result<()> {
 
     for file in files {
         let mut dl_url = Url::parse(url).unwrap();
-        dl_url.path_segments_mut().unwrap().push("dl");
-        dl_url.query_pairs_mut().append_pair("id", file.id());
+        dl_url.path_segments_mut().unwrap().push("dl").push(
+            file.id(),
+        );
 
         let client = HClient::new().chain_err(|| ErrorKind::HTTP)?;
         let mut resp = client
