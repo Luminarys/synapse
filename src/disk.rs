@@ -57,6 +57,12 @@ pub enum Request {
     Shutdown,
 }
 
+enum JobRes {
+    Resp(Response),
+    Done,
+    Paused(Request),
+}
+
 pub struct Ctx {
     pub pid: usize,
     pub tid: usize,
@@ -173,7 +179,7 @@ impl Request {
         Request::Shutdown
     }
 
-    fn execute(self, fc: &mut FileCache) -> io::Result<Result<Response, Option<Self>>> {
+    fn execute(self, fc: &mut FileCache) -> io::Result<JobRes> {
         let sd = &CONFIG.disk.session;
         let dd = &CONFIG.disk.directory;
         match self {
@@ -210,7 +216,7 @@ impl Request {
                     })?;
                 }
                 let data = Arc::new(data);
-                return Ok(Ok(Response::read(context, data)));
+                return Ok(JobRes::Resp(Response::read(context, data)));
             }
             Request::Serialize { data, hash, .. } => {
                 let mut pb = path::PathBuf::from(sd);
@@ -277,20 +283,20 @@ impl Request {
                     idx += 1;
                 }
                 if idx == info.pieces() {
-                    return Ok(Ok(Response::validation_complete(tid, invalid)));
+                    return Ok(JobRes::Resp(Response::validation_complete(tid, invalid)));
                 } else {
-                    return Ok(Err(Some(Request::Validate {
+                    return Ok(JobRes::Paused(Request::Validate {
                         tid,
                         info,
                         path,
                         idx,
                         invalid,
-                    })));
+                    }));
                 }
             }
             Request::Shutdown => unreachable!(),
         }
-        Ok(Err(None))
+        Ok(JobRes::Done)
     }
 
     pub fn tid(&self) -> usize {
@@ -403,18 +409,18 @@ impl Disk {
         while let Some(j) = self.active.pop_front() {
             let tid = j.tid();
             match j.execute(&mut self.files) {
-                Ok(Ok(r)) => {
+                Ok(JobRes::Resp(r)) => {
                     self.ch.send(r).ok();
                 }
-                Ok(Err(Some(s))) => {
+                Ok(JobRes::Paused(s)) => {
                     self.active.push_front(s);
                 }
-                Ok(Err(None)) => {}
+                Ok(JobRes::Done) => {}
                 Err(e) => {
                     self.ch.send(Response::error(tid, e)).ok();
                 }
             }
-            match self.poll.wait(10) {
+            match self.poll.wait(0) {
                 Ok(_) => {
                     if self.handle_events() {
                         return true;
@@ -438,13 +444,13 @@ impl Disk {
                     trace!("Handling disk job!");
                     let tid = r.tid();
                     match r.execute(&mut self.files) {
-                        Ok(Ok(r)) => {
+                        Ok(JobRes::Resp(r)) => {
                             self.ch.send(r).ok();
                         }
-                        Ok(Err(Some(s))) => {
+                        Ok(JobRes::Paused(s)) => {
                             self.active.push_back(s);
                         }
-                        Ok(Err(None)) => {}
+                        Ok(JobRes::Done) => {}
                         Err(e) => {
                             self.ch.send(Response::error(tid, e)).ok();
                         }
