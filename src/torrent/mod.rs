@@ -245,6 +245,9 @@ impl<T: cio::CIO> Torrent<T> {
         debug!("Processing tracker response");
         match *resp {
             Ok(ref r) => {
+                if r.dht {
+                    return;
+                }
                 let mut time = Instant::now();
                 time += Duration::from_secs(r.interval as u64);
                 self.tracker = TrackerStatus::Ok {
@@ -758,16 +761,14 @@ impl<T: cio::CIO> Torrent<T> {
         }
 
         let mut files = HashMap::new();
+        for f in &self.info.files {
+            files.insert(f.path.clone(), (0, f.length));
+        }
+
         for p in self.pieces.iter() {
             for loc in self.info.piece_disk_locs(p as u32) {
-                if !files.contains_key(&loc.file) {
-                    files.insert(loc.file.clone(), (0, 0));
-                }
                 files.get_mut(&loc.file).unwrap().0 += loc.end - loc.start;
             }
-        }
-        for f in &self.info.files {
-            files.get_mut(&f.path).map(|v| v.1 = f.length);
         }
 
         for (p, d) in files {

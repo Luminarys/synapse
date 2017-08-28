@@ -83,7 +83,7 @@ macro_rules! log(
                 write!(&mut msg, "\n").unwrap();
                 let stderr = ::std::io::stderr();
                 let mut handle = stderr.lock();
-                handle.write(&msg).unwrap();
+                handle.write_all(&msg).unwrap();
             }
         }
     };
@@ -101,7 +101,7 @@ macro_rules! log(
                 write!(&mut msg, "\n").unwrap();
                 let stderr = ::std::io::stderr();
                 let mut handle = stderr.lock();
-                handle.write(&msg).unwrap();
+                handle.write_all(&msg).unwrap();
             }
         }
     };

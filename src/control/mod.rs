@@ -198,8 +198,9 @@ impl<T: cio::CIO> Control<T> {
                 return self.handle_rpc_ev(e);
             }
             cio::Event::RPC(Err(e)) => {
-                error!("rpc error: {:?}", e);
+                error!("rpc error: {:?}, terminating", e);
                 trace!("rpc error: {:?}", e.backtrace());
+                return true;
             }
             cio::Event::Listener(Ok(e)) => {
                 self.handle_lst_ev(e);

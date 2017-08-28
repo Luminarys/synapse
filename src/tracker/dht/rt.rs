@@ -8,6 +8,8 @@ use super::{proto, ID, BUCKET_MAX, MIN_BOOTSTRAP_BKTS, TX_TIMEOUT_SECS};
 use byteorder::{ReadBytesExt, WriteBytesExt, BigEndian};
 use {tracker, bincode};
 
+const MAX_SEARCH_DEPTH: u8 = 5;
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct RoutingTable {
     id: ID,
@@ -35,6 +37,7 @@ enum TransactionKind {
         id: ID,
         torrent: usize,
         hash: [u8; 20],
+        depth: u8,
     },
 }
 
@@ -119,7 +122,7 @@ impl RoutingTable {
 
         let mut reqs = Vec::new();
         for node in nodes {
-            let tx = self.new_tsearch_tx(node.id, torrent, hash);
+            let tx = self.new_tsearch_tx(node.id, torrent, hash, 0);
             let req = proto::Request::get_peers(tx, self.id.clone(), hash);
             reqs.push((req, node.addr));
         }
@@ -321,15 +324,15 @@ impl RoutingTable {
                  id: ref id1,
                  torrent,
                  hash,
+                 depth,
              },
              proto::ResponseKind::GetPeers {
                  id: ref id2,
-                 resp: ref mut pr,
+                 ref mut values,
+                 ref mut nodes,
                  ref mut token,
              }) if id1 == id2 => {
-                if !self.contains_id(id1) {
-                    return Err(reqs);
-                } else {
+                if self.contains_id(id1) {
                     let node = self.get_node_mut(id1);
                     node.update();
                     if let Some(ref mut rt) = node.rem_token {
@@ -339,16 +342,18 @@ impl RoutingTable {
                     }
                 }
 
-                if let proto::PeerResp::Values(ref mut addrs) = *pr {
-                    let mut r = tracker::TrackerResponse::empty();
-                    mem::swap(&mut r.peers, addrs);
+                if !values.is_empty() {
+                    let mut r = tracker::TrackerResponse::dht();
+                    mem::swap(&mut r.peers, values);
                     return Ok((torrent, Ok(r)));
-                } else if let proto::PeerResp::Nodes(ref mut nodes) = *pr {
+                }
+
+                if depth < MAX_SEARCH_DEPTH {
                     for node in nodes.drain(..) {
                         let id = node.id.clone();
                         let addr = node.addr;
                         if !self.contains_id(&node.id) {
-                            let tx = self.new_tsearch_tx(id.clone(), torrent, hash);
+                            let tx = self.new_tsearch_tx(id.clone(), torrent, hash, depth + 1);
                             reqs.push((proto::Request::get_peers(tx, self.id.clone(), hash), addr));
                         }
                     }
@@ -496,7 +501,7 @@ impl RoutingTable {
         tb
     }
 
-    fn new_tsearch_tx(&mut self, id: ID, torrent: usize, hash: [u8; 20]) -> Vec<u8> {
+    fn new_tsearch_tx(&mut self, id: ID, torrent: usize, hash: [u8; 20], depth: u8) -> Vec<u8> {
         let mut tb = Vec::new();
         let tid = rand::random::<u32>();
         tb.write_u32::<BigEndian>(tid).unwrap();
@@ -504,7 +509,12 @@ impl RoutingTable {
             tid,
             Transaction {
                 created: Utc::now(),
-                kind: TransactionKind::TSearch { id, torrent, hash },
+                kind: TransactionKind::TSearch {
+                    id,
+                    torrent,
+                    hash,
+                    depth,
+                },
             },
         );
         tb

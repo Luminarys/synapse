@@ -75,15 +75,10 @@ pub enum ResponseKind {
     GetPeers {
         id: ID,
         token: Vec<u8>,
-        resp: PeerResp,
+        values: Vec<SocketAddr>,
+        nodes: Vec<Node>,
     },
     Error(ErrorKind),
-}
-
-#[derive(Debug)]
-pub enum PeerResp {
-    Values(Vec<SocketAddr>),
-    Nodes(Vec<Node>),
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -350,7 +345,8 @@ impl Response {
             kind: ResponseKind::GetPeers {
                 id,
                 token,
-                resp: PeerResp::Values(nodes),
+                values: nodes,
+                nodes: Vec::new(),
             },
         }
     }
@@ -361,7 +357,8 @@ impl Response {
             kind: ResponseKind::GetPeers {
                 id,
                 token,
-                resp: PeerResp::Nodes(nodes),
+                nodes,
+                values: Vec::new(),
             },
         }
     }
@@ -390,25 +387,25 @@ impl Response {
                 args.insert(String::from("nodes"), BEncode::String(data));
                 args.insert(String::from("id"), BEncode::String(id.to_bytes_be()));
             }
-            ResponseKind::GetPeers { id, token, resp } => {
+            ResponseKind::GetPeers {
+                id,
+                token,
+                nodes,
+                values,
+            } => {
                 args.insert(String::from("id"), BEncode::String(id.to_bytes_be()));
                 args.insert(String::from("token"), BEncode::String(token));
-                match resp {
-                    PeerResp::Values(addrs) => {
-                        let mut data = Vec::new();
-                        for addr in addrs {
-                            data.extend_from_slice(&addr_to_bytes(&addr)[..]);
-                        }
-                        args.insert(String::from("values"), BEncode::String(data));
-                    }
-                    PeerResp::Nodes(nodes) => {
-                        let mut data = Vec::new();
-                        for node in nodes {
-                            data.extend(node.to_bytes())
-                        }
-                        args.insert(String::from("nodes"), BEncode::String(data));
-                    }
+                let mut values_b = Vec::new();
+                for addr in values {
+                    values_b.push(BEncode::String(addr_to_bytes(&addr).to_vec()));
                 }
+                args.insert(String::from("values"), BEncode::List(values_b));
+
+                let mut nodes_b = Vec::new();
+                for node in nodes {
+                    nodes_b.extend(node.to_bytes())
+                }
+                args.insert(String::from("nodes"), BEncode::String(nodes_b));
             }
             ResponseKind::Error(e) => {
                 let mut err = Vec::new();
@@ -521,32 +518,27 @@ impl Response {
                     })?;
 
                 let kind = if let Some(token) = r.remove("token").and_then(|b| b.into_bytes()) {
-                    if let Some(data) = r.remove("values").and_then(|b| b.into_bytes()) {
-                        let mut peers = Vec::new();
-                        for d in data.chunks(6) {
-                            peers.push(bytes_to_addr(d));
+                    let mut values = Vec::new();
+                    if let Some(addrs) = r.remove("values").and_then(|b| b.into_list()) {
+                        for addr in addrs {
+                            if let Some(data) = addr.into_bytes() {
+                                if data.len() == 6 {
+                                    values.push(bytes_to_addr(&data));
+                                }
+                            }
                         }
-                        ResponseKind::GetPeers {
-                            id,
-                            token,
-                            resp: PeerResp::Values(peers),
-                        }
-                    } else if let Some(ns) = r.remove("nodes").and_then(|b| b.into_bytes()) {
-                        let mut nodes = Vec::new();
+                    }
+                    let mut nodes = Vec::new();
+                    if let Some(ns) = r.remove("nodes").and_then(|b| b.into_bytes()) {
                         for n in ns.chunks(26) {
                             nodes.push(Node::new(n));
                         }
-                        ResponseKind::GetPeers {
-                            id,
-                            token,
-                            resp: PeerResp::Nodes(nodes),
-                        }
-                    } else {
-                        return Err(
-                            ErrorKind::InvalidResponse(
-                                "Invalid BEncoded data(no values/nodes fields)",
-                            ).into(),
-                        );
+                    }
+                    ResponseKind::GetPeers {
+                        id,
+                        token,
+                        nodes,
+                        values,
                     }
                 } else if let Some(ns) = r.remove("nodes").and_then(|b| b.into_bytes()) {
                     let mut nodes = Vec::new();

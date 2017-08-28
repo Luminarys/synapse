@@ -73,6 +73,7 @@ pub type Response = (usize, Result<TrackerResponse>);
 #[derive(Debug)]
 pub struct TrackerResponse {
     pub peers: Vec<SocketAddr>,
+    pub dht: bool,
     pub interval: u32,
     pub leechers: u32,
     pub seeders: u32,
@@ -324,6 +325,17 @@ impl TrackerResponse {
             interval: 900,
             leechers: 0,
             seeders: 0,
+            dht: false,
+        }
+    }
+
+    pub fn dht() -> TrackerResponse {
+        TrackerResponse {
+            peers: vec![],
+            interval: 0,
+            leechers: 0,
+            seeders: 0,
+            dht: true,
         }
     }
 
