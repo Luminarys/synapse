@@ -14,14 +14,20 @@ use rpc::resource::{Resource, ResourceKind, SResourceUpdate};
 use client::Client;
 use error::{Result, ResultExt, ErrorKind};
 
-pub fn add(mut c: Client, url: &str, files: Vec<&str>, dir: Option<&str>) -> Result<()> {
+pub fn add(
+    mut c: Client,
+    url: &str,
+    files: Vec<&str>,
+    dir: Option<&str>,
+    start: bool,
+) -> Result<()> {
     for file in files {
-        add_file(&mut c, url, file, dir)?;
+        add_file(&mut c, url, file, dir, start)?;
     }
     Ok(())
 }
 
-fn add_file(c: &mut Client, url: &str, file: &str, dir: Option<&str>) -> Result<()> {
+fn add_file(c: &mut Client, url: &str, file: &str, dir: Option<&str>, start: bool) -> Result<()> {
     let mut torrent = Vec::new();
     let mut f = fs::File::open(file).chain_err(|| ErrorKind::FileIO)?;
     f.read_to_end(&mut torrent).chain_err(|| ErrorKind::FileIO)?;
@@ -30,7 +36,7 @@ fn add_file(c: &mut Client, url: &str, file: &str, dir: Option<&str>) -> Result<
         serial: c.next_serial(),
         size: torrent.len() as u64,
         path: dir.as_ref().map(|d| format!("{}", d)),
-        start: true,
+        start,
     };
     let token = if let SMessage::TransferOffer { token, .. } = c.rr(msg)? {
         token

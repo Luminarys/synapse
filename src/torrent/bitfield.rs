@@ -108,6 +108,12 @@ impl Bitfield {
     }
 }
 
+impl Default for Bitfield {
+    fn default() -> Bitfield {
+        Bitfield::new(0)
+    }
+}
+
 use std::fmt;
 
 impl fmt::Debug for Bitfield {

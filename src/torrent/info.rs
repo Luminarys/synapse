@@ -1,6 +1,6 @@
 use bencode::BEncode;
 use std::path::PathBuf;
-use std::collections::BTreeMap;
+use std::collections::{HashMap, BTreeMap};
 use std::{fmt, cmp};
 use url::Url;
 use ring::digest;
@@ -16,6 +16,7 @@ pub struct Info {
     pub hashes: Vec<Vec<u8>>,
     pub hash: [u8; 20],
     pub files: Vec<File>,
+    pub file_idx: HashMap<PathBuf, usize>,
     pub private: bool,
 }
 
@@ -150,6 +151,10 @@ impl Info {
                     unreachable!();
                 };
 
+                let mut file_idx = HashMap::new();
+                for (i, file) in files.iter().enumerate() {
+                    file_idx.insert(file.path.clone(), i);
+                }
                 let total_len = files.iter().map(|f| f.length).sum();
                 Ok(Info {
                     name,
@@ -158,6 +163,7 @@ impl Info {
                     hashes,
                     hash,
                     files,
+                    file_idx,
                     total_len,
                     private,
                 })
@@ -174,6 +180,7 @@ impl Info {
             hashes: vec![vec![0u8]; pieces],
             hash: [0u8; 20],
             files: vec![],
+            file_idx: HashMap::new(),
             private: false,
         }
     }

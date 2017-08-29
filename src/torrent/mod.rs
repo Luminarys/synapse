@@ -43,11 +43,14 @@ struct TorrentData {
     downloaded: u64,
     status: Status,
     path: Option<String>,
+    wanted: Bitfield,
+    priorities: Vec<u8>,
 }
 
 pub struct Torrent<T: cio::CIO> {
     id: usize,
     pieces: Bitfield,
+    wanted: Bitfield,
     info: Arc<Info>,
     cio: T,
     uploaded: u64,
@@ -55,6 +58,7 @@ pub struct Torrent<T: cio::CIO> {
     last_ul: u64,
     last_dl: u64,
     priority: u8,
+    priorities: Vec<u8>,
     last_clear: DateTime<Utc>,
     throttle: Throttle,
     tracker: TrackerStatus,
@@ -121,14 +125,21 @@ impl<T: cio::CIO> Torrent<T> {
         } else {
             Status::Paused
         };
+        let priorities = vec![3; info.files.len()];
+        let mut wanted = Bitfield::new(info.pieces() as u64);
+        for i in 0..info.pieces() {
+            wanted.set_bit(i as u64);
+        }
         let mut t = Torrent {
             id,
             info: Arc::new(info),
             path,
             peers,
             pieces,
+            wanted,
             picker,
             priority: 3,
+            priorities,
             uploaded: 0,
             downloaded: 0,
             last_ul: 0,
@@ -145,6 +156,7 @@ impl<T: cio::CIO> Torrent<T> {
         };
         t.start();
         t.validate();
+        t.set_status(status);
 
         t
     }
@@ -159,17 +171,36 @@ impl<T: cio::CIO> Torrent<T> {
         debug!("Torrent data deserialized!");
         let peers = HashMap::new();
         let leechers = HashSet::new();
+        // Initialize defaults if they're not present
+        let priorities = if d.priorities.is_empty() {
+            vec![3; d.info.files.len()]
+        } else {
+            d.priorities
+        };
+        let wanted = if d.wanted.len() == 0 {
+            let mut w = Bitfield::new(d.info.pieces() as u64);
+            for i in 0..d.info.pieces() {
+                w.set_bit(i as u64);
+            }
+            w
+        } else {
+            d.wanted
+        };
+
         let picker = picker::Picker::new(&d.info, &d.pieces);
+
         let mut t = Torrent {
             id,
             info: Arc::new(d.info),
             peers,
             pieces: d.pieces,
+            wanted,
             picker,
             uploaded: d.uploaded,
             downloaded: d.downloaded,
             last_ul: 0,
             last_dl: 0,
+            priorities,
             priority: 3,
             last_clear: Utc::now(),
             cio,
@@ -195,6 +226,7 @@ impl<T: cio::CIO> Torrent<T> {
             }
             _ => {}
         };
+        t.refresh_picker();
         t.start();
         t.announce_start();
         Ok(t)
@@ -208,6 +240,8 @@ impl<T: cio::CIO> Torrent<T> {
             downloaded: self.downloaded,
             status: self.status,
             path: self.path.clone(),
+            priorities: self.priorities.clone(),
+            wanted: self.wanted.clone(),
         };
         let data = bincode::serialize(&d, bincode::Infinite).expect("Serialization failed!");
         debug!("Sending serialization request!");
@@ -333,12 +367,23 @@ impl<T: cio::CIO> Torrent<T> {
                     peer.send_message(p);
                 }
             }
-            disk::Response::ValidationComplete { invalid, .. } => {
+            disk::Response::ValidationComplete { mut invalid, .. } => {
                 debug!("Validation completed!");
+                // Ignore invalid pieces which are not in wanted, or
+                // are part of an invalid file(none of the disk locations
+                // refer to files which aren't being downloaded(pri. 1)
+                invalid.retain(|i| {
+                    self.wanted.has_bit(*i as u64) &&
+                        !self.info.piece_disk_locs(*i).into_iter().any(|l| {
+                            self.priorities[self.info.file_idx[&l.file]] == 0
+                        })
+                });
                 if invalid.is_empty() {
-                    if !self.pieces.complete() {
+                    if !self.completed() {
                         for i in 0..self.pieces.len() {
-                            self.pieces.set_bit(i);
+                            if self.wanted.has_bit(i) {
+                                self.pieces.set_bit(i);
+                            }
                         }
                     }
                     info!("Torrent succesfully downloaded!");
@@ -360,13 +405,16 @@ impl<T: cio::CIO> Torrent<T> {
                 } else {
                     // If this is an initialization hash, start the torrent
                     // immediatly.
-                    if !self.pieces.complete() {
+                    if !self.completed() {
+                        debug!("initial validation complete, starting torrent");
                         // If there was some partial completion,
                         // set the pieces appropriately, then reset the
                         // picker to use the new bitfield
                         if invalid.len() as u64 != self.pieces.len() {
                             for i in 0..self.pieces.len() {
-                                self.pieces.set_bit(i);
+                                if self.wanted.has_bit(i) {
+                                    self.pieces.set_bit(i);
+                                }
                             }
                             for piece in invalid {
                                 self.pieces.unset_bit(piece as u64);
@@ -380,7 +428,7 @@ impl<T: cio::CIO> Torrent<T> {
                                 });
                             }
                             self.cio.msg_rpc(rpc::CtlMessage::Update(rpc_updates));
-                            self.picker.refresh_picker(&self.pieces);
+                            self.refresh_picker();
                         }
                         self.announce_start();
                     } else {
@@ -519,7 +567,7 @@ impl<T: cio::CIO> Torrent<T> {
                     ]));
 
                     // Begin validation, and save state if the torrent is done
-                    if self.pieces.complete() {
+                    if self.completed() {
                         debug!("Beginning validation");
                         self.serialize();
                         self.validate();
@@ -561,7 +609,7 @@ impl<T: cio::CIO> Torrent<T> {
                     }
                 }
 
-                if !self.pieces.complete() && !self.status.stopped() {
+                if !self.completed() && !self.status.stopped() {
                     Torrent::make_requests(peer, &mut self.picker, &self.info);
                 }
             }
@@ -668,7 +716,7 @@ impl<T: cio::CIO> Torrent<T> {
         match self.status {
             Status::Leeching | Status::Validating | Status::Pending => false,
             Status::Idle | Status::Seeding | Status::Paused => true,
-            Status::DiskError => self.pieces.complete(),
+            Status::DiskError => self.completed(),
         }
     }
 
@@ -684,6 +732,11 @@ impl<T: cio::CIO> Torrent<T> {
                 throttle_down: dl,
             },
         ]));
+    }
+
+    fn refresh_picker(&mut self) {
+        let should_pick = self.should_pick();
+        self.picker.refresh_picker(&should_pick);
     }
 
     fn set_path(&mut self, path: String) {
@@ -704,7 +757,26 @@ impl<T: cio::CIO> Torrent<T> {
     }
 
     fn set_file_priority(&mut self, id: String, priority: u8) {
-        // TODO: Implement file priority in picker
+        for (i, f) in self.info.files.iter().enumerate() {
+            let fid =
+                util::file_rpc_id(&self.info.hash, f.path.as_path().to_string_lossy().as_ref());
+            if fid == id {
+                self.priorities[i] = priority;
+                if priority == 0 {
+                    for p in 0..self.info.pieces() {
+                        if self.info.piece_disk_locs(p).into_iter().all(
+                            |l| l.file == f.path,
+                        )
+                        {
+                            self.wanted.unset_bit(p as u64);
+                        }
+                    }
+                } else {
+                    // TODO: Set picker prio
+                }
+            }
+        }
+        self.refresh_picker();
         self.cio.msg_rpc(rpc::CtlMessage::Update(vec![
             resource::SResourceUpdate::FilePriority {
                 id,
@@ -776,14 +848,14 @@ impl<T: cio::CIO> Torrent<T> {
             }
         }
 
-        for (p, d) in files {
+        for (i, (p, d)) in files.into_iter().enumerate() {
             let id = util::file_rpc_id(&self.info.hash, p.as_path().to_string_lossy().as_ref());
             r.push(resource::Resource::File(resource::File {
                 id,
                 torrent_id: self.rpc_id(),
                 availability: 0.,
                 progress: (d.0 as f32 / d.1 as f32),
-                priority: 3,
+                priority: self.priorities[i],
                 path: p.as_path().to_string_lossy().into_owned(),
                 size: d.1,
             }))
@@ -861,7 +933,8 @@ impl<T: cio::CIO> Torrent<T> {
     /// piece offset begin, piece length of len, and data bytes.
     /// The disk send handle is also provided.
     fn write_piece(&mut self, index: u32, begin: u32, data: Box<[u8; 16_384]>) {
-        let locs = self.info.block_disk_locs(index, begin);
+        let mut locs = self.info.block_disk_locs(index, begin);
+        locs.retain(|l| self.priorities[self.info.file_idx[&l.file]] != 0);
         self.cio.msg_disk(disk::Request::write(
             self.id,
             data,
@@ -1085,7 +1158,7 @@ impl<T: cio::CIO> Torrent<T> {
                 self.request_all();
             }
             Status::DiskError => {
-                if self.pieces.complete() {
+                if self.completed() {
                     self.validate();
                 } else {
                     self.request_all();
@@ -1094,7 +1167,7 @@ impl<T: cio::CIO> Torrent<T> {
             }
             _ => {}
         }
-        if self.pieces.complete() {
+        if self.completed() {
             self.set_status(Status::Idle);
         } else {
             self.set_status(Status::Pending);
@@ -1138,6 +1211,26 @@ impl<T: cio::CIO> Torrent<T> {
                 sequential,
             },
         ]));
+    }
+
+    fn should_pick(&self) -> Bitfield {
+        let mut b = Bitfield::new(self.pieces.len());
+        // Only DL pieces which we don't yet have, and are in wanted.
+        for i in 0..self.pieces.len() {
+            if self.pieces.has_bit(i) || !self.wanted.has_bit(i) {
+                b.set_bit(i);
+            }
+        }
+        b
+    }
+
+    fn completed(&self) -> bool {
+        for i in 0..self.pieces.len() {
+            if !self.pieces.has_bit(i) && self.wanted.has_bit(i) {
+                return false;
+            }
+        }
+        true
     }
 }
 

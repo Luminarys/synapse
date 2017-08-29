@@ -309,7 +309,7 @@ impl<T: cio::CIO> Control<T> {
     }
 
     fn add_torrent(&mut self, info: torrent::Info, path: Option<String>, start: bool) {
-        debug!("Adding {:?}!", info);
+        debug!("Adding {:?}, start: {}!", info, start);
         if self.hash_idx.contains_key(&info.hash) {
             error!("Torrent already exists!");
             return;

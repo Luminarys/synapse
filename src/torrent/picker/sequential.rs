@@ -50,47 +50,6 @@ impl Picker {
             .iter()
             .find(|p| peer.pieces().has_bit(p.pos as u64))
             .map(|p| p.pos)
-
-        /*
-        for idx in peer.pieces().iter_from(self.piece_idx) {
-            let start = idx * self.c.scale;
-            for i in 0..self.c.scale {
-                // On the last piece check, we won't check the whole range.
-                if start + i < self.c.blocks.len() && !self.c.blocks.has_bit(start + i) {
-                    self.c.blocks.set_bit(start + i);
-                    self.c.waiting.insert(start + i);
-                    let mut hs = HashSet::with_capacity(1);
-                    hs.insert(peer.id());
-                    self.c.waiting_peers.insert(start + i, hs);
-                    if self.c.endgame_cnt == 1 {
-                        println!("Entering endgame!");
-                    }
-                    self.c.endgame_cnt = self.c.endgame_cnt.saturating_sub(1);
-                    return Some(picker::Block {
-                        index: idx as u32,
-                        offset: (i * 16_384) as u32 }
-                    );
-                }
-            }
-        }
-        if self.c.endgame_cnt == 0 {
-            let mut idx = None;
-            for piece in self.c.waiting.iter() {
-                if peer.pieces().has_bit(*piece / self.c.scale) {
-                    idx = Some(*piece);
-                    break;
-                }
-            }
-            if let Some(i) = idx {
-                self.c.waiting_peers.get_mut(&i).unwrap().insert(peer.id());
-                return Some(picker::Block {
-                    index: (i / self.c.scale) as u32,
-                    offset: ((i % self.c.scale) * 16_384) as u32,
-                });
-            }
-        }
-        None
-        */
     }
 
     /// Returns whether or not the whole piece is complete.
@@ -99,26 +58,6 @@ impl Picker {
             .iter_mut()
             .find(|p| p.pos == idx)
             .map(|p| p.status = PieceStatus::Complete);
-        /*
-        self.pieces.iter_from(self.piece_idx)
-            .find(|p| peer.pieces().has_bit(p.pos))
-        let mut idx = idx as u64;
-        let mut offset = offset as u64;
-        offset /= 16_384;
-        idx *= self.c.scale;
-        self.c.waiting.remove(&(idx + offset));
-        let peers = self.c
-            .waiting_peers
-            .remove(&(idx + offset))
-            .unwrap_or_else(|| HashSet::with_capacity(0));
-        for i in 0..self.c.scale {
-            if (idx + i < self.c.blocks.len() && !self.c.blocks.has_bit(idx + i)) ||
-                self.c.waiting.contains(&(idx + i))
-            {
-                return (false, peers);
-            }
-        }
-        */
         self.update_piece_idx();
     }
 

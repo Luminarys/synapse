@@ -54,6 +54,12 @@ fn main() {
                         .takes_value(true),
                 )
                 .arg(
+                    Arg::with_name("pause")
+                        .help("Whether or not the torrent should start paused.")
+                        .short("P")
+                        .long("pause"),
+                )
+                .arg(
                     Arg::with_name("files")
                         .help("Torrent files to add")
                         .multiple(true)
@@ -186,7 +192,13 @@ fn main() {
             for file in args.values_of("files").unwrap() {
                 files.push(file)
             }
-            let res = cmd::add(client, url.as_str(), files, args.value_of("directory"));
+            let res = cmd::add(
+                client,
+                url.as_str(),
+                files,
+                args.value_of("directory"),
+                !args.is_present("pause"),
+            );
             if let Err(e) = res {
                 eprintln!("Failed to add torrents: {:?}", e);
                 process::exit(1);
