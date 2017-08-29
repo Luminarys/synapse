@@ -22,6 +22,8 @@ const TRK_JOB_SECS: u64 = 60;
 const UNCHK_JOB_SECS: u64 = 15;
 /// Session serialization job interval
 const SES_JOB_SECS: u64 = 60;
+/// Status update job interval
+const STS_JOB_SECS: u64 = 10;
 /// Interval to update RPC of transfer stats
 const TX_JOB_MS: u64 = 500;
 
@@ -65,6 +67,10 @@ impl<T: cio::CIO> Control<T> {
             time::Duration::from_secs(UNCHK_JOB_SECS),
         );
         jobs.add_job(job::SessionUpdate, time::Duration::from_secs(SES_JOB_SECS));
+        jobs.add_job(
+            job::TorrentStatusUpdate::new(),
+            time::Duration::from_secs(STS_JOB_SECS),
+        );
         jobs.add_job(
             job::TorrentTxUpdate::new(),
             time::Duration::from_millis(TX_JOB_MS),

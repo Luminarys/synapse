@@ -836,13 +836,6 @@ impl<T: cio::CIO> Torrent<T> {
     /// status if nothing has been uploaded/downloaded in the interval.
     pub fn reset_last_tx_rate(&mut self) -> (u64, u64) {
         let res = self.get_last_tx_rate();
-        // TODO: Maybe move this to another function, it could be too
-        // variable atm.
-        if res.0 == 0 && self.status == Status::Leeching {
-            self.set_status(Status::Pending);
-        } else if res.1 == 0 && self.status == Status::Seeding {
-            self.set_status(Status::Idle);
-        }
         self.last_clear = Utc::now();
         self.last_ul = 0;
         self.last_dl = 0;
@@ -935,7 +928,7 @@ impl<T: cio::CIO> Torrent<T> {
         }
     }
 
-    fn set_status(&mut self, status: Status) {
+    pub fn set_status(&mut self, status: Status) {
         if self.status == status {
             return;
         }
@@ -952,6 +945,10 @@ impl<T: cio::CIO> Torrent<T> {
                 status: status.into(),
             },
         ]));
+    }
+
+    pub fn status(&self) -> Status {
+        self.status
     }
 
     pub fn update_rpc_peers(&mut self) {

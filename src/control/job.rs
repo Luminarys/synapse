@@ -1,4 +1,4 @@
-use torrent::Torrent;
+use torrent::{Torrent, Status};
 use std::collections::HashMap;
 use std::time;
 use control::cio;
@@ -117,5 +117,37 @@ impl<T: cio::CIO> Job<T> for TorrentTxUpdate {
             }
         }
         self.speeds.retain(|id, _| torrents.contains_key(id));
+    }
+}
+
+impl TorrentStatusUpdate {
+    pub fn new() -> TorrentStatusUpdate {
+        TorrentStatusUpdate { transferred: HashMap::new() }
+    }
+}
+
+pub struct TorrentStatusUpdate {
+    transferred: HashMap<usize, (u64, u64)>,
+}
+
+impl<T: cio::CIO> Job<T> for TorrentStatusUpdate {
+    fn update(&mut self, torrents: &mut HashMap<usize, Torrent<T>>) {
+        for (id, torrent) in torrents.iter_mut() {
+            let (ul, dl) = (torrent.uploaded(), torrent.downloaded());
+            if !self.transferred.contains_key(id) {
+                self.transferred.insert(*id, (
+                    torrent.uploaded(),
+                    torrent.downloaded(),
+                ));
+            }
+            let tx = self.transferred.get_mut(id).unwrap();
+            if torrent.status() == Status::Seeding && ul == tx.0 {
+                torrent.set_status(Status::Idle);
+            }
+            if torrent.status() == Status::Leeching && dl == tx.1 {
+                torrent.set_status(Status::Pending);
+            }
+        }
+        self.transferred.retain(|id, _| torrents.contains_key(id));
     }
 }
