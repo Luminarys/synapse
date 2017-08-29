@@ -171,21 +171,6 @@ impl<T: cio::CIO> Torrent<T> {
         debug!("Torrent data deserialized!");
         let peers = HashMap::new();
         let leechers = HashSet::new();
-        // Initialize defaults if they're not present
-        let priorities = if d.priorities.is_empty() {
-            vec![3; d.info.files.len()]
-        } else {
-            d.priorities
-        };
-        let wanted = if d.wanted.len() == 0 {
-            let mut w = Bitfield::new(d.info.pieces() as u64);
-            for i in 0..d.info.pieces() {
-                w.set_bit(i as u64);
-            }
-            w
-        } else {
-            d.wanted
-        };
 
         let picker = picker::Picker::new(&d.info, &d.pieces);
 
@@ -194,13 +179,13 @@ impl<T: cio::CIO> Torrent<T> {
             info: Arc::new(d.info),
             peers,
             pieces: d.pieces,
-            wanted,
+            wanted: d.wanted,
             picker,
             uploaded: d.uploaded,
             downloaded: d.downloaded,
             last_ul: 0,
             last_dl: 0,
-            priorities,
+            priorities: d.priorities,
             priority: 3,
             last_clear: Utc::now(),
             cio,
