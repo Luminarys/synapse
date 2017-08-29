@@ -147,6 +147,8 @@ impl<T: cio::CIO> Job<T> for TorrentStatusUpdate {
             if torrent.status() == Status::Leeching && dl == tx.1 {
                 torrent.set_status(Status::Pending);
             }
+            tx.0 = ul;
+            tx.1 = dl;
         }
         self.transferred.retain(|id, _| torrents.contains_key(id));
     }
