@@ -1,6 +1,6 @@
 use std::sync::Arc;
 use std::collections::{HashMap, VecDeque};
-use std::{fs, fmt, path};
+use std::{fs, fmt, path, time};
 use std::io::{self, Seek, SeekFrom, Write, Read};
 use std::path::PathBuf;
 use torrent::Info;
@@ -10,6 +10,7 @@ use amy;
 use {handle, CONFIG};
 
 const POLL_INT_MS: usize = 1000;
+const JOB_TIME_SLICE: u64 = 1;
 
 pub struct Disk {
     poll: amy::Poller,
@@ -248,9 +249,11 @@ impl Request {
 
                 let mut f = fs::OpenOptions::new().read(true).open(&pb);
 
-                let mut max = 0;
+                let start = time::Instant::now();
 
-                while idx < info.pieces() && max < 10 {
+                while idx < info.pieces() &&
+                    start.elapsed() < time::Duration::from_secs(JOB_TIME_SLICE)
+                {
                     let mut valid = true;
                     let mut ctx = digest::Context::new(&digest::SHA1);
                     let locs = info.piece_disk_locs(idx);
@@ -279,7 +282,6 @@ impl Request {
                         invalid.push(idx);
                     }
 
-                    max += 1;
                     idx += 1;
                 }
                 if idx == info.pieces() {
