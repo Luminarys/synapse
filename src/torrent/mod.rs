@@ -243,12 +243,12 @@ impl<T: cio::CIO> Torrent<T> {
 
     pub fn set_tracker_response(&mut self, resp: &tracker::Result<TrackerResponse>) {
         debug!("Processing tracker response");
+        let mut time = Instant::now();
         match *resp {
             Ok(ref r) => {
                 if r.dht {
                     return;
                 }
-                let mut time = Instant::now();
                 time += Duration::from_secs(r.interval as u64);
                 self.tracker = TrackerStatus::Ok {
                     seeders: r.seeders,
@@ -258,10 +258,15 @@ impl<T: cio::CIO> Torrent<T> {
                 self.tracker_update = Some(time);
             }
             Err(tracker::Error(tracker::ErrorKind::TrackerError(ref s), _)) => {
+                time += Duration::from_secs(300);
+                self.tracker_update = Some(time);
                 self.tracker = TrackerStatus::Failure(s.clone());
             }
             Err(ref e) => {
                 error!("Failed to query tracker: {}", e);
+                // Wait 5 minutes before trying again
+                time += Duration::from_secs(300);
+                self.tracker_update = Some(time);
                 self.tracker = TrackerStatus::Error;
             }
         }
