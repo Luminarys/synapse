@@ -7,6 +7,10 @@ use std::fmt;
 use std::clone::Clone;
 
 pub enum Message {
+    // TODO: Consider moving this to the heap,
+    // reduces the enum size from 48 bytes to 24,
+    // memcpy of Message's ends up taking ~4% of
+    // CPU time, could be worth reducing as such.
     Handshake {
         rsv: [u8; 8],
         hash: [u8; 20],

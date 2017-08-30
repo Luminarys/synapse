@@ -89,14 +89,18 @@ impl FileCache {
         FileCache { files: HashMap::new() }
     }
 
-    pub fn get_file<F: FnOnce(&mut fs::File) -> io::Result<()>>(
+    pub fn get_file<F: FnMut(&mut fs::File) -> io::Result<()>>(
         &mut self,
         path: &path::Path,
-        f: F,
+        mut f: F,
     ) -> io::Result<()> {
-        if self.files.contains_key(path) {
-            f(self.files.get_mut(path).unwrap())?;
+        let hit = if let Some(file) = self.files.get_mut(path) {
+            f(file)?;
+            true
         } else {
+            false
+        };
+        if !hit {
             // TODO: LRU maybe?
             if self.files.len() >= CONFIG.net.max_open_files {
                 let removal = self.files.iter().map(|(id, _)| id.clone()).next().unwrap();
