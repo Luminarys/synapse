@@ -835,11 +835,16 @@ impl<T: cio::CIO> Torrent<T> {
 
         for (i, (p, d)) in files.into_iter().enumerate() {
             let id = util::file_rpc_id(&self.info.hash, p.as_path().to_string_lossy().as_ref());
+            let progress = if self.priorities[i] != 0 {
+                d.0 as f32 / d.1 as f32
+            } else {
+                0.
+            };
             r.push(resource::Resource::File(resource::File {
                 id,
                 torrent_id: self.rpc_id(),
                 availability: 0.,
-                progress: (d.0 as f32 / d.1 as f32),
+                progress,
                 priority: self.priorities[i],
                 path: p.as_path().to_string_lossy().into_owned(),
                 size: d.1,
@@ -1092,16 +1097,18 @@ impl<T: cio::CIO> Torrent<T> {
         }
         if self.status.leeching() || self.status.validating() {
             let mut files = HashMap::new();
-            for p in self.pieces.iter() {
-                for loc in self.info.piece_disk_locs(p as u32) {
-                    if !files.contains_key(&loc.file) {
-                        files.insert(loc.file.clone(), (0, 0));
-                    }
-                    files.get_mut(&loc.file).unwrap().0 += loc.end - loc.start;
+            for (i, f) in self.info.files.iter().enumerate() {
+                if self.priorities[i] != 0 {
+                    files.insert(f.path.clone(), (0, f.length));
                 }
             }
-            for f in &self.info.files {
-                files.get_mut(&f.path).map(|v| v.1 = f.length);
+
+            for p in self.pieces.iter() {
+                for loc in self.info.piece_disk_locs(p as u32) {
+                    if let Some(f) = files.get_mut(&loc.file) {
+                        f.0 += loc.end - loc.start;
+                    }
+                }
             }
 
             for (p, d) in files {
