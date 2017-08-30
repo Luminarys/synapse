@@ -266,6 +266,9 @@ impl<T: cio::CIO> Peer<T> {
         let dur = Utc::now()
             .signed_duration_since(self.last_flush)
             .num_milliseconds() as u64;
+        if dur == 0 {
+            return (0, 0);
+        }
         let ub = mem::replace(&mut self.uploaded_bytes, 0);
         let db = mem::replace(&mut self.downloaded_bytes, 0);
         let ul = (1000 * ub) / dur;
