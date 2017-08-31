@@ -155,7 +155,11 @@ impl<T: cio::CIO> Torrent<T> {
             status,
         };
         t.start();
-        t.validate();
+        if CONFIG.disk.validate {
+            t.validate();
+        } else {
+            t.announce_start();
+        }
         t.set_status(status);
 
         t
@@ -372,21 +376,7 @@ impl<T: cio::CIO> Torrent<T> {
                         }
                     }
                     info!("Torrent succesfully downloaded!");
-                    // TOOD: Consider if we should store this result
-                    if !self.status.stopped() {
-                        self.set_status(Status::Idle);
-                    }
-                    let req = tracker::Request::completed(self);
-                    self.cio.msg_trk(req);
-                    // Remove all seeding peers.
-                    let leechers = &self.leechers;
-                    let seeders = self.peers
-                        .iter()
-                        .filter(|&(id, _)| !leechers.contains(id))
-                        .map(|(id, _)| *id);
-                    for seeder in seeders {
-                        self.cio.remove_peer(seeder);
-                    }
+                    self.set_complete();
                 } else {
                     // If this is an initialization hash, start the torrent
                     // immediatly.
@@ -441,6 +431,26 @@ impl<T: cio::CIO> Torrent<T> {
                 error!("Disk error: {:?}", err);
                 self.set_status(Status::DiskError);
             }
+        }
+    }
+
+    fn set_complete(&mut self) {
+        let req = tracker::Request::completed(self);
+        self.cio.msg_trk(req);
+        // Order here is important, if we're in an idle status,
+        // rpc updates don't occur.
+        self.update_rpc_transfer();
+        if !self.status.stopped() {
+            self.set_status(Status::Idle);
+        }
+        // Remove all seeding peers.
+        let leechers = &self.leechers;
+        let seeders = self.peers
+            .iter()
+            .filter(|&(id, _)| !leechers.contains(id))
+            .map(|(id, _)| *id);
+        for seeder in seeders {
+            self.cio.remove_peer(seeder);
         }
     }
 
@@ -553,9 +563,14 @@ impl<T: cio::CIO> Torrent<T> {
 
                     // Begin validation, and save state if the torrent is done
                     if self.completed() {
-                        debug!("Beginning validation");
                         self.serialize();
-                        self.validate();
+                        if CONFIG.disk.validate {
+                            debug!("Beginning validation");
+                            self.validate();
+                        } else {
+                            debug!("Torrent complete");
+                            self.set_complete();
+                        }
                     }
 
                     // Tell all relevant peers we got the piece

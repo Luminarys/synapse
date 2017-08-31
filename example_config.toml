@@ -26,6 +26,9 @@ bootstrap_node = "router.bittorrent.com:6881"
 session = "~/.local/share/synapse/"
 # Default download directory
 directory = "./"
+# Automatically validate torrents on start and complete.
+# If disabled, manual validation must be performed.
+validate = true
 
 [net]
 # These max open limits should be set to be somewhat lower

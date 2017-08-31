@@ -91,6 +91,8 @@ pub struct DiskConfig {
     pub session: String,
     #[serde(default = "default_directory_dir")]
     pub directory: String,
+    #[serde(default = "default_validate")]
+    pub validate: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -187,6 +189,9 @@ fn default_session_dir() -> String {
 fn default_directory_dir() -> String {
     "./".into()
 }
+fn default_validate() -> bool {
+    true
+}
 fn default_max_files() -> usize {
     500
 }
@@ -254,6 +259,7 @@ impl Default for DiskConfig {
         DiskConfig {
             session: default_session_dir(),
             directory: default_directory_dir(),
+            validate: default_validate(),
         }
     }
 }
