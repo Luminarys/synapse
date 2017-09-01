@@ -51,7 +51,7 @@ torrent
         "modified": datetime,
         "status": status enum,
         "error": string OR null,
-        "size": number OR null,     bytes or null if DHT and unknown
+        "size": number OR null,     bytes or null if magnet and unknown
         "progress": number,         0..1
         "priority": number*,         1..5 default 3
         "availability": number,     0..1
@@ -65,7 +65,7 @@ torrent
         "peers": number,            # of peers
         "trackers": number,         # of trackers
         "pieces": number,           # of pieces
-        "files": number,            # of files
+        "files": number,            # of files or null if magnet and unknown
     }
 
 Status enum:
@@ -377,7 +377,7 @@ The server will respond with a TRANSFER_OFFER message. If successful the server
 will add the torrent and the client will be notified via RESOURCES_EXTANT with
 the serial set to the initial request's serial. Note that if the client is already subscribed
 to torrent updates, it will receive the RESOURCES_EXTANT message twice.
-The serial should be used to distinguish the two. 
+The serial should be used to distinguish the two.
 
     {
         "type": "UPLOAD_TORRENT",

@@ -7,7 +7,7 @@ Synapse is a flexible and lightweight BitTorrent daemon.
 
 Install dependencies:
 
-- rustc >= 1.18
+- rustc >= 1.19
 - cargo >= 0.18
 - c-ares 1.13 | build tools *
 - openssl **
@@ -31,7 +31,8 @@ or vice versa.
 
 ## Configuration
 
-Synapse expects the configuration file to be passed as `argv[1]`.
+Synapse expects the configuration file to be present at `$XDG_CONFIG_DIR/synapse.toml`,
+or `~/.config/synapse.toml`.
 If it is not present or invalid, a default configuration will be used.
 These defaults are given in `example_config.toml`.
 
