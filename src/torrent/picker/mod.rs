@@ -1,5 +1,7 @@
 use std::collections::HashMap;
 use std::{mem, time};
+use std::sync::Arc;
+use std::cmp;
 use torrent::{Info, Peer, Bitfield};
 use control::cio;
 
@@ -24,6 +26,7 @@ pub struct Picker {
     unpicked: Bitfield,
     /// The current picker in use
     picker: PickerKind,
+    info: Arc<Info>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -64,9 +67,9 @@ impl Picker {
     /// the given pieces. The algorithm used for selection
     /// will vary based on the current swarm state, but
     /// will default to rarest first.
-    pub fn new(info: &Info, pieces: &Bitfield) -> Picker {
+    pub fn new(info: Arc<Info>, pieces: &Bitfield) -> Picker {
         let scale = info.piece_len / 16_384;
-        let picker = rarest::Picker::new(pieces);
+        let picker = sequential::Picker::new(pieces);
         let last_piece = info.pieces() - 1;
         let lpl = info.piece_len(last_piece);
         let last_piece_scale = if lpl % 16_384 == 0 {
@@ -75,13 +78,14 @@ impl Picker {
             lpl / 16_384 + 1
         };
         Picker {
-            picker: PickerKind::Rarest(picker),
+            picker: PickerKind::Sequential(picker),
             scale,
             last_piece,
             last_piece_scale,
             seeders: 0,
             unpicked: pieces.clone(),
             downloading: HashMap::new(),
+            info,
         }
     }
 
@@ -253,12 +257,36 @@ impl Picker {
         }
     }
 
-    pub fn refresh_picker(&mut self, pieces: &Bitfield) {
+    pub fn refresh_picker(&mut self, pieces: &Bitfield, pri: &[u8]) {
+        // Map piece -> priority
+        let mut piece_map = HashMap::new();
+        // If a piece is completely in a file, just assign that pri.
+        // Otherwise mark it as the higher pri piece
+        for p in 0..self.info.pieces() {
+            let locs = self.info.piece_disk_locs(p);
+            let mp = locs.iter().fold(0, |mp, loc| {
+                cmp::max(mp, pri[self.info.file_idx[&loc.file]] as usize)
+            });
+            piece_map.insert(p, mp);
+        }
+
         self.unpicked = pieces.clone();
         self.picker = if self.is_sequential() {
-            PickerKind::Sequential(sequential::Picker::new(&self.unpicked))
+            let mut picker = rarest::Picker::new(&self.unpicked);
+            for p in 0..self.info.pieces() {
+                for _ in 0..piece_map[&p] {
+                    picker.piece_available(p);
+                }
+            }
+            PickerKind::Rarest(picker)
         } else {
-            PickerKind::Rarest(rarest::Picker::new(&self.unpicked))
+            let mut pieces = [vec![], vec![], vec![], vec![], vec![], vec![]];
+            for p in 0..self.info.pieces() {
+                for pr in 0..piece_map[&p] {
+                    pieces[pr].push(p);
+                }
+            }
+            PickerKind::Sequential(sequential::Picker::new_pri(pieces))
         };
     }
 }
@@ -266,11 +294,11 @@ impl Picker {
 #[cfg(test)]
 impl Picker {
     pub fn new_rarest(info: &Info, pieces: &Bitfield) -> Picker {
-        Picker::new(info, pieces)
+        Picker::new(Arc::new(info.clone()), pieces)
     }
 
     pub fn new_sequential(info: &Info, pieces: &Bitfield) -> Picker {
-        let mut p = Picker::new(info, pieces);
+        let mut p = Picker::new(Arc::new(info.clone()), pieces);
         p.change_picker(true);
         p
     }

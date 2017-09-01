@@ -44,12 +44,11 @@ impl Picker {
             piece_idx,
             priorities: vec![pieces.len() as usize],
         };
-        // Start every piece at an availability of 1.
+        // Start every piece at an availability of 5.
         // This way when we decrement availability for an initial
         // pick we never underflow, and can keep track of which pieces
         // are unpicked(odd) and picked(even).
-        // We additionally mark pieces as properly completed
-        for i in 0..pieces.len() {
+        for i in (0..pieces.len()).rev() {
             p.piece_available(i as u32);
             if pieces.has_bit(i) {
                 p.completed(i as u32);
@@ -123,26 +122,6 @@ impl Picker {
                 }
                 p
             })
-        /*
-                or bidx in 0..self.c.scale {
-                    let block = *pidx as u64 * self.c.scale + bidx;
-                    if !self.c.blocks.has_bit(block) {
-                        self.c.blocks.set_bit(block);
-                        let mut hs = HashSet::with_capacity(1);
-                        hs.insert(peer.id());
-                        self.c.waiting_peers.insert(block, hs);
-                        self.c.waiting.insert(block);
-                        if self.c.endgame_cnt == 1 {
-                            // println!("Entering endgame!");
-                        }
-                        self.c.endgame_cnt = self.c.endgame_cnt.saturating_sub(1);
-                        return Some(picker::Block {
-                            index: *pidx as u32,
-                            offset: bidx as u32 * 16_384,
-                        });
-                    }
-                }
-                */
     }
 
     pub fn incomplete(&mut self, piece: u32) {
@@ -159,35 +138,6 @@ impl Picker {
         for _ in 0..PIECE_COMPLETE_INC {
             self.piece_available(piece);
         }
-        //let idx: u64 = oidx as u64 * self.c.scale;
-        //let offset: u64 = offset as u64 / 16_384;
-        //let block = idx + offset;
-        //self.c.waiting.remove(&block);
-        //let peers = self.c.waiting_peers.remove(&block).unwrap_or_else(|| {
-        //    HashSet::with_capacity(0)
-        //});
-        //for i in 0..self.c.scale {
-        //    if (idx + i < self.c.blocks.len() && !self.c.blocks.has_bit(idx + i)) ||
-        //        self.c.waiting.contains(&(idx + i))
-        //    {
-        //        return (false, peers);
-        //    }
-        //}
-
-        // TODO: Make this less hacky somehow
-        // let pri_idx = self.piece_idx[oidx as usize].availability;
-        // let pinfo_idx = self.piece_idx[oidx as usize].idx;
-        // for pri in self.priorities.iter_mut() {
-        //     if *pri > pri_idx as usize {
-        //         *pri -= 1;
-        //     }
-        // }
-        // for pinfo in self.piece_idx.iter_mut() {
-        //     if pinfo.idx > pinfo_idx {
-        //         pinfo.idx -= 1;
-        //     }
-        // }
-        // self.pieces.remove(pinfo_idx);
     }
 
     fn swap_piece(&mut self, a: usize, b: usize) {

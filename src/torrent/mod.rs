@@ -118,7 +118,6 @@ impl<T: cio::CIO> Torrent<T> {
         debug!("Creating {:?}", info);
         let peers = HashMap::new();
         let pieces = Bitfield::new(info.pieces() as u64);
-        let picker = Picker::new(&info, &pieces);
         let leechers = HashSet::new();
         let status = if start {
             Status::Pending
@@ -130,9 +129,11 @@ impl<T: cio::CIO> Torrent<T> {
         for i in 0..info.pieces() {
             wanted.set_bit(i as u64);
         }
+        let info = Arc::new(info);
+        let picker = Picker::new(info.clone(), &pieces);
         let mut t = Torrent {
             id,
-            info: Arc::new(info),
+            info,
             path,
             peers,
             pieces,
@@ -176,11 +177,12 @@ impl<T: cio::CIO> Torrent<T> {
         let peers = HashMap::new();
         let leechers = HashSet::new();
 
-        let picker = picker::Picker::new(&d.info, &d.pieces);
+        let info = Arc::new(d.info);
+        let picker = picker::Picker::new(info.clone(), &d.pieces);
 
         let mut t = Torrent {
             id,
-            info: Arc::new(d.info),
+            info,
             peers,
             pieces: d.pieces,
             wanted: d.wanted,
@@ -736,7 +738,7 @@ impl<T: cio::CIO> Torrent<T> {
 
     fn refresh_picker(&mut self) {
         let should_pick = self.should_pick();
-        self.picker.refresh_picker(&should_pick);
+        self.picker.refresh_picker(&should_pick, &self.priorities);
     }
 
     fn set_path(&mut self, path: String) {
@@ -771,8 +773,6 @@ impl<T: cio::CIO> Torrent<T> {
                             self.wanted.unset_bit(p as u64);
                         }
                     }
-                } else {
-                    // TODO: Set picker prio
                 }
             }
         }

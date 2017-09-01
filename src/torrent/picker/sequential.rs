@@ -21,24 +21,36 @@ enum PieceStatus {
 }
 
 impl Picker {
-    pub fn new(pieces: &Bitfield) -> Picker {
-        let mut p = (0..pieces.len())
-            .filter(|p| pieces.has_bit(*p))
-            .map(|p| {
-                Piece {
-                    pos: p as u32,
-                    status: PieceStatus::Complete,
-                }
-            })
-            .collect::<Vec<_>>();
-        let il = p.len();
-        p.extend((0..pieces.len()).filter(|p| !pieces.has_bit(*p)).map(|p| {
-            Piece {
-                pos: p as u32,
-                status: PieceStatus::Incomplete,
+    pub fn new(bf: &Bitfield) -> Picker {
+        let mut pieces = [vec![], vec![], vec![], vec![], vec![], vec![]];
+        for i in 0..bf.len() {
+            if bf.has_bit(i) {
+                pieces[0].push(i as u32);
+            } else {
+                pieces[3].push(i as u32);
             }
-        }));
+        }
+        Picker::new_pri(pieces)
+    }
 
+    pub fn new_pri(pieces: [Vec<u32>; 6]) -> Picker {
+        let mut p = vec![];
+        for i in &pieces[0] {
+            p.push(Piece {
+                pos: *i as u32,
+                status: PieceStatus::Complete,
+            })
+        }
+        let il = p.len();
+        // 5 is highest priority, so start from there
+        for i in (1..6).rev() {
+            for j in &pieces[i] {
+                p.push(Piece {
+                    pos: *j as u32,
+                    status: PieceStatus::Incomplete,
+                })
+            }
+        }
         Picker {
             piece_idx: il,
             pieces: p,
