@@ -1,18 +1,20 @@
 mod reader;
 mod writer;
 
-use tracker::{self, Announce, Response, TrackerResponse, Result, ResultExt, Error, ErrorKind, dns};
 use std::time::{Instant, Duration};
 use std::mem;
-use {PEER_ID, bencode, amy};
-use self::writer::Writer;
-use self::reader::Reader;
 use std::io;
 use std::collections::HashMap;
 use std::net::SocketAddr;
+
 use url::percent_encoding::percent_encode_byte;
 use url::Url;
+
+use {PEER_ID, bencode, amy};
+use self::writer::Writer;
+use self::reader::{Reader, ReadRes};
 use socket::TSocket;
+use tracker::{self, Announce, Response, TrackerResponse, Result, ResultExt, Error, ErrorKind, dns};
 
 const TIMEOUT_MS: u64 = 5_000;
 
@@ -30,6 +32,7 @@ enum Event {
 struct Tracker {
     torrent: usize,
     last_updated: Instant,
+    redirect: bool,
     state: TrackerState,
 }
 
@@ -42,6 +45,13 @@ enum TrackerState {
     },
     Writing { sock: TSocket, writer: Writer },
     Reading { sock: TSocket, reader: Reader },
+    Redirect(String),
+    Complete(TrackerResponse),
+}
+
+enum HTTPRes {
+    None,
+    Redirect(String),
     Complete(TrackerResponse),
 }
 
@@ -50,14 +60,15 @@ impl TrackerState {
         TrackerState::ResolvingDNS { sock, req, port }
     }
 
-    fn handle(&mut self, event: Event) -> Result<Option<TrackerResponse>> {
+    fn handle(&mut self, event: Event) -> Result<HTTPRes> {
         let s = mem::replace(self, TrackerState::Error);
-        let n = s.next(event)?;
-        if let TrackerState::Complete(r) = n {
-            Ok(Some(r))
-        } else {
-            mem::replace(self, n);
-            Ok(None)
+        match s.next(event)? {
+            TrackerState::Complete(r) => Ok(HTTPRes::Complete(r)),
+            TrackerState::Redirect(l) => Ok(HTTPRes::Redirect(l)),
+            n => {
+                mem::replace(self, n);
+                Ok(HTTPRes::None)
+            }
         }
     }
 
@@ -89,15 +100,16 @@ impl TrackerState {
                  mut reader,
              },
              Event::Readable) => {
-                if reader.readable(&mut sock.conn)? {
-                    let data = reader.consume();
-                    let content = bencode::decode_buf(&data).chain_err(|| {
-                        ErrorKind::InvalidResponse("Invalid BEncoded response!")
-                    })?;
-                    let resp = TrackerResponse::from_bencode(content)?;
-                    Ok(TrackerState::Complete(resp))
-                } else {
-                    Ok(TrackerState::Reading { sock, reader })
+                match reader.readable(&mut sock.conn)? {
+                    ReadRes::Done(data) => {
+                        let content = bencode::decode_buf(&data).chain_err(|| {
+                            ErrorKind::InvalidResponse("Invalid BEncoded response!")
+                        })?;
+                        let resp = TrackerResponse::from_bencode(content)?;
+                        Ok(TrackerState::Complete(resp))
+                    }
+                    ReadRes::Redirect(l) => Ok(TrackerState::Redirect(l)),
+                    ReadRes::None => Ok(TrackerState::Reading { sock, reader }),
                 }
             }
             (s @ TrackerState::Writing { .. }, _) |
@@ -162,24 +174,86 @@ impl Handler {
         resp
     }
 
-    pub fn readable(&mut self, id: usize) -> Option<Response> {
-        let resp = if let Some(trk) = self.connections.get_mut(&id) {
+    pub fn readable(&mut self, id: usize, dns: &mut dns::Resolver) -> Option<Response> {
+        let mut loc = None;
+        let mut resp = if let Some(trk) = self.connections.get_mut(&id) {
             trk.last_updated = Instant::now();
             match trk.state.handle(Event::Readable) {
-                Ok(Some(r)) => {
+                Ok(HTTPRes::Complete(r)) => {
                     debug!("Announce response received for {:?} succesfully", id);
                     Some((trk.torrent, Ok(r)))
                 }
-                Ok(None) => None,
+                Ok(HTTPRes::Redirect(l)) => {
+                    loc = Some(l);
+                    None
+                }
+                Ok(HTTPRes::None) => None,
                 Err(e) => Some((trk.torrent, Err(e))),
             }
         } else {
             None
         };
+
         if resp.is_some() {
             self.connections.remove(&id);
         }
+
+        if let Some(l) = loc {
+            let trk = self.connections.remove(&id).unwrap();
+            // Disallow 2 levels of redirection
+            if trk.redirect {
+                resp = Some((
+                    trk.torrent,
+                    Err(ErrorKind::InvalidResponse("Too many redirects").into()),
+                ));
+            }
+            if let Err(e) = self.try_redirect(&l, trk.torrent, dns) {
+                debug!(
+                    "Announce response received for {:?}, redirecting!",
+                    trk.torrent
+                );
+                resp = Some((trk.torrent, Err(e)));
+            }
+        }
         resp
+    }
+
+    fn try_redirect(&mut self, url: &str, torrent: usize, dns: &mut dns::Resolver) -> Result<()> {
+        let url = Url::parse(url).chain_err(|| {
+            ErrorKind::InvalidResponse("Malformed redirect!")
+        })?;
+        let mut http_req = Vec::with_capacity(50);
+        http_req.extend_from_slice(b"GET ");
+        http_req.extend_from_slice(url.path().as_bytes());
+        if let Some(q) = url.query() {
+            http_req.extend_from_slice(b"?");
+            http_req.extend_from_slice(url.query().unwrap().as_bytes());
+        }
+
+        http_req.extend_from_slice(b" HTTP/1.1\r\n");
+        http_req.extend_from_slice(b"Host: ");
+        let host = url.host_str().ok_or_else(|| {
+            Error::from(ErrorKind::InvalidResponse("Malformed redirect!"))
+        })?;
+        let port = url.port().unwrap_or(80);
+        http_req.extend_from_slice(host.as_bytes());
+        http_req.extend_from_slice(b"\r\n\r\n");
+
+        // Setup actual connection and start DNS query
+        let (id, sock) = TSocket::new_v4(&self.reg).chain_err(|| ErrorKind::IO)?;
+        self.connections.insert(
+            id,
+            Tracker {
+                last_updated: Instant::now(),
+                redirect: true,
+                torrent,
+                state: TrackerState::new(sock, http_req, port),
+            },
+        );
+
+        debug!("Dispatching redirect DNS req, id {:?}", id);
+        dns.new_query(id, host);
+        Ok(())
     }
 
     pub fn tick(&mut self) -> Vec<Response> {
@@ -259,6 +333,7 @@ impl Handler {
                 last_updated: Instant::now(),
                 torrent: req.id,
                 state: TrackerState::new(sock, http_req, port),
+                redirect: false,
             },
         );
 

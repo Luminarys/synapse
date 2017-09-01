@@ -238,7 +238,7 @@ impl Tracker {
     fn handle_socket(&mut self, event: amy::Notification) {
         if self.http.contains(event.id) {
             let resp = if event.event.readable() {
-                self.http.readable(event.id)
+                self.http.readable(event.id, &mut self.dns)
             } else {
                 self.http.writable(event.id)
             };
