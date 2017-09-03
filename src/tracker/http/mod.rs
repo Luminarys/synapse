@@ -227,7 +227,7 @@ impl Handler {
         http_req.extend_from_slice(url.path().as_bytes());
         if let Some(q) = url.query() {
             http_req.extend_from_slice(b"?");
-            http_req.extend_from_slice(url.query().unwrap().as_bytes());
+            http_req.extend_from_slice(q.as_bytes());
         }
 
         http_req.extend_from_slice(b" HTTP/1.1\r\n");

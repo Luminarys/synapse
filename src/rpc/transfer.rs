@@ -78,15 +78,13 @@ impl Transfers {
     }
 
     pub fn add_download(&self, conn: TcpStream, path: String) {
-        thread::spawn(move || {
-            match handle_dl(conn, path) {
-                Ok(()) => {
+        // TODO: Transfer this to the disk thread ideally
+        thread::spawn(move || match handle_dl(conn, path) {
+            Ok(()) => {
                     debug!("DL transfer succeeded");
                 }
-                Err(e) => {
-                    debug!("DL transfer failed: {:?}", e);
-                    // TODO: ?
-                }
+            Err(e) => {
+                debug!("DL transfer failed: {:?}", e);
             }
         });
     }

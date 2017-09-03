@@ -128,6 +128,7 @@ impl Manager {
     pub fn tick(&mut self) {
         if self.dht_flush.elapsed() > time::Duration::from_secs(60) {
             let data = self.table.serialize();
+            // TODO: Transmit this to the disk thread rather than spawning a thread.
             thread::spawn(move || {
                 let p = Path::new(&CONFIG.disk.session[..]).join(SESSION_FILE);
                 if let Err(e) = OpenOptions::new()
@@ -136,8 +137,7 @@ impl Manager {
                     .open(&p)
                     .and_then(|mut f| f.write(&data[..]))
                 {
-                    // TODO: properly log
-                    println!("DHT serialization failed: {:?}!", e);
+                    error!("DHT serialization failed: {:?}!", e);
                 }
             });
             self.dht_flush = time::Instant::now();

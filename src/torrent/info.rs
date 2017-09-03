@@ -18,6 +18,8 @@ pub struct Info {
     pub files: Vec<File>,
     pub file_idx: HashMap<PathBuf, usize>,
     pub private: bool,
+    #[serde(skip_deserializing)]
+    pub be_name: Option<Vec<u8>>,
 }
 
 impl fmt::Debug for Info {
@@ -91,6 +93,17 @@ impl Info {
         unimplemented!();
     }
 
+    pub fn to_bencode(&self) -> BEncode {
+        let mut torrent = BTreeMap::new();
+        let mut info = BTreeMap::new();
+        torrent.insert(
+            "announce",
+            BEncode::String(self.announce.clone().into_bytes()),
+        );
+        torrent.insert("info", BEncode::Dict(info));
+        unimplemented!();
+    }
+
     pub fn from_bencode(data: BEncode) -> Result<Info, &'static str> {
         data.into_dict()
             .and_then(|mut d| {
@@ -125,10 +138,19 @@ impl Info {
                     })
                     .ok_or("Info must provide valid hashes")?;
 
-                let private = i.remove("private")
-                    .and_then(|v| v.into_int())
-                    .map(|p| p == 1)
-                    .unwrap_or(false);
+                let private = if let Some(v) = i.remove("private") {
+                    v.into_int()
+                        .and_then(|p| if p == 1 { Some(true) } else { None })
+                        .ok_or("private key must be an integer equal to 1 if present!")?
+                } else {
+                    false
+                };
+
+                let be_name = if let Some(v) = i.remove("name") {
+                    Some(v.into_bytes().ok_or("name field must be a bitstring!")?)
+                } else {
+                    None
+                };
 
                 let files = parse_bencode_files(i)?;
                 let name = if files.is_empty() {
@@ -137,7 +159,7 @@ impl Info {
                         .clone()
                         .into_os_string()
                         .into_string()
-                        .unwrap()
+                        .map_err(|_| "Only UTF8 paths are accepted")?
                 } else if !files[0].path.has_root() {
                     let mut piter = files[0].path.components();
                     piter
@@ -146,7 +168,7 @@ impl Info {
                         .as_os_str()
                         .to_os_string()
                         .into_string()
-                        .unwrap()
+                        .map_err(|_| "Only UTF8 paths are accepted")?
                 } else {
                     unreachable!();
                 };
@@ -166,6 +188,7 @@ impl Info {
                     file_idx,
                     total_len,
                     private,
+                    be_name,
                 })
             })
     }
