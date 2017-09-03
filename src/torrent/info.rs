@@ -197,7 +197,7 @@ impl Info {
                     false
                 };
 
-                let be_name = if let Some(v) = i.remove("name") {
+                let be_name = if let Some(v) = i.get("name").cloned() {
                     Some(v.into_bytes().ok_or("name field must be a bitstring!")?)
                 } else {
                     None
