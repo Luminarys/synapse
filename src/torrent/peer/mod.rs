@@ -362,6 +362,7 @@ impl<T: cio::CIO> Peer<T> {
                 s.set_port(p);
                 self.cio.msg_trk(tracker::Request::AddNode(s));
             }
+            Message::Extension { .. } => {}
         }
         Ok(())
     }

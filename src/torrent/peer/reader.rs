@@ -27,6 +27,8 @@ enum State {
         len: u32,
     },
     Bitfield { data: Vec<u8> },
+    ExtensionID,
+    Extension { id: u8, payload: Vec<u8> },
 }
 
 impl Reader {
@@ -120,6 +122,7 @@ impl Reader {
                                 7 => self.state = State::PiecePrefix,
                                 8 => self.state = State::Cancel,
                                 9 => self.state = State::Port,
+                                20 => self.state = State::ExtensionID,
                                 _ => return io_err("Invalid ID used!"),
                             }
                         }
@@ -240,6 +243,39 @@ impl Reader {
                         IOR::Err(e) => return Err(e),
                     }
                 }
+                State::ExtensionID => {
+                    match aread(&mut self.prefix[5..6], conn) {
+                        IOR::Complete => {
+                            let id = self.prefix[5];
+                            self.idx = 0;
+                            let plen = (&self.prefix[0..4]).read_u32::<BigEndian>().unwrap() - 2;
+                            let mut payload = Vec::with_capacity(plen as usize);
+                            unsafe {
+                                payload.set_len(plen as usize);
+                            }
+                            self.state = State::Extension { id, payload };
+                        }
+                        IOR::Blocked => return Ok(None),
+                        IOR::EOF => return io_err("EOF"),
+                        IOR::Err(e) => return Err(e),
+                        IOR::Incomplete(_) => unreachable!(),
+                    }
+                }
+                State::Extension {
+                    id,
+                    ref mut payload,
+                } => {
+                    match aread(&mut payload[self.idx..len], conn) {
+                        IOR::Complete => {
+                            let p = mem::replace(payload, Vec::with_capacity(0));
+                            return Ok(Some(Message::Extension { id, payload: p }));
+                        }
+                        IOR::Incomplete(a) => self.idx += a,
+                        IOR::Blocked => return Ok(None),
+                        IOR::EOF => return io_err("EOF"),
+                        IOR::Err(e) => return Err(e),
+                    }
+                }
             }
         }
     }
@@ -257,6 +293,8 @@ impl State {
             State::Handshake { .. } => 68,
             State::Piece { len, .. } => len as usize,
             State::Bitfield { ref data, .. } => data.len(),
+            State::ExtensionID => 6,
+            State::Extension { ref payload, .. } => payload.len(),
         }
     }
 }

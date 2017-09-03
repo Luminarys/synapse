@@ -1,10 +1,11 @@
-use torrent::Bitfield;
-use torrent::info::Info as TorrentInfo;
-use byteorder::{BigEndian, WriteBytesExt};
 use std::io::{self, Write};
 use std::sync::Arc;
 use std::fmt;
-use std::clone::Clone;
+
+use byteorder::{BigEndian, WriteBytesExt};
+
+use torrent::Bitfield;
+use torrent::info::Info as TorrentInfo;
 
 pub enum Message {
     // TODO: Consider moving this to the heap,
@@ -38,6 +39,7 @@ pub enum Message {
     },
     Cancel { index: u32, begin: u32, length: u32 },
     Port(u16),
+    Extension { id: u8, payload: Vec<u8> },
 }
 
 impl fmt::Debug for Message {
@@ -86,6 +88,7 @@ impl fmt::Debug for Message {
                 )
             }
             Message::Port(port) => write!(f, "Message::Port({:?})", port),
+            Message::Extension { id, .. } => write!(f, "Message::Extension {{ id: {} }}", id),
         }
     }
 }
@@ -148,6 +151,10 @@ impl Clone for Message {
                 length,
             },
             Message::Port(port) => Message::Port(port),
+            Message::Extension { id, ref payload } => Message::Extension {
+                id,
+                payload: payload.clone(),
+            },
         }
     }
 }
@@ -200,6 +207,11 @@ impl PartialEq for Message {
                  begin: b,
                  length: l,
              }) => index == i && begin == b && length == l,
+            (&Message::Extension { id, ref payload },
+             &Message::Extension {
+                 id: i,
+                 payload: ref p,
+             }) => id == i && payload == p,
             _ => false,
         }
     }
@@ -207,10 +219,10 @@ impl PartialEq for Message {
 
 impl Message {
     pub fn handshake(torrent: &TorrentInfo) -> Message {
-        use {PEER_ID, DHT_EXT};
+        use {PEER_ID, DHT_EXT, EXT_PROTO};
         let mut rsv = [0u8; 8];
         rsv[DHT_EXT.0] |= DHT_EXT.1;
-        // Indicate DHT support
+        rsv[EXT_PROTO.0] |= EXT_PROTO.1;
         Message::Handshake {
             rsv,
             hash: torrent.hash,
@@ -245,7 +257,8 @@ impl Message {
     pub fn is_special(&self) -> bool {
         match *self {
             Message::Handshake { .. } |
-            Message::Bitfield(_) => true,
+            Message::Bitfield(_) |
+            Message::Extension { .. } => true,
             _ => false,
         }
     }
@@ -262,6 +275,7 @@ impl Message {
             Message::Cancel { .. } => 17,
             Message::Piece { ref data, .. } => 13 + data.len(),
             Message::SharedPiece { ref data, .. } => 13 + data.len(),
+            Message::Extension { ref payload, .. } => 6 + payload.len(),
         }
     }
 
@@ -354,6 +368,12 @@ impl Message {
                 buf.write_u32::<BigEndian>(index)?;
                 buf.write_u32::<BigEndian>(begin)?;
                 buf.write_u32::<BigEndian>(length)?;
+            }
+            Message::Extension { id, ref payload } => {
+                buf.write_u32::<BigEndian>(2 + payload.len() as u32)?;
+                buf.write_u8(20)?;
+                buf.write_u8(id)?;
+                buf.write_all(&payload)?;
             }
         };
         Ok(())

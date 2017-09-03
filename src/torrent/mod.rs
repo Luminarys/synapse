@@ -5,7 +5,7 @@ mod picker;
 mod choker;
 
 use std::fmt;
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, BTreeMap};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -17,7 +17,7 @@ pub use self::peer::{Peer, PeerConn};
 pub use self::peer::Message;
 
 use self::picker::Picker;
-use {bincode, rpc, disk, util, CONFIG};
+use {bincode, rpc, disk, util, CONFIG, bencode, EXT_PROTO};
 use control::cio;
 use rpc::resource::{self, Resource, SResourceUpdate};
 use throttle::Throttle;
@@ -70,6 +70,7 @@ pub struct Torrent<T: cio::CIO> {
     choker: choker::Choker,
     dirty: bool,
     path: Option<String>,
+    info_bytes: Vec<u8>,
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -129,6 +130,7 @@ impl<T: cio::CIO> Torrent<T> {
         for i in 0..info.pieces() {
             wanted.set_bit(i as u64);
         }
+        let info_bytes = info.to_bencode().encode_to_buf();
         let info = Arc::new(info);
         let picker = Picker::new(info.clone(), &pieces);
         let mut t = Torrent {
@@ -154,6 +156,7 @@ impl<T: cio::CIO> Torrent<T> {
             choker: choker::Choker::new(),
             dirty: true,
             status,
+            info_bytes,
         };
         t.start();
         if CONFIG.disk.validate {
@@ -178,6 +181,7 @@ impl<T: cio::CIO> Torrent<T> {
         let leechers = HashSet::new();
 
         let info = Arc::new(d.info);
+        let info_bytes = info.to_bencode().encode_to_buf();
         let picker = picker::Picker::new(info.clone(), &d.pieces);
 
         let mut t = Torrent {
@@ -203,6 +207,7 @@ impl<T: cio::CIO> Torrent<T> {
             dirty: false,
             status: d.status,
             path: d.path,
+            info_bytes,
         };
         match t.status {
             Status::DiskError | Status::Seeding | Status::Leeching => {
@@ -486,6 +491,36 @@ impl<T: cio::CIO> Torrent<T> {
     pub fn handle_msg(&mut self, msg: Message, peer: &mut Peer<T>) -> Result<(), ()> {
         trace!("Received {:?} from peer", msg);
         match msg {
+            Message::Handshake { rsv, id, .. } => {
+                if (rsv[EXT_PROTO.0] & EXT_PROTO.1) != 0 {
+                    let mut ed = BTreeMap::new();
+                    let mut m = BTreeMap::new();
+                    m.insert("ut_metadata".to_owned(), bencode::BEncode::Int(3));
+                    ed.insert("m".to_owned(), bencode::BEncode::Dict(m));
+                    ed.insert(
+                        "metadata_size".to_owned(),
+                        bencode::BEncode::Int(self.info_bytes.len() as i64),
+                    );
+                    let payload = bencode::BEncode::Dict(ed).encode_to_buf();
+                    peer.send_message(Message::Extension { id: 0, payload });
+                }
+            }
+            Message::Extension { id, payload } => {
+                if id == 0 {
+                    let b = bencode::decode_buf(&payload).map_err(|_| ())?;
+                    let mut d = b.into_dict().ok_or(())?;
+                    let mut m = d.remove("m").and_then(|v| v.into_dict()).ok_or(())?;
+                    if m.remove("ut_metadata")
+                        .and_then(|v| v.into_int())
+                        .map(|i| i == 3)
+                        .unwrap_or(false)
+                    {
+                        let _size = d.remove("metadata_size").and_then(|v| v.into_int()).ok_or(
+                            (),
+                        )?;
+                    }
+                }
+            }
             Message::Bitfield(_) => {
                 if self.pieces.usable(peer.pieces()) {
                     peer.interested();
@@ -644,7 +679,6 @@ impl<T: cio::CIO> Torrent<T> {
             Message::KeepAlive |
             Message::Choke |
             Message::Cancel { .. } |
-            Message::Handshake { .. } |
             Message::Port(_) => {}
 
             Message::SharedPiece { .. } => unreachable!(),

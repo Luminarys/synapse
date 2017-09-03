@@ -53,6 +53,7 @@ use control::acio;
 use log::LogLevel;
 
 pub const DHT_EXT: (usize, u8) = (7, 1);
+pub const EXT_PROTO: (usize, u8) = (5, 0x10);
 
 /// Throttler max token amount
 pub const THROT_TOKS: usize = 2 * 1024 * 1024;
