@@ -18,7 +18,6 @@ pub struct Info {
     pub files: Vec<File>,
     pub file_idx: HashMap<PathBuf, usize>,
     pub private: bool,
-    #[serde(skip_deserializing)]
     pub be_name: Option<Vec<u8>>,
 }
 

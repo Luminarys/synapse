@@ -63,7 +63,7 @@ macro_rules! error(
     ($fmt:expr) => {
         log!($crate::LogLevel::Error, $fmt)
     };
-    ($fmt:expr, $($args:tt),*) => {
+    ($fmt:expr, $($args:tt)*) => {
         log!($crate::LogLevel::Error, $fmt, $($args)*)
     };
 );

@@ -288,7 +288,7 @@ impl<T: cio::CIO> Torrent<T> {
                 self.tracker = TrackerStatus::Failure(s.clone());
             }
             Err(ref e) => {
-                error!("Failed to query tracker: {}", e);
+                error!("Failed to query tracker {}: {}", self.info.announce, e);
                 // Wait 5 minutes before trying again
                 time += Duration::from_secs(300);
                 self.tracker_update = Some(time);

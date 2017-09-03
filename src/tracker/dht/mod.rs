@@ -148,8 +148,13 @@ impl Manager {
     }
 
     fn send_msg(&mut self, msg: &[u8], addr: SocketAddr) {
-        if let Err(e) = self.sock.send_to(msg, addr) {
-            error!("Failed to send message on UDP socket: {:?}", e);
+        loop {
+            if let Err(e) = self.sock.send_to(msg, addr) {
+                if e.raw_os_error().map(|c| c != 11).unwrap_or(true) {
+                    error!("Failed to send message on UDP socket: {:?}", e);
+                    break;
+                }
+            }
         }
     }
 }
