@@ -96,11 +96,63 @@ impl Info {
         let mut torrent = BTreeMap::new();
         let mut info = BTreeMap::new();
         torrent.insert(
-            "announce",
+            "announce".to_owned(),
             BEncode::String(self.announce.clone().into_bytes()),
         );
-        torrent.insert("info", BEncode::Dict(info));
-        unimplemented!();
+        if let Some(ref n) = self.be_name {
+            info.insert("name".to_owned(), BEncode::String(n.clone()));
+        }
+        info.insert(
+            "piece length".to_owned(),
+            BEncode::Int(self.piece_len as i64),
+        );
+        let mut pieces = Vec::with_capacity(self.hashes.len() * 20);
+        for h in &self.hashes {
+            pieces.extend_from_slice(h);
+        }
+        info.insert("piece".to_owned(), BEncode::String(pieces));
+        if self.files.len() == 1 {
+            info.insert(
+                "length".to_owned(),
+                BEncode::Int(self.files[0].length as i64),
+            );
+            // This is pretty awful, but we guarantee utf8 on creation, so should be fine.
+            info.insert(
+                "path".to_owned(),
+                BEncode::String(
+                    self.files[0]
+                        .path
+                        .clone()
+                        .into_os_string()
+                        .into_string()
+                        .unwrap()
+                        .into_bytes(),
+                ),
+            );
+        } else {
+            let files = self.files
+                .iter()
+                .map(|f| {
+                    let mut fb = BTreeMap::new();
+                    fb.insert("length".to_owned(), BEncode::Int(f.length as i64));
+                    fb.insert(
+                        "path".to_owned(),
+                        BEncode::String(
+                            f.path
+                                .clone()
+                                .into_os_string()
+                                .into_string()
+                                .unwrap()
+                                .into_bytes(),
+                        ),
+                    );
+                    BEncode::Dict(fb)
+                })
+                .collect();
+            info.insert("files".to_owned(), BEncode::List(files));
+        }
+        torrent.insert("info".to_owned(), BEncode::Dict(info));
+        BEncode::Dict(torrent)
     }
 
     pub fn from_bencode(data: BEncode) -> Result<Info, &'static str> {
@@ -204,6 +256,7 @@ impl Info {
             files: vec![],
             file_idx: HashMap::new(),
             private: false,
+            be_name: None,
         }
     }
 
