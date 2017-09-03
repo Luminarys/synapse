@@ -148,7 +148,8 @@ impl Manager {
     }
 
     fn send_msg(&mut self, msg: &[u8], addr: SocketAddr) {
-        loop {
+        // Cap tries to avoid burning CPU
+        for _ in 0..25 {
             if let Err(e) = self.sock.send_to(msg, addr) {
                 if e.raw_os_error().map(|c| c != 11).unwrap_or(true) {
                     error!("Failed to send message on UDP socket: {:?}", e);
