@@ -231,6 +231,7 @@ impl Handler {
         }
 
         http_req.extend_from_slice(b" HTTP/1.1\r\n");
+        http_req.extend_from_slice(b"Connection: close\r\n");
         http_req.extend_from_slice(b"Host: ");
         let host = url.host_str().ok_or_else(|| {
             Error::from(ErrorKind::InvalidResponse("Malformed redirect!"))
@@ -312,6 +313,8 @@ impl Handler {
 
         // Encode HTTP protocol
         http_req.extend_from_slice(b" HTTP/1.1\r\n");
+        // Don't keep alive
+        http_req.extend_from_slice(b"Connection: close\r\n");
         // Encode host header
         http_req.extend_from_slice(b"Host: ");
         let host = url.host_str().ok_or_else(|| {

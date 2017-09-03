@@ -86,7 +86,7 @@ impl Reader {
                     }
                     if let Some(i) = header_done {
                         self.data = self.data.split_off(i);
-                        self.idx = 0;
+                        self.idx = self.data.len();
                         self.state = ReadState::Body;
                     }
                 }
