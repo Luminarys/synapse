@@ -190,6 +190,12 @@ pub fn addr_to_bytes(addr: &SocketAddr) -> [u8; 6] {
     data
 }
 
+pub fn find_subseq(haystack: &[u8], needle: &[u8]) -> Option<usize> {
+    haystack.windows(needle.len()).position(
+        |window| window == needle,
+    )
+}
+
 #[test]
 fn test_hash_enc() {
     let hash = [8u8; 20];

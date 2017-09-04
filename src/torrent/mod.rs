@@ -17,7 +17,7 @@ pub use self::peer::{Peer, PeerConn};
 pub use self::peer::Message;
 
 use self::picker::Picker;
-use {bincode, rpc, disk, util, CONFIG, bencode, EXT_PROTO};
+use {bincode, rpc, disk, util, CONFIG, bencode, EXT_PROTO, UT_META_ID};
 use control::cio;
 use rpc::resource::{self, Resource, SResourceUpdate};
 use throttle::Throttle;
@@ -71,6 +71,7 @@ pub struct Torrent<T: cio::CIO> {
     dirty: bool,
     path: Option<String>,
     info_bytes: Vec<u8>,
+    have_info: bool,
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -157,6 +158,7 @@ impl<T: cio::CIO> Torrent<T> {
             dirty: true,
             status,
             info_bytes,
+            have_info: true,
         };
         t.start();
         if CONFIG.disk.validate {
@@ -208,6 +210,7 @@ impl<T: cio::CIO> Torrent<T> {
             status: d.status,
             path: d.path,
             info_bytes,
+            have_info: true,
         };
         match t.status {
             Status::DiskError | Status::Seeding | Status::Leeching => {
@@ -495,7 +498,10 @@ impl<T: cio::CIO> Torrent<T> {
                 if (rsv[EXT_PROTO.0] & EXT_PROTO.1) != 0 {
                     let mut ed = BTreeMap::new();
                     let mut m = BTreeMap::new();
-                    m.insert("ut_metadata".to_owned(), bencode::BEncode::Int(3));
+                    m.insert(
+                        "ut_metadata".to_owned(),
+                        bencode::BEncode::Int(UT_META_ID as i64),
+                    );
                     ed.insert("m".to_owned(), bencode::BEncode::Dict(m));
                     ed.insert(
                         "metadata_size".to_owned(),
@@ -509,16 +515,56 @@ impl<T: cio::CIO> Torrent<T> {
                 if id == 0 {
                     let b = bencode::decode_buf(&payload).map_err(|_| ())?;
                     let mut d = b.into_dict().ok_or(())?;
-                    let mut m = d.remove("m").and_then(|v| v.into_dict()).ok_or(())?;
-                    if m.remove("ut_metadata")
-                        .and_then(|v| v.into_int())
-                        .map(|i| i == 3)
-                        .unwrap_or(false)
-                    {
+                    let m = d.remove("m").and_then(|v| v.into_dict()).ok_or(())?;
+                    if m.contains_key("ut_metadata") {
                         let _size = d.remove("metadata_size").and_then(|v| v.into_int()).ok_or(
                             (),
                         )?;
                     }
+                } else if peer.exts().ut_meta.map(|mid| mid == id).unwrap_or(false) {
+                    let b = bencode::decode_buf(&payload).map_err(|_| ())?;
+                    let mut d = b.into_dict().ok_or(())?;
+                    let t = d.remove("msg_type").and_then(|v| v.into_int()).ok_or(())?;
+                    match t {
+                        0 => {
+                            let p = d.remove("piece").and_then(|v| v.into_int()).ok_or(())? as
+                                usize;
+                            let mut respb = BTreeMap::new();
+                            if self.have_info {
+                                if p * 16_384 >= self.info_bytes.len() {
+                                    return Err(());
+                                }
+                                respb.insert("msg_type".to_owned(), bencode::BEncode::Int(1));
+                                respb.insert("piece".to_owned(), bencode::BEncode::Int(p as i64));
+                                let size = if self.info_bytes.len() / 16_384 == p {
+                                    self.info_bytes.len() % 16_384
+                                } else {
+                                    16_384
+                                };
+                                respb.insert(
+                                    "total_size".to_owned(),
+                                    bencode::BEncode::Int(size as i64),
+                                );
+                                let m = Message::Extension { id: 0, payload };
+                                let mut payload = bencode::BEncode::Dict(respb).encode_to_buf();
+                                let s = p * 16_384;
+                                payload.extend_from_slice(&self.info_bytes[s..s + size]);
+                                peer.send_message(Message::Extension { id: 0, payload });
+                            } else {
+                                respb.insert("msg_type".to_owned(), bencode::BEncode::Int(2));
+                                respb.insert("piece".to_owned(), bencode::BEncode::Int(p as i64));
+                                let payload = bencode::BEncode::Dict(respb).encode_to_buf();
+                                peer.send_message(Message::Extension { id: 0, payload });
+                            }
+                        }
+                        1 => {}
+                        2 => {}
+                        i => {
+                            debug!("Got unknown ut_meta id: {}", i);
+                        }
+                    }
+                } else {
+                    debug!("Got unknown extension id: {}", id);
                 }
             }
             Message::Bitfield(_) => {

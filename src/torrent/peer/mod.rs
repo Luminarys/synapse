@@ -16,6 +16,7 @@ use torrent::{Torrent, Bitfield};
 use throttle::Throttle;
 use control::cio;
 use rpc::{self, resource};
+use bencode;
 use tracker;
 use util;
 use {DHT_EXT, CONFIG};
@@ -54,6 +55,11 @@ pub struct Peer<T: cio::CIO> {
     t_hash: [u8; 20],
     cid: Option<[u8; 20]>,
     rsv: Option<[u8; 8]>,
+    ext_ids: ExtIDs,
+}
+
+pub struct ExtIDs {
+    pub ut_meta: Option<u8>,
 }
 
 #[derive(Debug)]
@@ -172,6 +178,7 @@ impl Peer<cio::test::TCIO> {
             rsv: None,
             cid: None,
             last_flush: Utc::now(),
+            ext_ids: ExtIDs::new(),
         }
     }
 
@@ -222,6 +229,7 @@ impl<T: cio::CIO> Peer<T> {
             rsv,
             cid,
             last_flush: Utc::now(),
+            ext_ids: ExtIDs::new(),
         };
         p.send_message(Message::handshake(&t.info));
         p.send_message(Message::Bitfield(t.pieces.clone()));
@@ -232,6 +240,10 @@ impl<T: cio::CIO> Peer<T> {
     /// Returns whether or not the peer has received a handshake
     pub fn ready(&self) -> bool {
         self.cid.is_some()
+    }
+
+    pub fn exts(&self) -> &ExtIDs {
+        &self.ext_ids
     }
 
     pub fn addr(&self) -> SocketAddr {
@@ -362,7 +374,22 @@ impl<T: cio::CIO> Peer<T> {
                 s.set_port(p);
                 self.cio.msg_trk(tracker::Request::AddNode(s));
             }
-            Message::Extension { .. } => {}
+            Message::Extension { id, ref payload } => {
+                if id == 0 {
+                    let b = bencode::decode_buf(payload).map_err(|_| {
+                        ErrorKind::ProtocolError("Invalid bencode in ext handshake")
+                    })?;
+                    let mut d = b.into_dict().ok_or_else(|| {
+                        ErrorKind::ProtocolError("Invalid bencode type in ext handshake")
+                    })?;
+                    let mut m = d.remove("m").and_then(|v| v.into_dict()).ok_or_else(|| {
+                        ErrorKind::ProtocolError("Invalid metadata in in ext handshake")
+                    })?;
+                    if let Some(uti) = m.remove("ut_metadata").and_then(|v| v.into_int()) {
+                        self.ext_ids.ut_meta = Some(uti as u8);
+                    }
+                }
+            }
         }
         Ok(())
     }
@@ -455,6 +482,12 @@ impl<T: cio::CIO> fmt::Debug for Peer<T> {
             self.local_status,
             self.remote_status
         )
+    }
+}
+
+impl ExtIDs {
+    fn new() -> ExtIDs {
+        ExtIDs { ut_meta: None }
     }
 }
 
