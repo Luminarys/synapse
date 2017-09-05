@@ -205,6 +205,17 @@ impl Picker {
         res.map(|r| (complete, r)).ok_or(())
     }
 
+    pub fn have_block(&mut self, b: Block) -> bool {
+        self.downloading
+            .get_mut(&b.index)
+            .and_then(|dl| {
+                dl.iter().find(|r| r.offset == b.offset).map(
+                    |r| r.completed,
+                )
+            })
+            .unwrap_or(false)
+    }
+
     /// Invalidates a piece
     pub fn invalidate_piece(&mut self, idx: u32) {
         match self.picker {

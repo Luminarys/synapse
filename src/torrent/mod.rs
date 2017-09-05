@@ -614,16 +614,6 @@ impl<T: cio::CIO> Torrent<T> {
                         1 => {
                             if let Some(idx) = self.info_idx {
                                 let data_idx = util::find_subseq(&payload[..], b"ee").unwrap() + 2;
-                                let ts = d.remove("total_size")
-                                    .and_then(|v| v.into_int())
-                                    .ok_or(())? as usize;
-                                if ts != 16_384 && p * 16_384 + ts != self.info_bytes.len() {
-                                    debug!(
-                                        "Metadata size invalid, our size: {}",
-                                        self.info_bytes.len()
-                                    );
-                                    return Err(());
-                                }
                                 if payload.len() - data_idx > self.info_bytes.len() - p * 16_384 {
                                     debug!("Metadata bounds invalid, goes to: {}, ibl: {}",
                                             payload.len() - data_idx,
@@ -631,9 +621,13 @@ impl<T: cio::CIO> Torrent<T> {
                                         );
                                     return Err(());
                                 }
-                                (&mut self.info_bytes[p * 16_384..]).copy_from_slice(
-                                    &payload[data_idx..],
-                                );
+                                let size = if p == idx {
+                                    self.info_bytes.len() - p * 16_384
+                                } else {
+                                    16_384
+                                };
+                                (&mut self.info_bytes[p * 16_384..p * 16_384 + size])
+                                    .copy_from_slice(&payload[data_idx..]);
                                 if p == idx {
                                     let mut b = BTreeMap::new();
                                     let bni =
@@ -656,7 +650,8 @@ impl<T: cio::CIO> Torrent<T> {
                                         return Err(());
                                     }
                                 } else if p == 0 {
-                                    for i in 1..idx {
+                                    for i in 1..(idx + 1) {
+                                        debug!("Requesting idx: {}", i);
                                         let mut respb = BTreeMap::new();
                                         respb.insert(
                                             "msg_type".to_owned(),
@@ -739,6 +734,10 @@ impl<T: cio::CIO> Torrent<T> {
 
                 if self.info.block_len(index, begin) != length {
                     return Err(());
+                }
+
+                if self.picker.have_block(picker::Block::new(index, begin)) {
+                    return Ok(());
                 }
 
                 let pr = self.picker.completed(picker::Block::new(index, begin));
@@ -1400,7 +1399,9 @@ impl<T: cio::CIO> Torrent<T> {
         trace!("Removing {:?}!", peer);
         self.choker.remove_peer(peer, &mut self.peers);
         self.leechers.remove(&peer.id());
-        self.picker.remove_peer(peer);
+        if self.info.complete() {
+            self.picker.remove_peer(peer);
+        }
     }
 
     pub fn pause(&mut self) {
