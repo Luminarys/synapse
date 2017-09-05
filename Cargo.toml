@@ -27,6 +27,7 @@ httparse = "1.2.3"
 base64 = "0.6.0"
 base32 = "0.3.1"
 shellexpand = "1.0.0"
+openssl = "0.9"
 clippy = {version = "*", optional = true}
 
 [dependencies.chrono]

@@ -9,8 +9,8 @@ Install dependencies:
 
 - rustc >= 1.19
 - cargo >= 0.18
+- openssl
 - c-ares 1.13 | build tools *
-- openssl **
 
 _\*Only required for synapse_
 
