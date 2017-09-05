@@ -70,7 +70,7 @@ impl Picker {
     pub fn new(info: Arc<Info>, pieces: &Bitfield) -> Picker {
         let scale = info.piece_len / 16_384;
         let picker = sequential::Picker::new(pieces);
-        let last_piece = info.pieces() - 1;
+        let last_piece = info.pieces().saturating_sub(1);
         let lpl = info.piece_len(last_piece);
         let last_piece_scale = if lpl % 16_384 == 0 {
             lpl / 16_384

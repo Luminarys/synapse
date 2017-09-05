@@ -6,6 +6,7 @@ use super::proto::message::{CMessage, SMessage, Error};
 use super::proto::criterion::{self, Criterion, Filter as FTrait};
 use super::proto::resource::{Resource, ResourceKind, SResourceUpdate};
 use super::{CtlMessage, Message};
+use torrent::info::Info;
 use util::random_string;
 
 // TODO: Figure out a way to reduce allocations
@@ -44,7 +45,6 @@ pub enum TransferKind {
         start: bool,
     },
     UploadFiles { size: u64, path: String },
-    UploadMagnet { url: String, path: Option<String> },
 }
 
 const EXPIRATION_DUR: i64 = 120;
@@ -322,7 +322,17 @@ impl Processor {
                 uri,
                 path,
                 start,
-            } => {}
+            } => {
+                match Info::from_magnet(&uri) {
+                    Ok(info) => rmsg = Some(Message::Torrent { info, path, start }),
+                    Err(e) => {
+                        resp.push(SMessage::InvalidRequest(Error {
+                            serial: Some(serial),
+                            reason: format!("Invalid magnet: {}", e),
+                        }));
+                    }
+                }
+            }
             CMessage::UploadFiles { serial, size, path } => {
                 resp.push(self.new_transfer(
                     client,

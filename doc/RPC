@@ -45,7 +45,7 @@ torrent
     {
         "id": ID,
         "type": "torrent",
-        "name": string,
+        "name": string or null if magnet and unknown,
         "path": string*,
         "created": datetime,
         "modified": datetime,
@@ -64,7 +64,8 @@ torrent
         "transferred_down": number, total bytes leeched
         "peers": number,            # of peers
         "trackers": number,         # of trackers
-        "pieces": number,           # of pieces
+        "pieces": number,           # of pieces or null if magnet and unknown
+        "piece_size": number,       # size of each piece or null if magnet and unknown
         "files": number,            # of files or null if magnet and unknown
     }
 

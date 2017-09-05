@@ -38,7 +38,6 @@ pub enum ResourceKind {
 pub enum SResourceUpdate<'a> {
     #[serde(skip_deserializing)]
     Resource(&'a Resource),
-    #[serde(skip_serializing)]
     #[serde(rename = "RESOURCE")]
     OResource(Resource),
     Throttle {
@@ -172,7 +171,7 @@ pub struct Server {
 #[serde(deny_unknown_fields)]
 pub struct Torrent {
     pub id: String,
-    pub name: String,
+    pub name: Option<String>,
     pub path: String,
     pub created: DateTime<Utc>,
     pub modified: DateTime<Utc>,
@@ -190,9 +189,10 @@ pub struct Torrent {
     pub transferred_down: u64,
     pub peers: u16,
     pub trackers: u8,
-    pub pieces: u64,
-    pub piece_size: u32,
-    pub files: u32,
+    pub size: Option<u64>,
+    pub pieces: Option<u64>,
+    pub piece_size: Option<u32>,
+    pub files: Option<u32>,
 }
 
 #[derive(Copy, Clone, Debug, Serialize, Deserialize, PartialEq)]
@@ -478,7 +478,7 @@ impl Filter for Torrent {
     fn matches(&self, c: &Criterion) -> bool {
         match &c.field[..] {
             "id" => match_s(&self.id, c),
-            "name" => match_s(&self.name, c),
+            "name" => self.name.as_ref().map(|n| match_s(n, c)).unwrap_or(false),
             "path" => match_s(&self.path, c),
             "status" => match_s(self.status.as_str(), c),
             "error" => match_s(self.error.as_ref().map(|s| s.as_str()).unwrap_or(""), c),
@@ -492,9 +492,14 @@ impl Filter for Torrent {
             "transferred_down" => match_n(self.transferred_down as u64, c),
             "peers" => match_n(self.peers as u64, c),
             "trackers" => match_n(self.trackers as u64, c),
-            "pieces" => match_n(self.pieces as u64, c),
-            "piece_size" => match_n(self.piece_size as u64, c),
-            "files" => match_n(self.files as u64, c),
+            "size" => self.size.map(|s| match_n(s as u64, c)).unwrap_or(false),
+            "pieces" => self.pieces.map(|p| match_n(p as u64, c)).unwrap_or(false),
+            "piece_size" => {
+                self.piece_size.map(|p| match_n(p as u64, c)).unwrap_or(
+                    false,
+                )
+            }
+            "files" => self.files.map(|f| match_n(f as u64, c)).unwrap_or(false),
 
             "progress" => match_f(self.progress, c),
             "availability" => match_f(self.availability, c),

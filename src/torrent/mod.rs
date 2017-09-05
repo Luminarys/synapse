@@ -71,7 +71,7 @@ pub struct Torrent<T: cio::CIO> {
     dirty: bool,
     path: Option<String>,
     info_bytes: Vec<u8>,
-    have_info: bool,
+    info_idx: Option<usize>,
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -131,7 +131,16 @@ impl<T: cio::CIO> Torrent<T> {
         for i in 0..info.pieces() {
             wanted.set_bit(i as u64);
         }
-        let info_bytes = info.to_bencode().encode_to_buf();
+        let info_idx = if info.complete() {
+            None
+        } else {
+            Some(::std::usize::MAX)
+        };
+        let info_bytes = if info_idx.is_none() {
+            info.to_bencode().encode_to_buf()
+        } else {
+            vec![]
+        };
         let info = Arc::new(info);
         let picker = Picker::new(info.clone(), &pieces);
         let mut t = Torrent {
@@ -158,10 +167,10 @@ impl<T: cio::CIO> Torrent<T> {
             dirty: true,
             status,
             info_bytes,
-            have_info: true,
+            info_idx,
         };
         t.start();
-        if CONFIG.disk.validate {
+        if CONFIG.disk.validate && t.info_idx.is_none() {
             t.validate();
         } else {
             t.announce_start();
@@ -183,7 +192,16 @@ impl<T: cio::CIO> Torrent<T> {
         let leechers = HashSet::new();
 
         let info = Arc::new(d.info);
-        let info_bytes = info.to_bencode().encode_to_buf();
+        let info_idx = if info.complete() {
+            None
+        } else {
+            Some(::std::usize::MAX)
+        };
+        let info_bytes = if info_idx.is_none() {
+            info.to_bencode().encode_to_buf()
+        } else {
+            vec![]
+        };
         let picker = picker::Picker::new(info.clone(), &d.pieces);
 
         let mut t = Torrent {
@@ -210,7 +228,7 @@ impl<T: cio::CIO> Torrent<T> {
             status: d.status,
             path: d.path,
             info_bytes,
-            have_info: true,
+            info_idx,
         };
         match t.status {
             Status::DiskError | Status::Seeding | Status::Leeching => {
@@ -494,7 +512,7 @@ impl<T: cio::CIO> Torrent<T> {
     pub fn handle_msg(&mut self, msg: Message, peer: &mut Peer<T>) -> Result<(), ()> {
         trace!("Received {:?} from peer", msg);
         match msg {
-            Message::Handshake { rsv, id, .. } => {
+            Message::Handshake { rsv, .. } => {
                 if (rsv[EXT_PROTO.0] & EXT_PROTO.1) != 0 {
                     let mut ed = BTreeMap::new();
                     let mut m = BTreeMap::new();
@@ -517,23 +535,54 @@ impl<T: cio::CIO> Torrent<T> {
                     let mut d = b.into_dict().ok_or(())?;
                     let m = d.remove("m").and_then(|v| v.into_dict()).ok_or(())?;
                     if m.contains_key("ut_metadata") {
-                        let _size = d.remove("metadata_size").and_then(|v| v.into_int()).ok_or(
+                        let size = d.remove("metadata_size").and_then(|v| v.into_int()).ok_or(
                             (),
                         )?;
+                        if let Some(::std::usize::MAX) = self.info_idx {
+                            if size % 16_384 == 0 {
+                                self.info_idx = Some(size as usize / 16_384 - 1);
+                            } else {
+                                self.info_idx = Some(size as usize / 16_384);
+                            }
+                            self.info_bytes.reserve(size as usize);
+                            unsafe {
+                                self.info_bytes.set_len(size as usize);
+                            }
+                        }
+                        if !self.info.complete() {
+                            // Request the first index chunk to see if they have it
+                            let mut respb = BTreeMap::new();
+                            respb.insert("msg_type".to_owned(), bencode::BEncode::Int(0));
+                            respb.insert("piece".to_owned(), bencode::BEncode::Int(0));
+                            let payload = bencode::BEncode::Dict(respb).encode_to_buf();
+                            let utm_id = if let Some(i) = peer.exts().ut_meta {
+                                i
+                            } else {
+                                return Err(());
+                            };
+                            peer.send_message(Message::Extension {
+                                id: utm_id,
+                                payload,
+                            });
+                        }
                     }
-                } else if peer.exts().ut_meta.map(|mid| mid == id).unwrap_or(false) {
+                } else if id == UT_META_ID {
+                    let utm_id = if let Some(i) = peer.exts().ut_meta {
+                        i
+                    } else {
+                        return Err(());
+                    };
                     let b = bencode::decode_buf(&payload).map_err(|_| ())?;
                     let mut d = b.into_dict().ok_or(())?;
                     let t = d.remove("msg_type").and_then(|v| v.into_int()).ok_or(())?;
+                    let p = d.remove("piece").and_then(|v| v.into_int()).ok_or(())? as usize;
+                    if p * 16_384 >= self.info_bytes.len() {
+                        return Err(());
+                    }
                     match t {
                         0 => {
-                            let p = d.remove("piece").and_then(|v| v.into_int()).ok_or(())? as
-                                usize;
                             let mut respb = BTreeMap::new();
-                            if self.have_info {
-                                if p * 16_384 >= self.info_bytes.len() {
-                                    return Err(());
-                                }
+                            if self.info_idx.is_none() {
                                 respb.insert("msg_type".to_owned(), bencode::BEncode::Int(1));
                                 respb.insert("piece".to_owned(), bencode::BEncode::Int(p as i64));
                                 let size = if self.info_bytes.len() / 16_384 == p {
@@ -545,19 +594,87 @@ impl<T: cio::CIO> Torrent<T> {
                                     "total_size".to_owned(),
                                     bencode::BEncode::Int(size as i64),
                                 );
-                                let m = Message::Extension { id: 0, payload };
                                 let mut payload = bencode::BEncode::Dict(respb).encode_to_buf();
                                 let s = p * 16_384;
                                 payload.extend_from_slice(&self.info_bytes[s..s + size]);
-                                peer.send_message(Message::Extension { id: 0, payload });
+                                peer.send_message(Message::Extension {
+                                    id: utm_id,
+                                    payload,
+                                });
                             } else {
                                 respb.insert("msg_type".to_owned(), bencode::BEncode::Int(2));
                                 respb.insert("piece".to_owned(), bencode::BEncode::Int(p as i64));
                                 let payload = bencode::BEncode::Dict(respb).encode_to_buf();
-                                peer.send_message(Message::Extension { id: 0, payload });
+                                peer.send_message(Message::Extension {
+                                    id: utm_id,
+                                    payload,
+                                });
                             }
                         }
-                        1 => {}
+                        1 => {
+                            if let Some(idx) = self.info_idx {
+                                let data_idx = util::find_subseq(&payload[..], b"ee").unwrap() + 2;
+                                let ts = d.remove("total_size")
+                                    .and_then(|v| v.into_int())
+                                    .ok_or(())? as usize;
+                                if ts != 16_384 && p * 16_384 + ts != self.info_bytes.len() {
+                                    debug!(
+                                        "Metadata size invalid, our size: {}",
+                                        self.info_bytes.len()
+                                    );
+                                    return Err(());
+                                }
+                                if payload.len() - data_idx > self.info_bytes.len() - p * 16_384 {
+                                    debug!("Metadata bounds invalid, goes to: {}, ibl: {}",
+                                            payload.len() - data_idx,
+                                            self.info_bytes.len() - p * 16_384,
+                                        );
+                                    return Err(());
+                                }
+                                (&mut self.info_bytes[p * 16_384..]).copy_from_slice(
+                                    &payload[data_idx..],
+                                );
+                                if p == idx {
+                                    let mut b = BTreeMap::new();
+                                    let bni =
+                                        bencode::decode_buf(&self.info_bytes).map_err(|_| ())?;
+                                    b.insert(
+                                        "announce".to_owned(),
+                                        bencode::BEncode::String(
+                                            self.info.announce.clone().into_bytes(),
+                                        ),
+                                    );
+                                    b.insert("info".to_owned(), bni);
+                                    let ni = Info::from_bencode(bencode::BEncode::Dict(b))
+                                        .map_err(|_| ())?;
+                                    if ni.hash == self.info.hash {
+                                        debug!("Magnet file acquired succesfully!");
+                                        self.info_idx = None;
+                                        self.info = Arc::new(ni);
+                                        self.magnet_complete();
+                                    } else {
+                                        return Err(());
+                                    }
+                                } else if p == 0 {
+                                    for i in 1..idx {
+                                        let mut respb = BTreeMap::new();
+                                        respb.insert(
+                                            "msg_type".to_owned(),
+                                            bencode::BEncode::Int(0),
+                                        );
+                                        respb.insert(
+                                            "piece".to_owned(),
+                                            bencode::BEncode::Int(i as i64),
+                                        );
+                                        let payload = bencode::BEncode::Dict(respb).encode_to_buf();
+                                        peer.send_message(Message::Extension {
+                                            id: utm_id,
+                                            payload,
+                                        });
+                                    }
+                                }
+                            }
+                        }
                         2 => {}
                         i => {
                             debug!("Got unknown ut_meta id: {}", i);
@@ -571,7 +688,9 @@ impl<T: cio::CIO> Torrent<T> {
                 if self.pieces.usable(peer.pieces()) {
                     peer.interested();
                 }
-                self.picker.add_peer(peer);
+                if self.info.complete() {
+                    self.picker.add_peer(peer);
+                }
                 if !peer.pieces().complete() {
                     self.leechers.insert(peer.id());
                 } else if self.complete() {
@@ -580,7 +699,9 @@ impl<T: cio::CIO> Torrent<T> {
                 }
             }
             Message::Have(idx) => {
-                self.picker.piece_available(idx);
+                if self.info.complete() {
+                    self.picker.piece_available(idx);
+                }
                 if peer.pieces().complete() {
                     self.leechers.remove(&peer.id());
                     // If they're now a seeder and we're also seeding, drop the conn
@@ -593,7 +714,7 @@ impl<T: cio::CIO> Torrent<T> {
                 }
             }
             Message::Unchoke => {
-                if !self.status.stopped() {
+                if !self.status.stopped() && self.info.complete() {
                     Torrent::make_requests(peer, &mut self.picker, &self.info);
                 }
             }
@@ -769,9 +890,16 @@ impl<T: cio::CIO> Torrent<T> {
     fn start(&mut self) {
         debug!("Starting torrent");
         // Update RPC of the torrent, tracker, files, and peers
-        let resources = self.rpc_info();
+        let mut resources = Vec::new();
+        resources.push(self.rpc_info());
+        resources.extend(self.rpc_trk_info());
+        if self.info_idx.is_none() {
+            resources.extend(self.rpc_rel_info());
+        }
         self.cio.msg_rpc(rpc::CtlMessage::Extant(resources));
-        self.update_rpc_transfer();
+        if self.info_idx.is_none() {
+            self.update_rpc_transfer();
+        }
         self.serialize();
     }
 
@@ -814,6 +942,31 @@ impl<T: cio::CIO> Torrent<T> {
                 throttle_down: dl,
             },
         ]));
+    }
+
+    fn magnet_complete(&mut self) {
+        self.pieces = Bitfield::new(self.info.pieces() as u64);
+        self.priorities = vec![3; self.info.files.len()];
+        self.wanted = Bitfield::new(self.info.pieces() as u64);
+        for i in 0..self.info.pieces() {
+            self.wanted.set_bit(i as u64);
+        }
+        for peer in self.peers.values_mut() {
+            peer.magnet_complete(&self.info);
+        }
+
+        let resources = self.rpc_rel_info();
+        self.cio.msg_rpc(rpc::CtlMessage::Extant(resources));
+        let update = self.rpc_info();
+        self.cio.msg_rpc(rpc::CtlMessage::Update(
+            vec![SResourceUpdate::OResource(update)],
+        ));
+        self.serialize();
+
+        let seq = self.picker.is_sequential();
+        self.picker = Picker::new(self.info.clone(), &self.pieces);
+        self.change_picker(seq);
+        self.validate();
     }
 
     fn refresh_picker(&mut self) {
@@ -866,11 +1019,27 @@ impl<T: cio::CIO> Torrent<T> {
         ]));
     }
 
-    fn rpc_info(&self) -> Vec<resource::Resource> {
-        let mut r = Vec::new();
-        r.push(Resource::Torrent(resource::Torrent {
+    fn rpc_info(&self) -> resource::Resource {
+        let (name, size, pieces, piece_size, files) = if self.info_idx.is_none() {
+            (
+                Some(self.info.name.clone()),
+                Some(self.info.total_len),
+                Some(self.info.pieces() as u64),
+                Some(self.info.piece_len),
+                Some(self.info.files.len() as u32),
+            )
+        } else {
+            let name = if self.info.name == "" {
+                None
+            } else {
+                Some(self.info.name.clone())
+            };
+            (name, None, None, None, None)
+        };
+        Resource::Torrent(resource::Torrent {
             id: self.rpc_id(),
-            name: self.info.name.clone(),
+            name,
+            size,
             // TODO: Properly add this
             path: self.path.as_ref().unwrap_or(&CONFIG.disk.directory).clone(),
             created: Utc::now(),
@@ -891,11 +1060,14 @@ impl<T: cio::CIO> Torrent<T> {
             peers: 0,
             // TODO: Alter when mutlitracker support hits
             trackers: 1,
-            pieces: self.info.pieces() as u64,
-            piece_size: self.info.piece_len,
-            files: self.info.files.len() as u32,
-        }));
+            pieces,
+            piece_size,
+            files,
+        })
+    }
 
+    fn rpc_rel_info(&self) -> Vec<resource::Resource> {
+        let mut r = Vec::new();
         for i in 0..self.info.pieces() {
             let id = util::piece_rpc_id(&self.info.hash, i as u64);
             if self.pieces.has_bit(i as u64) {
@@ -946,6 +1118,11 @@ impl<T: cio::CIO> Torrent<T> {
             }))
         }
 
+        r
+    }
+
+    fn rpc_trk_info(&self) -> Vec<resource::Resource> {
+        let mut r = Vec::new();
         r.push(resource::Resource::Tracker(resource::Tracker {
             id: util::trk_rpc_id(&self.info.hash, &self.info.announce),
             torrent_id: self.rpc_id(),
@@ -953,7 +1130,6 @@ impl<T: cio::CIO> Torrent<T> {
             last_report: Utc::now(),
             error: None,
         }));
-
         r
     }
 
@@ -1074,7 +1250,9 @@ impl<T: cio::CIO> Torrent<T> {
         if let Ok(p) = Peer::new(conn, self, None, None) {
             let pid = p.id();
             trace!("Adding peer {:?}!", pid);
-            self.picker.add_peer(&p);
+            if self.info_idx.is_none() {
+                self.picker.add_peer(&p);
+            }
             self.peers.insert(pid, p);
             Some(pid)
         } else {
@@ -1274,7 +1452,7 @@ impl<T: cio::CIO> Torrent<T> {
     }
 
     fn request_all(&mut self) {
-        if self.status.stopped() {
+        if self.status.stopped() || self.info_idx.is_some() {
             return;
         }
         for pid in self.pids() {

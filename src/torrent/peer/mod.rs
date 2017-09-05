@@ -12,7 +12,7 @@ pub use self::message::Message;
 use self::reader::Reader;
 use self::writer::Writer;
 use socket::Socket;
-use torrent::{Torrent, Bitfield};
+use torrent::{Torrent, Bitfield, Info};
 use throttle::Throttle;
 use control::cio;
 use rpc::{self, resource};
@@ -232,9 +232,19 @@ impl<T: cio::CIO> Peer<T> {
             ext_ids: ExtIDs::new(),
         };
         p.send_message(Message::handshake(&t.info));
-        p.send_message(Message::Bitfield(t.pieces.clone()));
+        if t.info.complete() {
+            p.send_message(Message::Bitfield(t.pieces.clone()));
+        }
         p.send_rpc_info();
         Ok(p)
+    }
+
+    pub fn magnet_complete(&mut self, info: &Info) {
+        if self.pieces.len() == 0 {
+            self.pieces = Bitfield::new(info.pieces() as u64);
+        } else {
+            self.pieces.cap(info.pieces() as u64);
+        }
     }
 
     /// Returns whether or not the peer has received a handshake
@@ -353,7 +363,10 @@ impl<T: cio::CIO> Peer<T> {
             }
             Message::Bitfield(ref mut pieces) => {
                 // Set the correct length, then swap the pieces
-                pieces.cap(self.pieces.len());
+                // Don't do this with magnets though
+                if self.pieces.len() > 0 {
+                    pieces.cap(self.pieces.len());
+                }
                 mem::swap(pieces, &mut self.pieces);
             }
             Message::KeepAlive => {

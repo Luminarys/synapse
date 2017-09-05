@@ -1,11 +1,14 @@
-use bencode::BEncode;
 use std::path::PathBuf;
 use std::collections::{HashMap, BTreeMap};
 use std::{fmt, cmp};
+
+use base32;
 use url::Url;
 use ring::digest;
-use util::hash_to_id;
+
 use disk;
+use bencode::BEncode;
+use util::{hash_to_id, id_to_hash};
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct Info {
@@ -86,10 +89,48 @@ impl Info {
         };
 
         if url.scheme() != "magnet" {
-            return Err("magnet URL must use magnet scheme");
+            return Err("magnet URL must use magnet URL scheme");
         };
-        // TODO: Actually implmeent this
-        unimplemented!();
+        let hash = url.query_pairs()
+            .find(|&(ref k, ref v)| k == "xt" && v.starts_with("urn:btih:"))
+            .and_then(|(_, ref v)| {
+                id_to_hash(&v[9..]).or_else(|| {
+                    base32::decode(base32::Alphabet::RFC4648 { padding: true }, &v[9..])
+                        .and_then(|b| {
+                            if b.len() != 20 {
+                                return None;
+                            }
+                            let mut a = [0; 20];
+                            (&mut a[..]).copy_from_slice(&b);
+                            Some(a)
+                        })
+                })
+            })
+            .ok_or("No hash found in magnet")?;
+        let announce = url.query_pairs()
+            .find(|&(ref k, _)| k == "tr")
+            .map(|(_, ref v)| v.to_string())
+            .unwrap_or("".to_owned());
+        let name = url.query_pairs()
+            .find(|&(ref k, _)| k == "dn")
+            .map(|(_, ref v)| v.to_string())
+            .unwrap_or("".to_owned());
+        Ok(Info {
+            name,
+            announce,
+            piece_len: 0,
+            total_len: 0,
+            hashes: vec![],
+            hash,
+            files: vec![],
+            file_idx: HashMap::new(),
+            private: false,
+            be_name: None,
+        })
+    }
+
+    pub fn complete(&self) -> bool {
+        self.hashes.len() > 0
     }
 
     pub fn to_bencode(&self) -> BEncode {
@@ -262,7 +303,10 @@ impl Info {
     }
 
     pub fn piece_len(&self, idx: u32) -> u32 {
-        if idx != self.pieces() - 1 {
+        if !self.complete() {
+            return 0;
+        }
+        if idx != self.pieces().saturating_sub(1) {
             self.piece_len
         } else {
             (self.total_len - self.piece_len as u64 * (self.pieces() as u64 - 1)) as u32

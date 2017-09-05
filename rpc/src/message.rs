@@ -87,7 +87,7 @@ pub enum SMessage<'a> {
     InvalidResource(Error),
     // InvalidMessage(Error),
     InvalidSchema(Error),
-    // InvalidRequest(Error),
+    InvalidRequest(Error),
     PermissionDenied(Error),
     TransferFailed(Error),
     // ServerError(Error),
