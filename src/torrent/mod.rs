@@ -384,6 +384,18 @@ impl<T: cio::CIO> Torrent<T> {
                     peer.send_message(p);
                 }
             }
+            disk::Response::Moved { path, .. } => {
+                debug!("Moved torrent!");
+                let id = self.rpc_id();
+                self.path = Some(path.clone());
+                self.cio.msg_rpc(rpc::CtlMessage::Update(vec![
+                    resource::SResourceUpdate::TorrentPath {
+                        id,
+                        kind: resource::ResourceKind::Torrent,
+                        path,
+                    },
+                ]));
+            }
             disk::Response::ValidationComplete { mut invalid, .. } => {
                 debug!("Validation completed!");
                 // Ignore invalid pieces which are not in wanted, or
@@ -585,10 +597,13 @@ impl<T: cio::CIO> Torrent<T> {
                     return Ok(());
                 }
 
+                // The length doesn't match what it should be
                 if self.info.block_len(index, begin) != length {
                     return Err(());
                 }
 
+                // We already have this block, don't do anything with it, could happen
+                // from endgame
                 if self.picker.have_block(picker::Block::new(index, begin)) {
                     return Ok(());
                 }
@@ -600,13 +615,12 @@ impl<T: cio::CIO> Torrent<T> {
                     return Ok(());
                 };
 
-                // Internal data structures which are being serialized have changed, flag self as
-                // dirty
                 self.dirty = true;
                 self.write_piece(index, begin, data);
 
                 self.downloaded += u64::from(length);
                 self.last_dl += u64::from(length);
+
                 if piece_done {
                     self.pieces.set_bit(u64::from(index));
                     self.cio.msg_rpc(rpc::CtlMessage::Update(vec![
@@ -755,6 +769,10 @@ impl<T: cio::CIO> Torrent<T> {
             if p * 16_384 >= self.info_bytes.len() {
                 return Err(());
             }
+            // Our metadata request strategy is as follows: after requesting the first
+            // index chunk, we attempt to request every single subsequent chunk from
+            // a peer which responds succesfully. This is slightly wasteful, but
+            // simplifies logic (since we don't have to do "index piece picking").
             match t {
                 0 => {
                     let mut respb = BTreeMap::new();
@@ -766,7 +784,8 @@ impl<T: cio::CIO> Torrent<T> {
                         } else {
                             16_384
                         };
-                        respb.insert("total_size".to_owned(), bencode::BEncode::Int(size as i64));
+                        let total_size = self.info_bytes.len() as i64;
+                        respb.insert("total_size".to_owned(), bencode::BEncode::Int(total_size));
                         let mut payload = bencode::BEncode::Dict(respb).encode_to_buf();
                         let s = p * 16_384;
                         payload.extend_from_slice(&self.info_bytes[s..s + size]);
@@ -822,7 +841,6 @@ impl<T: cio::CIO> Torrent<T> {
                             }
                         } else if p == 0 {
                             for i in 1..(idx + 1) {
-                                debug!("Requesting idx: {}", i);
                                 let mut respb = BTreeMap::new();
                                 respb.insert("msg_type".to_owned(), bencode::BEncode::Int(0));
                                 respb.insert("piece".to_owned(), bencode::BEncode::Int(i as i64));
@@ -968,7 +986,17 @@ impl<T: cio::CIO> Torrent<T> {
     }
 
     fn set_path(&mut self, path: String) {
-        // TODO: IMplement
+        let from = if let Some(ref p) = self.path {
+            p.clone()
+        } else {
+            CONFIG.disk.directory.clone()
+        };
+        self.cio.msg_disk(disk::Request::Move {
+            tid: self.id,
+            from,
+            to: path,
+            target: self.info.name.clone(),
+        });
     }
 
     fn set_priority(&mut self, priority: u8) {

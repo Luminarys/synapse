@@ -103,6 +103,12 @@ pub enum SResourceUpdate<'a> {
         kind: ResourceKind,
         priority: u8,
     },
+    TorrentPath {
+        id: String,
+        #[serde(rename = "type")]
+        kind: ResourceKind,
+        path: String,
+    },
 
     TrackerStatus {
         id: String,
@@ -265,6 +271,7 @@ impl<'a> SResourceUpdate<'a> {
             &SResourceUpdate::TorrentPeers { ref id, .. } |
             &SResourceUpdate::TorrentPicker { ref id, .. } |
             &SResourceUpdate::TorrentPriority { ref id, .. } |
+            &SResourceUpdate::TorrentPath { ref id, .. } |
             &SResourceUpdate::FilePriority { ref id, .. } |
             &SResourceUpdate::FileProgress { ref id, .. } |
             &SResourceUpdate::TrackerStatus { ref id, .. } |

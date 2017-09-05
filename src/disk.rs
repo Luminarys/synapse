@@ -19,8 +19,11 @@ pub struct Disk {
     active: VecDeque<Request>,
 }
 
-struct FileCache {
-    files: HashMap<path::PathBuf, fs::File>,
+pub struct Location {
+    pub file: PathBuf,
+    pub offset: u64,
+    pub start: usize,
+    pub end: usize,
 }
 
 pub enum Request {
@@ -47,7 +50,12 @@ pub enum Request {
         files: Vec<PathBuf>,
         path: Option<String>,
     },
-
+    Move {
+        tid: usize,
+        from: String,
+        to: String,
+        target: String,
+    },
     Validate {
         tid: usize,
         info: Arc<Info>,
@@ -58,10 +66,14 @@ pub enum Request {
     Shutdown,
 }
 
-enum JobRes {
-    Resp(Response),
-    Done,
-    Paused(Request),
+pub enum Response {
+    Read {
+        context: Ctx,
+        data: Arc<Box<[u8; 16_384]>>,
+    },
+    ValidationComplete { tid: usize, invalid: Vec<u32> },
+    Moved { tid: usize, path: String },
+    Error { tid: usize, err: io::Error },
 }
 
 pub struct Ctx {
@@ -70,6 +82,16 @@ pub struct Ctx {
     pub idx: u32,
     pub begin: u32,
     pub length: u32,
+}
+
+enum JobRes {
+    Resp(Response),
+    Done,
+    Paused(Request),
+}
+
+struct FileCache {
+    files: HashMap<path::PathBuf, fs::File>,
 }
 
 impl Ctx {
@@ -223,6 +245,19 @@ impl Request {
                 let data = Arc::new(data);
                 return Ok(JobRes::Resp(Response::read(context, data)));
             }
+            Request::Move {
+                tid,
+                from,
+                to,
+                target,
+            } => {
+                let mut fp = PathBuf::from(&from);
+                let mut tp = PathBuf::from(&to);
+                fp.push(target.clone());
+                tp.push(target);
+                fs::rename(&fp, &tp)?;
+                return Ok(JobRes::Resp(Response::moved(tid, to)));
+            }
             Request::Serialize { data, hash, .. } => {
                 let mut pb = path::PathBuf::from(sd);
                 pb.push(hash_to_id(&hash));
@@ -311,6 +346,7 @@ impl Request {
             Request::Validate { tid, .. } |
             Request::Delete { tid, .. } |
             Request::Write { tid, .. } => tid,
+            Request::Move { tid, .. } => tid,
             Request::Read { ref context, .. } => context.tid,
             Request::Shutdown => unreachable!(),
         }
@@ -321,13 +357,6 @@ impl fmt::Debug for Request {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "disk::Request")
     }
-}
-
-pub struct Location {
-    pub file: PathBuf,
-    pub offset: u64,
-    pub start: usize,
-    pub end: usize,
 }
 
 impl Location {
@@ -341,15 +370,6 @@ impl Location {
     }
 }
 
-pub enum Response {
-    Read {
-        context: Ctx,
-        data: Arc<Box<[u8; 16_384]>>,
-    },
-    ValidationComplete { tid: usize, invalid: Vec<u32> },
-    Error { tid: usize, err: io::Error },
-}
-
 impl Response {
     pub fn read(context: Ctx, data: Arc<Box<[u8; 16_384]>>) -> Response {
         Response::Read { context, data }
@@ -357,6 +377,10 @@ impl Response {
 
     pub fn error(tid: usize, err: io::Error) -> Response {
         Response::Error { tid, err }
+    }
+
+    pub fn moved(tid: usize, path: String) -> Response {
+        Response::Moved { tid, path }
     }
 
     pub fn validation_complete(tid: usize, invalid: Vec<u32>) -> Response {
@@ -367,6 +391,7 @@ impl Response {
         match *self {
             Response::Read { ref context, .. } => context.tid,
             Response::ValidationComplete { tid, .. } |
+            Response::Moved { tid, .. } |
             Response::Error { tid, .. } => tid,
         }
     }
