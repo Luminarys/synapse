@@ -151,7 +151,7 @@ impl Choker {
 mod tests {
     use super::{Choker, SwapRes};
     use torrent::{Peer, Bitfield};
-    use time::{Instant, Duration};
+    use std::time::{Instant, Duration};
     use std::collections::HashMap;
 
     #[test]
