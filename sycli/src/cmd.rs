@@ -84,7 +84,7 @@ fn del_torrent(c: &mut Client, torrent: &str) -> Result<()> {
         );
         for res in resources.into_iter().take(3) {
             if let Resource::Torrent(t) = res {
-                eprintln!("{}", t.name);
+                eprintln!("{}", t.name.unwrap_or("[Unknown Magnet]".to_owned()));
             }
         }
     }
@@ -120,7 +120,7 @@ pub fn dl(mut c: Client, url: &str, name: &str) -> Result<()> {
         );
         for res in resources.into_iter().take(3) {
             if let Resource::Torrent(t) = res {
-                eprintln!("{}", t.name);
+                eprintln!("{}", t.name.unwrap_or("[Unknown Magnet]".to_owned()));
             }
         }
         return Ok(());
@@ -192,7 +192,7 @@ pub fn list(mut c: Client, kind: &str, crit: Vec<Criterion>, output: &str) -> Re
                 ResourceKind::Torrent => {
                     let t = res.as_torrent();
                     table.add_row(row![
-                        t.name,
+                        t.name.as_ref().map(|s| s.as_str()).unwrap_or("[Unknown Magnet]"),
                         format!("{:.2}%", t.progress * 100.),
                         fmt_bytes(t.transferred_down as f64),
                         fmt_bytes(t.transferred_up as f64),
@@ -273,7 +273,7 @@ fn pause_torrent(c: &mut Client, torrent: &str) -> Result<()> {
         );
         for res in resources.into_iter().take(3) {
             if let Resource::Torrent(t) = res {
-                eprintln!("{}", t.name);
+                eprintln!("{}", t.name.unwrap_or("[Unknown Magnet]".to_owned()));
             }
         }
     }
@@ -304,7 +304,7 @@ fn resume_torrent(c: &mut Client, torrent: &str) -> Result<()> {
         );
         for res in resources.into_iter().take(3) {
             if let Resource::Torrent(t) = res {
-                eprintln!("{}", t.name);
+                eprintln!("{}", t.name.unwrap_or("[Unknown Magnet]".to_owned()));
             }
         }
     }
