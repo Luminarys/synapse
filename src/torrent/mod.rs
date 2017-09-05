@@ -119,7 +119,7 @@ impl<T: cio::CIO> Torrent<T> {
     ) -> Torrent<T> {
         debug!("Creating {:?}", info);
         let peers = HashMap::new();
-        let pieces = Bitfield::new(info.pieces() as u64);
+        let pieces = Bitfield::new(u64::from(info.pieces()));
         let leechers = HashSet::new();
         let status = if start {
             Status::Pending
@@ -127,9 +127,9 @@ impl<T: cio::CIO> Torrent<T> {
             Status::Paused
         };
         let priorities = vec![3; info.files.len()];
-        let mut wanted = Bitfield::new(info.pieces() as u64);
+        let mut wanted = Bitfield::new(u64::from(info.pieces()));
         for i in 0..info.pieces() {
-            wanted.set_bit(i as u64);
+            wanted.set_bit(u64::from(i));
         }
         let info_idx = if info.complete() {
             None
@@ -300,7 +300,7 @@ impl<T: cio::CIO> Torrent<T> {
                 if r.dht {
                     return;
                 }
-                time += Duration::from_secs(r.interval as u64);
+                time += Duration::from_secs(u64::from(r.interval));
                 self.tracker = TrackerStatus::Ok {
                     seeders: r.seeders,
                     leechers: r.leechers,
@@ -378,8 +378,8 @@ impl<T: cio::CIO> Torrent<T> {
                 if let Some(peer) = self.peers.get_mut(&context.pid) {
                     let p = Message::s_piece(context.idx, context.begin, context.length, data);
                     // This may not be 100% accurate, but close enough for now.
-                    self.uploaded += context.length as u64;
-                    self.last_ul += context.length as u64;
+                    self.uploaded += u64::from(context.length);
+                    self.last_ul += u64::from(context.length);
                     self.dirty = true;
                     peer.send_message(p);
                 }
@@ -390,7 +390,7 @@ impl<T: cio::CIO> Torrent<T> {
                 // are part of an invalid file(none of the disk locations
                 // refer to files which aren't being downloaded(pri. 1)
                 invalid.retain(|i| {
-                    self.wanted.has_bit(*i as u64) &&
+                    self.wanted.has_bit(u64::from(*i)) &&
                         !self.info.piece_disk_locs(*i).into_iter().any(|l| {
                             self.priorities[self.info.file_idx[&l.file]] == 0
                         })
@@ -413,14 +413,14 @@ impl<T: cio::CIO> Torrent<T> {
                         // If there was some partial completion,
                         // set the pieces appropriately, then reset the
                         // picker to use the new bitfield
-                        if invalid.len() as u64 != self.pieces.len() {
+                        if invalid.len() != self.pieces.len() as usize {
                             for i in 0..self.pieces.len() {
                                 if self.wanted.has_bit(i) {
                                     self.pieces.set_bit(i);
                                 }
                             }
                             for piece in invalid {
-                                self.pieces.unset_bit(piece as u64);
+                                self.pieces.unset_bit(u64::from(piece));
                             }
                             let mut rpc_updates = vec![];
                             for i in self.pieces.iter() {
@@ -438,9 +438,9 @@ impl<T: cio::CIO> Torrent<T> {
                         let mut rpc_updates = vec![];
                         for piece in invalid {
                             self.picker.invalidate_piece(piece);
-                            self.pieces.unset_bit(piece as u64);
+                            self.pieces.unset_bit(u64::from(piece));
                             rpc_updates.push(SResourceUpdate::PieceDownloaded {
-                                id: util::piece_rpc_id(&self.info.hash, piece as u64),
+                                id: util::piece_rpc_id(&self.info.hash, u64::from(piece)),
                                 kind: resource::ResourceKind::Piece,
                                 downloaded: false,
                             });
@@ -518,7 +518,7 @@ impl<T: cio::CIO> Torrent<T> {
                     let mut m = BTreeMap::new();
                     m.insert(
                         "ut_metadata".to_owned(),
-                        bencode::BEncode::Int(UT_META_ID as i64),
+                        bencode::BEncode::Int(i64::from(UT_META_ID)),
                     );
                     ed.insert("m".to_owned(), bencode::BEncode::Dict(m));
                     ed.insert(
@@ -720,7 +720,7 @@ impl<T: cio::CIO> Torrent<T> {
                 length,
             } => {
                 // Ignore a piece we already have, this could happen from endgame
-                if self.pieces.has_bit(index as u64) {
+                if self.pieces.has_bit(u64::from(index)) {
                     return Ok(());
                 }
 
@@ -752,13 +752,13 @@ impl<T: cio::CIO> Torrent<T> {
                 self.dirty = true;
                 self.write_piece(index, begin, data);
 
-                self.downloaded += length as u64;
-                self.last_dl += length as u64;
+                self.downloaded += u64::from(length);
+                self.last_dl += u64::from(length);
                 if piece_done {
-                    self.pieces.set_bit(index as u64);
+                    self.pieces.set_bit(u64::from(index));
                     self.cio.msg_rpc(rpc::CtlMessage::Update(vec![
                         resource::SResourceUpdate::PieceDownloaded {
-                            id: util::piece_rpc_id(&self.info.hash, index as u64),
+                            id: util::piece_rpc_id(&self.info.hash, u64::from(index)),
                             kind: resource::ResourceKind::Piece,
                             downloaded: true,
                         },
@@ -780,7 +780,7 @@ impl<T: cio::CIO> Torrent<T> {
                     let m = Message::Have(index);
                     for pid in &self.leechers {
                         if let Some(peer) = self.peers.get_mut(pid) {
-                            if !peer.pieces().has_bit(index as u64) {
+                            if !peer.pieces().has_bit(u64::from(index)) {
                                 peer.send_message(m.clone());
                             }
                         } else {
@@ -944,11 +944,11 @@ impl<T: cio::CIO> Torrent<T> {
     }
 
     fn magnet_complete(&mut self) {
-        self.pieces = Bitfield::new(self.info.pieces() as u64);
+        self.pieces = Bitfield::new(u64::from(self.info.pieces()));
         self.priorities = vec![3; self.info.files.len()];
-        self.wanted = Bitfield::new(self.info.pieces() as u64);
+        self.wanted = Bitfield::new(u64::from(self.info.pieces()));
         for i in 0..self.info.pieces() {
-            self.wanted.set_bit(i as u64);
+            self.wanted.set_bit(u64::from(i));
         }
         for peer in self.peers.values_mut() {
             peer.magnet_complete(&self.info);
@@ -1002,7 +1002,7 @@ impl<T: cio::CIO> Torrent<T> {
                             |l| l.file == f.path,
                         )
                         {
-                            self.wanted.unset_bit(p as u64);
+                            self.wanted.unset_bit(u64::from(p));
                         }
                     }
                 }
@@ -1023,7 +1023,7 @@ impl<T: cio::CIO> Torrent<T> {
             (
                 Some(self.info.name.clone()),
                 Some(self.info.total_len),
-                Some(self.info.pieces() as u64),
+                Some(u64::from(self.info.pieces())),
                 Some(self.info.piece_len),
                 Some(self.info.files.len() as u32),
             )
@@ -1068,8 +1068,8 @@ impl<T: cio::CIO> Torrent<T> {
     fn rpc_rel_info(&self) -> Vec<resource::Resource> {
         let mut r = Vec::new();
         for i in 0..self.info.pieces() {
-            let id = util::piece_rpc_id(&self.info.hash, i as u64);
-            if self.pieces.has_bit(i as u64) {
+            let id = util::piece_rpc_id(&self.info.hash, u64::from(i));
+            if self.pieces.has_bit(u64::from(i)) {
                 r.push(Resource::Piece(resource::Piece {
                     id,
                     torrent_id: self.rpc_id(),
@@ -1136,7 +1136,7 @@ impl<T: cio::CIO> Torrent<T> {
         let mut r = Vec::new();
         r.push(self.rpc_id());
         for i in 0..self.info.pieces() {
-            let id = util::piece_rpc_id(&self.info.hash, i as u64);
+            let id = util::piece_rpc_id(&self.info.hash, u64::from(i));
             r.push(id)
         }
         for f in &self.info.files {

@@ -373,7 +373,7 @@ impl Message {
                 buf.write_u32::<BigEndian>(2 + payload.len() as u32)?;
                 buf.write_u8(20)?;
                 buf.write_u8(id)?;
-                buf.write_all(&payload)?;
+                buf.write_all(payload)?;
             }
         };
         Ok(())

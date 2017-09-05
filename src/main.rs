@@ -50,8 +50,9 @@ use std::thread;
 use std::sync::{atomic, mpsc};
 use std::io;
 
-use control::acio;
+// We need to do this for the log macros
 use log::LogLevel;
+use control::acio;
 
 pub const DHT_EXT: (usize, u8) = (7, 1);
 pub const EXT_PROTO: (usize, u8) = (5, 0x10);
@@ -153,7 +154,6 @@ fn main() {
         }
         Err(e) => {
             error!("Couldn't initialize synapse: {}", e);
-            return;
         }
     }
 }

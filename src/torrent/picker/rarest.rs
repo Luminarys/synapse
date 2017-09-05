@@ -115,7 +115,7 @@ impl Picker {
             .filter(|p| {
                 self.piece_idx[*p as usize].status == PieceStatus::Incomplete
             })
-            .find(|p| peer.pieces().has_bit(*p as u64))
+            .find(|p| peer.pieces().has_bit(u64::from(*p)))
             .map(|p| {
                 if (self.piece_idx[p as usize].availability % 2) == 0 {
                     self.dec_avail(p);

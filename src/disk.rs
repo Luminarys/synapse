@@ -403,10 +403,8 @@ impl Disk {
                     error!("Failed to poll for events: {:?}", e);
                 }
             }
-            if !self.active.is_empty() {
-                if self.handle_active() {
-                    break;
-                }
+            if !self.active.is_empty() && self.handle_active() {
+                break;
             }
         }
     }

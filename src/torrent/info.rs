@@ -110,11 +110,11 @@ impl Info {
         let announce = url.query_pairs()
             .find(|&(ref k, _)| k == "tr")
             .map(|(_, ref v)| v.to_string())
-            .unwrap_or("".to_owned());
+            .unwrap_or_else(|| "".to_owned());
         let name = url.query_pairs()
             .find(|&(ref k, _)| k == "dn")
             .map(|(_, ref v)| v.to_string())
-            .unwrap_or("".to_owned());
+            .unwrap_or_else(|| "".to_owned());
         Ok(Info {
             name,
             announce,
@@ -130,7 +130,7 @@ impl Info {
     }
 
     pub fn complete(&self) -> bool {
-        self.hashes.len() > 0
+        !self.hashes.is_empty()
     }
 
     pub fn to_bencode(&self) -> BEncode {
@@ -143,7 +143,7 @@ impl Info {
         }
         info.insert(
             "piece length".to_owned(),
-            BEncode::Int(self.piece_len as i64),
+            BEncode::Int(i64::from(self.piece_len)),
         );
         let mut pieces = Vec::with_capacity(self.hashes.len() * 20);
         for h in &self.hashes {
@@ -246,7 +246,7 @@ impl Info {
                         .into_string()
                         .map_err(|_| "Only UTF8 paths are accepted")?
                 } else {
-                    unreachable!();
+                    unreachable!()
                 };
 
                 let mut file_idx = HashMap::new();
@@ -290,7 +290,7 @@ impl Info {
             16_384
         } else {
             let last_piece_len =
-                (self.total_len - self.piece_len as u64 * (self.pieces() as u64 - 1)) as u32;
+                (self.total_len - u64::from(self.piece_len) * u64::from(self.pieces()) - 1) as u32;
             // Note this is not the real last block len, just what it will be IF the offset really
             // is for the last block
             let last_block_len = last_piece_len - offset;
@@ -309,7 +309,7 @@ impl Info {
         if idx != self.pieces().saturating_sub(1) {
             self.piece_len
         } else {
-            (self.total_len - self.piece_len as u64 * (self.pieces() as u64 - 1)) as u32
+            (self.total_len - u64::from(self.piece_len) * (u64::from(self.pieces()) - 1)) as u32
         }
     }
 
@@ -331,9 +331,9 @@ impl Info {
 
     /// Calculates the file offsets for a given index, begin, and block length.
     fn calc_disk_locs(&self, index: u32, begin: u32, len: u32) -> Vec<disk::Location> {
-        let mut len = len as u64;
+        let mut len = u64::from(len);
         // The absolute byte offset where we start processing data.
-        let mut cur_start = index as u64 * self.piece_len as u64 + begin as u64;
+        let mut cur_start = u64::from(index) * u64::from(self.piece_len) + u64::from(begin);
         // Current index of the data block we're writing
         let mut data_start = 0;
         // The current file end length.

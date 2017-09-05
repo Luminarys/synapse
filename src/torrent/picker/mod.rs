@@ -140,7 +140,7 @@ impl Picker {
                 PickerKind::Sequential(ref mut p) => p.completed(piece),
                 PickerKind::Rarest(ref mut p) => p.completed(piece),
             }
-            self.unpicked.set_bit(piece as u64);
+            self.unpicked.set_bit(u64::from(piece));
         }
         Some(Block {
             index: piece,
@@ -151,7 +151,7 @@ impl Picker {
     /// Attempts to pick an already requested block
     fn pick_downloading<T: cio::CIO>(&mut self, peer: &Peer<T>) -> Option<Block> {
         for (idx, dl) in &mut self.downloading {
-            if peer.pieces().has_bit(*idx as u64) {
+            if peer.pieces().has_bit(u64::from(*idx)) {
                 let r = dl.iter_mut()
                     .find(|r| {
                         !r.completed && r.requested.len() < MAX_DUP_REQS &&
@@ -222,7 +222,7 @@ impl Picker {
             PickerKind::Sequential(ref mut p) => p.incomplete(idx),
             PickerKind::Rarest(ref mut p) => p.incomplete(idx),
         }
-        self.unpicked.unset_bit(idx as u64);
+        self.unpicked.unset_bit(u64::from(idx));
     }
 
     pub fn piece_available(&mut self, idx: u32) {
@@ -293,9 +293,12 @@ impl Picker {
         } else {
             let mut pieces = [vec![], vec![], vec![], vec![], vec![], vec![]];
             for p in 0..self.info.pieces() {
-                for pr in 0..piece_map[&p] {
-                    pieces[pr].push(p);
+                for pri in pieces.iter_mut().take(piece_map[&p]) {
+                    pri.push(p);
                 }
+                // for pr in 0..piece_map[&p] {
+                //     pieces[pr].push(p);
+                // }
             }
             PickerKind::Sequential(sequential::Picker::new_pri(pieces))
         };

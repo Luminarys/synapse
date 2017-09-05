@@ -241,9 +241,9 @@ impl<T: cio::CIO> Peer<T> {
 
     pub fn magnet_complete(&mut self, info: &Info) {
         if self.pieces.len() == 0 {
-            self.pieces = Bitfield::new(info.pieces() as u64);
+            self.pieces = Bitfield::new(u64::from(info.pieces()));
         } else {
-            self.pieces.cap(info.pieces() as u64);
+            self.pieces.cap(u64::from(info.pieces()));
         }
     }
 
@@ -330,7 +330,7 @@ impl<T: cio::CIO> Peer<T> {
             }
             Message::Piece { length, .. } |
             Message::SharedPiece { length, .. } => {
-                self.downloaded_bytes += length as u64;
+                self.downloaded_bytes += u64::from(length);
                 self.downloaded += 1;
                 self.queued -= 1;
             }
@@ -359,7 +359,7 @@ impl<T: cio::CIO> Peer<T> {
                         ErrorKind::ProtocolError("Invalid piece provided in HAVE!").into(),
                     );
                 }
-                self.pieces.set_bit(idx as u64);
+                self.pieces.set_bit(u64::from(idx));
             }
             Message::Bitfield(ref mut pieces) => {
                 // Set the correct length, then swap the pieces
@@ -446,7 +446,7 @@ impl<T: cio::CIO> Peer<T> {
             Message::SharedPiece { length, .. } |
             Message::Piece { length, .. } => {
                 self.uploaded += 1;
-                self.uploaded_bytes += length as u64;
+                self.uploaded_bytes += u64::from(length);
             }
             _ => {}
         }
