@@ -530,154 +530,7 @@ impl<T: cio::CIO> Torrent<T> {
                 }
             }
             Message::Extension { id, payload } => {
-                if id == 0 {
-                    let b = bencode::decode_buf(&payload).map_err(|_| ())?;
-                    let mut d = b.into_dict().ok_or(())?;
-                    let m = d.remove("m").and_then(|v| v.into_dict()).ok_or(())?;
-                    if m.contains_key("ut_metadata") {
-                        let size = d.remove("metadata_size").and_then(|v| v.into_int()).ok_or(
-                            (),
-                        )?;
-                        if let Some(::std::usize::MAX) = self.info_idx {
-                            if size % 16_384 == 0 {
-                                self.info_idx = Some(size as usize / 16_384 - 1);
-                            } else {
-                                self.info_idx = Some(size as usize / 16_384);
-                            }
-                            self.info_bytes.reserve(size as usize);
-                            unsafe {
-                                self.info_bytes.set_len(size as usize);
-                            }
-                        }
-                        if !self.info.complete() {
-                            // Request the first index chunk to see if they have it
-                            let mut respb = BTreeMap::new();
-                            respb.insert("msg_type".to_owned(), bencode::BEncode::Int(0));
-                            respb.insert("piece".to_owned(), bencode::BEncode::Int(0));
-                            let payload = bencode::BEncode::Dict(respb).encode_to_buf();
-                            let utm_id = if let Some(i) = peer.exts().ut_meta {
-                                i
-                            } else {
-                                return Err(());
-                            };
-                            peer.send_message(Message::Extension {
-                                id: utm_id,
-                                payload,
-                            });
-                        }
-                    }
-                } else if id == UT_META_ID {
-                    let utm_id = if let Some(i) = peer.exts().ut_meta {
-                        i
-                    } else {
-                        return Err(());
-                    };
-                    let b = bencode::decode_buf(&payload).map_err(|_| ())?;
-                    let mut d = b.into_dict().ok_or(())?;
-                    let t = d.remove("msg_type").and_then(|v| v.into_int()).ok_or(())?;
-                    let p = d.remove("piece").and_then(|v| v.into_int()).ok_or(())? as usize;
-                    if p * 16_384 >= self.info_bytes.len() {
-                        return Err(());
-                    }
-                    match t {
-                        0 => {
-                            let mut respb = BTreeMap::new();
-                            if self.info_idx.is_none() {
-                                respb.insert("msg_type".to_owned(), bencode::BEncode::Int(1));
-                                respb.insert("piece".to_owned(), bencode::BEncode::Int(p as i64));
-                                let size = if self.info_bytes.len() / 16_384 == p {
-                                    self.info_bytes.len() % 16_384
-                                } else {
-                                    16_384
-                                };
-                                respb.insert(
-                                    "total_size".to_owned(),
-                                    bencode::BEncode::Int(size as i64),
-                                );
-                                let mut payload = bencode::BEncode::Dict(respb).encode_to_buf();
-                                let s = p * 16_384;
-                                payload.extend_from_slice(&self.info_bytes[s..s + size]);
-                                peer.send_message(Message::Extension {
-                                    id: utm_id,
-                                    payload,
-                                });
-                            } else {
-                                respb.insert("msg_type".to_owned(), bencode::BEncode::Int(2));
-                                respb.insert("piece".to_owned(), bencode::BEncode::Int(p as i64));
-                                let payload = bencode::BEncode::Dict(respb).encode_to_buf();
-                                peer.send_message(Message::Extension {
-                                    id: utm_id,
-                                    payload,
-                                });
-                            }
-                        }
-                        1 => {
-                            if let Some(idx) = self.info_idx {
-                                let data_idx = util::find_subseq(&payload[..], b"ee").unwrap() + 2;
-                                if payload.len() - data_idx > self.info_bytes.len() - p * 16_384 {
-                                    debug!("Metadata bounds invalid, goes to: {}, ibl: {}",
-                                            payload.len() - data_idx,
-                                            self.info_bytes.len() - p * 16_384,
-                                        );
-                                    return Err(());
-                                }
-                                let size = if p == idx {
-                                    self.info_bytes.len() - p * 16_384
-                                } else {
-                                    16_384
-                                };
-                                (&mut self.info_bytes[p * 16_384..p * 16_384 + size])
-                                    .copy_from_slice(&payload[data_idx..]);
-                                if p == idx {
-                                    let mut b = BTreeMap::new();
-                                    let bni =
-                                        bencode::decode_buf(&self.info_bytes).map_err(|_| ())?;
-                                    b.insert(
-                                        "announce".to_owned(),
-                                        bencode::BEncode::String(
-                                            self.info.announce.clone().into_bytes(),
-                                        ),
-                                    );
-                                    b.insert("info".to_owned(), bni);
-                                    let ni = Info::from_bencode(bencode::BEncode::Dict(b))
-                                        .map_err(|_| ())?;
-                                    if ni.hash == self.info.hash {
-                                        debug!("Magnet file acquired succesfully!");
-                                        self.info_idx = None;
-                                        self.info = Arc::new(ni);
-                                        self.magnet_complete();
-                                    } else {
-                                        return Err(());
-                                    }
-                                } else if p == 0 {
-                                    for i in 1..(idx + 1) {
-                                        debug!("Requesting idx: {}", i);
-                                        let mut respb = BTreeMap::new();
-                                        respb.insert(
-                                            "msg_type".to_owned(),
-                                            bencode::BEncode::Int(0),
-                                        );
-                                        respb.insert(
-                                            "piece".to_owned(),
-                                            bencode::BEncode::Int(i as i64),
-                                        );
-                                        let payload = bencode::BEncode::Dict(respb).encode_to_buf();
-                                        peer.send_message(Message::Extension {
-                                            id: utm_id,
-                                            payload,
-                                        });
-                                    }
-                                }
-                            }
-                        }
-                        2 => {}
-                        i => {
-                            debug!("Got unknown ut_meta id: {}", i);
-                        }
-                    }
-                } else {
-                    debug!("Got unknown extension id: {}", id);
-                }
+                self.handle_ext(id, payload, peer)?;
             }
             Message::Bitfield(_) => {
                 if self.pieces.usable(peer.pieces()) {
@@ -848,6 +701,147 @@ impl<T: cio::CIO> Torrent<T> {
             Message::Port(_) => {}
 
             Message::SharedPiece { .. } => unreachable!(),
+        }
+        Ok(())
+    }
+
+    fn handle_ext(&mut self, id: u8, payload: Vec<u8>, peer: &mut Peer<T>) -> Result<(), ()> {
+        if id == 0 {
+            let b = bencode::decode_buf(&payload).map_err(|_| ())?;
+            let mut d = b.into_dict().ok_or(())?;
+            let m = d.remove("m").and_then(|v| v.into_dict()).ok_or(())?;
+            if m.contains_key("ut_metadata") {
+                let size = d.remove("metadata_size").and_then(|v| v.into_int()).ok_or(
+                    (),
+                )?;
+                if let Some(::std::usize::MAX) = self.info_idx {
+                    if size % 16_384 == 0 {
+                        self.info_idx = Some(size as usize / 16_384 - 1);
+                    } else {
+                        self.info_idx = Some(size as usize / 16_384);
+                    }
+                    self.info_bytes.reserve(size as usize);
+                    unsafe {
+                        self.info_bytes.set_len(size as usize);
+                    }
+                }
+                if !self.info.complete() {
+                    // Request the first index chunk to see if they have it
+                    let mut respb = BTreeMap::new();
+                    respb.insert("msg_type".to_owned(), bencode::BEncode::Int(0));
+                    respb.insert("piece".to_owned(), bencode::BEncode::Int(0));
+                    let payload = bencode::BEncode::Dict(respb).encode_to_buf();
+                    let utm_id = if let Some(i) = peer.exts().ut_meta {
+                        i
+                    } else {
+                        return Err(());
+                    };
+                    peer.send_message(Message::Extension {
+                        id: utm_id,
+                        payload,
+                    });
+                }
+            }
+        } else if id == UT_META_ID {
+            let utm_id = if let Some(i) = peer.exts().ut_meta {
+                i
+            } else {
+                return Err(());
+            };
+            let b = bencode::decode_buf(&payload).map_err(|_| ())?;
+            let mut d = b.into_dict().ok_or(())?;
+            let t = d.remove("msg_type").and_then(|v| v.into_int()).ok_or(())?;
+            let p = d.remove("piece").and_then(|v| v.into_int()).ok_or(())? as usize;
+            if p * 16_384 >= self.info_bytes.len() {
+                return Err(());
+            }
+            match t {
+                0 => {
+                    let mut respb = BTreeMap::new();
+                    if self.info_idx.is_none() {
+                        respb.insert("msg_type".to_owned(), bencode::BEncode::Int(1));
+                        respb.insert("piece".to_owned(), bencode::BEncode::Int(p as i64));
+                        let size = if self.info_bytes.len() / 16_384 == p {
+                            self.info_bytes.len() % 16_384
+                        } else {
+                            16_384
+                        };
+                        respb.insert("total_size".to_owned(), bencode::BEncode::Int(size as i64));
+                        let mut payload = bencode::BEncode::Dict(respb).encode_to_buf();
+                        let s = p * 16_384;
+                        payload.extend_from_slice(&self.info_bytes[s..s + size]);
+                        peer.send_message(Message::Extension {
+                            id: utm_id,
+                            payload,
+                        });
+                    } else {
+                        respb.insert("msg_type".to_owned(), bencode::BEncode::Int(2));
+                        respb.insert("piece".to_owned(), bencode::BEncode::Int(p as i64));
+                        let payload = bencode::BEncode::Dict(respb).encode_to_buf();
+                        peer.send_message(Message::Extension {
+                            id: utm_id,
+                            payload,
+                        });
+                    }
+                }
+                1 => {
+                    if let Some(idx) = self.info_idx {
+                        let data_idx = util::find_subseq(&payload[..], b"ee").unwrap() + 2;
+                        if payload.len() - data_idx > self.info_bytes.len() - p * 16_384 {
+                            debug!("Metadata bounds invalid, goes to: {}, ibl: {}",
+                                            payload.len() - data_idx,
+                                            self.info_bytes.len() - p * 16_384,
+                                        );
+                            return Err(());
+                        }
+                        let size = if p == idx {
+                            self.info_bytes.len() - p * 16_384
+                        } else {
+                            16_384
+                        };
+                        (&mut self.info_bytes[p * 16_384..p * 16_384 + size])
+                            .copy_from_slice(&payload[data_idx..]);
+                        if p == idx {
+                            let mut b = BTreeMap::new();
+                            let bni = bencode::decode_buf(&self.info_bytes).map_err(|_| ())?;
+                            b.insert(
+                                "announce".to_owned(),
+                                bencode::BEncode::String(self.info.announce.clone().into_bytes()),
+                            );
+                            b.insert("info".to_owned(), bni);
+                            let ni = Info::from_bencode(bencode::BEncode::Dict(b)).map_err(
+                                |_| (),
+                            )?;
+                            if ni.hash == self.info.hash {
+                                debug!("Magnet file acquired succesfully!");
+                                self.info_idx = None;
+                                self.info = Arc::new(ni);
+                                self.magnet_complete();
+                            } else {
+                                return Err(());
+                            }
+                        } else if p == 0 {
+                            for i in 1..(idx + 1) {
+                                debug!("Requesting idx: {}", i);
+                                let mut respb = BTreeMap::new();
+                                respb.insert("msg_type".to_owned(), bencode::BEncode::Int(0));
+                                respb.insert("piece".to_owned(), bencode::BEncode::Int(i as i64));
+                                let payload = bencode::BEncode::Dict(respb).encode_to_buf();
+                                peer.send_message(Message::Extension {
+                                    id: utm_id,
+                                    payload,
+                                });
+                            }
+                        }
+                    }
+                }
+                2 => {}
+                i => {
+                    debug!("Got unknown ut_meta id: {}", i);
+                }
+            }
+        } else {
+            debug!("Got unknown extension id: {}", id);
         }
         Ok(())
     }
