@@ -6,7 +6,7 @@ mod dht;
 
 use std::collections::VecDeque;
 use std::net::{SocketAddr, SocketAddrV4, Ipv4Addr};
-use std::{result, io};
+use std::{result, io, thread};
 
 use byteorder::{BigEndian, ReadBytesExt};
 use url::Url;
@@ -82,7 +82,9 @@ pub struct TrackerResponse {
 const POLL_INT_MS: usize = 1000;
 
 impl Tracker {
-    pub fn start(creg: &mut amy::Registrar) -> io::Result<handle::Handle<Response, Request>> {
+    pub fn start(
+        creg: &mut amy::Registrar,
+    ) -> io::Result<(handle::Handle<Response, Request>, thread::JoinHandle<()>)> {
         let poll = amy::Poller::new()?;
         let mut reg = poll.get_registrar()?;
         let (ch, dh) = handle::Handle::new(creg, &mut reg)?;
@@ -92,7 +94,7 @@ impl Tracker {
         let dht = dht::Manager::new(&reg)?;
         let http = http::Handler::new(&reg)?;
         let dns = dns::Resolver::new(reg, dtx);
-        dh.run("trk", move |h| {
+        let th = dh.run("trk", move |h| {
             Tracker {
                 poll,
                 ch: h,
@@ -105,8 +107,8 @@ impl Tracker {
                 queue: VecDeque::new(),
                 shutting_down: false,
             }.run()
-        });
-        Ok(ch)
+        })?;
+        Ok((ch, th))
     }
 
     pub fn run(&mut self) {

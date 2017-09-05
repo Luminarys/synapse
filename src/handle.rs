@@ -2,7 +2,6 @@ use std::{io, thread};
 use std::sync::atomic;
 use std::fmt::Debug;
 use amy;
-use TC;
 
 pub struct Handle<I, O> {
     pub tx: amy::Sender<O>,
@@ -21,14 +20,17 @@ impl<I: Debug + Send + 'static, O: Debug + Send + 'static> Handle<I, O> {
         Ok((ch, hh))
     }
 
-    pub fn run<F: FnOnce(Handle<I, O>) + Send + 'static>(self, thread: &'static str, f: F) {
-        thread::spawn(move || {
-            TC.fetch_add(1, atomic::Ordering::SeqCst);
+    pub fn run<F: FnOnce(Handle<I, O>) + Send + 'static>(
+        self,
+        thread: &'static str,
+        f: F,
+    ) -> io::Result<thread::JoinHandle<()>> {
+        let builder = thread::Builder::new().name(thread.to_owned());
+        builder.spawn(move || {
             debug!("{} thread started", thread);
             f(self);
             debug!("{} thread completed", thread);
-            TC.fetch_sub(1, atomic::Ordering::SeqCst);
-        });
+        })
     }
 
     pub fn send(&self, msg: O) -> Result<(), ()> {

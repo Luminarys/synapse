@@ -108,7 +108,7 @@ impl<T: cio::CIO> Control<T> {
                     return;
                 }
             }
-            if SHUTDOWN.load(atomic::Ordering::SeqCst) {
+            if SHUTDOWN.load(atomic::Ordering::Relaxed) {
                 self.serialize();
                 break;
             }

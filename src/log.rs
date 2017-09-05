@@ -31,10 +31,14 @@ pub fn log_init(level: LogLevel) {
 #[macro_export]
 macro_rules! trace(
     ($fmt:expr) => {
-        log!($crate::LogLevel::Trace, $fmt)
+        if cfg!(debug_assertions) {
+            log!($crate::LogLevel::Trace, $fmt)
+        }
     };
     ($fmt:expr, $($arg:tt)*) => {
-        log!($crate::LogLevel::Trace, $fmt, $($arg)*)
+        if cfg!(debug_assertions) {
+            log!($crate::LogLevel::Trace, $fmt, $($arg)*)
+        }
     };
 );
 

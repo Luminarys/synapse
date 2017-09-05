@@ -1,6 +1,6 @@
 use std::sync::Arc;
 use std::collections::{HashMap, VecDeque};
-use std::{fs, fmt, path, time};
+use std::{fs, fmt, path, time, thread};
 use std::io::{self, Seek, SeekFrom, Write, Read};
 use std::path::PathBuf;
 use torrent::Info;
@@ -469,10 +469,12 @@ impl Disk {
     }
 }
 
-pub fn start(creg: &mut amy::Registrar) -> io::Result<handle::Handle<Response, Request>> {
+pub fn start(
+    creg: &mut amy::Registrar,
+) -> io::Result<(handle::Handle<Response, Request>, thread::JoinHandle<()>)> {
     let poll = amy::Poller::new()?;
     let mut reg = poll.get_registrar()?;
     let (ch, dh) = handle::Handle::new(creg, &mut reg)?;
-    dh.run("disk", move |h| Disk::new(poll, h).run());
-    Ok(ch)
+    let h = dh.run("disk", move |h| Disk::new(poll, h).run())?;
+    Ok((ch, h))
 }

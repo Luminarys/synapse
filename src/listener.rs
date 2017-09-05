@@ -1,4 +1,4 @@
-use std::fmt;
+use std::{fmt, thread};
 use std::io::{self, ErrorKind};
 use std::net::{SocketAddrV4, Ipv4Addr, TcpListener};
 use amy::{self, Poller, Registrar};
@@ -40,7 +40,9 @@ pub enum Request {
 const POLL_INT_MS: usize = 1000;
 
 impl Listener {
-    pub fn start(creg: &mut amy::Registrar) -> io::Result<handle::Handle<Message, Request>> {
+    pub fn start(
+        creg: &mut amy::Registrar,
+    ) -> io::Result<(handle::Handle<Message, Request>, thread::JoinHandle<()>)> {
         let poll = Poller::new()?;
         let mut reg = poll.get_registrar()?;
         let ip = Ipv4Addr::new(0, 0, 0, 0);
@@ -50,7 +52,7 @@ impl Listener {
         let lid = reg.register(&listener, amy::Event::Both)?;
 
         let (ch, dh) = handle::Handle::new(creg, &mut reg)?;
-        dh.run("listener", move |h| {
+        let th = dh.run("listener", move |h| {
             Listener {
                 listener,
                 lid,
@@ -59,8 +61,8 @@ impl Listener {
                 reg,
                 ch: h,
             }.run()
-        });
-        Ok(ch)
+        })?;
+        Ok((ch, th))
     }
 
     pub fn run(&mut self) {

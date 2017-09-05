@@ -6,7 +6,7 @@ mod client;
 mod processor;
 mod transfer;
 
-use std::{io, str, result};
+use std::{io, str, result, thread};
 use std::io::Write;
 use std::net::{TcpListener, TcpStream, Ipv4Addr, SocketAddrV4};
 use std::collections::HashMap;
@@ -103,7 +103,9 @@ pub struct RPC {
 }
 
 impl RPC {
-    pub fn start(creg: &mut amy::Registrar) -> io::Result<handle::Handle<Message, CtlMessage>> {
+    pub fn start(
+        creg: &mut amy::Registrar,
+    ) -> io::Result<(handle::Handle<Message, CtlMessage>, thread::JoinHandle<()>)> {
         let poll = amy::Poller::new()?;
         let mut reg = poll.get_registrar()?;
         let cleanup = reg.set_interval(CLEANUP_INT_MS)?;
@@ -119,7 +121,7 @@ impl RPC {
         listener.set_nonblocking(true)?;
         let lid = reg.register(&listener, amy::Event::Both)?;
 
-        dh.run("rpc", move |ch| {
+        let th = dh.run("rpc", move |ch| {
             RPC {
                 ch,
                 poll,
@@ -132,8 +134,8 @@ impl RPC {
                 processor: Processor::new(),
                 transfers: Transfers::new(),
             }.run()
-        });
-        Ok(ch)
+        })?;
+        Ok((ch, th))
     }
 
     pub fn run(&mut self) {
