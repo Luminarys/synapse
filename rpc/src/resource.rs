@@ -377,9 +377,22 @@ impl Resource {
                 s.throttle_down = throttle_down;
             }
             (&mut Resource::Server(ref mut s),
-             SResourceUpdate::Rate { rate_up, rate_down, .. }) => {
+             SResourceUpdate::ServerTransfer {
+                 id: _,
+                 kind: _,
+                 rate_up,
+                 rate_down,
+                 transferred_up,
+                 transferred_down,
+                 ses_transferred_up,
+                 ses_transferred_down,
+             }) => {
                 s.rate_up = rate_up;
                 s.rate_down = rate_down;
+                s.transferred_up = transferred_up;
+                s.transferred_down = transferred_down;
+                s.ses_transferred_up = ses_transferred_up;
+                s.ses_transferred_down = ses_transferred_down;
             }
             (&mut Resource::Torrent(ref mut t),
              SResourceUpdate::TorrentStatus {

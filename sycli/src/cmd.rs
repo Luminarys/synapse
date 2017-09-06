@@ -311,6 +311,32 @@ fn resume_torrent(c: &mut Client, torrent: &str) -> Result<()> {
     Ok(())
 }
 
+pub fn status(mut c: Client) -> Result<()> {
+    match search(&mut c, ResourceKind::Server, vec![])?.pop() {
+        Some(Resource::Server(s)) => {
+            let vi = s.id.find("-").unwrap();
+            let version = &s.id[..vi];
+            println!(
+                "synapse v{}, RPC v{}.{}",
+                version,
+                c.version().major,
+                c.version().minor
+            );
+            println!(
+                "UL: {}/s, DL: {}/s, total UL: {}, total DL: {}",
+                fmt_bytes(s.rate_up as f64),
+                fmt_bytes(s.rate_down as f64),
+                fmt_bytes(s.transferred_up as f64),
+                fmt_bytes(s.transferred_down as f64),
+            );
+        }
+        _ => {
+            bail!("synapse server incorrectly reported server status!");
+        }
+    };
+    Ok(())
+}
+
 fn search_torrent_name(c: &mut Client, name: &str) -> Result<Vec<Resource>> {
     search(
         c,
@@ -333,6 +359,11 @@ fn search(c: &mut Client, kind: ResourceKind, criteria: Vec<Criterion>) -> Resul
         criteria,
     };
     if let SMessage::OResourcesExtant { ids, .. } = c.rr(msg)? {
+        let ns = c.next_serial();
+        c.send(CMessage::FilterUnsubscribe {
+            serial: ns,
+            filter_serial: s,
+        })?;
         get_resources(c, ids)
     } else {
         bail!("Failed to receive extant resource list!");
@@ -342,13 +373,20 @@ fn search(c: &mut Client, kind: ResourceKind, criteria: Vec<Criterion>) -> Resul
 fn get_resources(c: &mut Client, ids: Vec<String>) -> Result<Vec<Resource>> {
     let msg = CMessage::Subscribe {
         serial: c.next_serial(),
+        ids: ids.clone(),
+    };
+    let unsub = CMessage::Unsubscribe {
+        serial: c.next_serial(),
         ids,
     };
+
     let resources = if let SMessage::UpdateResources { resources } = c.rr(msg)? {
         resources
     } else {
         bail!("Failed to received torrent resource list!");
     };
+
+    c.send(unsub)?;
 
     let mut results = Vec::new();
     for r in resources {

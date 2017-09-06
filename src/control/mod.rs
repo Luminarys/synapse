@@ -35,8 +35,8 @@ pub struct Control<T: cio::CIO> {
     cio: T,
     tid_cnt: usize,
     job_timer: usize,
-    tx_rates: Option<(u64, u64)>,
-    last_tx_rates: (u64, u64),
+    last_tx: (u64, u64),
+    last_tx_time: time::Instant,
     jobs: job::JobManager<T>,
     torrents: HashMap<usize, Torrent<T>>,
     peers: HashMap<usize, usize>,
@@ -87,8 +87,8 @@ impl<T: cio::CIO> Control<T> {
             torrents,
             peers,
             hash_idx,
-            tx_rates: None,
-            last_tx_rates: (0, 0),
+            last_tx: (0, 0),
+            last_tx_time: time::Instant::now(),
             data: Default::default(),
         })
     }
@@ -217,13 +217,11 @@ impl<T: cio::CIO> Control<T> {
             }
             cio::Event::Timer(t) => {
                 if t == self.throttler.id() {
-                    if let Some(((ulr, ul), (dlr, dl))) = self.throttler.update() {
-                        self.tx_rates = Some((ulr, dlr));
-                        self.data.ul += ul;
-                        self.data.dl += dl;
-                        self.data.session_ul += ul;
-                        self.data.session_dl += dl;
-                    }
+                    let (ul, dl) = self.throttler.update();
+                    self.data.ul += ul;
+                    self.data.dl += dl;
+                    self.data.session_ul += ul;
+                    self.data.session_dl += dl;
                 } else if t == self.throttler.fid() {
                     self.flush_blocked_peers();
                 } else if t == self.job_timer {
@@ -441,14 +439,11 @@ impl<T: cio::CIO> Control<T> {
     }
 
     fn update_rpc_tx(&mut self) {
-        if let Some((rate_up, rate_down)) = self.tx_rates {
-            self.tx_rates = None;
-            if rate_up == self.last_tx_rates.0 && rate_down == self.last_tx_rates.1 {
-                return;
-            } else {
-                self.last_tx_rates.0 = rate_up;
-                self.last_tx_rates.1 = rate_down;
-            }
+        if self.last_tx.0 != self.data.session_ul || self.last_tx.1 != self.data.session_dl {
+            let elapsed = self.last_tx_time.elapsed();
+            let d = elapsed.as_secs() * 1000 + elapsed.subsec_nanos() as u64 / 1000000;
+            let rate_up = ((self.data.session_ul - self.last_tx.0) * 1000) / d;
+            let rate_down = ((self.data.session_dl - self.last_tx.1) * 1000) / d;
             self.cio.msg_rpc(rpc::CtlMessage::Update(vec![
                 rpc::resource::SResourceUpdate::ServerTransfer {
                     id: self.data.id.clone(),
@@ -461,6 +456,9 @@ impl<T: cio::CIO> Control<T> {
                     ses_transferred_down: self.data.session_dl,
                 },
             ]));
+            self.last_tx_time = time::Instant::now();
+            self.last_tx.0 = self.data.session_ul;
+            self.last_tx.1 = self.data.session_dl;
         }
     }
 

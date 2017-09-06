@@ -44,6 +44,7 @@ struct TorrentData {
     status: Status,
     path: Option<String>,
     wanted: Bitfield,
+    priority: u8,
     priorities: Vec<u8>,
 }
 
@@ -216,7 +217,7 @@ impl<T: cio::CIO> Torrent<T> {
             last_ul: 0,
             last_dl: 0,
             priorities: d.priorities,
-            priority: 3,
+            priority: d.priority,
             last_clear: Utc::now(),
             cio,
             leechers,
@@ -258,6 +259,7 @@ impl<T: cio::CIO> Torrent<T> {
             status: self.status,
             path: self.path.clone(),
             priorities: self.priorities.clone(),
+            priority: self.priority.clone(),
             wanted: self.wanted.clone(),
         };
         let data = bincode::serialize(&d, bincode::Infinite).expect("Serialization failed!");
@@ -1067,7 +1069,7 @@ impl<T: cio::CIO> Torrent<T> {
             modified: Utc::now(),
             status: self.status.into(),
             error: self.error(),
-            priority: 3,
+            priority: self.priority,
             progress: self.progress(),
             availability: self.availability(),
             sequential: self.sequential(),

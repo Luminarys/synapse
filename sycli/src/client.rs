@@ -1,33 +1,41 @@
-use std::process;
-
 use websocket::ClientBuilder;
 use websocket::client::sync::Client as WSClient;
 use websocket::stream::sync::NetworkStream;
 use websocket::message::OwnedMessage as WSMessage;
 use serde_json;
 
-use rpc::message::{CMessage, SMessage};
+use rpc::message::{CMessage, SMessage, Version};
 
 use error::{Result, ResultExt, ErrorKind};
 
 pub struct Client {
     ws: WSClient<Box<NetworkStream + Send>>,
+    version: Version,
     serial: u64,
 }
 
 impl Client {
-    pub fn new(url: &str) -> Client {
-        let client = match ClientBuilder::new(url).unwrap().connect(None) {
-            Ok(c) => c,
-            Err(_) => {
-                eprintln!("Couldn't connect to synapse!");
-                process::exit(1);
-            }
-        };
-        Client {
+    pub fn new(url: &str) -> Result<Client> {
+        let client = ClientBuilder::new(url).unwrap().connect(None).chain_err(
+            || {
+                ErrorKind::Websocket
+            },
+        )?;
+        let mut c = Client {
             ws: client,
             serial: 0,
+            version: Version { major: 0, minor: 0 },
+        };
+        if let SMessage::RpcVersion(v) = c.recv()? {
+            c.version = v;
+            Ok(c)
+        } else {
+            bail!("Expected a version message on start!");
         }
+    }
+
+    pub fn version(&self) -> &Version {
+        &self.version
     }
 
     pub fn next_serial(&mut self) -> u64 {
@@ -47,7 +55,7 @@ impl Client {
         Ok(())
     }
 
-    pub fn recv(&mut self) -> Result<SMessage> {
+    pub fn recv(&mut self) -> Result<SMessage<'static>> {
         loop {
             match self.ws.recv_message().chain_err(|| ErrorKind::Websocket)? {
                 WSMessage::Text(s) => {
@@ -58,7 +66,7 @@ impl Client {
         }
     }
 
-    pub fn rr(&mut self, msg: CMessage) -> Result<SMessage> {
+    pub fn rr(&mut self, msg: CMessage) -> Result<SMessage<'static>> {
         self.send(msg)?;
         self.recv()
     }

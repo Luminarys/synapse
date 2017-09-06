@@ -83,6 +83,18 @@ fn main() {
                 ),
         )
         .subcommand(
+            SubCommand::with_name("dl")
+                .about("Downloads a torrent.")
+                .arg(
+                    Arg::with_name("torrent")
+                        .help("Name of torrent to download.")
+                        .short("t")
+                        .long("torrent")
+                        .index(1)
+                        .required(true),
+                ),
+        )
+        .subcommand(
             SubCommand::with_name("list")
                 .about("Lists resources of a given type in synapse.")
                 .arg(
@@ -135,18 +147,7 @@ fn main() {
                         .index(1),
                 ),
         )
-        .subcommand(
-            SubCommand::with_name("dl")
-                .about("Downloads a torrent.")
-                .arg(
-                    Arg::with_name("torrent")
-                        .help("Name of torrent to download.")
-                        .short("t")
-                        .long("torrent")
-                        .index(1)
-                        .required(true),
-                ),
-        )
+        .subcommand(SubCommand::with_name("status").about("Server status"))
         .get_matches();
 
     let mut url = match Url::parse(matches.value_of("server").unwrap()) {
@@ -159,24 +160,29 @@ fn main() {
     if let Some(password) = matches.value_of("password") {
         url.query_pairs_mut().append_pair("password", password);
     }
-    let mut client = Client::new(url.as_str());
-    if let Ok(rpc::message::SMessage::RpcVersion(v)) = client.recv() {
-        if v.major != rpc::MAJOR_VERSION {
-            eprintln!(
-                "synapse RPC major version {} is not compatible with sycli RPC major version {}",
-                v.major,
-                rpc::MAJOR_VERSION
-            );
+    let client = match Client::new(url.as_str()) {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("Failed to connect to synapse: {}!", e);
             process::exit(1);
         }
-        if v.minor < rpc::MINOR_VERSION {
-            eprintln!(
-                "synapse RPC minor version {} is not compatible with sycli RPC minor version {}",
-                v.minor,
-                rpc::MINOR_VERSION
-            );
-            process::exit(1);
-        }
+    };
+
+    if client.version().major != rpc::MAJOR_VERSION {
+        eprintln!(
+            "synapse RPC major version {} is not compatible with sycli RPC major version {}",
+            client.version().major,
+            rpc::MAJOR_VERSION
+        );
+        process::exit(1);
+    }
+    if client.version().minor < rpc::MINOR_VERSION {
+        eprintln!(
+            "synapse RPC minor version {} is not compatible with sycli RPC minor version {}",
+            client.version().minor,
+            rpc::MINOR_VERSION
+        );
+        process::exit(1);
     }
 
     if url.scheme() == "wss" {
@@ -249,6 +255,12 @@ fn main() {
             let res = cmd::resume(client, args.values_of("torrents").unwrap().collect());
             if let Err(e) = res {
                 eprintln!("Failed to resume torrents: {:?}", e);
+                process::exit(1);
+            }
+        }
+        "status" => {
+            if let Err(e) = cmd::status(client) {
+                eprintln!("Failed to get server status: {:?}", e);
                 process::exit(1);
             }
         }
