@@ -439,8 +439,12 @@ impl<T: cio::CIO> Control<T> {
     }
 
     fn update_rpc_tx(&mut self) {
+        let elapsed = self.last_tx_time.elapsed();
+        let linger_start = time::Duration::from_millis(1000);
+        let cutoff_start = time::Duration::from_millis(5000);
+        let cutoff_end = time::Duration::from_millis(6000);
+
         if self.last_tx.0 != self.data.session_ul || self.last_tx.1 != self.data.session_dl {
-            let elapsed = self.last_tx_time.elapsed();
             let d = elapsed.as_secs() * 1000 + elapsed.subsec_nanos() as u64 / 1000000;
             let rate_up = ((self.data.session_ul - self.last_tx.0) * 1000) / d;
             let rate_down = ((self.data.session_dl - self.last_tx.1) * 1000) / d;
@@ -459,6 +463,32 @@ impl<T: cio::CIO> Control<T> {
             self.last_tx_time = time::Instant::now();
             self.last_tx.0 = self.data.session_ul;
             self.last_tx.1 = self.data.session_dl;
+        } else if elapsed > linger_start && elapsed < cutoff_start {
+            // Handle linger at 1-3 second
+            let d = elapsed.as_secs() * 1000 + elapsed.subsec_nanos() as u64 / 1000000;
+            let rate_up = ((self.data.session_ul - self.last_tx.0) * 1000) / d;
+            let rate_down = ((self.data.session_dl - self.last_tx.1) * 1000) / d;
+            self.cio.msg_rpc(rpc::CtlMessage::Update(vec![
+                rpc::resource::SResourceUpdate::Rate {
+                    id: self.data.id.clone(),
+                    kind: rpc::resource::ResourceKind::Server,
+                    rate_up,
+                    rate_down,
+                },
+            ]));
+        } else if elapsed > cutoff_start && elapsed < cutoff_end {
+            // Handle linger at 3 seconds by just cutting off to 0.
+            self.cio.msg_rpc(rpc::CtlMessage::Update(vec![
+                rpc::resource::SResourceUpdate::Rate {
+                    id: self.data.id.clone(),
+                    kind: rpc::resource::ResourceKind::Server,
+                    rate_up: 0,
+                    rate_down: 0,
+                },
+            ]));
+            self.last_tx_time = time::Instant::now() - cutoff_end;
+        } else if elapsed > cutoff_end {
+            self.last_tx_time = time::Instant::now() - cutoff_end;
         }
     }
 
