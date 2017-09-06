@@ -89,7 +89,7 @@ pub enum Status {
 impl Status {
     pub fn leeching(&self) -> bool {
         match *self {
-            Status::Leeching => true,
+            Status::Leeching | Status::Pending => true,
             _ => false,
         }
     }
