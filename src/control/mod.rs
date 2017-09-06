@@ -441,8 +441,8 @@ impl<T: cio::CIO> Control<T> {
     fn update_rpc_tx(&mut self) {
         let elapsed = self.last_tx_time.elapsed();
         let linger_start = time::Duration::from_millis(1000);
-        let cutoff_start = time::Duration::from_millis(5000);
-        let cutoff_end = time::Duration::from_millis(6000);
+        let cutoff_start = time::Duration::from_millis(2000);
+        let cutoff_end = time::Duration::from_millis(3000);
 
         if self.last_tx.0 != self.data.session_ul || self.last_tx.1 != self.data.session_dl {
             let d = elapsed.as_secs() * 1000 + elapsed.subsec_nanos() as u64 / 1000000;
@@ -476,6 +476,9 @@ impl<T: cio::CIO> Control<T> {
                     rate_down,
                 },
             ]));
+            if rate_up == 0 && rate_down == 0 {
+                self.last_tx_time = time::Instant::now() - cutoff_end;
+            }
         } else if elapsed > cutoff_start && elapsed < cutoff_end {
             // Handle linger at 3 seconds by just cutting off to 0.
             self.cio.msg_rpc(rpc::CtlMessage::Update(vec![
