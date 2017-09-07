@@ -166,6 +166,24 @@ fn main() {
                 ),
         )
         .subcommand(SubCommand::with_name("status").about("Server status"))
+        .subcommand(
+            SubCommand::with_name("watch")
+                .about("Watches the specified resource, printing out updates.")
+                .arg(
+                    Arg::with_name("output")
+                        .help("Output the results in the specified format.")
+                        .short("o")
+                        .long("output")
+                        .possible_values(&["json", "text"])
+                        .default_value("text"),
+                )
+                .arg(
+                    Arg::with_name("id")
+                        .help("ID of the resource.")
+                        .index(1)
+                        .required(true),
+                ),
+        )
         .get_matches();
 
     let mut url = match Url::parse(matches.value_of("server").unwrap()) {
@@ -289,6 +307,16 @@ fn main() {
         "status" => {
             if let Err(e) = cmd::status(client) {
                 eprintln!("Failed to get server status: {:?}", e);
+                process::exit(1);
+            }
+        }
+        "watch" => {
+            let args = matches.subcommand_matches("watch").unwrap();
+            let id = args.value_of("id").unwrap();
+            let output = args.value_of("output").unwrap();
+            let res = cmd::watch(client, id, output);
+            if let Err(e) = res {
+                eprintln!("Failed to watch resource: {:?}", e);
                 process::exit(1);
             }
         }

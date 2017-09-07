@@ -453,11 +453,13 @@ impl RPC {
     fn cleanup(&mut self) {
         self.processor.remove_expired_tokens();
         let reg = &self.reg;
+        let processor = &mut self.processor;
         self.clients.retain(|id, client| {
             let res = client.timed_out();
             if res {
                 info!("client {} timed out", id);
                 reg.deregister(&client.conn).unwrap();
+                processor.remove_client(*id);
             }
             !res
         });

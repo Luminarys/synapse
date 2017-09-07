@@ -2,6 +2,7 @@ use websocket::ClientBuilder;
 use websocket::client::sync::Client as WSClient;
 use websocket::stream::sync::NetworkStream;
 use websocket::message::OwnedMessage as WSMessage;
+use websocket::result::WebSocketError;
 use serde_json;
 
 use rpc::message::{CMessage, SMessage, Version};
@@ -57,10 +58,16 @@ impl Client {
 
     pub fn recv(&mut self) -> Result<SMessage<'static>> {
         loop {
-            match self.ws.recv_message().chain_err(|| ErrorKind::Websocket)? {
-                WSMessage::Text(s) => {
+            match self.ws.recv_message() {
+                Ok(WSMessage::Text(s)) => {
                     return serde_json::from_str(&s).chain_err(|| ErrorKind::Deserialization);
                 }
+                Ok(WSMessage::Ping(p)) => {
+                    self.ws.send_message(&WSMessage::Pong(p)).chain_err(|| {
+                        ErrorKind::Websocket
+                    })?;
+                }
+                Err(e) => return Err(e).chain_err(|| ErrorKind::Websocket),
                 _ => {}
             };
         }

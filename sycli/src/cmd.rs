@@ -333,6 +333,63 @@ fn resume_torrent(c: &mut Client, torrent: &str) -> Result<()> {
     Ok(())
 }
 
+pub fn watch(mut c: Client, id: &str, output: &str) -> Result<()> {
+    let res = get_resources(&mut c, vec![id.to_owned()])?;
+    if res.is_empty() {
+        bail!("Resource not found");
+    }
+
+    let msg = CMessage::Subscribe {
+        serial: c.next_serial(),
+        ids: vec![id.to_owned()],
+    };
+
+    let resources = if let SMessage::UpdateResources { resources } = c.rr(msg)? {
+        resources
+    } else {
+        bail!("Failed to received torrent resource list!");
+    };
+
+    let mut results = Vec::new();
+    for r in resources {
+        if let SResourceUpdate::OResource(res) = r {
+            results.push(res);
+        } else {
+            bail!("Failed to received full resource!");
+        }
+    }
+
+    if results.is_empty() {
+        bail!("Could not find specified resource!");
+    }
+    let mut res = results.remove(0);
+    loop {
+        match output {
+            "text" => {
+                println!("{}", res);
+            }
+            "json" => {
+                println!(
+                    "{}",
+                    serde_json::to_string(&res).chain_err(
+                        || ErrorKind::Serialization,
+                    )?
+                );
+            }
+            _ => unreachable!(),
+        }
+        loop {
+            if let SMessage::UpdateResources { resources } = c.recv()? {
+                for r in resources {
+                    res.update(r);
+                }
+                break;
+            }
+        }
+    }
+}
+
+
 pub fn status(mut c: Client) -> Result<()> {
     match search(&mut c, ResourceKind::Server, vec![])?.pop() {
         Some(Resource::Server(s)) => {
