@@ -45,8 +45,8 @@ pub enum SResourceUpdate<'a> {
         id: String,
         #[serde(rename = "type")]
         kind: ResourceKind,
-        throttle_up: u32,
-        throttle_down: u32,
+        throttle_up: Option<i64>,
+        throttle_down: Option<i64>,
     },
     Rate {
         id: String,
@@ -155,8 +155,10 @@ pub struct CResourceUpdate {
     pub path: Option<String>,
     pub priority: Option<u8>,
     pub sequential: Option<bool>,
-    pub throttle_up: Option<u32>,
-    pub throttle_down: Option<u32>,
+    #[serde(default)]
+    pub throttle_up: Option<Option<i64>>,
+    #[serde(default)]
+    pub throttle_down: Option<Option<i64>>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
@@ -165,8 +167,8 @@ pub struct Server {
     pub id: String,
     pub rate_up: u64,
     pub rate_down: u64,
-    pub throttle_up: u32,
-    pub throttle_down: u32,
+    pub throttle_up: Option<i64>,
+    pub throttle_down: Option<i64>,
     pub transferred_up: u64,
     pub transferred_down: u64,
     pub ses_transferred_up: u64,
@@ -190,8 +192,8 @@ pub struct Torrent {
     pub sequential: bool,
     pub rate_up: u64,
     pub rate_down: u64,
-    pub throttle_up: u32,
-    pub throttle_down: u32,
+    pub throttle_up: Option<i64>,
+    pub throttle_down: Option<i64>,
     pub transferred_up: u64,
     pub transferred_down: u64,
     pub peers: u16,
@@ -611,10 +613,18 @@ impl Filter for Server {
         match &c.field[..] {
             "id" => match_s(&self.id, c),
 
-            "rate_up" => match_n(self.rate_up as u64, c),
-            "rate_down" => match_n(self.rate_down as u64, c),
-            "throttle_up" => match_n(self.throttle_up as u64, c),
-            "throttle_down" => match_n(self.throttle_down as u64, c),
+            "rate_up" => match_n(self.rate_up as i64, c),
+            "rate_down" => match_n(self.rate_down as i64, c),
+            "throttle_up" => {
+                self.throttle_up.map(|v| match_n(v as i64, c)).unwrap_or(
+                    false,
+                )
+            }
+            "throttle_down" => {
+                self.throttle_down.map(|v| match_n(v as i64, c)).unwrap_or(
+                    false,
+                )
+            }
 
             _ => false,
         }
@@ -630,23 +640,23 @@ impl Filter for Torrent {
             "status" => match_s(self.status.as_str(), c),
             "error" => match_s(self.error.as_ref().map(|s| s.as_str()).unwrap_or(""), c),
 
-            "priority" => match_n(self.priority as u64, c),
-            "rate_up" => match_n(self.rate_up as u64, c),
-            "rate_down" => match_n(self.rate_down as u64, c),
-            "throttle_up" => match_n(self.throttle_up as u64, c),
-            "throttle_down" => match_n(self.throttle_down as u64, c),
-            "transferred_up" => match_n(self.transferred_up as u64, c),
-            "transferred_down" => match_n(self.transferred_down as u64, c),
-            "peers" => match_n(self.peers as u64, c),
-            "trackers" => match_n(self.trackers as u64, c),
-            "size" => self.size.map(|s| match_n(s as u64, c)).unwrap_or(false),
-            "pieces" => self.pieces.map(|p| match_n(p as u64, c)).unwrap_or(false),
+            "priority" => match_n(self.priority as i64, c),
+            "rate_up" => match_n(self.rate_up as i64, c),
+            "rate_down" => match_n(self.rate_down as i64, c),
+            "throttle_up" => self.throttle_up.map(|v| match_n(v, c)).unwrap_or(false),
+            "throttle_down" => self.throttle_down.map(|v| match_n(v, c)).unwrap_or(false),
+            "transferred_up" => match_n(self.transferred_up as i64, c),
+            "transferred_down" => match_n(self.transferred_down as i64, c),
+            "peers" => match_n(self.peers as i64, c),
+            "trackers" => match_n(self.trackers as i64, c),
+            "size" => self.size.map(|s| match_n(s as i64, c)).unwrap_or(false),
+            "pieces" => self.pieces.map(|p| match_n(p as i64, c)).unwrap_or(false),
             "piece_size" => {
-                self.piece_size.map(|p| match_n(p as u64, c)).unwrap_or(
+                self.piece_size.map(|p| match_n(p as i64, c)).unwrap_or(
                     false,
                 )
             }
-            "files" => self.files.map(|f| match_n(f as u64, c)).unwrap_or(false),
+            "files" => self.files.map(|f| match_n(f as i64, c)).unwrap_or(false),
 
             "progress" => match_f(self.progress, c),
             "availability" => match_f(self.availability, c),
@@ -679,7 +689,7 @@ impl Filter for File {
             "torrent_id" => match_s(&self.torrent_id, c),
             "path" => match_s(&self.path, c),
 
-            "priority" => match_n(self.priority as u64, c),
+            "priority" => match_n(self.priority as i64, c),
 
             "progress" => match_f(self.progress, c),
 
@@ -695,8 +705,8 @@ impl Filter for Peer {
             "torrent_id" => match_s(&self.torrent_id, c),
             "ip" => match_s(&self.ip, c),
 
-            "rate_up" => match_n(self.rate_up as u64, c),
-            "rate_down" => match_n(self.rate_down as u64, c),
+            "rate_up" => match_n(self.rate_up as i64, c),
+            "rate_down" => match_n(self.rate_down as i64, c),
 
             "availability" => match_f(self.availability, c),
 

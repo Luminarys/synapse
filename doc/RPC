@@ -30,8 +30,8 @@ server
         "id": ID,
         "type": "server",
         "rate_up": number,
-        "rate_down": number,
-        "throttle_up": number*,
+        "rate_down": number,             bit/sec OR null for unlimited
+        "throttle_up": number*,          bit/sec OR null for unlimited
         "throttle_down": number*,
         "transferred_up": number,
         "transferred_down": number,
@@ -58,8 +58,8 @@ torrent
         "sequential": boolean*,      true if downloading sequentially
         "rate_up": number,          bit/sec
         "rate_down": number,        bit/sec
-        "throttle_up": number*,      bit/sec OR 0 to use global limit
-        "throttle_down": number*,    bit/sec OR 0 to use global limit
+        "throttle_up": number*,      bit/sec OR null to use global limit OR -1 to ignore limits
+        "throttle_down": number*,    bit/sec OR null to use global limit OR -1 to ignore limits
         "transferred_up": number,   total bytes seeded
         "transferred_down": number, total bytes leeched
         "peers": number,            # of peers

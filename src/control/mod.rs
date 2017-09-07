@@ -353,10 +353,10 @@ impl<T: cio::CIO> Control<T> {
                 throttle_up,
                 throttle_down,
             } => {
-                let tu = throttle_up.unwrap_or(self.throttler.ul_rate() as u32);
-                let td = throttle_down.unwrap_or(self.throttler.dl_rate() as u32);
-                self.throttler.set_ul_rate(tu as usize);
-                self.throttler.set_dl_rate(td as usize);
+                let tu = throttle_up.unwrap_or(self.throttler.ul_rate());
+                let td = throttle_down.unwrap_or(self.throttler.dl_rate());
+                self.throttler.set_ul_rate(tu);
+                self.throttler.set_dl_rate(td);
                 self.cio.msg_rpc(rpc::CtlMessage::Update(vec![
                     rpc::resource::SResourceUpdate::Throttle {
                         id,
@@ -500,8 +500,8 @@ impl<T: cio::CIO> Control<T> {
             id: self.data.id.clone(),
             rate_up: 0,
             rate_down: 0,
-            throttle_up: 0,
-            throttle_down: 0,
+            throttle_up: self.throttler.ul_rate(),
+            throttle_down: self.throttler.dl_rate(),
             transferred_up: self.data.ul,
             transferred_down: self.data.dl,
             ses_transferred_up: self.data.session_ul,

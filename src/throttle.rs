@@ -20,7 +20,12 @@ impl Throttler {
     /// Creates a new throttler and sets two timers on reg,
     /// one for updating the tokens, the other for flushing out
     /// blocked peers.
-    pub fn new(dl_rate: usize, ul_rate: usize, max_tokens: usize, reg: &Registrar) -> Throttler {
+    pub fn new(
+        dl_rate: Option<i64>,
+        ul_rate: Option<i64>,
+        max_tokens: usize,
+        reg: &Registrar,
+    ) -> Throttler {
         let id = reg.set_interval(URATE).unwrap();
         let fid = reg.set_interval(50).unwrap();
         let ut = ThrottleData::new(ul_rate, max_tokens);
@@ -34,7 +39,7 @@ impl Throttler {
     }
 
     #[cfg(test)]
-    pub fn test(dl_rate: usize, ul_rate: usize, max_tokens: usize) -> Throttler {
+    pub fn test(dl_rate: Option<i64>, ul_rate: Option<i64>, max_tokens: usize) -> Throttler {
         let ut = ThrottleData::new(ul_rate, max_tokens);
         let dt = ThrottleData::new(dl_rate, max_tokens);
         Throttler {
@@ -59,19 +64,19 @@ impl Throttler {
         }
     }
 
-    pub fn ul_rate(&mut self) -> usize {
+    pub fn ul_rate(&mut self) -> Option<i64> {
         self.ul_data().rate
     }
 
-    pub fn dl_rate(&mut self) -> usize {
+    pub fn dl_rate(&mut self) -> Option<i64> {
         self.dl_data().rate
     }
 
-    pub fn set_ul_rate(&mut self, rate: usize) {
+    pub fn set_ul_rate(&mut self, rate: Option<i64>) {
         self.ul_data().rate = rate;
     }
 
-    pub fn set_dl_rate(&mut self, rate: usize) {
+    pub fn set_dl_rate(&mut self, rate: Option<i64>) {
         self.dl_data().rate = rate;
     }
 
@@ -101,7 +106,7 @@ impl Throttler {
 }
 
 struct ThrottleData {
-    rate: usize,
+    rate: Option<i64>,
     tokens: usize,
     max_tokens: usize,
     last_used: u64,
@@ -145,20 +150,20 @@ impl Throttle {
         res
     }
 
-    pub fn ul_rate(&self) -> usize {
+    pub fn ul_rate(&self) -> Option<i64> {
         self.ul_data().rate
     }
 
-    pub fn dl_rate(&self) -> usize {
+    pub fn dl_rate(&self) -> Option<i64> {
         self.dl_data().rate
     }
 
     // TODO: Make this an HTB
-    pub fn set_ul_rate(&mut self, rate: usize) {
+    pub fn set_ul_rate(&mut self, rate: Option<i64>) {
         self.ul_data().rate = rate;
     }
 
-    pub fn set_dl_rate(&mut self, rate: usize) {
+    pub fn set_dl_rate(&mut self, rate: Option<i64>) {
         self.dl_data().rate = rate;
     }
 
@@ -189,7 +194,7 @@ impl Drop for Throttle {
 
 impl ThrottleData {
     /// Creates a new Throttle with the given rate and max token amount.
-    fn new(rate: usize, max_tokens: usize) -> ThrottleData {
+    fn new(rate: Option<i64>, max_tokens: usize) -> ThrottleData {
         ThrottleData {
             tokens: 0,
             rate,
@@ -210,7 +215,11 @@ impl ThrottleData {
     fn add_tokens(&mut self) -> u64 {
         let drained = self.last_used as u64;
         self.last_used = 0;
-        self.tokens += self.rate * URATE;
+        self.tokens += if let Some(r) = self.rate {
+            if r > 0 { r as usize * URATE } else { 0 }
+        } else {
+            0
+        };
         if self.tokens >= self.max_tokens {
             self.tokens = self.max_tokens;
         }
@@ -219,16 +228,24 @@ impl ThrottleData {
 
     /// Attempt to extract amnt tokens from the throttler.
     fn get_tokens(&mut self, amnt: usize) -> Result<(), ()> {
-        if self.rate == 0 {
-            self.last_used += amnt as u64;
-            return Ok(());
-        }
-        if amnt > self.tokens {
-            Err(())
-        } else {
-            self.last_used += amnt as u64;
-            self.tokens -= amnt;
-            Ok(())
+        match self.rate {
+            None => {
+                self.last_used += amnt as u64;
+                Ok(())
+            }
+            Some(i) if i < 0 => {
+                self.last_used += amnt as u64;
+                Ok(())
+            }
+            Some(_) => {
+                if amnt > self.tokens {
+                    Err(())
+                } else {
+                    self.last_used += amnt as u64;
+                    self.tokens -= amnt;
+                    Ok(())
+                }
+            }
         }
     }
 }

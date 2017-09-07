@@ -67,8 +67,8 @@ pub enum Message {
     UpdateTorrent(resource::CResourceUpdate),
     UpdateServer {
         id: String,
-        throttle_up: Option<u32>,
-        throttle_down: Option<u32>,
+        throttle_up: Option<Option<i64>>,
+        throttle_down: Option<Option<i64>>,
     },
     UpdateFile {
         id: String,
