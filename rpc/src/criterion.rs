@@ -41,10 +41,10 @@ pub enum Operation {
 pub enum Value {
     B(bool),
     S(String),
-    N(u64),
+    N(i64),
     F(f32),
     AS(Vec<String>),
-    AN(Vec<u64>),
+    AN(Vec<i64>),
     AF(Vec<f32>),
 }
 
@@ -58,7 +58,7 @@ impl Default for ResourceKind {
     }
 }
 
-pub fn match_n<T: PartialOrd<u64>>(t: T, c: &Criterion) -> bool {
+pub fn match_n<T: PartialOrd<i64>>(t: T, c: &Criterion) -> bool {
     match c.op {
         Operation::Eq => {
             match c.value {

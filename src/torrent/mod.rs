@@ -878,8 +878,8 @@ impl<T: cio::CIO> Torrent<T> {
 
     pub fn rpc_update(&mut self, u: rpc::proto::resource::CResourceUpdate) {
         if u.throttle_up.is_some() || u.throttle_down.is_some() {
-            let tu = u.throttle_up.unwrap_or(self.throttle.ul_rate() as u32);
-            let td = u.throttle_down.unwrap_or(self.throttle.dl_rate() as u32);
+            let tu = u.throttle_up.unwrap_or(self.throttle.ul_rate());
+            let td = u.throttle_down.unwrap_or(self.throttle.dl_rate());
             self.set_throttle(tu, td);
         }
 
@@ -943,9 +943,9 @@ impl<T: cio::CIO> Torrent<T> {
         }
     }
 
-    fn set_throttle(&mut self, ul: u32, dl: u32) {
-        self.throttle.set_ul_rate(ul as usize);
-        self.throttle.set_dl_rate(dl as usize);
+    fn set_throttle(&mut self, ul: Option<i64>, dl: Option<i64>) {
+        self.throttle.set_ul_rate(ul);
+        self.throttle.set_dl_rate(dl);
         let id = self.rpc_id();
         self.cio.msg_rpc(rpc::CtlMessage::Update(vec![
             resource::SResourceUpdate::Throttle {
@@ -1076,8 +1076,8 @@ impl<T: cio::CIO> Torrent<T> {
             rate_up: 0,
             rate_down: 0,
             // TODO: COnsider the overflow potential here
-            throttle_up: self.throttle.ul_rate() as u32,
-            throttle_down: self.throttle.dl_rate() as u32,
+            throttle_up: self.throttle.ul_rate(),
+            throttle_down: self.throttle.dl_rate(),
             transferred_up: self.uploaded,
             transferred_down: self.downloaded,
             peers: 0,
@@ -1583,7 +1583,7 @@ mod tests {
             0,
             None,
             Info::with_pieces(10),
-            Throttler::test(0, 0, 0).get_throttle(1),
+            Throttler::test(None, None, 0).get_throttle(1),
             tcio.new_handle(),
             true,
         );

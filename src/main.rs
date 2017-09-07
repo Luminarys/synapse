@@ -112,7 +112,7 @@ fn init() -> io::Result<Vec<thread::JoinHandle<()>>> {
     };
     let (tx, rx) = mpsc::channel();
     let chj = thread::spawn(move || {
-        let throttler = throttle::Throttler::new(0, 0, THROT_TOKS, &creg);
+        let throttler = throttle::Throttler::new(None, None, THROT_TOKS, &creg);
         let acio = acio::ACIO::new(cpoll, creg, chans);
         match control::Control::new(acio, throttler) {
             Ok(mut c) => {
