@@ -95,6 +95,24 @@ fn main() {
                 ),
         )
         .subcommand(
+            SubCommand::with_name("get")
+                .about("Gets the specified resource.")
+                .arg(
+                    Arg::with_name("output")
+                        .help("Output the results in the specified format.")
+                        .short("o")
+                        .long("output")
+                        .possible_values(&["json", "text"])
+                        .default_value("text"),
+                )
+                .arg(
+                    Arg::with_name("id")
+                        .help("ID of the resource.")
+                        .index(1)
+                        .required(true),
+                ),
+        )
+        .subcommand(
             SubCommand::with_name("list")
                 .about("Lists resources of a given type in synapse.")
                 .arg(
@@ -223,6 +241,16 @@ fn main() {
             let res = cmd::dl(client, url.as_str(), args.value_of("torrent").unwrap());
             if let Err(e) = res {
                 eprintln!("Failed to download torrent: {:?}", e);
+                process::exit(1);
+            }
+        }
+        "get" => {
+            let args = matches.subcommand_matches("get").unwrap();
+            let id = args.value_of("id").unwrap();
+            let output = args.value_of("output").unwrap();
+            let res = cmd::get(client, id, output);
+            if let Err(e) = res {
+                eprintln!("Failed to get resource: {:?}", e);
                 process::exit(1);
             }
         }

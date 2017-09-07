@@ -1,4 +1,5 @@
 use std::mem;
+use std::fmt;
 
 use chrono::{DateTime, Utc};
 
@@ -464,6 +465,128 @@ impl Resource {
             }
             _ => {}
         }
+    }
+}
+
+impl fmt::Display for Resource {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            &Resource::Server(ref t) => {
+                write!(f, "Server {{")?;
+                write!(f, "\n")?;
+                write!(f, "  id: {}", t.id)?;
+                write!(f, "\n")?;
+                write!(f, "  upload: {} B/s", t.rate_up)?;
+                write!(f, "\n")?;
+                write!(f, "  download: {} B/s", t.rate_down)?;
+                write!(f, "\n")?;
+                write!(f, "  throttle up: {} B/s", t.throttle_up)?;
+                write!(f, "\n")?;
+                write!(f, "  throttle down: {} B/s", t.throttle_down)?;
+                write!(f, "\n")?;
+                write!(f, "  uploaded: {} B", t.transferred_up)?;
+                write!(f, "\n")?;
+                write!(f, "  downloaded: {} B", t.transferred_down)?;
+                write!(f, "\n")?;
+                write!(f, "  session upload: {} B", t.ses_transferred_up)?;
+                write!(f, "\n")?;
+                write!(f, "  session download: {} B", t.ses_transferred_down)?;
+                write!(f, "\n")?;
+                write!(f, "  started at: {}", t.started)?;
+                write!(f, "\n")?;
+                write!(f, "}}")?;
+            }
+            &Resource::Torrent(ref t) => {
+                write!(f, "Torrent {{")?;
+                write!(f, "\n")?;
+                write!(f, "  id: {}", t.id)?;
+                write!(f, "\n")?;
+                write!(
+                    f,
+                    "  name: {}",
+                    if let Some(ref n) = t.name {
+                        n.as_str()
+                    } else {
+                        "Unknown (magnet)"
+                    }
+                )?;
+                write!(f, "\n")?;
+                write!(f, "  path: {}", t.path)?;
+                write!(f, "\n")?;
+                write!(f, "  created at: {}", t.created)?;
+                write!(f, "\n")?;
+                write!(f, "  modified at: {}", t.modified)?;
+                write!(f, "\n")?;
+                write!(f, "  status: {}", t.status.as_str())?;
+                write!(f, "\n")?;
+                if let Some(ref e) = t.error {
+                    write!(f, "  error: {}", e)?;
+                    write!(f, "\n")?;
+                }
+                write!(f, "  priority: {}", t.priority)?;
+                write!(f, "\n")?;
+                write!(f, "  progress: {}", t.progress)?;
+                write!(f, "\n")?;
+                write!(f, "  availability: {}", t.availability)?;
+                write!(f, "\n")?;
+                write!(f, "  sequential: {}", t.sequential)?;
+                write!(f, "\n")?;
+                write!(f, "  upload: {} B/s", t.rate_up)?;
+                write!(f, "\n")?;
+                write!(f, "  download: {} B/s", t.rate_down)?;
+                write!(f, "\n")?;
+                write!(f, "  throttle up: {} B/s", t.throttle_up)?;
+                write!(f, "\n")?;
+                write!(f, "  throttle down: {} B/s", t.throttle_down)?;
+                write!(f, "\n")?;
+                write!(f, "  uploaded: {} B", t.transferred_up)?;
+                write!(f, "\n")?;
+                write!(f, "  downloaded: {} B", t.transferred_down)?;
+                write!(f, "\n")?;
+                write!(f, "  peers: {}", t.peers)?;
+                write!(f, "\n")?;
+                write!(f, "  trackers: {}", t.trackers)?;
+                write!(f, "\n")?;
+                if let Some(s) = t.size {
+                    write!(f, "  size: {} B", s)?;
+                } else {
+                    write!(f, "  size: Unknown (magnet0")?;
+                }
+                write!(f, "\n")?;
+                if let Some(p) = t.pieces {
+                    write!(f, "  pieces: {}", p)?;
+                } else {
+                    write!(f, "  pieces: Unknown (magnet)")?;
+                }
+                write!(f, "\n")?;
+                if let Some(p) = t.piece_size {
+                    write!(f, "  piece size: {} B", p)?;
+                } else {
+                    write!(f, "  piece size: Unknown (magnet)")?;
+                }
+                write!(f, "\n")?;
+                if let Some(files) = t.files {
+                    write!(f, "  files: {}", files)?;
+                } else {
+                    write!(f, "  files: Unknown (magnet)")?;
+                }
+                write!(f, "\n")?;
+                write!(f, "}}")?;
+            }
+            &Resource::File(ref t) => {
+                write!(f, "{:#?}", t)?;
+            }
+            &Resource::Piece(ref t) => {
+                write!(f, "{:#?}", t)?;
+            }
+            &Resource::Peer(ref t) => {
+                write!(f, "{:#?}", t)?;
+            }
+            &Resource::Tracker(ref t) => {
+                write!(f, "{:#?}", t)?;
+            }
+        }
+        Ok(())
     }
 }
 

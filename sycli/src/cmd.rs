@@ -152,6 +152,28 @@ pub fn dl(mut c: Client, url: &str, name: &str) -> Result<()> {
     Ok(())
 }
 
+pub fn get(mut c: Client, id: &str, output: &str) -> Result<()> {
+    let res = get_resources(&mut c, vec![id.to_owned()])?;
+    if res.is_empty() {
+        bail!("Resource not found");
+    }
+    match output {
+        "text" => {
+            println!("{}", res[0]);
+        }
+        "json" => {
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&res[0]).chain_err(|| {
+                    ErrorKind::Serialization
+                })?
+            );
+        }
+        _ => unreachable!(),
+    }
+    Ok(())
+}
+
 pub fn list(mut c: Client, kind: &str, crit: Vec<Criterion>, output: &str) -> Result<()> {
     let k = match kind {
         "torrent" => ResourceKind::Torrent,
