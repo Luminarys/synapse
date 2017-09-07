@@ -482,9 +482,29 @@ impl fmt::Display for Resource {
                 write!(f, "\n")?;
                 write!(f, "  download: {} B/s", t.rate_down)?;
                 write!(f, "\n")?;
-                write!(f, "  throttle up: {} B/s", t.throttle_up)?;
+                match t.throttle_up {
+                    Some(u) if u >= 0 => {
+                        write!(f, "  throttle up: {} B/s", u)?;
+                    }
+                    Some(u) => {
+                        write!(f, "  throttle up: invalid({})", u)?;
+                    }
+                    None => {
+                        write!(f, "  throttle up: unlimited")?;
+                    }
+                }
                 write!(f, "\n")?;
-                write!(f, "  throttle down: {} B/s", t.throttle_down)?;
+                match t.throttle_down {
+                    Some(u) if u >= 0 => {
+                        write!(f, "  throttle down: {} B/s", u)?;
+                    }
+                    Some(u) => {
+                        write!(f, "  throttle down: invalid({})", u)?;
+                    }
+                    None => {
+                        write!(f, "  throttle down: unlimited")?;
+                    }
+                }
                 write!(f, "\n")?;
                 write!(f, "  uploaded: {} B", t.transferred_up)?;
                 write!(f, "\n")?;
@@ -537,9 +557,29 @@ impl fmt::Display for Resource {
                 write!(f, "\n")?;
                 write!(f, "  download: {} B/s", t.rate_down)?;
                 write!(f, "\n")?;
-                write!(f, "  throttle up: {} B/s", t.throttle_up)?;
+                match t.throttle_up {
+                    Some(u) if u >= 0 => {
+                        write!(f, "  throttle up: {} B/s", u)?;
+                    }
+                    Some(_) => {
+                        write!(f, "  throttle up: unlimited")?;
+                    }
+                    None => {
+                        write!(f, "  throttle up: server")?;
+                    }
+                }
                 write!(f, "\n")?;
-                write!(f, "  throttle down: {} B/s", t.throttle_down)?;
+                match t.throttle_down {
+                    Some(u) if u >= 0 => {
+                        write!(f, "  throttle down: {} B/s", u)?;
+                    }
+                    Some(_) => {
+                        write!(f, "  throttle down: unlimited")?;
+                    }
+                    None => {
+                        write!(f, "  throttle down: server")?;
+                    }
+                }
                 write!(f, "\n")?;
                 write!(f, "  uploaded: {} B", t.transferred_up)?;
                 write!(f, "\n")?;
