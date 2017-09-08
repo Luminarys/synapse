@@ -289,8 +289,7 @@ impl Info {
         if idx != self.pieces() - 1 {
             16_384
         } else {
-            let last_piece_len =
-                (self.total_len - u64::from(self.piece_len) * u64::from(self.pieces()) - 1) as u32;
+            let last_piece_len = self.piece_len(idx);
             // Note this is not the real last block len, just what it will be IF the offset really
             // is for the last block
             let last_block_len = last_piece_len - offset;
