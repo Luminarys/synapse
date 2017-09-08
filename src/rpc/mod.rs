@@ -21,7 +21,6 @@ use self::proto::ws;
 use self::client::{Incoming, IncomingStatus, Client};
 use self::processor::{Processor, TransferKind};
 use self::transfer::{Transfers, TransferResult};
-use util;
 use bencode;
 use handle;
 use torrent;
@@ -59,6 +58,11 @@ pub enum CtlMessage {
     Extant(Vec<resource::Resource>),
     Update(Vec<resource::SResourceUpdate<'static>>),
     Removed(Vec<String>),
+    Uploaded {
+        id: String,
+        client: usize,
+        serial: u64,
+    },
     Shutdown,
 }
 
@@ -83,6 +87,8 @@ pub enum Message {
     RemoveTracker { id: String, torrent_id: String },
     Torrent {
         info: torrent::Info,
+        client: usize,
+        serial: u64,
         path: Option<String>,
         start: bool,
     },
@@ -174,7 +180,7 @@ impl RPC {
                         let res = match self.clients.get_mut(&c) {
                             Some(client) => client.send(ws::Frame::Text(m)),
                             None => {
-                                error!("Processor referenced a nonexistent client!");
+                                debug!("Processor referenced a nonexistent client!");
                                 Ok(())
                             }
                         };
@@ -207,24 +213,13 @@ impl RPC {
                     Ok(b) => {
                         match torrent::info::Info::from_bencode(b) {
                             Ok(i) => {
-                                let res = self.clients.get_mut(&client).map(|c| {
-                                    let tid = util::hash_to_id(&i.hash[..]);
-                                    c.send(ws::Frame::Text(
-                                        serde_json::to_string(&SMessage::ResourcesExtant {
-                                            serial,
-                                            ids: vec![&tid],
-                                        }).unwrap(),
-                                    ))
-                                });
-                                if res.unwrap_or(Ok(())).is_err() {
-                                    let client = self.clients.remove(&id).unwrap();
-                                    self.remove_client(id, client);
-                                }
                                 if self.ch
                                     .send(Message::Torrent {
                                         info: i,
                                         path,
                                         start,
+                                        client,
+                                        serial,
                                     })
                                     .is_err()
                                 {

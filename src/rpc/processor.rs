@@ -324,7 +324,15 @@ impl Processor {
                 start,
             } => {
                 match Info::from_magnet(&uri) {
-                    Ok(info) => rmsg = Some(Message::Torrent { info, path, start }),
+                    Ok(info) => {
+                        rmsg = Some(Message::Torrent {
+                            info,
+                            path,
+                            start,
+                            client,
+                            serial,
+                        })
+                    }
                     Err(e) => {
                         resp.push(SMessage::InvalidRequest(Error {
                             serial: Some(serial),
@@ -420,6 +428,19 @@ impl Processor {
                     } else {
                         self.torrent_idx.remove(&id);
                     }
+                }
+            }
+            CtlMessage::Uploaded { id, serial, client } => {
+                if let Some(r) = self.resources.get(&id) {
+                    msgs.push((
+                        client,
+                        SMessage::ResourcesExtant {
+                            serial,
+                            ids: vec![r.id()],
+                        },
+                    ))
+                } else {
+                    debug!("Failed to get resource uploaded: {}!", id);
                 }
             }
             CtlMessage::Shutdown => unreachable!(),

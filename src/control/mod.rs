@@ -8,7 +8,7 @@ use chrono::Utc;
 use bincode;
 
 use {rpc, tracker, disk, listener, CONFIG, SHUTDOWN};
-use util::{io_err, io_err_val, id_to_hash, random_string};
+use util::{io_err, io_err_val, id_to_hash, hash_to_id, random_string};
 use torrent::{self, peer, Torrent};
 use throttle::Throttler;
 
@@ -306,18 +306,29 @@ impl<T: cio::CIO> Control<T> {
         self.cio.flush_peers(self.throttler.flush_ul());
     }
 
-    fn add_torrent(&mut self, info: torrent::Info, path: Option<String>, start: bool) {
+    fn add_torrent(
+        &mut self,
+        info: torrent::Info,
+        path: Option<String>,
+        start: bool,
+        client: usize,
+        serial: u64,
+    ) {
         debug!("Adding {:?}, start: {}!", info, start);
         if self.hash_idx.contains_key(&info.hash) {
             error!("Torrent already exists!");
             return;
         }
+        let id = hash_to_id(&info.hash);
         let tid = self.tid_cnt;
         let throttle = self.throttler.get_throttle(tid);
         let t = Torrent::new(tid, path, info, throttle, self.cio.new_handle(), start);
         self.hash_idx.insert(t.info().hash, tid);
         self.tid_cnt += 1;
         self.torrents.insert(tid, t);
+        self.cio.msg_rpc(
+            rpc::CtlMessage::Uploaded { id, client, serial },
+        )
     }
 
     fn handle_rpc_ev(&mut self, req: rpc::Message) -> bool {
@@ -333,7 +344,13 @@ impl<T: cio::CIO> Control<T> {
                     t.rpc_update(u);
                 }
             }
-            rpc::Message::Torrent { info, path, start } => self.add_torrent(info, path, start),
+            rpc::Message::Torrent {
+                info,
+                path,
+                start,
+                client,
+                serial,
+            } => self.add_torrent(info, path, start, client, serial),
             rpc::Message::UpdateFile {
                 id,
                 torrent_id,
