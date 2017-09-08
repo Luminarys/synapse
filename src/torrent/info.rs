@@ -285,6 +285,22 @@ impl Info {
         }
     }
 
+    #[cfg(test)]
+    pub fn with_pieces_scale(pieces: u32, scale: u32) -> Info {
+        Info {
+            name: String::from(""),
+            announce: String::from(""),
+            piece_len: 16_384 * scale,
+            total_len: 16_384 * pieces as u64 * scale as u64,
+            hashes: vec![vec![0u8]; pieces as usize],
+            hash: [0u8; 20],
+            files: vec![],
+            file_idx: HashMap::new(),
+            private: false,
+            be_name: None,
+        }
+    }
+
     pub fn block_len(&self, idx: u32, offset: u32) -> u32 {
         if idx != self.pieces() - 1 {
             16_384
@@ -390,5 +406,29 @@ fn parse_bencode_files(mut data: BTreeMap<String, BEncode>) -> Result<Vec<File>,
             Ok(files)
         }
         None => File::from_bencode(BEncode::Dict(data)).map(|f| vec![f]),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn correct_piece_len() {
+        let scale = 3;
+        let pieces = 15;
+        let mut info = Info::with_pieces_scale(pieces, scale);
+        let end = 16_700u32;
+        info.total_len += end as u64;
+        info.hashes.push(vec![]);
+        for i in 0..pieces {
+            assert_eq!(info.piece_len(i), info.piece_len);
+            for o in 0..scale {
+                assert_eq!(info.block_len(i, o * 16_384), 16_384);
+            }
+        }
+        assert_eq!(info.piece_len(pieces), end as u32);
+        assert_eq!(info.block_len(pieces, 0), 16_384);
+        assert_eq!(info.block_len(pieces, 16_384), (end % 16_384) as u32);
     }
 }
