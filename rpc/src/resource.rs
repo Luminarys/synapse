@@ -446,6 +446,10 @@ impl Resource {
              SResourceUpdate::TorrentPicker { sequential, .. }) => {
                 t.sequential = sequential;
             }
+            (&mut Resource::Torrent(ref mut t),
+             SResourceUpdate::TorrentPriority { priority, .. }) => {
+                t.priority = priority;
+            }
             (&mut Resource::Peer(ref mut p), SResourceUpdate::Rate { rate_up, rate_down, .. }) => {
                 p.rate_up = rate_up;
                 p.rate_down = rate_down;
