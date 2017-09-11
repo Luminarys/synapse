@@ -58,6 +58,11 @@ pub enum CtlMessage {
     Extant(Vec<resource::Resource>),
     Update(Vec<resource::SResourceUpdate<'static>>),
     Removed(Vec<String>),
+    ClientRemoved {
+        id: String,
+        client: usize,
+        serial: u64,
+    },
     Uploaded {
         id: String,
         client: usize,
@@ -79,12 +84,26 @@ pub enum Message {
         torrent_id: String,
         priority: u8,
     },
-    RemoveTorrent(String),
+    RemoveTorrent {
+        id: String,
+        client: usize,
+        serial: u64,
+    },
     Pause(String),
     Resume(String),
     Validate(Vec<String>),
-    RemovePeer { id: String, torrent_id: String },
-    RemoveTracker { id: String, torrent_id: String },
+    RemovePeer {
+        id: String,
+        torrent_id: String,
+        client: usize,
+        serial: u64,
+    },
+    RemoveTracker {
+        id: String,
+        torrent_id: String,
+        client: usize,
+        serial: u64,
+    },
     Torrent {
         info: torrent::Info,
         client: usize,

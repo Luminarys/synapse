@@ -331,8 +331,9 @@ The semantics of this message vary based on the resource type.
 For a torrent, the torrent is deleted from the client. For a peer, the
 peer will be removed. For a tracker, the tracker is removed from the torrent.
 For other resources, there is no effect(this is subject to change).
-As with UPDATE_RESOURCE, the client should wait for a corresponding
-RESOURCES_REMOVED message (assuming it is subscribed appropriately).
+On success, the client will be notified of the removal via a RESOURCES_REMOVED
+message with the serial of the original message, in addition to any
+updates from existing subscriptions.
 
                                 SPECIAL MESSAGES
 

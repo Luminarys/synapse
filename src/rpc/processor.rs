@@ -182,18 +182,22 @@ impl Processor {
             CMessage::RemoveResource { serial, id } => {
                 match self.resources.get(&id) {
                     Some(&Resource::Torrent(_)) => {
-                        rmsg = Some(Message::RemoveTorrent(id));
+                        rmsg = Some(Message::RemoveTorrent { id, client, serial });
                     }
                     Some(&Resource::Tracker(ref t)) => {
                         rmsg = Some(Message::RemoveTracker {
                             id,
                             torrent_id: t.id.to_owned(),
+                            client,
+                            serial,
                         });
                     }
                     Some(&Resource::Peer(ref p)) => {
                         rmsg = Some(Message::RemovePeer {
                             id,
                             torrent_id: p.id.to_owned(),
+                            client,
+                            serial,
                         });
                     }
                     Some(_) => {
@@ -429,6 +433,15 @@ impl Processor {
                         self.torrent_idx.remove(&id);
                     }
                 }
+            }
+            CtlMessage::ClientRemoved { id, client, serial } => {
+                msgs.push((
+                    client,
+                    SMessage::ResourcesRemoved {
+                        serial,
+                        ids: vec![id],
+                    },
+                ));
             }
             CtlMessage::Uploaded { id, serial, client } => {
                 if let Some(r) = self.resources.get(&id) {

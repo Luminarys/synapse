@@ -383,13 +383,18 @@ impl<T: cio::CIO> Control<T> {
                     },
                 ]));
             }
-            rpc::Message::RemoveTorrent(id) => {
+            rpc::Message::RemoveTorrent { id, client, serial } => {
                 let hash_idx = &mut self.hash_idx;
                 let torrents = &mut self.torrents;
                 id_to_hash(&id)
                     .and_then(|d| hash_idx.remove(d.as_ref()))
                     .and_then(|i| torrents.remove(&i))
                     .map(|mut t| t.delete());
+                self.cio.msg_rpc(rpc::CtlMessage::ClientRemoved {
+                    id,
+                    client,
+                    serial,
+                });
             }
             rpc::Message::Pause(id) => {
                 let hash_idx = &mut self.hash_idx;
@@ -417,21 +422,41 @@ impl<T: cio::CIO> Control<T> {
                         .map(|t| t.validate());
                 }
             }
-            rpc::Message::RemovePeer { id, torrent_id } => {
+            rpc::Message::RemovePeer {
+                id,
+                torrent_id,
+                client,
+                serial,
+            } => {
                 let hash_idx = &self.hash_idx;
                 let torrents = &mut self.torrents;
                 id_to_hash(&torrent_id)
                     .and_then(|d| hash_idx.get(d.as_ref()))
                     .and_then(|i| torrents.get_mut(i))
                     .map(|t| t.remove_peer(&id));
+                self.cio.msg_rpc(rpc::CtlMessage::ClientRemoved {
+                    id,
+                    client,
+                    serial,
+                });
             }
-            rpc::Message::RemoveTracker { id, torrent_id } => {
+            rpc::Message::RemoveTracker {
+                id,
+                torrent_id,
+                client,
+                serial,
+            } => {
                 let hash_idx = &self.hash_idx;
                 let torrents = &mut self.torrents;
                 id_to_hash(&torrent_id)
                     .and_then(|d| hash_idx.get(d.as_ref()))
                     .and_then(|i| torrents.get_mut(i))
                     .map(|t| t.remove_tracker(&id));
+                self.cio.msg_rpc(rpc::CtlMessage::ClientRemoved {
+                    id,
+                    client,
+                    serial,
+                });
             }
         }
         false
