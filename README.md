@@ -20,13 +20,14 @@ Synapse and sycli can be installed with:
 ```
 cargo build --release --all
 cargo install
+cargo install --path ./sycli/
 ```
 
 If you'd just like to install sycli:
 ```
 cd sycli
 cargo build --release -p sycli
-cargo install
+cargo install --path ./sycli/
 ```
 
 ## Configuration
