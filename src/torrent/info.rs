@@ -4,11 +4,10 @@ use std::{fmt, cmp};
 
 use base32;
 use url::Url;
-use ring::digest;
 
 use disk;
 use bencode::BEncode;
-use util::{hash_to_id, id_to_hash};
+use util::{hash_to_id, id_to_hash, sha1_hash};
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct Info {
@@ -189,11 +188,7 @@ impl Info {
             .and_then(|(mut d, mut i)| {
                 let mut info_bytes = Vec::new();
                 BEncode::Dict(i.clone()).encode(&mut info_bytes).unwrap();
-                let mut ctx = digest::Context::new(&digest::SHA1);
-                ctx.update(&info_bytes[..]);
-                let digest = ctx.finish();
-                let mut hash = [0u8; 20];
-                hash.copy_from_slice(digest.as_ref());
+                let hash = sha1_hash(&info_bytes);
 
                 let a = d.remove("announce").and_then(|a| a.into_string()).ok_or(
                     "Info must have announce url",

@@ -1,0 +1,19 @@
+[package]
+name = "sha1"
+version = "0.1.0"
+description = "SHA1 implementation based off of https://github.com/mitsuhiko/rust-sha1"
+authors = ["Armin Ronacher <armin.ronacher@active-4.com>", "Luminarys <postmaster@gensok.io>"]
+
+[lib]
+crate-type = ["rlib"]
+
+[profile.dev]
+opt-level = 3
+debug = true
+
+[profile.release]
+opt-level = 3
+
+[profile.test]
+opt-level = 3
+

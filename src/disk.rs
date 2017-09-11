@@ -5,8 +5,8 @@ use std::io::{self, Seek, SeekFrom, Write, Read};
 use std::path::PathBuf;
 use torrent::Info;
 use util::hash_to_id;
-use ring::digest;
 use amy;
+use sha1;
 use {handle, CONFIG};
 
 const POLL_INT_MS: usize = 1000;
@@ -294,7 +294,7 @@ impl Request {
                     start.elapsed() < time::Duration::from_secs(JOB_TIME_SLICE)
                 {
                     let mut valid = true;
-                    let mut ctx = digest::Context::new(&digest::SHA1);
+                    let mut ctx = sha1::Sha1::new();
                     let locs = info.piece_disk_locs(idx);
                     let mut pos = 0;
                     for loc in locs {

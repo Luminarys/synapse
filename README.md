@@ -16,18 +16,18 @@ _\*Only required for synapse_
 
 _\**Only required for sycli_
 
-Synapse and sycli can be installed with:
+Synapse can be installed with:
 ```
-cargo build --all --release
+cargo build --release
 cargo install
 ```
 
-If you'd just like to install one or the other:
+If you'd just like to install sycli:
 ```
-cargo build -p sycli --release
+cd sycli
+cargo build --release
 cargo install
 ```
-or vice versa.
 
 ## Configuration
 

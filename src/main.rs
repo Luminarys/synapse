@@ -5,7 +5,7 @@
 extern crate amy;
 extern crate byteorder;
 extern crate rand;
-extern crate ring;
+extern crate sha1;
 extern crate url;
 #[macro_use]
 extern crate lazy_static;

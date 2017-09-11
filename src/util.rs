@@ -1,9 +1,10 @@
 use std::io;
-use rand::{self, Rng};
 use std::fmt::Write as FWrite;
-use byteorder::{ReadBytesExt, WriteBytesExt, BigEndian};
 use std::net::{SocketAddr, Ipv4Addr, SocketAddrV4};
-use ring::digest;
+
+use sha1;
+use rand::{self, Rng};
+use byteorder::{ReadBytesExt, WriteBytesExt, BigEndian};
 
 pub fn io_err<T>(reason: &'static str) -> io::Result<T> {
     Err(io::Error::new(io::ErrorKind::Other, reason))
@@ -71,8 +72,8 @@ pub fn random_string(len: usize) -> String {
         .collect::<String>()
 }
 
-pub fn sha1_hash(data: &[u8]) -> digest::Digest {
-    let mut ctx = digest::Context::new(&digest::SHA1);
+pub fn sha1_hash(data: &[u8]) -> [u8; 20] {
+    let mut ctx = sha1::Sha1::new();
     ctx.update(data);
     ctx.finish()
 }
@@ -82,7 +83,7 @@ pub fn piece_rpc_id(torrent: &[u8; 20], piece: u64) -> String {
     let mut idx = [0u8; 8];
     (&mut idx[..]).write_u64::<BigEndian>(piece).unwrap();
 
-    let mut ctx = digest::Context::new(&digest::SHA1);
+    let mut ctx = sha1::Sha1::new();
     ctx.update(torrent);
     ctx.update(PIECE_ID);
     ctx.update(&idx[..]);
@@ -94,7 +95,7 @@ pub fn peer_rpc_id(torrent: &[u8; 20], peer: u64) -> String {
     let mut idx = [0u8; 8];
     (&mut idx[..]).write_u64::<BigEndian>(peer).unwrap();
 
-    let mut ctx = digest::Context::new(&digest::SHA1);
+    let mut ctx = sha1::Sha1::new();
     ctx.update(torrent);
     ctx.update(PEER_ID);
     ctx.update(&idx[..]);
@@ -103,7 +104,7 @@ pub fn peer_rpc_id(torrent: &[u8; 20], peer: u64) -> String {
 
 pub fn file_rpc_id(torrent: &[u8; 20], file: &str) -> String {
     const FILE_ID: &'static [u8] = b"FILE";
-    let mut ctx = digest::Context::new(&digest::SHA1);
+    let mut ctx = sha1::Sha1::new();
     ctx.update(torrent);
     ctx.update(FILE_ID);
     ctx.update(file.as_bytes());
@@ -112,7 +113,7 @@ pub fn file_rpc_id(torrent: &[u8; 20], file: &str) -> String {
 
 pub fn trk_rpc_id(torrent: &[u8; 20], url: &str) -> String {
     const TRK_ID: &'static [u8] = b"TRK";
-    let mut ctx = digest::Context::new(&digest::SHA1);
+    let mut ctx = sha1::Sha1::new();
     ctx.update(torrent);
     ctx.update(TRK_ID);
     ctx.update(url.as_bytes());

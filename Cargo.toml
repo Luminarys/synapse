@@ -3,11 +3,9 @@ name = "synapse"
 version = "0.1.0"
 authors = ["Luminarys <postmaster@gensok.io>"]
 
-[workspace]
-members = ["./", "./rpc/", "./sycli"]
-
 [dependencies]
 rpc = { path = "rpc" }
+sha1 = { path = "sha1" }
 amy = "0.8.0"
 byteorder = "1.0"
 lazy_static = "*"
