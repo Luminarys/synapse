@@ -46,6 +46,7 @@ struct TorrentData {
     wanted: Bitfield,
     priority: u8,
     priorities: Vec<u8>,
+    created: DateTime<Utc>,
 }
 
 pub struct Torrent<T: cio::CIO> {
@@ -73,6 +74,7 @@ pub struct Torrent<T: cio::CIO> {
     path: Option<String>,
     info_bytes: Vec<u8>,
     info_idx: Option<usize>,
+    created: DateTime<Utc>,
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -169,6 +171,7 @@ impl<T: cio::CIO> Torrent<T> {
             status,
             info_bytes,
             info_idx,
+            created: Utc::now(),
         };
         t.start();
         if CONFIG.disk.validate && t.info_idx.is_none() {
@@ -230,6 +233,7 @@ impl<T: cio::CIO> Torrent<T> {
             path: d.path,
             info_bytes,
             info_idx,
+            created: d.created,
         };
         match t.status {
             Status::DiskError | Status::Seeding | Status::Leeching => {
@@ -259,8 +263,9 @@ impl<T: cio::CIO> Torrent<T> {
             status: self.status,
             path: self.path.clone(),
             priorities: self.priorities.clone(),
-            priority: self.priority.clone(),
+            priority: self.priority,
             wanted: self.wanted.clone(),
+            created: self.created.clone(),
         };
         let data = bincode::serialize(&d, bincode::Infinite).expect("Serialization failed!");
         debug!("Sending serialization request!");
@@ -1065,7 +1070,7 @@ impl<T: cio::CIO> Torrent<T> {
             size,
             // TODO: Properly add this
             path: self.path.as_ref().unwrap_or(&CONFIG.disk.directory).clone(),
-            created: Utc::now(),
+            created: self.created,
             modified: Utc::now(),
             status: self.status.into(),
             error: self.error(),
@@ -1075,7 +1080,6 @@ impl<T: cio::CIO> Torrent<T> {
             sequential: self.sequential(),
             rate_up: 0,
             rate_down: 0,
-            // TODO: COnsider the overflow potential here
             throttle_up: self.throttle.ul_rate(),
             throttle_down: self.throttle.dl_rate(),
             transferred_up: self.uploaded,

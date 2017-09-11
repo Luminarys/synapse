@@ -360,16 +360,15 @@ impl Resource {
     }
 
     pub fn update(&mut self, update: SResourceUpdate) {
-        match (self, update) {
-            (&mut Resource::Torrent(ref mut t),
-             SResourceUpdate::Throttle {
-                 throttle_up,
-                 throttle_down,
-                 ..
-             }) => {
-                t.throttle_up = throttle_up;
-                t.throttle_down = throttle_down;
+        match self {
+            &mut Resource::Torrent(ref mut t) => {
+                t.modified = Utc::now();
             }
+            _ => {
+            }
+        }
+
+        match (self, update) {
             (&mut Resource::Server(ref mut s),
              SResourceUpdate::Throttle {
                  throttle_up,
@@ -400,6 +399,15 @@ impl Resource {
              SResourceUpdate::Rate { rate_up, rate_down, .. }) => {
                 s.rate_up = rate_up;
                 s.rate_down = rate_down;
+            }
+            (&mut Resource::Torrent(ref mut t),
+             SResourceUpdate::Throttle {
+                 throttle_up,
+                 throttle_down,
+                 ..
+             }) => {
+                t.throttle_up = throttle_up;
+                t.throttle_down = throttle_down;
             }
             (&mut Resource::Torrent(ref mut t),
              SResourceUpdate::TorrentStatus {
