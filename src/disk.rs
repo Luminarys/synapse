@@ -355,8 +355,8 @@ impl Request {
             Request::Serialize { tid, .. } |
             Request::Validate { tid, .. } |
             Request::Delete { tid, .. } |
+            Request::Move { tid, .. } |
             Request::Write { tid, .. } => tid,
-            Request::Move { tid, .. } => tid,
             Request::Read { ref context, .. } => context.tid,
             Request::Shutdown => unreachable!(),
         }

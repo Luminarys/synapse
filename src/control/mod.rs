@@ -494,7 +494,7 @@ impl<T: cio::CIO> Control<T> {
         let cutoff_end = time::Duration::from_millis(3000);
 
         if self.last_tx.0 != self.data.session_ul || self.last_tx.1 != self.data.session_dl {
-            let d = elapsed.as_secs() * 1000 + elapsed.subsec_nanos() as u64 / 1000000;
+            let d = elapsed.as_secs() * 1000 + elapsed.subsec_nanos() as u64 / 1_000_000;
             let rate_up = ((self.data.session_ul - self.last_tx.0) * 1000) / d;
             let rate_down = ((self.data.session_dl - self.last_tx.1) * 1000) / d;
             self.cio.msg_rpc(rpc::CtlMessage::Update(vec![
@@ -514,7 +514,7 @@ impl<T: cio::CIO> Control<T> {
             self.last_tx.1 = self.data.session_dl;
         } else if elapsed > linger_start && elapsed < cutoff_start {
             // Handle linger at 1-3 second
-            let d = elapsed.as_secs() * 1000 + elapsed.subsec_nanos() as u64 / 1000000;
+            let d = elapsed.as_secs() * 1000 + elapsed.subsec_nanos() as u64 / 1_000_000;
             let rate_up = ((self.data.session_ul - self.last_tx.0) * 1000) / d;
             let rate_down = ((self.data.session_dl - self.last_tx.1) * 1000) / d;
             self.cio.msg_rpc(rpc::CtlMessage::Update(vec![

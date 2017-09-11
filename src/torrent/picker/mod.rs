@@ -284,21 +284,16 @@ impl Picker {
         self.unpicked = pieces.clone();
         self.picker = if self.is_sequential() {
             let mut picker = rarest::Picker::new(&self.unpicked);
-            for p in 0..self.info.pieces() {
-                for _ in 0..piece_map[&p] {
-                    picker.piece_available(p);
+            for (piece, pri) in piece_map {
+                for _ in 0..pri {
+                    picker.piece_available(piece);
                 }
             }
             PickerKind::Rarest(picker)
         } else {
             let mut pieces = [vec![], vec![], vec![], vec![], vec![], vec![]];
-            for p in 0..self.info.pieces() {
-                for pri in pieces.iter_mut().take(piece_map[&p]) {
-                    pri.push(p);
-                }
-                // for pr in 0..piece_map[&p] {
-                //     pieces[pr].push(p);
-                // }
+            for (piece, pri) in piece_map {
+                pieces[pri].push(piece);
             }
             PickerKind::Sequential(sequential::Picker::new_pri(pieces))
         };

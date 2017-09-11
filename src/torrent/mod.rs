@@ -265,7 +265,7 @@ impl<T: cio::CIO> Torrent<T> {
             priorities: self.priorities.clone(),
             priority: self.priority,
             wanted: self.wanted.clone(),
-            created: self.created.clone(),
+            created: self.created,
         };
         let data = bincode::serialize(&d, bincode::Infinite).expect("Serialization failed!");
         debug!("Sending serialization request!");
@@ -883,8 +883,8 @@ impl<T: cio::CIO> Torrent<T> {
 
     pub fn rpc_update(&mut self, u: rpc::proto::resource::CResourceUpdate) {
         if u.throttle_up.is_some() || u.throttle_down.is_some() {
-            let tu = u.throttle_up.unwrap_or(self.throttle.ul_rate());
-            let td = u.throttle_down.unwrap_or(self.throttle.dl_rate());
+            let tu = u.throttle_up.unwrap_or_else(|| self.throttle.ul_rate());
+            let td = u.throttle_down.unwrap_or_else(|| self.throttle.dl_rate());
             self.set_throttle(tu, td);
         }
 
