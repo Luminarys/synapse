@@ -2,7 +2,6 @@ use websocket::ClientBuilder;
 use websocket::client::sync::Client as WSClient;
 use websocket::stream::sync::NetworkStream;
 use websocket::message::OwnedMessage as WSMessage;
-use websocket::result::WebSocketError;
 use serde_json;
 
 use rpc::message::{CMessage, SMessage, Version};

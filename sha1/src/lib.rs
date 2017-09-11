@@ -89,14 +89,16 @@ impl Sha1 {
     pub fn digest(&self) -> Digest {
         let mut state = self.state;
         let bits = (self.len + (self.blocks.len as u64)) * 8;
-        let extra = [(bits >> 56) as u8,
-                     (bits >> 48) as u8,
-                     (bits >> 40) as u8,
-                     (bits >> 32) as u8,
-                     (bits >> 24) as u8,
-                     (bits >> 16) as u8,
-                     (bits >> 8) as u8,
-                     (bits >> 0) as u8];
+        let extra = [
+            (bits >> 56) as u8,
+            (bits >> 48) as u8,
+            (bits >> 40) as u8,
+            (bits >> 32) as u8,
+            (bits >> 24) as u8,
+            (bits >> 16) as u8,
+            (bits >> 8) as u8,
+            (bits >> 0) as u8,
+        ];
         let mut last = [0; 128];
         let blocklen = self.blocks.len as usize;
         last[..blocklen].clone_from_slice(&self.blocks.block[..blocklen]);
@@ -120,33 +122,36 @@ impl Digest {
     #[cfg_attr(debug_assertions, inline(never))]
     #[cfg_attr(not(debug_assertions), inline(always))]
     pub fn bytes(&self) -> [u8; DIGEST_LENGTH] {
-        [(self.data.state[0] >> 24) as u8,
-         (self.data.state[0] >> 16) as u8,
-         (self.data.state[0] >> 8) as u8,
-         (self.data.state[0] >> 0) as u8,
-         (self.data.state[1] >> 24) as u8,
-         (self.data.state[1] >> 16) as u8,
-         (self.data.state[1] >> 8) as u8,
-         (self.data.state[1] >> 0) as u8,
-         (self.data.state[2] >> 24) as u8,
-         (self.data.state[2] >> 16) as u8,
-         (self.data.state[2] >> 8) as u8,
-         (self.data.state[2] >> 0) as u8,
-         (self.data.state[3] >> 24) as u8,
-         (self.data.state[3] >> 16) as u8,
-         (self.data.state[3] >> 8) as u8,
-         (self.data.state[3] >> 0) as u8,
-         (self.data.state[4] >> 24) as u8,
-         (self.data.state[4] >> 16) as u8,
-         (self.data.state[4] >> 8) as u8,
-         (self.data.state[4] >> 0) as u8]
+        [
+            (self.data.state[0] >> 24) as u8,
+            (self.data.state[0] >> 16) as u8,
+            (self.data.state[0] >> 8) as u8,
+            (self.data.state[0] >> 0) as u8,
+            (self.data.state[1] >> 24) as u8,
+            (self.data.state[1] >> 16) as u8,
+            (self.data.state[1] >> 8) as u8,
+            (self.data.state[1] >> 0) as u8,
+            (self.data.state[2] >> 24) as u8,
+            (self.data.state[2] >> 16) as u8,
+            (self.data.state[2] >> 8) as u8,
+            (self.data.state[2] >> 0) as u8,
+            (self.data.state[3] >> 24) as u8,
+            (self.data.state[3] >> 16) as u8,
+            (self.data.state[3] >> 8) as u8,
+            (self.data.state[3] >> 0) as u8,
+            (self.data.state[4] >> 24) as u8,
+            (self.data.state[4] >> 16) as u8,
+            (self.data.state[4] >> 8) as u8,
+            (self.data.state[4] >> 0) as u8,
+        ]
     }
 }
 
 impl Blocks {
     #[inline(always)]
     fn input<F>(&mut self, mut input: &[u8], mut f: F)
-        where F: FnMut(&[u8; 64])
+    where
+        F: FnMut(&[u8; 64]),
     {
         if self.len > 0 {
             let len = self.len as usize;
@@ -181,8 +186,8 @@ impl Sha1State {
         for i in 0..16 {
             let off = i * 4;
             words[i] = (block[off + 3] as u32) | ((block[off + 2] as u32) << 8) |
-                       ((block[off + 1] as u32) << 16) |
-                       ((block[off] as u32) << 24);
+                ((block[off + 1] as u32) << 16) |
+                ((block[off] as u32) << 24);
         }
 
         #[inline(always)]
@@ -279,8 +284,6 @@ mod tests {
             ("testing\n", "9801739daae44ec5293d4e1f53d3f4d2d426d91c"),
             ("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
              "025ecbd5d70f8fb3c5457cd96bab13fda305dc59"),
-            ("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
-             "4300320394f7ee239bcdce7d3b8bcee173a0cd5c"),
             ("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
              "cef734ba81a024479e09eb5a75b6ddae62e6abf1"),
         ];

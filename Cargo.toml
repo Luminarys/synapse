@@ -3,6 +3,9 @@ name = "synapse"
 version = "0.1.0"
 authors = ["Luminarys <postmaster@gensok.io>"]
 
+[workspace]
+members = ["sycli", "rpc"]
+
 [dependencies]
 rpc = { path = "rpc" }
 sha1 = { path = "sha1" }

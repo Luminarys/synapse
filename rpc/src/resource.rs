@@ -2,6 +2,8 @@ use std::mem;
 use std::fmt;
 
 use chrono::{DateTime, Utc};
+use serde;
+use serde_json as json;
 
 use super::criterion::{Criterion, Filter, match_n, match_f, match_s, match_b};
 
@@ -155,8 +157,10 @@ pub struct CResourceUpdate {
     pub path: Option<String>,
     pub priority: Option<u8>,
     pub sequential: Option<bool>,
+    #[serde(deserialize_with = "deserialize_throttle")]
     #[serde(default)]
     pub throttle_up: Option<Option<i64>>,
+    #[serde(deserialize_with = "deserialize_throttle")]
     #[serde(default)]
     pub throttle_down: Option<Option<i64>>,
 }
@@ -364,8 +368,7 @@ impl Resource {
             &mut Resource::Torrent(ref mut t) => {
                 t.modified = Utc::now();
             }
-            _ => {
-            }
+            _ => {}
         }
 
         match (self, update) {
@@ -641,6 +644,19 @@ impl fmt::Display for Resource {
             }
         }
         Ok(())
+    }
+}
+
+fn deserialize_throttle<'de, D>(de: D) -> Result<Option<Option<i64>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let deser_result = serde::Deserialize::deserialize(de)?;
+    match deser_result {
+        json::Value::Null => Ok(Some(None)),
+        json::Value::Number(ref i) if i.is_i64() => Ok(Some(Some(i.as_i64().unwrap()))),
+        json::Value::Number(_) => Err(serde::de::Error::custom("Throttle must not be a float")),
+        _ => Err(serde::de::Error::custom("Throttle must be number or null")),
     }
 }
 
