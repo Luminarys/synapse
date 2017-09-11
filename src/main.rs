@@ -46,7 +46,7 @@ mod rpc;
 mod throttle;
 mod config;
 
-use std::thread;
+use std::{thread, process};
 use std::sync::{atomic, mpsc};
 use std::io;
 
@@ -126,7 +126,9 @@ fn init() -> io::Result<Vec<thread::JoinHandle<()>>> {
     });
     rx.recv().unwrap()?;
 
-    ctrlc::set_handler(|| {
+    ctrlc::set_handler(|| if SHUTDOWN.load(atomic::Ordering::SeqCst) {
+        process::abort();
+    } else {
         info!("Trigggering shutdown via signal!");
         SHUTDOWN.store(true, atomic::Ordering::SeqCst);
     }).map_err(|_| util::io_err_val("Signal installation failed!"))?;
