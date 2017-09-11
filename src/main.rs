@@ -127,9 +127,10 @@ fn init() -> io::Result<Vec<thread::JoinHandle<()>>> {
     rx.recv().unwrap()?;
 
     ctrlc::set_handler(|| if SHUTDOWN.load(atomic::Ordering::SeqCst) {
+        info!("Shutting down immediately!");
         process::abort();
     } else {
-        info!("Trigggering shutdown via signal!");
+        info!("Caught SIGINT, shutting down cleanly. Interrupt again to shut down immediately.");
         SHUTDOWN.store(true, atomic::Ordering::SeqCst);
     }).map_err(|_| util::io_err_val("Signal installation failed!"))?;
 
