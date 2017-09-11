@@ -1,11 +1,15 @@
 use std::net::{SocketAddr, UdpSocket};
-use std::io;
-use self::io::{Read, Write};
-use num::bigint::BigUint;
-use {amy, tracker, CONFIG};
-use std::{thread, time};
+use std::io::{self, Read};
+use std::time;
 use std::fs::OpenOptions;
 use std::path::Path;
+
+use num::bigint::BigUint;
+use amy;
+
+use tracker;
+use disk;
+use CONFIG;
 
 mod rt;
 mod proto;
@@ -24,10 +28,11 @@ pub struct Manager {
     dht_flush: time::Instant,
     sock: UdpSocket,
     buf: Vec<u8>,
+    db: amy::Sender<disk::Job>,
 }
 
 impl Manager {
-    pub fn new(reg: &amy::Registrar) -> io::Result<Manager> {
+    pub fn new(reg: &amy::Registrar, db: amy::Sender<disk::Job>) -> io::Result<Manager> {
         let sock = UdpSocket::bind(("0.0.0.0", CONFIG.dht.port))?;
         sock.set_nonblocking(true)?;
         let id = reg.register(&sock, amy::Event::Read)?;
@@ -55,6 +60,7 @@ impl Manager {
             table,
             sock,
             id,
+            db,
             buf: vec![0u8; 500],
             dht_flush: time::Instant::now(),
         })
@@ -129,17 +135,8 @@ impl Manager {
         if self.dht_flush.elapsed() > time::Duration::from_secs(60) {
             let data = self.table.serialize();
             // TODO: Transmit this to the disk thread rather than spawning a thread.
-            thread::spawn(move || {
-                let p = Path::new(&CONFIG.disk.session[..]).join(SESSION_FILE);
-                if let Err(e) = OpenOptions::new()
-                    .write(true)
-                    .create(true)
-                    .open(&p)
-                    .and_then(|mut f| f.write(&data[..]))
-                {
-                    error!("DHT serialization failed: {:?}!", e);
-                }
-            });
+            let path = Path::new(&CONFIG.disk.session[..]).join(SESSION_FILE);
+            self.db.send(disk::Job { data, path }).ok();
             self.dht_flush = time::Instant::now();
         }
         for (req, a) in self.table.tick() {

@@ -15,6 +15,7 @@ const JOB_TIME_SLICE: u64 = 1;
 pub struct Disk {
     poll: amy::Poller,
     ch: handle::Handle<Request, Response>,
+    jobs: amy::Receiver<Job>,
     files: FileCache,
     active: VecDeque<Request>,
 }
@@ -24,6 +25,12 @@ pub struct Location {
     pub offset: u64,
     pub start: usize,
     pub end: usize,
+}
+
+#[derive(Debug)]
+pub struct Job {
+    pub data: Vec<u8>,
+    pub path: PathBuf,
 }
 
 pub enum Request {
@@ -259,10 +266,13 @@ impl Request {
                 return Ok(JobRes::Resp(Response::moved(tid, to)));
             }
             Request::Serialize { data, hash, .. } => {
-                let mut pb = path::PathBuf::from(sd);
-                pb.push(hash_to_id(&hash));
-                let mut f = fs::OpenOptions::new().write(true).create(true).open(&pb)?;
+                let mut temp = path::PathBuf::from(sd);
+                temp.push(hash_to_id(&hash) + ".temp");
+                let mut f = fs::OpenOptions::new().write(true).create(true).open(&temp)?;
                 f.write_all(&data)?;
+                let mut actual = path::PathBuf::from(sd);
+                actual.push(hash_to_id(&hash));
+                fs::rename(temp, actual)?;
             }
             Request::Delete { hash, files, path, .. } => {
                 let mut spb = path::PathBuf::from(sd);
@@ -404,10 +414,15 @@ impl fmt::Debug for Response {
 }
 
 impl Disk {
-    pub fn new(poll: amy::Poller, ch: handle::Handle<Request, Response>) -> Disk {
+    pub fn new(
+        poll: amy::Poller,
+        ch: handle::Handle<Request, Response>,
+        jobs: amy::Receiver<Job>,
+    ) -> Disk {
         Disk {
             poll,
             ch,
+            jobs,
             files: FileCache::new(),
             active: VecDeque::new(),
         }
@@ -488,16 +503,38 @@ impl Disk {
                 _ => break,
             }
         }
+        while let Ok(j) = self.jobs.try_recv() {
+            let mut p = j.path.clone();
+            p.set_extension("temp");
+            let res = fs::OpenOptions::new()
+                .write(true)
+                .create(true)
+                .open(&p)
+                .map(|mut f| f.write(&j.data[..]));
+            match res {
+                Ok(Ok(_)) => {
+                    fs::rename(&p, &j.path).ok();
+                }
+                Ok(Err(e)) => {
+                    error!("Failed to write disk job: {}", e);
+                    fs::remove_file(&p).ok();
+                }
+                Err(e) => {
+                    error!("Failed to write disk job: {}", e);
+                }
+            }
+        }
         false
     }
 }
 
 pub fn start(
     creg: &mut amy::Registrar,
-) -> io::Result<(handle::Handle<Response, Request>, thread::JoinHandle<()>)> {
+) -> io::Result<(handle::Handle<Response, Request>, amy::Sender<Job>, thread::JoinHandle<()>)> {
     let poll = amy::Poller::new()?;
     let mut reg = poll.get_registrar()?;
     let (ch, dh) = handle::Handle::new(creg, &mut reg)?;
-    let h = dh.run("disk", move |h| Disk::new(poll, h).run())?;
-    Ok((ch, h))
+    let (tx, rx) = reg.channel()?;
+    let h = dh.run("disk", move |h| Disk::new(poll, h, rx).run())?;
+    Ok((ch, tx, h))
 }

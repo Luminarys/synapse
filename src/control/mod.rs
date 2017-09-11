@@ -6,6 +6,7 @@ use std::path::PathBuf;
 
 use chrono::Utc;
 use bincode;
+use amy;
 
 use {rpc, tracker, disk, listener, CONFIG, SHUTDOWN};
 use util::{io_err, io_err_val, id_to_hash, hash_to_id, random_string};
@@ -42,6 +43,7 @@ pub struct Control<T: cio::CIO> {
     peers: HashMap<usize, usize>,
     hash_idx: HashMap<[u8; 20], usize>,
     data: ServerData,
+    db: amy::Sender<disk::Job>,
 }
 
 #[derive(Serialize, Deserialize, Default)]
@@ -56,7 +58,11 @@ struct ServerData {
 }
 
 impl<T: cio::CIO> Control<T> {
-    pub fn new(mut cio: T, throttler: Throttler) -> io::Result<Control<T>> {
+    pub fn new(
+        mut cio: T,
+        throttler: Throttler,
+        db: amy::Sender<disk::Job>,
+    ) -> io::Result<Control<T>> {
         let torrents = HashMap::new();
         let peers = HashMap::new();
         let hash_idx = HashMap::new();
@@ -90,6 +96,7 @@ impl<T: cio::CIO> Control<T> {
             last_tx: (0, 0),
             last_tx_time: time::Instant::now(),
             data: Default::default(),
+            db,
         })
     }
 
@@ -118,16 +125,16 @@ impl<T: cio::CIO> Control<T> {
     fn serialize(&mut self) {
         let sd = &CONFIG.disk.session;
         debug!("Serializing server data!");
-        let mut pb = PathBuf::from(sd);
-        pb.push("syn_data");
-        if let Ok(Ok(_)) = fs::File::create(pb).map(|mut f| {
-            bincode::serialize_into(&mut f, &self.data, bincode::Infinite)
-        })
-        {
-        } else {
-            error!("Failed to serialize");
+        let mut path = PathBuf::from(sd);
+        path.push("syn_data");
+        match bincode::serialize(&self.data, bincode::Infinite) {
+            Ok(data) => {
+                self.db.send(disk::Job { path, data }).ok();
+            }
+            Err(_) => {
+                error!("Failed to serialize server data");
+            }
         }
-
         debug!("Serializing torrents!");
         for torrent in self.torrents.values_mut() {
             torrent.serialize();

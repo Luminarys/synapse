@@ -10,13 +10,14 @@ use std::{result, io, thread};
 
 use byteorder::{BigEndian, ReadBytesExt};
 use url::Url;
+use amy;
 
 pub use self::errors::{Result, ResultExt, Error, ErrorKind};
 use torrent::Torrent;
 use bencode::BEncode;
 use control::cio;
 use handle;
-use amy;
+use disk;
 use CONFIG;
 
 pub struct Tracker {
@@ -84,6 +85,7 @@ const POLL_INT_MS: usize = 1000;
 impl Tracker {
     pub fn start(
         creg: &mut amy::Registrar,
+        db: amy::Sender<disk::Job>,
     ) -> io::Result<(handle::Handle<Response, Request>, thread::JoinHandle<()>)> {
         let poll = amy::Poller::new()?;
         let mut reg = poll.get_registrar()?;
@@ -91,7 +93,7 @@ impl Tracker {
         let timer = reg.set_interval(150)?;
         let (dtx, drx) = reg.channel()?;
         let udp = udp::Handler::new(&reg)?;
-        let dht = dht::Manager::new(&reg)?;
+        let dht = dht::Manager::new(&reg, db)?;
         let http = http::Handler::new(&reg)?;
         let dns = dns::Resolver::new(reg, dtx);
         let th = dh.run("trk", move |h| {
