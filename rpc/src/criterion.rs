@@ -76,8 +76,16 @@ impl Criterion {
         match (field, value) {
             (f, &Value::V(ref v)) => {
                 match op {
-                    Operation::In => v.iter().any(|item| self.match_field(f, Operation::Eq, item)),
-                    Operation::NotIn => v.iter().all(|item| self.match_field(f, Operation::Neq, item)),
+                    Operation::In => {
+                        v.iter().any(
+                            |item| self.match_field(f, Operation::Eq, item),
+                        )
+                    }
+                    Operation::NotIn => {
+                        v.iter().all(
+                            |item| self.match_field(f, Operation::Neq, item),
+                        )
+                    }
                     _ => false,
                 }
             }
@@ -145,7 +153,7 @@ impl Criterion {
                             Operation::Neq => true,
                             _ => false,
                         }
-                    },
+                    }
                 }
             }
             _ => false,
@@ -206,7 +214,7 @@ mod tests {
         let c = Criterion {
             field: "asdf".to_owned(),
             op: Operation::Like,
-            value: Value::S("fo%".to_owned())
+            value: Value::S("fo%".to_owned()),
         };
 
         let q = Q;
@@ -219,7 +227,7 @@ mod tests {
         let c = Criterion {
             field: "s".to_owned(),
             op: Operation::Like,
-            value: Value::S("fo%".to_owned())
+            value: Value::S("fo%".to_owned()),
         };
 
         let q = Q;
