@@ -127,7 +127,7 @@ mod tests {
                 "type": "FILTER_SUBSCRIBE",
                 "serial": 0,
                 "criteria": [
-                    { "field": "id", "op": "in", "value": [1,2,3] }
+                    { "field": "id", "op": "in", "value": [1,2,null] }
                 ]
             }
             "#;
@@ -140,7 +140,8 @@ mod tests {
         {
             assert_eq!(c[0].field, "id");
             assert_eq!(c[0].op, criterion::Operation::In);
-            assert_eq!(c[0].value, criterion::Value::AN(vec![1, 2, 3]));
+            let v = vec![criterion::Value::N(1), criterion::Value::N(2), criterion::Value::E(None)];
+            assert_eq!(c[0].value, criterion::Value::V(v));
         } else {
             unreachable!();
         }

@@ -49,6 +49,7 @@ pub enum Value {
     V(Vec<Value>),
 }
 
+#[derive(Debug, Clone, PartialEq)]
 pub enum Field<'a> {
     B(bool),
     S(&'a str),
@@ -71,8 +72,15 @@ impl Criterion {
         }
     }
 
-    fn match_field(&self, f: &Field, op: Operation, value: &Value) -> bool {
-        match (f, value) {
+    fn match_field(&self, field: &Field, op: Operation, value: &Value) -> bool {
+        match (field, value) {
+            (f, &Value::V(ref v)) => {
+                match op {
+                    Operation::In => v.iter().any(|item| self.match_field(f, Operation::Eq, item)),
+                    Operation::NotIn => v.iter().all(|item| self.match_field(f, Operation::Neq, item)),
+                    _ => false,
+                }
+            }
             (&Field::B(f), &Value::B(v)) => {
                 match op {
                     Operation::Eq => f == v,
@@ -84,8 +92,8 @@ impl Criterion {
                 match op {
                     Operation::Eq => f == v,
                     Operation::Neq => f != v,
-                    Operation::Like => match_like(f, v),
-                    Operation::ILike => match_ilike(f, v),
+                    Operation::Like => match_like(v, f),
+                    Operation::ILike => match_ilike(v, f),
                     _ => false,
                 }
             }
@@ -132,14 +140,12 @@ impl Criterion {
             (&Field::O(ref b), v) => {
                 match b.as_ref().as_ref() {
                     Some(f) => self.match_field(f, op, v),
-                    None => false,
-                }
-            }
-            (f, &Value::V(ref v)) => {
-                match op {
-                    Operation::In => v.iter().any(|item| self.match_field(f, op, item)),
-                    Operation::NotIn => v.iter().all(|item| !self.match_field(f, op, item)),
-                    _ => false,
+                    None => {
+                        match op {
+                            Operation::Neq => true,
+                            _ => false,
+                        }
+                    },
                 }
             }
             _ => false,
@@ -179,5 +185,92 @@ mod tests {
         assert!(match_like("%world", "hello world"));
         assert!(!match_like("% world", "helloworld"));
         assert!(match_like("%", "foo bar"));
+        assert!(match_like("fo%", "foo"));
+    }
+
+    struct Q;
+    impl Queryable for Q {
+        fn field(&self, f: &str) -> Option<Field> {
+            match f {
+                "s" => Some(Field::S("foo")),
+                "n" => Some(Field::N(1)),
+                "ob" => Some(Field::O(Box::new(Some(Field::B(true))))),
+                "on" => Some(Field::O(Box::new(None))),
+                _ => None,
+            }
+        }
+    }
+
+    #[test]
+    fn test_match_bad_field() {
+        let c = Criterion {
+            field: "asdf".to_owned(),
+            op: Operation::Like,
+            value: Value::S("fo%".to_owned())
+        };
+
+        let q = Q;
+        assert_eq!(q.field("asdf"), None);
+        assert!(!c.matches(&q));
+    }
+
+    #[test]
+    fn test_match() {
+        let c = Criterion {
+            field: "s".to_owned(),
+            op: Operation::Like,
+            value: Value::S("fo%".to_owned())
+        };
+
+        let q = Q;
+        assert!(c.matches(&q));
+    }
+
+    #[test]
+    fn test_match_none() {
+        let c = Criterion {
+            field: "on".to_owned(),
+            op: Operation::Eq,
+            value: Value::E(None),
+        };
+
+        let q = Q;
+        assert!(c.matches(&q));
+    }
+
+    #[test]
+    fn test_match_some() {
+        let c = Criterion {
+            field: "ob".to_owned(),
+            op: Operation::Eq,
+            value: Value::B(true),
+        };
+
+        let q = Q;
+        assert!(c.matches(&q));
+    }
+
+    #[test]
+    fn test_match_none_in() {
+        let c = Criterion {
+            field: "on".to_owned(),
+            op: Operation::In,
+            value: Value::V(vec![Value::B(false), Value::E(None)]),
+        };
+
+        let q = Q;
+        assert!(c.matches(&q));
+    }
+
+    #[test]
+    fn test_match_none_not_in() {
+        let c = Criterion {
+            field: "on".to_owned(),
+            op: Operation::NotIn,
+            value: Value::V(vec![Value::B(false), Value::B(true)]),
+        };
+
+        let q = Q;
+        assert!(c.matches(&q));
     }
 }
