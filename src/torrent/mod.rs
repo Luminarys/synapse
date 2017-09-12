@@ -32,7 +32,6 @@ pub enum TrackerStatus {
         interval: u32,
     },
     Failure(String),
-    Error,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -325,7 +324,8 @@ impl<T: cio::CIO> Torrent<T> {
                 // Wait 5 minutes before trying again
                 time += Duration::from_secs(300);
                 self.tracker_update = Some(time);
-                self.tracker = TrackerStatus::Error;
+                let reason = format!("Couldn't contact tracker: {}", e);
+                self.tracker = TrackerStatus::Failure(reason);
             }
         }
         self.update_rpc_tracker();
@@ -1339,9 +1339,6 @@ impl<T: cio::CIO> Torrent<T> {
         let id = util::trk_rpc_id(&self.info.hash, &self.info.announce);
         let error = match self.tracker {
             TrackerStatus::Failure(ref r) => Some(r.clone()),
-            TrackerStatus::Error => Some(
-                "Failed to query tracker for an unknown reason.".to_owned(),
-            ),
             _ => None,
         };
         self.cio.msg_rpc(rpc::CtlMessage::Update(vec![
