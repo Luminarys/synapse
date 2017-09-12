@@ -331,15 +331,19 @@ impl<T: cio::CIO> Torrent<T> {
         self.update_rpc_tracker();
     }
 
-    pub fn update_tracker(&mut self) {
+    pub fn try_update_tracker(&mut self) {
         if let Some(end) = self.tracker_update {
             debug!("Updating tracker at inteval!");
             let cur = Instant::now();
             if cur >= end {
-                let req = tracker::Request::interval(self);
-                self.cio.msg_trk(req);
+                self.update_tracker();
             }
         }
+    }
+
+    fn update_tracker(&mut self) {
+        let req = tracker::Request::interval(self);
+        self.cio.msg_trk(req);
     }
 
     pub fn remove_peer(&mut self, rpc_id: &str) {
@@ -353,6 +357,10 @@ impl<T: cio::CIO> Torrent<T> {
 
     // TODO: Implement once mutlitracker support is in
     pub fn remove_tracker(&mut self, rpc_id: &str) {}
+
+    pub fn update_tracker_req(&mut self, rpc_id: &str) {
+        self.update_tracker();
+    }
 
     pub fn get_throttle(&self, id: usize) -> Throttle {
         self.throttle.new_sibling(id)

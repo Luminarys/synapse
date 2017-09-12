@@ -289,6 +289,28 @@ impl Processor {
                     }
                 }
             }
+            CMessage::UpdateTracker { serial, id } => {
+                match self.resources.get(&id) {
+                    Some(&Resource::Tracker(ref t)) => {
+                        rmsg = Some(Message::UpdateTracker {
+                            id,
+                            torrent_id: t.torrent_id.clone(),
+                        })
+                    }
+                    Some(_) => {
+                        resp.push(SMessage::InvalidResource(Error {
+                            serial: Some(serial),
+                            reason: "UPDATE_TRACKER not used with tracker".to_owned(),
+                        }))
+                    }
+                    None => {
+                        resp.push(SMessage::UnknownResource(Error {
+                            serial: Some(serial),
+                            reason: format!("Unknown resource {}", id),
+                        }))
+                    }
+                }
+            }
             CMessage::ValidateResources { serial, mut ids } => {
                 ids.retain(|id| match self.resources.get(id) {
                     Some(&Resource::Torrent(_)) => true,

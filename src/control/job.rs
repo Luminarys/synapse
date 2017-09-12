@@ -45,7 +45,7 @@ pub struct TrackerUpdate;
 impl<T: cio::CIO> Job<T> for TrackerUpdate {
     fn update(&mut self, torrents: &mut HashMap<usize, Torrent<T>>) {
         for (_, torrent) in torrents.iter_mut() {
-            torrent.update_tracker();
+            torrent.try_update_tracker();
         }
     }
 }

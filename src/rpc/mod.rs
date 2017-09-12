@@ -98,6 +98,7 @@ pub enum Message {
         client: usize,
         serial: u64,
     },
+    UpdateTracker { id: String, torrent_id: String },
     RemoveTracker {
         id: String,
         torrent_id: String,

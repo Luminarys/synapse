@@ -430,6 +430,16 @@ Resumes a torrent.
         "id": ID
     }
 
+UPDATE_TRACKER          client->server
+
+Updates a tracker.
+
+    {
+        "type": "UPDATE_TRACKER",
+        "id": ID
+    }
+
+
 VALIDATE_RESOURCES      client->server
 
 Validates a list of resources. At the moment only torrents will be

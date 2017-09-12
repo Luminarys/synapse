@@ -55,6 +55,7 @@ pub enum CMessage {
     },
     PauseTorrent { serial: u64, id: String },
     ResumeTorrent { serial: u64, id: String },
+    UpdateTracker { id: String, serial: u64 },
     ValidateResources { serial: u64, ids: Vec<String> },
 }
 
