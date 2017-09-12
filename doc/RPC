@@ -137,6 +137,10 @@ A criterion can be specified like so:
         "value": *,                 Value to test against
     }
 
+Note that criterion are evaluated in the order of "field op value", so
+a criterion with field "foo", op "<", and value "10" would be true for all
+resources with a field foo less than 10.
+
 Operation enum:
     "==": equal to
     "!=": not equal to

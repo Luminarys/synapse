@@ -1,4 +1,5 @@
 use regex::{self, Regex};
+use chrono::{DateTime, Utc};
 
 use resource::ResourceKind;
 
@@ -43,186 +44,112 @@ pub enum Value {
     S(String),
     N(i64),
     F(f32),
-    AS(Vec<String>),
-    AN(Vec<i64>),
-    AF(Vec<f32>),
+    D(DateTime<Utc>),
+    E(Option<()>),
+    V(Vec<Value>),
 }
 
-pub trait Filter {
-    fn matches(&self, criterion: &Criterion) -> bool;
+pub enum Field<'a> {
+    B(bool),
+    S(&'a str),
+    N(i64),
+    F(f32),
+    D(DateTime<Utc>),
+    O(Box<Option<Field<'a>>>),
+}
+
+pub trait Queryable {
+    fn field(&self, field: &str) -> Option<Field>;
+}
+
+impl Criterion {
+    pub fn matches<Q: Queryable>(&self, q: &Q) -> bool {
+        if let Some(f) = q.field(&self.field) {
+            self.match_field(&f, self.op, &self.value)
+        } else {
+            false
+        }
+    }
+
+    fn match_field(&self, f: &Field, op: Operation, value: &Value) -> bool {
+        match (f, value) {
+            (&Field::B(f), &Value::B(v)) => {
+                match op {
+                    Operation::Eq => f == v,
+                    Operation::Neq => f != v,
+                    _ => false,
+                }
+            }
+            (&Field::S(ref f), &Value::S(ref v)) => {
+                match op {
+                    Operation::Eq => f == v,
+                    Operation::Neq => f != v,
+                    Operation::Like => match_like(f, v),
+                    Operation::ILike => match_ilike(f, v),
+                    _ => false,
+                }
+            }
+            (&Field::N(f), &Value::N(v)) => {
+                match op {
+                    Operation::Eq => f == v,
+                    Operation::Neq => f != v,
+                    Operation::GTE => f >= v,
+                    Operation::GT => f > v,
+                    Operation::LTE => f <= v,
+                    Operation::LT => f < v,
+                    _ => false,
+                }
+            }
+            (&Field::F(f), &Value::F(v)) => {
+                match op {
+                    Operation::Eq => f == v,
+                    Operation::Neq => f != v,
+                    Operation::GTE => f >= v,
+                    Operation::GT => f > v,
+                    Operation::LTE => f <= v,
+                    Operation::LT => f < v,
+                    _ => false,
+                }
+            }
+            (&Field::D(f), &Value::D(v)) => {
+                match op {
+                    Operation::Eq => f == v,
+                    Operation::Neq => f != v,
+                    Operation::GTE => f >= v,
+                    Operation::GT => f > v,
+                    Operation::LTE => f <= v,
+                    Operation::LT => f < v,
+                    _ => false,
+                }
+            }
+            (&Field::O(ref f), &Value::E(_)) => {
+                match op {
+                    Operation::Eq => f.is_none(),
+                    Operation::Neq => f.is_some(),
+                    _ => false,
+                }
+            }
+            (&Field::O(ref b), v) => {
+                match b.as_ref().as_ref() {
+                    Some(f) => self.match_field(f, op, v),
+                    None => false,
+                }
+            }
+            (f, &Value::V(ref v)) => {
+                match op {
+                    Operation::In => v.iter().any(|item| self.match_field(f, op, item)),
+                    Operation::NotIn => v.iter().all(|item| !self.match_field(f, op, item)),
+                    _ => false,
+                }
+            }
+            _ => false,
+        }
+    }
 }
 
 impl Default for ResourceKind {
     fn default() -> ResourceKind {
         ResourceKind::Torrent
-    }
-}
-
-pub fn match_n<T: PartialOrd<i64>>(t: T, c: &Criterion) -> bool {
-    match c.op {
-        Operation::Eq => {
-            match c.value {
-                Value::N(v) => t.eq(&v),
-                _ => false,
-            }
-        }
-        Operation::Neq => {
-            match c.value {
-                Value::N(v) => t.ne(&v),
-                _ => false,
-            }
-        }
-        Operation::GT => {
-            match c.value {
-                Value::N(v) => t.gt(&v),
-                _ => false,
-            }
-        }
-        Operation::GTE => {
-            match c.value {
-                Value::N(v) => t.ge(&v),
-                _ => false,
-            }
-        }
-        Operation::LT => {
-            match c.value {
-                Value::N(v) => t.lt(&v),
-                _ => false,
-            }
-        }
-        Operation::LTE => {
-            match c.value {
-                Value::N(v) => t.le(&v),
-                _ => false,
-            }
-        }
-        Operation::In => {
-            match c.value {
-                Value::AN(ref a) => a.iter().any(|v| t.eq(v)),
-                _ => false,
-            }
-        }
-        Operation::NotIn => {
-            match c.value {
-                Value::AN(ref a) => a.iter().all(|v| t.ne(v)),
-                _ => false,
-            }
-        }
-        _ => false,
-    }
-}
-
-pub fn match_f<T: PartialOrd<f32>>(t: T, c: &Criterion) -> bool {
-    match c.op {
-        Operation::Eq => {
-            match c.value {
-                Value::F(v) => t.eq(&v),
-                _ => false,
-            }
-        }
-        Operation::Neq => {
-            match c.value {
-                Value::F(v) => t.ne(&v),
-                _ => false,
-            }
-        }
-        Operation::GT => {
-            match c.value {
-                Value::F(v) => t.gt(&v),
-                _ => false,
-            }
-        }
-        Operation::GTE => {
-            match c.value {
-                Value::F(v) => t.ge(&v),
-                _ => false,
-            }
-        }
-        Operation::LT => {
-            match c.value {
-                Value::F(v) => t.lt(&v),
-                _ => false,
-            }
-        }
-        Operation::LTE => {
-            match c.value {
-                Value::F(v) => t.le(&v),
-                _ => false,
-            }
-        }
-        Operation::In => {
-            match c.value {
-                Value::AF(ref a) => a.iter().any(|v| t.eq(v)),
-                _ => false,
-            }
-        }
-        Operation::NotIn => {
-            match c.value {
-                Value::AF(ref a) => a.iter().all(|v| t.ne(v)),
-                _ => false,
-            }
-        }
-        _ => false,
-    }
-}
-
-pub fn match_b(t: bool, c: &Criterion) -> bool {
-    match c.op {
-        Operation::Eq => {
-            match c.value {
-                Value::B(b) => t == b,
-                _ => false,
-            }
-        }
-        Operation::Neq => {
-            match c.value {
-                Value::B(b) => t != b,
-                _ => false,
-            }
-        }
-        _ => false,
-    }
-}
-
-pub fn match_s(t: &str, c: &Criterion) -> bool {
-    match c.op {
-        Operation::Eq => {
-            match c.value {
-                Value::S(ref v) => v.eq(t),
-                _ => false,
-            }
-        }
-        Operation::Neq => {
-            match c.value {
-                Value::S(ref v) => v.ne(t),
-                _ => false,
-            }
-        }
-        Operation::Like => {
-            match c.value {
-                Value::S(ref v) => match_like(v, t),
-                _ => false,
-            }
-        }
-        Operation::ILike => {
-            match c.value {
-                Value::S(ref v) => match_ilike(v, t),
-                _ => false,
-            }
-        }
-        Operation::In => {
-            match c.value {
-                Value::AS(ref a) => a.iter().any(|v| t.eq(v)),
-                _ => false,
-            }
-        }
-        Operation::NotIn => {
-            match c.value {
-                Value::AS(ref a) => a.iter().all(|v| t.ne(v)),
-                _ => false,
-            }
-        }
-        _ => false,
     }
 }
 

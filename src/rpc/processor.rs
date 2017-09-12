@@ -3,7 +3,7 @@ use std::collections::{HashMap, HashSet};
 use chrono::{DateTime, Utc, Duration};
 
 use super::proto::message::{CMessage, SMessage, Error};
-use super::proto::criterion::{self, Criterion, Filter as FTrait};
+use super::proto::criterion::{self, Criterion};
 use super::proto::resource::{Resource, ResourceKind, SResourceUpdate};
 use super::{CtlMessage, Message};
 use torrent::info::Info;
@@ -537,6 +537,6 @@ impl Processor {
 impl Filter {
     pub fn matches(&self, r: &Resource) -> bool {
         if self.criteria.is_empty() {}
-        self.criteria.iter().all(|c| r.matches(c))
+        self.criteria.iter().all(|c| c.matches(r))
     }
 }

@@ -5,7 +5,7 @@ use chrono::{DateTime, Utc};
 use serde;
 use serde_json as json;
 
-use super::criterion::{Criterion, Filter, match_n, match_f, match_s, match_b};
+use super::criterion::{Field, Queryable};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
@@ -660,141 +660,146 @@ where
     }
 }
 
-// TODO: Consider how to handle datetime matching
 // TODO: Proc macros to remove this shit
 
-impl Filter for Resource {
-    fn matches(&self, c: &Criterion) -> bool {
+impl Queryable for Resource {
+    fn field(&self, f: &str) -> Option<Field> {
         match self {
-            &Resource::Server(ref t) => t.matches(c),
-            &Resource::Torrent(ref t) => t.matches(c),
-            &Resource::File(ref t) => t.matches(c),
-            &Resource::Piece(ref t) => t.matches(c),
-            &Resource::Peer(ref t) => t.matches(c),
-            &Resource::Tracker(ref t) => t.matches(c),
+            &Resource::Server(ref t) => t.field(f),
+            &Resource::Torrent(ref t) => t.field(f),
+            &Resource::File(ref t) => t.field(f),
+            &Resource::Piece(ref t) => t.field(f),
+            &Resource::Peer(ref t) => t.field(f),
+            &Resource::Tracker(ref t) => t.field(f),
         }
     }
 }
 
-impl Filter for Server {
-    fn matches(&self, c: &Criterion) -> bool {
-        match &c.field[..] {
-            "id" => match_s(&self.id, c),
+impl Queryable for Server {
+    fn field(&self, f: &str) -> Option<Field> {
+        match f {
+            "id" => Some(Field::S(&self.id)),
 
-            "rate_up" => match_n(self.rate_up as i64, c),
-            "rate_down" => match_n(self.rate_down as i64, c),
-            "throttle_up" => {
-                self.throttle_up.map(|v| match_n(v as i64, c)).unwrap_or(
-                    false,
-                )
-            }
-            "throttle_down" => {
-                self.throttle_down.map(|v| match_n(v as i64, c)).unwrap_or(
-                    false,
-                )
-            }
+            "rate_up" => Some(Field::N(self.rate_up as i64)),
+            "rate_down" => Some(Field::N(self.rate_down as i64)),
+            "throttle_up" => Some(Field::O(Box::new(self.throttle_up.map(|v| Field::N(v))))),
+            "throttle_down" => Some(Field::O(Box::new(self.throttle_down.map(|v| Field::N(v))))),
+            "transferred_up" => Some(Field::N(self.transferred_up as i64)),
+            "transferred_down" => Some(Field::N(self.transferred_down as i64)),
+            "ses_transferred_up" => Some(Field::N(self.ses_transferred_up as i64)),
+            "ses_transferred_down" => Some(Field::N(self.ses_transferred_down as i64)),
 
-            _ => false,
+            "started" => Some(Field::D(self.started)),
+
+            _ => None,
         }
     }
 }
 
-impl Filter for Torrent {
-    fn matches(&self, c: &Criterion) -> bool {
-        match &c.field[..] {
-            "id" => match_s(&self.id, c),
-            "name" => self.name.as_ref().map(|n| match_s(n, c)).unwrap_or(false),
-            "path" => match_s(&self.path, c),
-            "status" => match_s(self.status.as_str(), c),
-            "error" => match_s(self.error.as_ref().map(|s| s.as_str()).unwrap_or(""), c),
+impl Queryable for Torrent {
+    fn field(&self, f: &str) -> Option<Field> {
+        match f {
+            "id" => Some(Field::S(&self.id)),
+            "name" => Some(Field::O(
+                Box::new(self.name.as_ref().map(|v| Field::S(v.as_str()))),
+            )),
+            "path" => Some(Field::S(&self.path)),
+            "status" => Some(Field::S(self.status.as_str())),
+            "error" => Some(Field::O(
+                Box::new(self.error.as_ref().map(|v| Field::S(v.as_str()))),
+            )),
 
-            "priority" => match_n(self.priority as i64, c),
-            "rate_up" => match_n(self.rate_up as i64, c),
-            "rate_down" => match_n(self.rate_down as i64, c),
-            "throttle_up" => self.throttle_up.map(|v| match_n(v, c)).unwrap_or(false),
-            "throttle_down" => self.throttle_down.map(|v| match_n(v, c)).unwrap_or(false),
-            "transferred_up" => match_n(self.transferred_up as i64, c),
-            "transferred_down" => match_n(self.transferred_down as i64, c),
-            "peers" => match_n(self.peers as i64, c),
-            "trackers" => match_n(self.trackers as i64, c),
-            "size" => self.size.map(|s| match_n(s as i64, c)).unwrap_or(false),
-            "pieces" => self.pieces.map(|p| match_n(p as i64, c)).unwrap_or(false),
-            "piece_size" => {
-                self.piece_size.map(|p| match_n(p as i64, c)).unwrap_or(
-                    false,
-                )
-            }
-            "files" => self.files.map(|f| match_n(f as i64, c)).unwrap_or(false),
+            "priority" => Some(Field::N(self.priority as i64)),
+            "rate_up" => Some(Field::N(self.rate_up as i64)),
+            "rate_down" => Some(Field::N(self.rate_down as i64)),
+            "throttle_up" => Some(Field::O(Box::new(self.throttle_up.map(|v| Field::N(v))))),
+            "throttle_down" => Some(Field::O(Box::new(self.throttle_down.map(|v| Field::N(v))))),
+            "transferred_up" => Some(Field::N(self.transferred_up as i64)),
+            "transferred_down" => Some(Field::N(self.transferred_down as i64)),
+            "peers" => Some(Field::N(self.peers as i64)),
+            "trackers" => Some(Field::N(self.trackers as i64)),
+            "size" => Some(Field::O(Box::new(self.size.map(|v| Field::N(v as i64))))),
+            "pieces" => Some(Field::O(Box::new(self.pieces.map(|v| Field::N(v as i64))))),
+            "piece_size" => Some(Field::O(
+                Box::new(self.piece_size.map(|v| Field::N(v as i64))),
+            )),
+            "files" => Some(Field::O(Box::new(self.files.map(|v| Field::N(v as i64))))),
 
-            "progress" => match_f(self.progress, c),
-            "availability" => match_f(self.availability, c),
+            "created" => Some(Field::D(self.created)),
+            "modified" => Some(Field::D(self.modified)),
 
-            "sequential" => match_b(self.sequential, c),
+            "progress" => Some(Field::F(self.progress)),
+            "availability" => Some(Field::F(self.availability)),
 
-            _ => false,
+            "sequential" => Some(Field::B(self.sequential)),
+
+            _ => None,
         }
     }
 }
 
-impl Filter for Piece {
-    fn matches(&self, c: &Criterion) -> bool {
-        match &c.field[..] {
-            "id" => match_s(&self.id, c),
-            "torrent_id" => match_s(&self.torrent_id, c),
+impl Queryable for Piece {
+    fn field(&self, f: &str) -> Option<Field> {
+        match f {
+            "id" => Some(Field::S(&self.id)),
+            "torrent_id" => Some(Field::S(&self.torrent_id)),
 
-            "available" => match_b(self.available, c),
-            "downloaded" => match_b(self.downloaded, c),
+            "available" => Some(Field::B(self.available)),
+            "downloaded" => Some(Field::B(self.downloaded)),
 
-            _ => false,
+            _ => None,
         }
     }
 }
 
-impl Filter for File {
-    fn matches(&self, c: &Criterion) -> bool {
-        match &c.field[..] {
-            "id" => match_s(&self.id, c),
-            "torrent_id" => match_s(&self.torrent_id, c),
-            "path" => match_s(&self.path, c),
+impl Queryable for File {
+    fn field(&self, f: &str) -> Option<Field> {
+        match f {
+            "id" => Some(Field::S(&self.id)),
+            "torrent_id" => Some(Field::S(&self.torrent_id)),
+            "path" => Some(Field::S(&self.path)),
 
-            "priority" => match_n(self.priority as i64, c),
+            "priority" => Some(Field::N(self.priority as i64)),
 
-            "progress" => match_f(self.progress, c),
+            "progress" => Some(Field::F(self.progress)),
 
-            _ => false,
+            _ => None,
         }
     }
 }
 
-impl Filter for Peer {
-    fn matches(&self, c: &Criterion) -> bool {
-        match &c.field[..] {
-            "id" => match_s(&self.id, c),
-            "torrent_id" => match_s(&self.torrent_id, c),
-            "ip" => match_s(&self.ip, c),
+impl Queryable for Peer {
+    fn field(&self, f: &str) -> Option<Field> {
+        match f {
+            "id" => Some(Field::S(&self.id)),
+            "torrent_id" => Some(Field::S(&self.torrent_id)),
+            "ip" => Some(Field::S(&self.ip)),
 
-            "rate_up" => match_n(self.rate_up as i64, c),
-            "rate_down" => match_n(self.rate_down as i64, c),
+            "rate_up" => Some(Field::N(self.rate_up as i64)),
+            "rate_down" => Some(Field::N(self.rate_down as i64)),
 
-            "availability" => match_f(self.availability, c),
+            "availability" => Some(Field::F(self.availability)),
 
-            // TODO: Come up with a way to match this
-            "client_id" => false,
+            "client_id" => Some(Field::S(&self.client_id)),
 
-            _ => false,
+            _ => None,
         }
     }
 }
 
-impl Filter for Tracker {
-    fn matches(&self, c: &Criterion) -> bool {
-        match &c.field[..] {
-            "id" => match_s(&self.id, c),
-            "torrent_id" => match_s(&self.torrent_id, c),
-            "url" => match_s(&self.url, c),
-            "error" => match_s(self.error.as_ref().map(|s| s.as_str()).unwrap_or(""), c),
+impl Queryable for Tracker {
+    fn field(&self, f: &str) -> Option<Field> {
+        match f {
+            "id" => Some(Field::S(&self.id)),
+            "torrent_id" => Some(Field::S(&self.torrent_id)),
+            "url" => Some(Field::S(&self.url)),
+            "error" => Some(Field::O(
+                Box::new(self.error.as_ref().map(|v| Field::S(v.as_str()))),
+            )),
 
-            _ => false,
+            "last_report" => Some(Field::D(self.last_report)),
+
+            _ => None,
         }
     }
 }
