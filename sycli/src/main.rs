@@ -5,7 +5,7 @@ extern crate error_chain;
 #[macro_use]
 extern crate prettytable;
 extern crate clap;
-extern crate rpc;
+extern crate synapse_rpc as rpc;
 extern crate serde;
 extern crate serde_json;
 extern crate reqwest;

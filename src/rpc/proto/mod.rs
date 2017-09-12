@@ -1,4 +1,4 @@
-extern crate rpc as rpc_lib;
+extern crate synapse_rpc as rpc_lib;
 
 pub mod ws;
 pub mod error;
