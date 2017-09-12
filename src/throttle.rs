@@ -215,7 +215,11 @@ impl ThrottleData {
         let drained = self.last_used as u64;
         self.last_used = 0;
         self.tokens += if let Some(r) = self.rate {
-            if r > 0 { (r as usize * URATE)/1000 } else { 0 }
+            if r > 0 {
+                (r as usize * URATE) / 1000
+            } else {
+                0
+            }
         } else {
             0
         };
