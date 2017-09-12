@@ -67,7 +67,7 @@ pub trait CIO {
     /// Sends a message over RPC
     fn msg_rpc(&mut self, msg: rpc::CtlMessage);
 
-    /// Sends a message over RPC
+    /// Sends a message to the tracker
     fn msg_trk(&mut self, msg: tracker::Request);
 
     /// Sends a message to the disk worker

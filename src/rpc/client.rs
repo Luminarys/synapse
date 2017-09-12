@@ -152,8 +152,6 @@ impl Into<Client> for Incoming {
         let data = lines.join("\r\n") + "\r\n\r\n";
         // Ignore error, it'll pop up again anyways
         self.conn.write(data.as_bytes()).ok();
-        // Set TCP_NODELAY
-        if self.conn.set_nodelay(true).is_err() {}
 
         let mut c = Client {
             r: Reader::new(),

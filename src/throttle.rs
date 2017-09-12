@@ -160,13 +160,12 @@ impl Throttle {
 
     // TODO: Make this an HTB
     pub fn set_ul_rate(&mut self, rate: Option<i64>) {
-        self.ul_data().rate = rate;
+        // self.ul_data().rate = rate;
     }
 
     pub fn set_dl_rate(&mut self, rate: Option<i64>) {
-        self.dl_data().rate = rate;
+        // self.dl_data().rate = rate;
     }
-
 
     pub fn restore_bytes_dl(&mut self, amnt: usize) {
         self.dl_data().restore_tokens(amnt);
@@ -216,7 +215,7 @@ impl ThrottleData {
         let drained = self.last_used as u64;
         self.last_used = 0;
         self.tokens += if let Some(r) = self.rate {
-            if r > 0 { r as usize * URATE } else { 0 }
+            if r > 0 { (r as usize * URATE)/1000 } else { 0 }
         } else {
             0
         };
