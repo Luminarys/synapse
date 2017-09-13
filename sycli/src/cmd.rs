@@ -417,17 +417,31 @@ pub fn status(mut c: Client) -> Result<()> {
 }
 
 fn search_torrent_name(c: &mut Client, name: &str) -> Result<Vec<Resource>> {
-    search(
+    let mut res = search(
         c,
         ResourceKind::Torrent,
         vec![
             Criterion {
-                field: "name".to_owned(),
-                op: Operation::ILike,
-                value: Value::S(format!("%{}%", name)),
+                field: "id".to_owned(),
+                op: Operation::Eq,
+                value: Value::S(name.to_owned()),
             },
         ],
-    )
+    )?;
+    if res.is_empty() {
+        res = search(
+            c,
+            ResourceKind::Torrent,
+            vec![
+                Criterion {
+                    field: "name".to_owned(),
+                    op: Operation::ILike,
+                    value: Value::S(format!("%{}%", name)),
+                },
+            ],
+        )?;
+    }
+    Ok(res)
 }
 
 fn search(c: &mut Client, kind: ResourceKind, criteria: Vec<Criterion>) -> Result<Vec<Resource>> {
