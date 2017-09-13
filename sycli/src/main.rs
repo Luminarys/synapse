@@ -147,6 +147,7 @@ fn main() {
                 .arg(
                     Arg::with_name("torrents")
                         .help("Names of torrents to pause.")
+                        .required(true)
                         .multiple(true)
                         .short("t")
                         .long("torrents")
@@ -159,6 +160,7 @@ fn main() {
                 .arg(
                     Arg::with_name("torrents")
                         .help("Names of torrents to resume.")
+                        .required(true)
                         .multiple(true)
                         .short("t")
                         .long("torrents")
