@@ -465,6 +465,7 @@ impl<T: cio::CIO> Peer<T> {
                     rate_up: 0,
                     rate_down: 0,
                     availability: 0.,
+                    ..Default::default()
                 }),
             ]));
         }

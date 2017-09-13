@@ -564,6 +564,7 @@ impl<T: cio::CIO> Control<T> {
             ses_transferred_up: self.data.session_ul,
             ses_transferred_down: self.data.session_dl,
             started: Utc::now(),
+            ..Default::default()
         });
         self.cio.msg_rpc(rpc::CtlMessage::Extant(vec![res]));
     }

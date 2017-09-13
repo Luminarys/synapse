@@ -10,6 +10,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use chrono::{DateTime, Utc};
+use bincode;
 
 pub use self::bitfield::Bitfield;
 pub use self::info::Info;
@@ -17,7 +18,7 @@ pub use self::peer::{Peer, PeerConn};
 pub use self::peer::Message;
 
 use self::picker::Picker;
-use {bincode, rpc, disk, util, CONFIG, bencode, EXT_PROTO, UT_META_ID};
+use {rpc, disk, util, CONFIG, bencode, EXT_PROTO, UT_META_ID};
 use control::cio;
 use rpc::resource::{self, Resource, SResourceUpdate};
 use throttle::Throttle;
@@ -1098,6 +1099,7 @@ impl<T: cio::CIO> Torrent<T> {
             pieces,
             piece_size,
             files,
+            ..Default::default()
         })
     }
 
@@ -1112,6 +1114,7 @@ impl<T: cio::CIO> Torrent<T> {
                     available: true,
                     downloaded: true,
                     index: i,
+                    ..Default::default()
                 }))
             } else {
                 r.push(Resource::Piece(resource::Piece {
@@ -1120,6 +1123,7 @@ impl<T: cio::CIO> Torrent<T> {
                     available: true,
                     downloaded: false,
                     index: i,
+                    ..Default::default()
                 }))
             }
         }
@@ -1150,6 +1154,7 @@ impl<T: cio::CIO> Torrent<T> {
                 priority: self.priorities[i],
                 path: p.as_path().to_string_lossy().into_owned(),
                 size: d.1,
+                ..Default::default()
             }))
         }
 
@@ -1164,6 +1169,7 @@ impl<T: cio::CIO> Torrent<T> {
             url: self.info.announce.clone(),
             last_report: Utc::now(),
             error: None,
+            ..Default::default()
         }));
         r
     }

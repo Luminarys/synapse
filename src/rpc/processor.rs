@@ -1,10 +1,11 @@
 use std::collections::{HashMap, HashSet};
+use std::mem;
 
 use chrono::{DateTime, Utc, Duration};
 
 use super::proto::message::{CMessage, SMessage, Error};
 use super::proto::criterion::{self, Criterion};
-use super::proto::resource::{Resource, ResourceKind, SResourceUpdate};
+use super::proto::resource::{Resource, ResourceKind, SResourceUpdate, merge_json};
 use super::{CtlMessage, Message};
 use torrent::info::Info;
 use util::random_string;
@@ -143,7 +144,26 @@ impl Processor {
                     self.subs.get_mut(&id).map(|s| s.remove(&client));
                 }
             }
-            CMessage::UpdateResource { serial, resource } => {
+            CMessage::UpdateResource {
+                serial,
+                mut resource,
+            } => {
+                let udo = mem::replace(&mut resource.user_data, None);
+                if let Some(user_data) = udo {
+                    if let Some(res) = self.resources.get_mut(&resource.id) {
+                        merge_json(res.user_data(), &mut user_data.clone());
+                        resp.push(SMessage::UpdateResources {
+                            resources: vec![
+                                SResourceUpdate::UserData {
+                                    id: resource.id.clone(),
+                                    kind: res.kind(),
+                                    user_data: user_data,
+                                },
+                            ],
+                        });
+                    }
+                }
+
                 match self.resources.get(&resource.id) {
                     Some(&Resource::Torrent(_)) => {
                         rmsg = Some(Message::UpdateTorrent(resource));
@@ -165,12 +185,7 @@ impl Processor {
                             throttle_down: resource.throttle_down,
                         });
                     }
-                    Some(_) => {
-                        resp.push(SMessage::PermissionDenied(Error {
-                            serial: Some(serial),
-                            reason: format!("Only torrents, server, and files have mutable fields"),
-                        }));
-                    }
+                    Some(_) => {}
                     None => {
                         resp.push(SMessage::UnknownResource(Error {
                             serial: Some(serial),
@@ -536,7 +551,6 @@ impl Processor {
 
 impl Filter {
     pub fn matches(&self, r: &Resource) -> bool {
-        if self.criteria.is_empty() {}
         self.criteria.iter().all(|c| c.matches(r))
     }
 }

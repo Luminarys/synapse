@@ -24,6 +24,10 @@ and can be expected to be consistent across sessions and for the same resource
 (i.e. the same given torrent will have the same ID on several different
 machines). Fields marked with * are mutable via UPDATE_RESOURCE messages.
 
+All resources also have an implicit field "user_data" which can be used
+to store arbitrary user data. Updates to this field will be performed according
+to the JSON Merge standard (RFC 7396).
+
 server
 
     {

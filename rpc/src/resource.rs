@@ -57,6 +57,12 @@ pub enum SResourceUpdate<'a> {
         rate_up: u64,
         rate_down: u64,
     },
+    UserData {
+        id: String,
+        #[serde(rename = "type")]
+        kind: ResourceKind,
+        user_data: json::Value,
+    },
 
     ServerTransfer {
         id: String,
@@ -163,6 +169,7 @@ pub struct CResourceUpdate {
     #[serde(deserialize_with = "deserialize_throttle")]
     #[serde(default)]
     pub throttle_down: Option<Option<i64>>,
+    pub user_data: Option<json::Value>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
@@ -178,6 +185,7 @@ pub struct Server {
     pub ses_transferred_up: u64,
     pub ses_transferred_down: u64,
     pub started: DateTime<Utc>,
+    pub user_data: json::Value,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
@@ -206,6 +214,7 @@ pub struct Torrent {
     pub pieces: Option<u64>,
     pub piece_size: Option<u32>,
     pub files: Option<u32>,
+    pub user_data: json::Value,
 }
 
 #[derive(Copy, Clone, Debug, Serialize, Deserialize, PartialEq)]
@@ -221,7 +230,7 @@ pub enum Status {
     Error,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct Piece {
     pub id: String,
@@ -229,9 +238,10 @@ pub struct Piece {
     pub available: bool,
     pub downloaded: bool,
     pub index: u32,
+    pub user_data: json::Value,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct File {
     pub id: String,
@@ -241,9 +251,10 @@ pub struct File {
     pub availability: f32,
     pub priority: u8,
     pub size: u64,
+    pub user_data: json::Value,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct Peer {
     pub id: String,
@@ -253,6 +264,7 @@ pub struct Peer {
     pub rate_up: u64,
     pub rate_down: u64,
     pub availability: f32,
+    pub user_data: json::Value,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
@@ -263,6 +275,7 @@ pub struct Tracker {
     pub url: String,
     pub last_report: DateTime<Utc>,
     pub error: Option<String>,
+    pub user_data: json::Value,
 }
 
 impl<'a> SResourceUpdate<'a> {
@@ -272,6 +285,7 @@ impl<'a> SResourceUpdate<'a> {
             &SResourceUpdate::OResource(ref r) => r.id(),
             &SResourceUpdate::Throttle { ref id, .. } |
             &SResourceUpdate::Rate { ref id, .. } |
+            &SResourceUpdate::UserData { ref id, .. } |
             &SResourceUpdate::ServerTransfer { ref id, .. } |
             &SResourceUpdate::TorrentStatus { ref id, .. } |
             &SResourceUpdate::TorrentTransfer { ref id, .. } |
@@ -318,6 +332,17 @@ impl Resource {
             &Resource::Piece(_) => ResourceKind::Piece,
             &Resource::Peer(_) => ResourceKind::Peer,
             &Resource::Tracker(_) => ResourceKind::Tracker,
+        }
+    }
+
+    pub fn user_data(&mut self) -> &mut json::Value {
+        match self {
+            &mut Resource::Server(ref mut r) => &mut r.user_data,
+            &mut Resource::Torrent(ref mut r) => &mut r.user_data,
+            &mut Resource::File(ref mut r) => &mut r.user_data,
+            &mut Resource::Piece(ref mut r) => &mut r.user_data,
+            &mut Resource::Peer(ref mut r) => &mut r.user_data,
+            &mut Resource::Tracker(ref mut r) => &mut r.user_data,
         }
     }
 
@@ -675,6 +700,26 @@ impl Queryable for Resource {
     }
 }
 
+impl Queryable for json::Value {
+    fn field(&self, f: &str) -> Option<Field> {
+        match self.get(f) {
+            Some(&json::Value::Null) => Some(Field::O(Box::new(None))),
+            Some(&json::Value::Bool(b)) => Some(Field::B(b)),
+            Some(&json::Value::Number(ref n)) => {
+                if n.is_f64() {
+                    Some(Field::F(n.as_f64().unwrap() as f32))
+                } else {
+                    Some(Field::N(n.as_i64().unwrap()))
+                }
+            }
+            Some(&json::Value::String(ref s)) => Some(Field::S(s)),
+            Some(&json::Value::Array(_)) => None,
+            Some(&json::Value::Object(_)) => None,
+            None => None,
+        }
+    }
+}
+
 impl Queryable for Server {
     fn field(&self, f: &str) -> Option<Field> {
         match f {
@@ -814,6 +859,94 @@ impl Status {
             Status::Seeding => "seeding",
             Status::Hashing => "hashing",
             Status::Error => "error",
+        }
+    }
+}
+
+/// Merges json objects according to RFC 7396
+pub fn merge_json(original: &mut json::Value, update: &mut json::Value) {
+    match (original, update) {
+        (&mut json::Value::Object(ref mut o), &mut json::Value::Object(ref mut u)) => {
+            for (k, v) in u.iter_mut() {
+                if v.is_null() {
+                    o.remove(k);
+                } else if o.contains_key(k) {
+                    merge_json(o.get_mut(k).unwrap(), v);
+                } else {
+                    o.insert(k.to_owned(), mem::replace(v, json::Value::Null));
+                }
+            }
+        }
+        (o, u) => {
+            mem::swap(o, u);
+        }
+    }
+}
+
+impl Default for Status {
+    fn default() -> Self {
+        Status::Pending
+    }
+}
+
+impl Default for Server {
+    fn default() -> Self {
+        Server {
+            id: "".to_owned(),
+            rate_up: 0,
+            rate_down: 0,
+            throttle_up: None,
+            throttle_down: None,
+            transferred_up: 0,
+            transferred_down: 0,
+            ses_transferred_up: 0,
+            ses_transferred_down: 0,
+            started: Utc::now(),
+            user_data: json::Value::Null,
+        }
+    }
+}
+
+impl Default for Torrent {
+    fn default() -> Self {
+        Torrent {
+            id: "".to_owned(),
+            name: None,
+            path: "".to_owned(),
+            created: Utc::now(),
+            modified: Utc::now(),
+            status: Default::default(),
+            error: None,
+            priority: 0,
+            progress: 0.,
+            availability: 0.,
+            sequential: false,
+            rate_up: 0,
+            rate_down: 0,
+            throttle_up: None,
+            throttle_down: None,
+            transferred_up: 0,
+            transferred_down: 0,
+            peers: 0,
+            trackers: 0,
+            size: None,
+            pieces: None,
+            piece_size: None,
+            files: None,
+            user_data: json::Value::Null,
+        }
+    }
+}
+
+impl Default for Tracker {
+    fn default() -> Self {
+        Tracker {
+            id: "".to_owned(),
+            torrent_id: "".to_owned(),
+            url: "".to_owned(),
+            last_report: Utc::now(),
+            error: None,
+            user_data: json::Value::Null,
         }
     }
 }
