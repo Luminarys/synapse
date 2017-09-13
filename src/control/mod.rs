@@ -574,10 +574,10 @@ impl<T: cio::CIO> Drop for Control<T> {
     fn drop(&mut self) {
         debug!("Triggering thread shutdown sequence!");
         self.torrents.drain().last();
-        self.cio.msg_disk(disk::Request::shutdown());
         self.cio.msg_rpc(rpc::CtlMessage::Shutdown);
         self.cio.msg_trk(tracker::Request::Shutdown);
         self.cio.msg_listener(listener::Request::Shutdown);
+        self.cio.msg_disk(disk::Request::shutdown());
     }
 }
 

@@ -11,8 +11,8 @@ use std::io::Write;
 use std::net::{TcpListener, TcpStream, Ipv4Addr, SocketAddrV4};
 use std::collections::HashMap;
 
-use serde_json;
 use amy;
+use serde_json;
 
 pub use self::proto::resource;
 pub use self::errors::{Result, ResultExt, ErrorKind, Error};
@@ -24,6 +24,7 @@ use self::transfer::{Transfers, TransferResult};
 use bencode;
 use handle;
 use torrent;
+use disk;
 use CONFIG;
 
 const POLL_INT_MS: usize = 1000;
@@ -131,6 +132,7 @@ pub struct RPC {
 impl RPC {
     pub fn start(
         creg: &mut amy::Registrar,
+        db: amy::Sender<disk::Job>,
     ) -> io::Result<(handle::Handle<Message, CtlMessage>, thread::JoinHandle<()>)> {
         let poll = amy::Poller::new()?;
         let mut reg = poll.get_registrar()?;
@@ -157,7 +159,7 @@ impl RPC {
                 cleanup,
                 clients: HashMap::new(),
                 incoming: HashMap::new(),
-                processor: Processor::new(),
+                processor: Processor::new(db),
                 transfers: Transfers::new(),
             }.run()
         })?;

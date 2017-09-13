@@ -134,7 +134,6 @@ impl Manager {
     pub fn tick(&mut self) {
         if self.dht_flush.elapsed() > time::Duration::from_secs(60) {
             let data = self.table.serialize();
-            // TODO: Transmit this to the disk thread rather than spawning a thread.
             let path = Path::new(&CONFIG.disk.session[..]).join(SESSION_FILE);
             self.db.send(disk::Job { data, path }).ok();
             self.dht_flush = time::Instant::now();

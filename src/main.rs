@@ -98,7 +98,7 @@ fn init() -> io::Result<Vec<thread::JoinHandle<()>>> {
     let mut creg = cpoll.get_registrar()?;
     let (dh, disk_broadcast, dhj) = disk::start(&mut creg)?;
     let (lh, lhj) = listener::Listener::start(&mut creg)?;
-    let (rh, rhj) = rpc::RPC::start(&mut creg)?;
+    let (rh, rhj) = rpc::RPC::start(&mut creg, disk_broadcast.try_clone()?)?;
     let (th, thj) = tracker::Tracker::start(&mut creg, disk_broadcast.try_clone()?)?;
     let chans = acio::ACChans {
         disk_tx: dh.tx,

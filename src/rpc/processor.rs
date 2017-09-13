@@ -1,14 +1,25 @@
 use std::collections::{HashMap, HashSet};
 use std::mem;
+use std::io::Read;
+use std::fs::OpenOptions;
+use std::path::Path;
 
+use amy;
+use bincode;
 use chrono::{DateTime, Utc, Duration};
+use serde_json as json;
 
 use super::proto::message::{CMessage, SMessage, Error};
 use super::proto::criterion::{self, Criterion};
 use super::proto::resource::{Resource, ResourceKind, SResourceUpdate, merge_json};
 use super::{CtlMessage, Message};
+use CONFIG;
+use disk;
 use torrent::info::Info;
 use util::random_string;
+
+const USER_DATA_FILE: &'static str = "rpc_user_data";
+type RpcDiskFmt = HashMap<String, Vec<u8>>;
 
 // TODO: Figure out a way to reduce allocations
 // in this entire file, ideally by taking pointers
@@ -24,6 +35,8 @@ pub struct Processor {
     // Index by torrent ID
     torrent_idx: HashMap<String, HashSet<String>>,
     tokens: HashMap<String, BearerToken>,
+    db: amy::Sender<disk::Job>,
+    user_data: HashMap<String, json::Value>,
 }
 
 struct Filter {
@@ -51,7 +64,43 @@ pub enum TransferKind {
 const EXPIRATION_DUR: i64 = 120;
 
 impl Processor {
-    pub fn new() -> Processor {
+    pub fn new(db: amy::Sender<disk::Job>) -> Processor {
+        let p = Path::new(&CONFIG.disk.session[..]).join(USER_DATA_FILE);
+        let mut data = Vec::new();
+
+        let res = OpenOptions::new()
+            .read(true)
+            .open(&p)
+            .and_then(move |mut f| {
+                f.read_to_end(&mut data)?;
+                Ok(data)
+            })
+            .map(|d| bincode::deserialize(&d));
+        let json_data: RpcDiskFmt = match res {
+            Ok(Ok(d)) => {
+                info!("user data loaded from disk!");
+                d
+            }
+            Err(e) => {
+                info!(
+                    "user data could not be read from disk, creating a fresh version: {}",
+                    e
+                );
+                HashMap::new()
+            }
+            Ok(Err(e)) => {
+                info!(
+                    "user data could not be deserialized from disk, creating a fresh version: {:?}",
+                    e
+                );
+                HashMap::new()
+            }
+        };
+        let user_data = json_data
+            .into_iter()
+            .filter_map(|(k, v)| json::from_slice(&v).ok().map(|j| (k, j)))
+            .collect();
+
         Processor {
             subs: HashMap::new(),
             filter_subs: HashMap::new(),
@@ -59,6 +108,8 @@ impl Processor {
             tokens: HashMap::new(),
             torrent_idx: HashMap::new(),
             kinds: vec![HashSet::new(); 6],
+            db,
+            user_data,
         }
     }
 
@@ -150,8 +201,14 @@ impl Processor {
             } => {
                 let udo = mem::replace(&mut resource.user_data, None);
                 if let Some(user_data) = udo {
+                    let mut modified = false;
                     if let Some(res) = self.resources.get_mut(&resource.id) {
+                        modified = true;
                         merge_json(res.user_data(), &mut user_data.clone());
+                        self.user_data.insert(
+                            res.id().to_owned(),
+                            res.user_data().clone(),
+                        );
                         resp.push(SMessage::UpdateResources {
                             resources: vec![
                                 SResourceUpdate::UserData {
@@ -161,6 +218,9 @@ impl Processor {
                                 },
                             ],
                         });
+                    }
+                    if modified {
+                        self.serialize();
                     }
                 }
 
@@ -399,7 +459,7 @@ impl Processor {
             CtlMessage::Extant(e) => {
                 // TODO: Make this cleaner
                 let mut ids = Vec::new();
-                for r in e {
+                for mut r in e {
                     ids.push(r.id().to_owned());
 
                     self.subs.insert(r.id().to_owned(), HashSet::new());
@@ -414,6 +474,9 @@ impl Processor {
                         self.torrent_idx.get_mut(tid).unwrap().insert(id.clone());
                     }
 
+                    if let Some(user_data) = self.user_data.get(&id) {
+                        mem::replace(r.user_data(), user_data.clone());
+                    }
                     self.resources.insert(id, r);
                 }
                 // We have to make a new vec which points to the resource struct
@@ -459,6 +522,9 @@ impl Processor {
 
                 for id in r {
                     let r = self.resources.remove(&id).unwrap();
+                    if self.user_data.remove(&id).is_some() {
+                        self.serialize();
+                    }
                     self.kinds[r.kind() as usize].remove(&id);
                     // If this resource is part of a torrent, remove from index,
                     // if we haven't removed the entire torrent already.
@@ -545,6 +611,18 @@ impl Processor {
             token: tok,
             // TODO: Get this
             size: 0,
+        }
+    }
+
+    fn serialize(&self) {
+        let json_data: RpcDiskFmt = self.user_data
+            .iter()
+            .map(|(k, v)| (k.to_owned(), json::to_vec(v).unwrap()))
+            .collect();
+        if let Ok(data) = bincode::serialize(&json_data, bincode::Infinite) {
+            let path = Path::new(&CONFIG.disk.session[..]).join(USER_DATA_FILE);
+
+            self.db.send(disk::Job { data, path }).ok();
         }
     }
 }
