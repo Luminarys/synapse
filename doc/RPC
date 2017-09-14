@@ -145,6 +145,21 @@ Note that criterion are evaluated in the order of "field op value", so
 a criterion with field "foo", op "<", and value "10" would be true for all
 resources with a field foo less than 10.
 
+When querying the user_data field, nested structures can be selected
+using json pointers (RFC 6901) syntax, prefixed with "user_data".
+For example in a resource which looks like:
+
+    {
+        "id": "..."
+        "user_data": {
+            "foo": {
+                "bar": "baz"
+            }
+        }
+    }
+
+accessing the "bar" field can be done with a field "user_data/foo/bar".
+
 Operation enum:
     "==": equal to
     "!=": not equal to

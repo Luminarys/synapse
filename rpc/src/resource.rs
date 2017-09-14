@@ -702,7 +702,7 @@ impl Queryable for Resource {
 
 impl Queryable for json::Value {
     fn field(&self, f: &str) -> Option<Field> {
-        match self.get(f) {
+        match self.pointer(f) {
             Some(&json::Value::Null) => Some(Field::O(Box::new(None))),
             Some(&json::Value::Bool(b)) => Some(Field::B(b)),
             Some(&json::Value::Number(ref n)) => {
@@ -735,6 +735,8 @@ impl Queryable for Server {
             "ses_transferred_down" => Some(Field::N(self.ses_transferred_down as i64)),
 
             "started" => Some(Field::D(self.started)),
+
+            _ if f.starts_with("user_data") => self.user_data.field(&f[9..]),
 
             _ => None,
         }
@@ -778,6 +780,8 @@ impl Queryable for Torrent {
 
             "sequential" => Some(Field::B(self.sequential)),
 
+            _ if f.starts_with("user_data") => self.user_data.field(&f[9..]),
+
             _ => None,
         }
     }
@@ -791,6 +795,8 @@ impl Queryable for Piece {
 
             "available" => Some(Field::B(self.available)),
             "downloaded" => Some(Field::B(self.downloaded)),
+
+            _ if f.starts_with("user_data") => self.user_data.field(&f[9..]),
 
             _ => None,
         }
@@ -807,6 +813,8 @@ impl Queryable for File {
             "priority" => Some(Field::N(self.priority as i64)),
 
             "progress" => Some(Field::F(self.progress)),
+
+            _ if f.starts_with("user_data") => self.user_data.field(&f[9..]),
 
             _ => None,
         }
@@ -827,6 +835,8 @@ impl Queryable for Peer {
 
             "client_id" => Some(Field::S(&self.client_id)),
 
+            _ if f.starts_with("user_data") => self.user_data.field(&f[9..]),
+
             _ => None,
         }
     }
@@ -843,6 +853,8 @@ impl Queryable for Tracker {
             )),
 
             "last_report" => Some(Field::D(self.last_report)),
+
+            _ if f.starts_with("user_data") => self.user_data.field(&f[9..]),
 
             _ => None,
         }
