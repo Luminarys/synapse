@@ -294,9 +294,12 @@ impl Processor {
                 kind,
                 criteria,
             } => {
-                let f = Filter { criteria, kind };
-                {
-                    let valid = &self.kinds[kind as usize];
+                let torrent_idx = &self.torrent_idx;
+                let rkind = &self.kinds[kind as usize];
+                let resources = &self.resources;
+
+                let get_matching = |f: &Filter| {
+                    let mut added = HashSet::new();
                     let crit_res = f.criteria
                         .iter()
                         .find(|c| c.field == "torrent_id")
@@ -304,27 +307,51 @@ impl Processor {
                             &criterion::Value::S(ref s) => Some(s),
                             _ => None,
                         })
-                        .and_then(|id| self.torrent_idx.get(id));
+                        .and_then(|id| torrent_idx.get(id));
 
-                    let mut ids = Vec::new();
                     if let Some(t) = crit_res {
-                        for id in valid.intersection(t) {
-                            let r = self.resources.get(id).unwrap();
+                        for id in rkind.intersection(t) {
+                            let r = resources.get(id).unwrap();
                             if f.matches(r) {
-                                ids.push(r.id());
+                                added.insert(r.id());
                             }
                         }
                     } else {
-                        for id in valid.iter() {
-                            let r = self.resources.get(id).unwrap();
+                        for id in rkind.iter() {
+                            let r = resources.get(id).unwrap();
                             if f.matches(r) {
-                                ids.push(r.id());
+                                added.insert(r.id());
                             }
                         }
                     }
-                    resp.push(SMessage::ResourcesExtant { serial, ids });
+                    added
+                };
+
+                let f = Filter { criteria, kind };
+                let matching = get_matching(&f);
+                if let Some(prev) = self.filter_subs.insert((client, serial), f) {
+                    let prev_matching = get_matching(&prev);
+                    let added: Vec<_> = matching.difference(&prev_matching).cloned().collect();
+                    let removed: Vec<_> = prev_matching
+                        .difference(&matching)
+                        .map(|s| (*s).to_owned())
+                        .collect();
+
+                    if !added.is_empty() {
+                        resp.push(SMessage::ResourcesExtant { serial, ids: added });
+                    }
+                    if !removed.is_empty() {
+                        resp.push(SMessage::ResourcesRemoved {
+                            serial,
+                            ids: removed,
+                        });
+                    }
+                } else {
+                    resp.push(SMessage::ResourcesExtant {
+                        serial,
+                        ids: matching.into_iter().collect(),
+                    });
                 }
-                self.filter_subs.insert((client, serial), f);
             }
             CMessage::FilterUnsubscribe { filter_serial, .. } => {
                 self.filter_subs.remove(&(client, filter_serial));

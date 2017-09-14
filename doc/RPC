@@ -285,6 +285,11 @@ list of valid torrent IDs and subscribe to new/removed torrents by sending
 FILTER_SUBSCRIBE upfront. The "order" field will be used for the initial set of
 RESOURCES_EXTANT, but will be disregarded for future updates.
 
+FILTER_SUBSCRIBE also has special semantics when issued with a serial matching
+an existing FILTER_SUBSCRIBE. It will issue a RESOURCES_EXTANT and RESOURCES_REMOVED
+messages which indicate the difference between the resources matching the
+old filter and the new filter.
+
 FILTER_UNSUBSCRIBE      client->server
 
 Indicates that the client would no longer like to be subscribed to a filter.
