@@ -47,6 +47,8 @@ struct TorrentData {
     priority: u8,
     priorities: Vec<u8>,
     created: DateTime<Utc>,
+    throttle_ul: Option<i64>,
+    throttle_dl: Option<i64>,
 }
 
 pub struct Torrent<T: cio::CIO> {
@@ -187,7 +189,7 @@ impl<T: cio::CIO> Torrent<T> {
     pub fn deserialize(
         id: usize,
         data: &[u8],
-        throttle: Throttle,
+        mut throttle: Throttle,
         cio: T,
     ) -> Result<Torrent<T>, bincode::Error> {
         let d: TorrentData = bincode::deserialize(data)?;
@@ -207,6 +209,8 @@ impl<T: cio::CIO> Torrent<T> {
             vec![]
         };
         let picker = picker::Picker::new(info.clone(), &d.pieces);
+        throttle.set_ul_rate(d.throttle_ul);
+        throttle.set_dl_rate(d.throttle_dl);
 
         let mut t = Torrent {
             id,
@@ -266,6 +270,8 @@ impl<T: cio::CIO> Torrent<T> {
             priority: self.priority,
             wanted: self.wanted.clone(),
             created: self.created,
+            throttle_ul: self.throttle.ul_rate(),
+            throttle_dl: self.throttle.dl_rate(),
         };
         let data = bincode::serialize(&d, bincode::Infinite).expect("Serialization failed!");
         debug!("Sending serialization request!");

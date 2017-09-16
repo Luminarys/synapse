@@ -55,6 +55,8 @@ struct ServerData {
     session_ul: u64,
     #[serde(skip)]
     session_dl: u64,
+    throttle_ul: Option<i64>,
+    throttle_dl: Option<i64>,
 }
 
 impl<T: cio::CIO> Control<T> {
@@ -381,6 +383,8 @@ impl<T: cio::CIO> Control<T> {
                 let td = throttle_down.unwrap_or(self.throttler.dl_rate());
                 self.throttler.set_ul_rate(tu);
                 self.throttler.set_dl_rate(td);
+                self.data.throttle_ul = tu;
+                self.data.throttle_dl = td;
                 self.cio.msg_rpc(rpc::CtlMessage::Update(vec![
                     rpc::resource::SResourceUpdate::Throttle {
                         id,
@@ -589,6 +593,8 @@ impl ServerData {
             dl: 0,
             session_ul: 0,
             session_dl: 0,
+            throttle_ul: Some(-1),
+            throttle_dl: Some(-1),
         }
     }
 }

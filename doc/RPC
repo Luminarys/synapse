@@ -34,9 +34,9 @@ server
         "id": ID,
         "type": "server",
         "rate_up": number,
-        "rate_down": number,             bit/sec OR null for unlimited
-        "throttle_up": number*,          bit/sec OR null for unlimited
-        "throttle_down": number*,
+        "rate_down": number,
+        "throttle_up": number*,          bit/sec OR -1 OR null for unlimited
+        "throttle_down": number*,        bit/sec OR -1 OR null for unlimited
         "transferred_up": number,
         "transferred_down": number,
         "ses_transferred_up": number,
