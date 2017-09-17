@@ -3,14 +3,18 @@ use std::collections::{HashMap, VecDeque};
 use std::{fs, fmt, path, time, thread};
 use std::io::{self, Seek, SeekFrom, Write, Read};
 use std::path::PathBuf;
-use torrent::Info;
-use util::hash_to_id;
+
+use fs_extra;
 use amy;
 use sha1;
+
+use torrent::Info;
+use util::{hash_to_id, io_err};
 use {handle, CONFIG};
 
 const POLL_INT_MS: usize = 1000;
 const JOB_TIME_SLICE: u64 = 1;
+const EXDEV: i32 = 18;
 
 pub struct Disk {
     poll: amy::Poller,
@@ -262,7 +266,22 @@ impl Request {
                 let mut tp = PathBuf::from(&to);
                 fp.push(target.clone());
                 tp.push(target);
-                fs::rename(&fp, &tp)?;
+                match fs::rename(&fp, &tp) {
+                    Ok(_) => {}
+                    // Cross filesystem move, try to copy then delete
+                    Err(ref e) if e.raw_os_error() == Some(EXDEV) => {
+                        match fs_extra::dir::copy(&fp, &tp, &fs_extra::dir::CopyOptions::new()) {
+                            Ok(_) => {
+                                fs::remove_dir_all(&fp)?;
+                            }
+                            Err(e) => {
+                                fs::remove_dir_all(&tp)?;
+                                return io_err("Failed to copy directory across filesystems!");
+                            }
+                        }
+                    }
+                    Err(e) => return Err(e),
+                }
                 return Ok(JobRes::Resp(Response::moved(tid, to)));
             }
             Request::Serialize { data, hash, .. } => {

@@ -26,6 +26,7 @@ extern crate base32;
 extern crate shellexpand;
 extern crate chrono;
 extern crate openssl;
+extern crate fs_extra;
 
 // TODO: Get rid of this
 extern crate num;
