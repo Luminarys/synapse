@@ -95,6 +95,9 @@ lazy_static! {
 }
 
 fn init() -> io::Result<Vec<thread::JoinHandle<()>>> {
+    // Since the config is lazy loaded, derefernce now to check it.
+    CONFIG.port;
+
     let cpoll = amy::Poller::new()?;
     let mut creg = cpoll.get_registrar()?;
     let (dh, disk_broadcast, dhj) = disk::start(&mut creg)?;

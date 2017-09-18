@@ -125,8 +125,17 @@ impl ConfigFile {
                 .and_then(|p| fs::File::open(&*p).chain_err(|| ErrorKind::IO))
                 .and_then(|mut f| f.read_to_string(&mut s).chain_err(|| ErrorKind::IO))
                 .and_then(|_| toml::from_str(&s).chain_err(|| ErrorKind::Format));
-            if let Ok(cfg) = res {
-                return Ok(cfg);
+            match res {
+                Ok(cfg) => return Ok(cfg),
+                Err(e @ Error(ErrorKind::Format, _)) => {
+                    use std::error::Error;
+                    error!(
+                        "Failed to parse config, terminating: {}",
+                        e.cause().unwrap()
+                    );
+                    ::std::process::abort();
+                }
+                _ => {}
             }
         }
         bail!("Failed to find a suitable config!");
