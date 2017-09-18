@@ -276,11 +276,15 @@ impl Request {
                             }
                             Err(e) => {
                                 fs::remove_dir_all(&tp)?;
+                                error!("FS copy failed: {:?}", e);
                                 return io_err("Failed to copy directory across filesystems!");
                             }
                         }
                     }
-                    Err(e) => return Err(e),
+                    Err(e) => {
+                        error!("FS rename failed: {:?}", e);
+                        return Err(e);
+                    }
                 }
                 return Ok(JobRes::Resp(Response::moved(tid, to)));
             }
