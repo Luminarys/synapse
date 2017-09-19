@@ -87,6 +87,7 @@ pub enum Status {
     Idle,
     Seeding,
     Validating,
+    Magnet,
     DiskError,
 }
 
@@ -126,7 +127,7 @@ impl<T: cio::CIO> Torrent<T> {
         let peers = HashMap::new();
         let pieces = Bitfield::new(u64::from(info.pieces()));
         let leechers = HashSet::new();
-        let status = if start {
+        let mut status = if start {
             Status::Pending
         } else {
             Status::Paused
@@ -139,6 +140,7 @@ impl<T: cio::CIO> Torrent<T> {
         let info_idx = if info.complete() {
             None
         } else {
+            status = Status::Magnet;
             Some(::std::usize::MAX)
         };
         let info_bytes = if info_idx.is_none() {
@@ -957,7 +959,7 @@ impl<T: cio::CIO> Torrent<T> {
 
     pub fn complete(&self) -> bool {
         match self.status {
-            Status::Leeching | Status::Validating | Status::Pending => false,
+            Status::Leeching | Status::Validating | Status::Pending | Status::Magnet => false,
             Status::Idle | Status::Seeding | Status::Paused => true,
             Status::DiskError => self.completed(),
         }
@@ -978,6 +980,7 @@ impl<T: cio::CIO> Torrent<T> {
     }
 
     fn magnet_complete(&mut self) {
+        self.set_status(Status::Pending);
         self.pieces = Bitfield::new(u64::from(self.info.pieces()));
         self.priorities = vec![3; self.info.files.len()];
         self.wanted = Bitfield::new(u64::from(self.info.pieces()));
@@ -1588,6 +1591,7 @@ impl Into<rpc::resource::Status> for Status {
             Status::Seeding => rpc::resource::Status::Seeding,
             Status::Validating => rpc::resource::Status::Hashing,
             Status::DiskError => rpc::resource::Status::Error,
+            Status::Magnet => rpc::resource::Status::Magnet,
         }
     }
 }

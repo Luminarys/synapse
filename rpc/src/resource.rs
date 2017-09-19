@@ -222,6 +222,7 @@ pub struct Torrent {
 #[serde(deny_unknown_fields)]
 pub enum Status {
     Pending,
+    Magnet,
     Paused,
     Leeching,
     Idle,
@@ -870,6 +871,7 @@ impl Status {
             Status::Idle => "idle",
             Status::Seeding => "seeding",
             Status::Hashing => "hashing",
+            Status::Magnet => "magnet",
             Status::Error => "error",
         }
     }

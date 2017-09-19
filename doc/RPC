@@ -80,6 +80,7 @@ Status enum:
     "idle": completely downloaded but not seeding
     "seeding": seeding
     "hashing": hash check in progress
+    "magnet": torrent still in magnet state, acquiring metadata
     "error": see "error" field for details
 
 piece
