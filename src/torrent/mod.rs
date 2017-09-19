@@ -289,7 +289,7 @@ impl<T: cio::CIO> Torrent<T> {
         util::hash_to_id(&self.info.hash[..])
     }
 
-    pub fn delete(&mut self) {
+    pub fn delete(&mut self, artifacts: bool) {
         debug!("Sending file deletion request!");
         let mut files = Vec::new();
         for file in &self.info.files {
@@ -300,6 +300,7 @@ impl<T: cio::CIO> Torrent<T> {
             self.info.hash,
             files,
             self.path.clone(),
+            artifacts,
         ));
     }
 

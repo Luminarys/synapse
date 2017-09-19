@@ -89,6 +89,7 @@ pub enum Message {
         id: String,
         client: usize,
         serial: u64,
+        artifacts: bool,
     },
     Pause(String),
     Resume(String),

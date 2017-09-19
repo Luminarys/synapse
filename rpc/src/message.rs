@@ -23,7 +23,11 @@ pub enum CMessage {
         serial: u64,
         resource: CResourceUpdate,
     },
-    RemoveResource { serial: u64, id: String },
+    RemoveResource {
+        serial: u64,
+        id: String,
+        artifacts: Option<bool>,
+    },
     FilterSubscribe {
         serial: u64,
         #[serde(default)]

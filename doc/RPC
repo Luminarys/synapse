@@ -353,7 +353,8 @@ The client wishes to delete a resource.
 
     {
         "type": "REMOVE_RESOURCE",
-        "id": ID
+        "id": ID,
+        "artifacts": bool,          optional, delete related artifacts(files for torrents).
     }
 
 The semantics of this message vary based on the resource type.

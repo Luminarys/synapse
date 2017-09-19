@@ -60,6 +60,7 @@ pub enum Request {
         hash: [u8; 20],
         files: Vec<PathBuf>,
         path: Option<String>,
+        artifacts: bool,
     },
     Move {
         tid: usize,
@@ -204,12 +205,14 @@ impl Request {
         hash: [u8; 20],
         files: Vec<PathBuf>,
         path: Option<String>,
+        artifacts: bool,
     ) -> Request {
         Request::Delete {
             tid,
             hash,
             files,
             path,
+            artifacts,
         }
     }
 
@@ -297,7 +300,13 @@ impl Request {
                 actual.push(hash_to_id(&hash));
                 fs::rename(temp, actual)?;
             }
-            Request::Delete { hash, files, path, .. } => {
+            Request::Delete {
+                hash,
+                files,
+                path,
+                artifacts,
+                tid: _,
+            } => {
                 let mut spb = path::PathBuf::from(sd);
                 spb.push(hash_to_id(&hash));
                 fs::remove_file(spb)?;
@@ -306,6 +315,11 @@ impl Request {
                     let mut pb = path::PathBuf::from(path.as_ref().unwrap_or(dd));
                     pb.push(&file);
                     fc.remove_file(&pb);
+                    if artifacts {
+                        if let Err(e) = fs::remove_file(&pb) {
+                            error!("Failed to delete file: {:?}, {}", pb, e);
+                        }
+                    }
                 }
             }
             Request::Validate {

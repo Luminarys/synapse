@@ -254,10 +254,19 @@ impl Processor {
                     }
                 }
             }
-            CMessage::RemoveResource { serial, id } => {
+            CMessage::RemoveResource {
+                serial,
+                id,
+                artifacts,
+            } => {
                 match self.resources.get(&id) {
                     Some(&Resource::Torrent(_)) => {
-                        rmsg = Some(Message::RemoveTorrent { id, client, serial });
+                        rmsg = Some(Message::RemoveTorrent {
+                            id,
+                            client,
+                            serial,
+                            artifacts: artifacts.unwrap_or(false),
+                        });
                     }
                     Some(&Resource::Tracker(ref t)) => {
                         rmsg = Some(Message::RemoveTracker {

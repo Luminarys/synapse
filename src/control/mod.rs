@@ -394,13 +394,18 @@ impl<T: cio::CIO> Control<T> {
                     },
                 ]));
             }
-            rpc::Message::RemoveTorrent { id, client, serial } => {
+            rpc::Message::RemoveTorrent {
+                id,
+                client,
+                serial,
+                artifacts,
+            } => {
                 let hash_idx = &mut self.hash_idx;
                 let torrents = &mut self.torrents;
                 id_to_hash(&id)
                     .and_then(|d| hash_idx.remove(d.as_ref()))
                     .and_then(|i| torrents.remove(&i))
-                    .map(|mut t| t.delete());
+                    .map(|mut t| t.delete(artifacts));
                 self.cio.msg_rpc(rpc::CtlMessage::ClientRemoved {
                     id,
                     client,
