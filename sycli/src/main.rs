@@ -73,6 +73,13 @@ fn main() {
             SubCommand::with_name("del")
                 .about("Deletes torrents from synapse.")
                 .arg(
+                    Arg::with_name("files")
+                        .help("Delete files along with torrents.")
+                        .short("f")
+                        .long("files")
+                        .default_value("false"),
+                )
+                .arg(
                     Arg::with_name("torrents")
                         .help("Names of torrents to delete.")
                         .multiple(true)
@@ -250,7 +257,15 @@ fn main() {
         }
         "del" => {
             let args = matches.subcommand_matches("del").unwrap();
-            let res = cmd::del(client, args.values_of("torrents").unwrap().collect());
+            let artifacts = match args.value_of("files").unwrap() {
+                "true" => true,
+                _ => false,
+            };
+            let res = cmd::del(
+                client,
+                args.values_of("torrents").unwrap().collect(),
+                artifacts,
+            );
             if let Err(e) = res {
                 eprintln!("Failed to delete torrents: {:?}", e);
                 process::exit(1);

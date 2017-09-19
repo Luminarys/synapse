@@ -60,19 +60,20 @@ fn add_file(c: &mut Client, url: &str, file: &str, dir: Option<&str>, start: boo
     Ok(())
 }
 
-pub fn del(mut c: Client, torrents: Vec<&str>) -> Result<()> {
+pub fn del(mut c: Client, torrents: Vec<&str>, artifacts: bool) -> Result<()> {
     for torrent in torrents {
-        del_torrent(&mut c, torrent)?;
+        del_torrent(&mut c, torrent, artifacts)?;
     }
     Ok(())
 }
 
-fn del_torrent(c: &mut Client, torrent: &str) -> Result<()> {
+fn del_torrent(c: &mut Client, torrent: &str, artifacts: bool) -> Result<()> {
     let resources = search_torrent_name(c, torrent)?;
     if resources.len() == 1 {
         let msg = CMessage::RemoveResource {
             serial: c.next_serial(),
             id: resources[0].id().to_owned(),
+            artifacts: Some(artifacts),
         };
         c.send(msg)?;
     } else if resources.is_empty() {
