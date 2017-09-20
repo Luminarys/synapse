@@ -19,7 +19,7 @@ const EXDEV: i32 = 18;
 pub struct Disk {
     poll: amy::Poller,
     ch: handle::Handle<Request, Response>,
-    jobs: amy::Receiver<Job>,
+    jobs: amy::Receiver<Request>,
     files: FileCache,
     active: VecDeque<Request>,
 }
@@ -29,12 +29,6 @@ pub struct Location {
     pub offset: u64,
     pub start: usize,
     pub end: usize,
-}
-
-#[derive(Debug)]
-pub struct Job {
-    pub data: Vec<u8>,
-    pub path: PathBuf,
 }
 
 pub enum Request {
@@ -75,6 +69,7 @@ pub enum Request {
         idx: u32,
         invalid: Vec<u32>,
     },
+    WriteFile { data: Vec<u8>, path: PathBuf },
     Shutdown,
 }
 
@@ -224,6 +219,27 @@ impl Request {
         let sd = &CONFIG.disk.session;
         let dd = &CONFIG.disk.directory;
         match self {
+            Request::WriteFile { path, data } => {
+                let mut p = path.clone();
+                p.set_extension("temp");
+                let res = fs::OpenOptions::new()
+                    .write(true)
+                    .create(true)
+                    .open(&p)
+                    .map(|mut f| f.write(&data[..]));
+                match res {
+                    Ok(Ok(_)) => {
+                        fs::rename(&p, &path).ok();
+                    }
+                    Ok(Err(e)) => {
+                        error!("Failed to write disk job: {}", e);
+                        fs::remove_file(&p).ok();
+                    }
+                    Err(e) => {
+                        error!("Failed to write disk job: {}", e);
+                    }
+                }
+            }
             Request::Write {
                 data,
                 locations,
@@ -395,6 +411,7 @@ impl Request {
             Request::Move { tid, .. } |
             Request::Write { tid, .. } => tid,
             Request::Read { ref context, .. } => context.tid,
+            Request::WriteFile { .. } |
             Request::Shutdown => unreachable!(),
         }
     }
@@ -454,7 +471,7 @@ impl Disk {
     pub fn new(
         poll: amy::Poller,
         ch: handle::Handle<Request, Response>,
-        jobs: amy::Receiver<Job>,
+        jobs: amy::Receiver<Request>,
     ) -> Disk {
         Disk {
             poll,
@@ -540,25 +557,15 @@ impl Disk {
                 _ => break,
             }
         }
-        while let Ok(j) = self.jobs.try_recv() {
-            let mut p = j.path.clone();
-            p.set_extension("temp");
-            let res = fs::OpenOptions::new()
-                .write(true)
-                .create(true)
-                .open(&p)
-                .map(|mut f| f.write(&j.data[..]));
-            match res {
-                Ok(Ok(_)) => {
-                    fs::rename(&p, &j.path).ok();
-                }
-                Ok(Err(e)) => {
-                    error!("Failed to write disk job: {}", e);
-                    fs::remove_file(&p).ok();
+        while let Ok(r) = self.jobs.try_recv() {
+            match r.execute(&mut self.files) {
+                Ok(JobRes::Paused(s)) => {
+                    self.active.push_back(s);
                 }
                 Err(e) => {
-                    error!("Failed to write disk job: {}", e);
+                    error!("Disk job failed: {}", e);
                 }
+                _ => {}
             }
         }
         false
@@ -567,7 +574,7 @@ impl Disk {
 
 pub fn start(
     creg: &mut amy::Registrar,
-) -> io::Result<(handle::Handle<Response, Request>, amy::Sender<Job>, thread::JoinHandle<()>)> {
+) -> io::Result<(handle::Handle<Response, Request>, amy::Sender<Request>, thread::JoinHandle<()>)> {
     let poll = amy::Poller::new()?;
     let mut reg = poll.get_registrar()?;
     let (ch, dh) = handle::Handle::new(creg, &mut reg)?;

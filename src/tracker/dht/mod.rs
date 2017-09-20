@@ -28,11 +28,11 @@ pub struct Manager {
     dht_flush: time::Instant,
     sock: UdpSocket,
     buf: Vec<u8>,
-    db: amy::Sender<disk::Job>,
+    db: amy::Sender<disk::Request>,
 }
 
 impl Manager {
-    pub fn new(reg: &amy::Registrar, db: amy::Sender<disk::Job>) -> io::Result<Manager> {
+    pub fn new(reg: &amy::Registrar, db: amy::Sender<disk::Request>) -> io::Result<Manager> {
         let sock = UdpSocket::bind(("0.0.0.0", CONFIG.dht.port))?;
         sock.set_nonblocking(true)?;
         let id = reg.register(&sock, amy::Event::Read)?;
@@ -135,7 +135,7 @@ impl Manager {
         if self.dht_flush.elapsed() > time::Duration::from_secs(60) {
             let data = self.table.serialize();
             let path = Path::new(&CONFIG.disk.session[..]).join(SESSION_FILE);
-            self.db.send(disk::Job { data, path }).ok();
+            self.db.send(disk::Request::WriteFile { data, path }).ok();
             self.dht_flush = time::Instant::now();
         }
         for (req, a) in self.table.tick() {

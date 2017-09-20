@@ -85,7 +85,7 @@ const POLL_INT_MS: usize = 1000;
 impl Tracker {
     pub fn start(
         creg: &mut amy::Registrar,
-        db: amy::Sender<disk::Job>,
+        db: amy::Sender<disk::Request>,
     ) -> io::Result<(handle::Handle<Response, Request>, thread::JoinHandle<()>)> {
         let poll = amy::Poller::new()?;
         let mut reg = poll.get_registrar()?;

@@ -43,7 +43,7 @@ pub struct Control<T: cio::CIO> {
     peers: HashMap<usize, usize>,
     hash_idx: HashMap<[u8; 20], usize>,
     data: ServerData,
-    db: amy::Sender<disk::Job>,
+    db: amy::Sender<disk::Request>,
 }
 
 #[derive(Serialize, Deserialize, Default)]
@@ -63,7 +63,7 @@ impl<T: cio::CIO> Control<T> {
     pub fn new(
         mut cio: T,
         throttler: Throttler,
-        db: amy::Sender<disk::Job>,
+        db: amy::Sender<disk::Request>,
     ) -> io::Result<Control<T>> {
         let torrents = HashMap::new();
         let peers = HashMap::new();
@@ -131,7 +131,7 @@ impl<T: cio::CIO> Control<T> {
         path.push("syn_data");
         match bincode::serialize(&self.data, bincode::Infinite) {
             Ok(data) => {
-                self.db.send(disk::Job { path, data }).ok();
+                self.db.send(disk::Request::WriteFile { path, data }).ok();
             }
             Err(_) => {
                 error!("Failed to serialize server data");

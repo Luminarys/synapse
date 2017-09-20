@@ -133,7 +133,7 @@ pub struct RPC {
 impl RPC {
     pub fn start(
         creg: &mut amy::Registrar,
-        db: amy::Sender<disk::Job>,
+        db: amy::Sender<disk::Request>,
     ) -> io::Result<(handle::Handle<Message, CtlMessage>, thread::JoinHandle<()>)> {
         let poll = amy::Poller::new()?;
         let mut reg = poll.get_registrar()?;
