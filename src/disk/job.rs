@@ -1,28 +1,15 @@
 use std::sync::Arc;
-use std::collections::{HashMap, VecDeque};
-use std::{fs, fmt, path, time, thread};
+use std::{fs, fmt, path, time};
 use std::io::{self, Seek, SeekFrom, Write, Read};
 use std::path::PathBuf;
 
 use fs_extra;
-use amy;
 use sha1;
 
+use super::{EXDEV, JOB_TIME_SLICE, FileCache};
 use torrent::Info;
 use util::{hash_to_id, io_err};
-use {handle, CONFIG};
-
-const POLL_INT_MS: usize = 1000;
-const JOB_TIME_SLICE: u64 = 1;
-const EXDEV: i32 = 18;
-
-pub struct Disk {
-    poll: amy::Poller,
-    ch: handle::Handle<Request, Response>,
-    jobs: amy::Receiver<Request>,
-    files: FileCache,
-    active: VecDeque<Request>,
-}
+use CONFIG;
 
 pub struct Location {
     pub file: PathBuf,
@@ -91,65 +78,11 @@ pub struct Ctx {
     pub length: u32,
 }
 
-enum JobRes {
+pub enum JobRes {
     Resp(Response),
     Done,
     Paused(Request),
-}
-
-struct FileCache {
-    files: HashMap<path::PathBuf, fs::File>,
-}
-
-impl Ctx {
-    pub fn new(pid: usize, tid: usize, idx: u32, begin: u32, length: u32) -> Ctx {
-        Ctx {
-            pid,
-            tid,
-            idx,
-            begin,
-            length,
-        }
-    }
-}
-
-impl FileCache {
-    pub fn new() -> FileCache {
-        FileCache { files: HashMap::new() }
-    }
-
-    pub fn get_file<F: FnMut(&mut fs::File) -> io::Result<()>>(
-        &mut self,
-        path: &path::Path,
-        mut f: F,
-    ) -> io::Result<()> {
-        let hit = if let Some(file) = self.files.get_mut(path) {
-            f(file)?;
-            true
-        } else {
-            false
-        };
-        if !hit {
-            // TODO: LRU maybe?
-            if self.files.len() >= CONFIG.net.max_open_files {
-                let removal = self.files.iter().map(|(id, _)| id.clone()).next().unwrap();
-                self.files.remove(&removal);
-            }
-            fs::create_dir_all(path.parent().unwrap())?;
-            let mut file = fs::OpenOptions::new()
-                .write(true)
-                .create(true)
-                .read(true)
-                .open(path)?;
-            f(&mut file)?;
-            self.files.insert(path.to_path_buf(), file);
-        }
-        Ok(())
-    }
-
-    pub fn remove_file(&mut self, path: &path::Path) {
-        self.files.remove(path);
-    }
+    Blocked((usize, Request)),
 }
 
 impl Request {
@@ -215,7 +148,7 @@ impl Request {
         Request::Shutdown
     }
 
-    fn execute(self, fc: &mut FileCache) -> io::Result<JobRes> {
+    pub fn execute(self, fc: &mut FileCache) -> io::Result<JobRes> {
         let sd = &CONFIG.disk.session;
         let dd = &CONFIG.disk.directory;
         match self {
@@ -403,16 +336,16 @@ impl Request {
         Ok(JobRes::Done)
     }
 
-    pub fn tid(&self) -> usize {
+    pub fn tid(&self) -> Option<usize> {
         match *self {
             Request::Serialize { tid, .. } |
             Request::Validate { tid, .. } |
             Request::Delete { tid, .. } |
             Request::Move { tid, .. } |
-            Request::Write { tid, .. } => tid,
-            Request::Read { ref context, .. } => context.tid,
+            Request::Write { tid, .. } => Some(tid),
+            Request::Read { ref context, .. } => Some(context.tid),
             Request::WriteFile { .. } |
-            Request::Shutdown => unreachable!(),
+            Request::Shutdown => None,
         }
     }
 }
@@ -467,118 +400,15 @@ impl fmt::Debug for Response {
     }
 }
 
-impl Disk {
-    pub fn new(
-        poll: amy::Poller,
-        ch: handle::Handle<Request, Response>,
-        jobs: amy::Receiver<Request>,
-    ) -> Disk {
-        Disk {
-            poll,
-            ch,
-            jobs,
-            files: FileCache::new(),
-            active: VecDeque::new(),
+
+impl Ctx {
+    pub fn new(pid: usize, tid: usize, idx: u32, begin: u32, length: u32) -> Ctx {
+        Ctx {
+            pid,
+            tid,
+            idx,
+            begin,
+            length,
         }
     }
-
-    pub fn run(&mut self) {
-        let sd = &CONFIG.disk.session;
-        fs::create_dir_all(sd).unwrap();
-
-        loop {
-            match self.poll.wait(POLL_INT_MS) {
-                Ok(_) => {
-                    if self.handle_events() {
-                        break;
-                    }
-                }
-                Err(e) => {
-                    error!("Failed to poll for events: {:?}", e);
-                }
-            }
-            if !self.active.is_empty() && self.handle_active() {
-                break;
-            }
-        }
-    }
-
-    fn handle_active(&mut self) -> bool {
-        while let Some(j) = self.active.pop_front() {
-            let tid = j.tid();
-            match j.execute(&mut self.files) {
-                Ok(JobRes::Resp(r)) => {
-                    self.ch.send(r).ok();
-                }
-                Ok(JobRes::Paused(s)) => {
-                    self.active.push_front(s);
-                }
-                Ok(JobRes::Done) => {}
-                Err(e) => {
-                    self.ch.send(Response::error(tid, e)).ok();
-                }
-            }
-            match self.poll.wait(0) {
-                Ok(_) => {
-                    if self.handle_events() {
-                        return true;
-                    }
-                }
-                Err(e) => {
-                    error!("Failed to poll for events: {:?}", e);
-                }
-            }
-        }
-        false
-    }
-
-    pub fn handle_events(&mut self) -> bool {
-        loop {
-            match self.ch.recv() {
-                Ok(Request::Shutdown) => {
-                    return true;
-                }
-                Ok(r) => {
-                    trace!("Handling disk job!");
-                    let tid = r.tid();
-                    match r.execute(&mut self.files) {
-                        Ok(JobRes::Resp(r)) => {
-                            self.ch.send(r).ok();
-                        }
-                        Ok(JobRes::Paused(s)) => {
-                            self.active.push_back(s);
-                        }
-                        Ok(JobRes::Done) => {}
-                        Err(e) => {
-                            self.ch.send(Response::error(tid, e)).ok();
-                        }
-                    }
-                }
-                _ => break,
-            }
-        }
-        while let Ok(r) = self.jobs.try_recv() {
-            match r.execute(&mut self.files) {
-                Ok(JobRes::Paused(s)) => {
-                    self.active.push_back(s);
-                }
-                Err(e) => {
-                    error!("Disk job failed: {}", e);
-                }
-                _ => {}
-            }
-        }
-        false
-    }
-}
-
-pub fn start(
-    creg: &mut amy::Registrar,
-) -> io::Result<(handle::Handle<Response, Request>, amy::Sender<Request>, thread::JoinHandle<()>)> {
-    let poll = amy::Poller::new()?;
-    let mut reg = poll.get_registrar()?;
-    let (ch, dh) = handle::Handle::new(creg, &mut reg)?;
-    let (tx, rx) = reg.channel()?;
-    let h = dh.run("disk", move |h| Disk::new(poll, h, rx).run())?;
-    Ok((ch, tx, h))
 }
