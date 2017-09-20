@@ -12,13 +12,14 @@ impl FileCache {
         FileCache { files: HashMap::new() }
     }
 
-    pub fn get_file<F: FnMut(&mut fs::File) -> io::Result<()>>(
+    pub fn get_file<R, F: FnMut(&mut fs::File) -> io::Result<R>>(
         &mut self,
         path: &path::Path,
         mut f: F,
-    ) -> io::Result<()> {
+    ) -> io::Result<R> {
+        let mut res = None;
         let hit = if let Some(file) = self.files.get_mut(path) {
-            f(file)?;
+            res = Some(f(file)?);
             true
         } else {
             false
@@ -35,10 +36,10 @@ impl FileCache {
                 .create(true)
                 .read(true)
                 .open(path)?;
-            f(&mut file)?;
+            res = Some(f(&mut file)?);
             self.files.insert(path.to_path_buf(), file);
         }
-        Ok(())
+        Ok(res.unwrap())
     }
 
     pub fn remove_file(&mut self, path: &path::Path) {

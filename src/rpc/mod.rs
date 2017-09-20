@@ -128,6 +128,7 @@ pub struct RPC {
     transfers: Transfers,
     clients: HashMap<usize, Client>,
     incoming: HashMap<usize, Incoming>,
+    disk: amy::Sender<disk::Request>,
 }
 
 impl RPC {
@@ -150,9 +151,11 @@ impl RPC {
         listener.set_nonblocking(true)?;
         let lid = reg.register(&listener, amy::Event::Both)?;
 
+        let disk = db.try_clone()?;
         let th = dh.run("rpc", move |ch| {
             RPC {
                 ch,
+                disk,
                 poll,
                 reg,
                 listener,
@@ -373,7 +376,7 @@ impl RPC {
                     if let Some(path) = self.processor.get_dl(&id) {
                         debug!("Initiating DL");
                         conn.set_nonblocking(false).is_ok();
-                        self.transfers.add_download(conn, path);
+                        self.disk.send(disk::Request::download(conn, path)).ok();
                     } else {
                         debug!("ID {} invalid, stopping DL", id);
                         conn.write(&EMPTY_HTTP_RESP).ok();

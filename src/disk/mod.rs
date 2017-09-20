@@ -16,11 +16,12 @@ use self::cache::FileCache;
 use {handle, CONFIG};
 
 const POLL_INT_MS: usize = 1000;
-const JOB_TIME_SLICE: u64 = 1;
+const JOB_TIME_SLICE: u64 = 150;
 const EXDEV: i32 = 18;
 
 pub struct Disk {
     poll: amy::Poller,
+    reg: amy::Registrar,
     ch: handle::Handle<Request, Response>,
     jobs: amy::Receiver<Request>,
     files: FileCache,
@@ -32,11 +33,13 @@ pub struct Disk {
 impl Disk {
     pub fn new(
         poll: amy::Poller,
+        reg: amy::Registrar,
         ch: handle::Handle<Request, Response>,
         jobs: amy::Receiver<Request>,
     ) -> Disk {
         Disk {
             poll,
+            reg,
             ch,
             jobs,
             files: FileCache::new(),
@@ -51,9 +54,14 @@ impl Disk {
 
         loop {
             match self.poll.wait(POLL_INT_MS) {
-                Ok(_) => {
+                Ok(v) => {
                     if self.handle_events() {
                         break;
+                    }
+                    for ev in v {
+                        if let Some(r) = self.blocked.remove(&ev.id) {
+                            self.active.push_back(r);
+                        }
                     }
                 }
                 Err(e) => {
@@ -67,6 +75,7 @@ impl Disk {
     }
 
     fn handle_active(&mut self) -> bool {
+        let mut rotate = 1;
         while let Some(j) = self.active.pop_front() {
             let tid = j.tid();
             match j.execute(&mut self.files) {
@@ -74,26 +83,40 @@ impl Disk {
                     self.ch.send(r).ok();
                 }
                 Ok(JobRes::Paused(s)) => {
-                    self.active.push_front(s);
+                    if rotate % 3 == 0 {
+                        self.active.push_back(s);
+                    } else {
+                        self.active.push_front(s);
+                    }
                 }
                 Ok(JobRes::Blocked((id, s))) => {
                     self.blocked.insert(id, s);
                 }
                 Ok(JobRes::Done) => {}
                 Err(e) => {
-                    self.ch.send(Response::error(tid.unwrap(), e)).ok();
+                    if let Some(t) = tid {
+                        self.ch.send(Response::error(t, e)).ok();
+                    } else {
+                        error!("Disk job failed: {}", e);
+                    }
                 }
             }
             match self.poll.wait(0) {
-                Ok(_) => {
+                Ok(v) => {
                     if self.handle_events() {
                         return true;
+                    }
+                    for ev in v {
+                        if let Some(r) = self.blocked.remove(&ev.id) {
+                            self.active.push_back(r);
+                        }
                     }
                 }
                 Err(e) => {
                     error!("Failed to poll for events: {:?}", e);
                 }
             }
+            rotate += 1;
         }
         false
     }
@@ -104,9 +127,14 @@ impl Disk {
                 Ok(Request::Shutdown) => {
                     return true;
                 }
-                Ok(r) => {
+                Ok(mut r) => {
                     trace!("Handling disk job!");
                     let tid = r.tid();
+                    if let Err(e) = r.register(&self.reg) {
+                        if let Some(t) = tid {
+                            self.ch.send(Response::error(t, e)).ok();
+                        }
+                    }
                     match r.execute(&mut self.files) {
                         Ok(JobRes::Resp(r)) => {
                             self.ch.send(r).ok();
@@ -119,14 +147,19 @@ impl Disk {
                         }
                         Ok(JobRes::Done) => {}
                         Err(e) => {
-                            self.ch.send(Response::error(tid.unwrap(), e)).ok();
+                            if let Some(t) = tid {
+                                self.ch.send(Response::error(t, e)).ok();
+                            }
                         }
                     }
                 }
                 _ => break,
             }
         }
-        while let Ok(r) = self.jobs.try_recv() {
+        while let Ok(mut r) = self.jobs.try_recv() {
+            if r.register(&self.reg).is_err() {
+                continue;
+            }
             match r.execute(&mut self.files) {
                 Ok(JobRes::Paused(s)) => {
                     self.active.push_back(s);
@@ -148,6 +181,6 @@ pub fn start(
     let mut reg = poll.get_registrar()?;
     let (ch, dh) = handle::Handle::new(creg, &mut reg)?;
     let (tx, rx) = reg.channel()?;
-    let h = dh.run("disk", move |h| Disk::new(poll, h, rx).run())?;
+    let h = dh.run("disk", move |h| Disk::new(poll, reg, h, rx).run())?;
     Ok((ch, tx, h))
 }

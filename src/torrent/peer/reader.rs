@@ -181,7 +181,7 @@ impl Reader {
                             let plen = (&self.prefix[0..4]).read_u32::<BigEndian>().unwrap() - 9;
                             self.idx = 0;
                             self.state = State::Piece {
-                                data: Some(Box::new([0; 16_384])),
+                                data: Some(Box::new(unsafe { mem::uninitialized() })),
                                 len: plen,
                             };
                         }

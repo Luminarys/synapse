@@ -1,14 +1,16 @@
 use std::sync::Arc;
-use std::{fs, fmt, path, time};
+use std::{fs, fmt, path, time, mem};
 use std::io::{self, Seek, SeekFrom, Write, Read};
 use std::path::PathBuf;
+use std::net::TcpStream;
 
 use fs_extra;
 use sha1;
+use amy;
 
 use super::{EXDEV, JOB_TIME_SLICE, FileCache};
 use torrent::Info;
-use util::{hash_to_id, io_err};
+use util::{hash_to_id, io_err, awrite, IOR};
 use CONFIG;
 
 pub struct Location {
@@ -57,6 +59,12 @@ pub enum Request {
         invalid: Vec<u32>,
     },
     WriteFile { data: Vec<u8>, path: PathBuf },
+    Download {
+        client: TcpStream,
+        path: String,
+        offset: Option<u64>,
+        id: usize,
+    },
     Shutdown,
 }
 
@@ -141,6 +149,15 @@ impl Request {
             files,
             path,
             artifacts,
+        }
+    }
+
+    pub fn download(client: TcpStream, path: String) -> Request {
+        Request::Download {
+            client,
+            path,
+            offset: None,
+            id: 0,
         }
     }
 
@@ -287,7 +304,7 @@ impl Request {
                 let start = time::Instant::now();
 
                 while idx < info.pieces() &&
-                    start.elapsed() < time::Duration::from_secs(JOB_TIME_SLICE)
+                    start.elapsed() < time::Duration::from_millis(JOB_TIME_SLICE)
                 {
                     let mut valid = true;
                     let mut ctx = sha1::Sha1::new();
@@ -331,9 +348,108 @@ impl Request {
                     }));
                 }
             }
+            Request::Download {
+                mut client,
+                path,
+                offset,
+                id,
+            } => {
+                if let Some(o) = offset {
+                    let mut no = o;
+                    let start = time::Instant::now();
+                    let mut buf: [u8; 16_384] = unsafe { mem::uninitialized() };
+                    'read: while start.elapsed() < time::Duration::from_millis(JOB_TIME_SLICE) {
+                        let r = fc.get_file(path::Path::new(&path), |f| {
+                            f.seek(SeekFrom::Start(no))?;
+                            loop {
+                                match f.read(&mut buf) {
+                                    Ok(r) => return Ok(r),
+                                    Err(ref e) if e.kind() == io::ErrorKind::Interrupted => {
+                                        continue
+                                    }
+                                    Err(e) => return Err(e),
+                                }
+                            }
+                        })?;
+                        'write: loop {
+                            // Need the mod here because after the first 16 KiBs complete
+                            // no will be too big
+                            let b = &mut buf[(no - o) as usize % 16_384..r];
+
+                            match awrite(b, &mut client) {
+                                IOR::Complete => {
+                                    no += b.len() as u64;
+                                    continue 'read;
+                                }
+                                IOR::Incomplete(w) => no += w as u64,
+                                IOR::Blocked => {
+                                    return Ok(JobRes::Blocked((
+                                        id,
+                                        Request::Download {
+                                            client,
+                                            path,
+                                            offset: Some(no),
+                                            id,
+                                        },
+                                    )))
+                                }
+                                IOR::EOF => return io_err("EOF"),
+                                IOR::Err(e) => return Err(e),
+                            }
+                        }
+                    }
+                    return Ok(JobRes::Paused(Request::Download {
+                        client,
+                        path,
+                        offset: Some(no),
+                        id,
+                    }));
+                } else {
+                    fc.get_file(path::Path::new(&path), |f| {
+                        let len = f.metadata()?.len();
+                        let lines = vec![
+                            format!("HTTP/1.1 200 OK"),
+                            format!("Content-Length: {}", len),
+                            format!("Content-Type: {}", "application/octet-stream"),
+                            format!(
+                                "Content-Disposition: attachment; filename=\"{}\"",
+                                path::Path::new(&path)
+                                    .file_name()
+                                    .unwrap()
+                                    .to_string_lossy()
+                            ),
+                            format!("Connection: {}", "Close"),
+                            format!("\r\n"),
+                        ];
+                        let data = lines.join("\r\n");
+                        client.write_all(data.as_bytes())?;
+                        Ok(())
+                    })?;
+                    return Ok(JobRes::Paused(Request::Download {
+                        client,
+                        path,
+                        offset: Some(0),
+                        id,
+                    }));
+                }
+            }
             Request::Shutdown => unreachable!(),
         }
         Ok(JobRes::Done)
+    }
+
+    pub fn register(&mut self, reg: &amy::Registrar) -> io::Result<()> {
+        match *self {
+            Request::Download {
+                ref client,
+                ref mut id,
+                ..
+            } => {
+                *id = reg.register(client, amy::Event::Write)?;
+                Ok(())
+            }
+            _ => Ok(()),
+        }
     }
 
     pub fn tid(&self) -> Option<usize> {
@@ -345,6 +461,7 @@ impl Request {
             Request::Write { tid, .. } => Some(tid),
             Request::Read { ref context, .. } => Some(context.tid),
             Request::WriteFile { .. } |
+            Request::Download { .. } |
             Request::Shutdown => None,
         }
     }
