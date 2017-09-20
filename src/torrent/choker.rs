@@ -1,13 +1,12 @@
-use std::collections::{HashSet, HashMap};
 use std::time::{Instant, Duration};
-use std;
+
 use torrent::Peer;
-use util::random_sample;
 use control::cio;
+use util::{random_sample, UHashMap, FHashSet};
 
 pub struct Choker {
     unchoked: Vec<usize>,
-    interested: HashSet<usize>,
+    interested: FHashSet<usize>,
     last_updated: Instant,
 }
 
@@ -22,7 +21,7 @@ impl Choker {
     pub fn new() -> Choker {
         Choker {
             unchoked: Vec::with_capacity(5),
-            interested: HashSet::new(),
+            interested: FHashSet::default(),
             last_updated: Instant::now(),
         }
     }
@@ -41,10 +40,7 @@ impl Choker {
         &self.unchoked
     }
 
-    fn unchoke_random<T: cio::CIO>(
-        &mut self,
-        peers: &mut HashMap<usize, Peer<T>>,
-    ) -> Option<usize> {
+    fn unchoke_random<T: cio::CIO>(&mut self, peers: &mut UHashMap<Peer<T>>) -> Option<usize> {
         if let Some(random_id) = random_sample(self.interested.iter()).cloned() {
             let mut peer = peers.get_mut(&random_id).unwrap();
             self.interested.remove(&random_id);
@@ -58,7 +54,7 @@ impl Choker {
     pub fn remove_peer<T: cio::CIO>(
         &mut self,
         peer: &mut Peer<T>,
-        peers: &mut HashMap<usize, Peer<T>>,
+        peers: &mut UHashMap<Peer<T>>,
     ) -> Option<SwapRes> {
         if let Some(idx) = self.unchoked.iter().position(|&id| id == peer.id()) {
             self.unchoked.remove(idx);
@@ -86,10 +82,7 @@ impl Choker {
         }
     }
 
-    pub fn update_upload<T: cio::CIO>(
-        &mut self,
-        peers: &mut HashMap<usize, Peer<T>>,
-    ) -> Option<SwapRes> {
+    pub fn update_upload<T: cio::CIO>(&mut self, peers: &mut UHashMap<Peer<T>>) -> Option<SwapRes> {
         if self.update_timer().is_err() {
             return None;
         }
@@ -97,7 +90,7 @@ impl Choker {
             return None;
         }
         let (slowest, _) = self.unchoked.iter().enumerate().fold(
-            (0, std::u32::MAX),
+            (0, ::std::u32::MAX),
             |(slowest, min),
              (idx, id)| {
                 let (ul, _) = peers.get_mut(id).unwrap().flush();
@@ -109,14 +102,14 @@ impl Choker {
 
     pub fn update_download<T: cio::CIO>(
         &mut self,
-        peers: &mut HashMap<usize, Peer<T>>,
+        peers: &mut UHashMap<Peer<T>>,
     ) -> Option<SwapRes> {
         if self.update_timer().is_err() {
             return None;
         }
 
         let (slowest, _) = self.unchoked.iter().enumerate().fold(
-            (0, std::u32::MAX),
+            (0, ::std::u32::MAX),
             |(slowest, min),
              (idx, id)| {
                 let (_, dl) = peers.get_mut(id).unwrap().flush();
@@ -126,11 +119,7 @@ impl Choker {
         Some(self.swap_peer(slowest, peers))
     }
 
-    fn swap_peer<T: cio::CIO>(
-        &mut self,
-        idx: usize,
-        peers: &mut HashMap<usize, Peer<T>>,
-    ) -> SwapRes {
+    fn swap_peer<T: cio::CIO>(&mut self, idx: usize, peers: &mut UHashMap<Peer<T>>) -> SwapRes {
         let id = self.unchoked.remove(idx);
         {
             let peer = peers.get_mut(&id).unwrap();

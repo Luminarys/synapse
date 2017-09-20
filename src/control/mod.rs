@@ -1,7 +1,6 @@
 use std::{fs, io, time};
 use std::io::Read;
 use std::sync::atomic;
-use std::collections::HashMap;
 use std::path::PathBuf;
 
 use chrono::Utc;
@@ -9,7 +8,7 @@ use bincode;
 use amy;
 
 use {rpc, tracker, disk, listener, CONFIG, SHUTDOWN};
-use util::{io_err, io_err_val, id_to_hash, hash_to_id, random_string};
+use util::{io_err, io_err_val, id_to_hash, hash_to_id, random_string, UHashMap, MHashMap};
 use torrent::{self, peer, Torrent};
 use throttle::Throttler;
 
@@ -39,9 +38,9 @@ pub struct Control<T: cio::CIO> {
     last_tx: (u64, u64),
     last_tx_time: time::Instant,
     jobs: job::JobManager<T>,
-    torrents: HashMap<usize, Torrent<T>>,
-    peers: HashMap<usize, usize>,
-    hash_idx: HashMap<[u8; 20], usize>,
+    torrents: UHashMap<Torrent<T>>,
+    peers: UHashMap<usize>,
+    hash_idx: MHashMap<[u8; 20], usize>,
     data: ServerData,
     db: amy::Sender<disk::Request>,
 }
@@ -65,9 +64,9 @@ impl<T: cio::CIO> Control<T> {
         throttler: Throttler,
         db: amy::Sender<disk::Request>,
     ) -> io::Result<Control<T>> {
-        let torrents = HashMap::new();
-        let peers = HashMap::new();
-        let hash_idx = HashMap::new();
+        let torrents = UHashMap::default();
+        let peers = UHashMap::default();
+        let hash_idx = MHashMap::default();
         let mut jobs = job::JobManager::new();
         jobs.add_job(job::TrackerUpdate, time::Duration::from_secs(TRK_JOB_SECS));
         jobs.add_job(

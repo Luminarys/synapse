@@ -1,10 +1,11 @@
-use torrent::{Torrent, Status};
-use std::collections::HashMap;
 use std::time;
+
+use torrent::{Torrent, Status};
 use control::cio;
+use util::UHashMap;
 
 pub trait Job<T: cio::CIO> {
-    fn update(&mut self, torrents: &mut HashMap<usize, Torrent<T>>);
+    fn update(&mut self, torrents: &mut UHashMap<Torrent<T>>);
 }
 
 pub struct JobManager<T: cio::CIO> {
@@ -30,7 +31,7 @@ impl<T: cio::CIO> JobManager<T> {
         })
     }
 
-    pub fn update(&mut self, torrents: &mut HashMap<usize, Torrent<T>>) {
+    pub fn update(&mut self, torrents: &mut UHashMap<Torrent<T>>) {
         for j in &mut self.jobs {
             if j.last_updated.elapsed() > j.interval {
                 j.job.update(torrents);
@@ -43,7 +44,7 @@ impl<T: cio::CIO> JobManager<T> {
 pub struct TrackerUpdate;
 
 impl<T: cio::CIO> Job<T> for TrackerUpdate {
-    fn update(&mut self, torrents: &mut HashMap<usize, Torrent<T>>) {
+    fn update(&mut self, torrents: &mut UHashMap<Torrent<T>>) {
         for (_, torrent) in torrents.iter_mut() {
             torrent.try_update_tracker();
         }
@@ -53,7 +54,7 @@ impl<T: cio::CIO> Job<T> for TrackerUpdate {
 pub struct UnchokeUpdate;
 
 impl<T: cio::CIO> Job<T> for UnchokeUpdate {
-    fn update(&mut self, torrents: &mut HashMap<usize, Torrent<T>>) {
+    fn update(&mut self, torrents: &mut UHashMap<Torrent<T>>) {
         for (_, torrent) in torrents.iter_mut() {
             torrent.update_unchoked();
         }
@@ -63,7 +64,7 @@ impl<T: cio::CIO> Job<T> for UnchokeUpdate {
 pub struct SessionUpdate;
 
 impl<T: cio::CIO> Job<T> for SessionUpdate {
-    fn update(&mut self, torrents: &mut HashMap<usize, Torrent<T>>) {
+    fn update(&mut self, torrents: &mut UHashMap<Torrent<T>>) {
         for (_, torrent) in torrents.iter_mut() {
             if torrent.dirty() {
                 torrent.serialize();
@@ -73,12 +74,12 @@ impl<T: cio::CIO> Job<T> for SessionUpdate {
 }
 
 pub struct TorrentTxUpdate {
-    speeds: HashMap<usize, Speed>,
+    speeds: UHashMap<Speed>,
 }
 
 impl TorrentTxUpdate {
     pub fn new() -> TorrentTxUpdate {
-        TorrentTxUpdate { speeds: HashMap::new() }
+        TorrentTxUpdate { speeds: UHashMap::default() }
     }
 }
 
@@ -89,7 +90,7 @@ struct Speed {
 }
 
 impl<T: cio::CIO> Job<T> for TorrentTxUpdate {
-    fn update(&mut self, torrents: &mut HashMap<usize, Torrent<T>>) {
+    fn update(&mut self, torrents: &mut UHashMap<Torrent<T>>) {
         for (id, torrent) in torrents.iter_mut() {
             let (ul, dl) = torrent.get_last_tx_rate();
             if !self.speeds.contains_key(id) {
@@ -122,16 +123,16 @@ impl<T: cio::CIO> Job<T> for TorrentTxUpdate {
 
 impl TorrentStatusUpdate {
     pub fn new() -> TorrentStatusUpdate {
-        TorrentStatusUpdate { transferred: HashMap::new() }
+        TorrentStatusUpdate { transferred: UHashMap::default() }
     }
 }
 
 pub struct TorrentStatusUpdate {
-    transferred: HashMap<usize, (u64, u64)>,
+    transferred: UHashMap<(u64, u64)>,
 }
 
 impl<T: cio::CIO> Job<T> for TorrentStatusUpdate {
-    fn update(&mut self, torrents: &mut HashMap<usize, Torrent<T>>) {
+    fn update(&mut self, torrents: &mut UHashMap<Torrent<T>>) {
         for (id, torrent) in torrents.iter_mut() {
             let (ul, dl) = (torrent.uploaded(), torrent.downloaded());
             if !self.transferred.contains_key(id) {

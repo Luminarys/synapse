@@ -4,7 +4,6 @@ mod writer;
 use std::time::{Instant, Duration};
 use std::mem;
 use std::io::{self, Read, Write};
-use std::collections::HashMap;
 use std::net::SocketAddr;
 
 use url::percent_encoding::percent_encode_byte;
@@ -15,12 +14,13 @@ use self::writer::Writer;
 use self::reader::{Reader, ReadRes};
 use socket::TSocket;
 use tracker::{self, Announce, Response, TrackerResponse, Result, ResultExt, Error, ErrorKind, dns};
+use util::UHashMap;
 
 const TIMEOUT_MS: u64 = 5_000;
 
 pub struct Handler {
     reg: amy::Registrar,
-    connections: HashMap<usize, Tracker>,
+    connections: UHashMap<Tracker>,
 }
 
 enum Event {
@@ -175,7 +175,7 @@ impl Handler {
     pub fn new(reg: &amy::Registrar) -> io::Result<Handler> {
         Ok(Handler {
             reg: reg.try_clone()?,
-            connections: HashMap::new(),
+            connections: UHashMap::default(),
         })
     }
 

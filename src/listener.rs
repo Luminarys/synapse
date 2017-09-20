@@ -1,15 +1,17 @@
 use std::{fmt, thread};
 use std::io::{self, ErrorKind};
 use std::net::{SocketAddrV4, Ipv4Addr, TcpListener};
+
 use amy::{self, Poller, Registrar};
-use std::collections::HashMap;
+
 use torrent::peer::PeerConn;
 use {handle, CONFIG};
+use util::UHashMap;
 
 pub struct Listener {
     listener: TcpListener,
     lid: usize,
-    incoming: HashMap<usize, PeerConn>,
+    incoming: UHashMap<PeerConn>,
     poll: Poller,
     reg: Registrar,
     ch: handle::Handle<Request, Message>,
@@ -56,7 +58,7 @@ impl Listener {
             Listener {
                 listener,
                 lid,
-                incoming: HashMap::new(),
+                incoming: UHashMap::default(),
                 poll,
                 reg,
                 ch: h,

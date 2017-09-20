@@ -1,13 +1,15 @@
 use std::net::{UdpSocket, SocketAddr};
-use std::time;
-use tracker::{Announce, Result, ResultExt, Response, TrackerResponse, Event, Error, ErrorKind, dns};
-use std::collections::HashMap;
-use {CONFIG, PEER_ID, amy};
-use util::bytes_to_addr;
 use std::io::{self, Write, Read, Cursor};
+use std::time;
+
+use amy;
 use byteorder::{ReadBytesExt, WriteBytesExt, BigEndian};
 use url::Url;
 use rand::random;
+
+use {CONFIG, PEER_ID};
+use tracker::{Announce, Result, ResultExt, Response, TrackerResponse, Event, Error, ErrorKind, dns};
+use util::{bytes_to_addr, UHashMap, FHashMap};
 
 // We're not going to bother with backoff, if the tracker/network aren't working now
 // the torrent can just resend a request later.
@@ -18,8 +20,8 @@ const MAGIC_NUM: u64 = 0x417_2710_1980;
 pub struct Handler {
     id: usize,
     sock: UdpSocket,
-    connections: HashMap<usize, Connection>,
-    transactions: HashMap<u32, usize>,
+    connections: UHashMap<Connection>,
+    transactions: FHashMap<u32, usize>,
     conn_count: usize,
     buf: Vec<u8>,
 }
@@ -47,8 +49,8 @@ impl Handler {
         Ok(Handler {
             id,
             sock,
-            connections: HashMap::new(),
-            transactions: HashMap::new(),
+            connections: UHashMap::default(),
+            transactions: FHashMap::default(),
             conn_count: 0,
             buf: vec![0u8; 350],
         })

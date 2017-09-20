@@ -1,10 +1,23 @@
 use std::io;
 use std::fmt::Write as FWrite;
 use std::net::{SocketAddr, Ipv4Addr, SocketAddrV4};
+use std::hash::BuildHasherDefault;
+use std::collections::{HashMap, HashSet};
 
-use sha1;
 use rand::{self, Rng};
 use byteorder::{ReadBytesExt, WriteBytesExt, BigEndian};
+use metrohash::MetroHash;
+use sha1;
+use fnv;
+
+pub type FHashMap<K, V> = fnv::FnvHashMap<K, V>;
+pub type FHashSet<T> = fnv::FnvHashSet<T>;
+pub type UHashMap<T> = FHashMap<usize, T>;
+
+pub type MBuildHasher = BuildHasherDefault<MetroHash>;
+pub type MHashMap<K, V> = HashMap<K, V, MBuildHasher>;
+pub type MHashSet<T> = HashSet<T, MBuildHasher>;
+pub type SHashMap<T> = MHashMap<String, T>;
 
 pub fn io_err<T>(reason: &'static str) -> io::Result<T> {
     Err(io::Error::new(io::ErrorKind::Other, reason))

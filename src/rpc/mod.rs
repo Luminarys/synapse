@@ -9,7 +9,6 @@ mod transfer;
 use std::{io, str, result, thread};
 use std::io::Write;
 use std::net::{TcpListener, TcpStream, Ipv4Addr, SocketAddrV4};
-use std::collections::HashMap;
 
 use amy;
 use serde_json;
@@ -25,6 +24,7 @@ use bencode;
 use handle;
 use torrent;
 use disk;
+use util::UHashMap;
 use CONFIG;
 
 const POLL_INT_MS: usize = 1000;
@@ -126,8 +126,8 @@ pub struct RPC {
     cleanup: usize,
     processor: Processor,
     transfers: Transfers,
-    clients: HashMap<usize, Client>,
-    incoming: HashMap<usize, Incoming>,
+    clients: UHashMap<Client>,
+    incoming: UHashMap<Incoming>,
     disk: amy::Sender<disk::Request>,
 }
 
@@ -161,8 +161,8 @@ impl RPC {
                 listener,
                 lid,
                 cleanup,
-                clients: HashMap::new(),
-                incoming: HashMap::new(),
+                clients: UHashMap::default(),
+                incoming: UHashMap::default(),
                 processor: Processor::new(db),
                 transfers: Transfers::new(),
             }.run()

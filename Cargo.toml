@@ -31,6 +31,8 @@ shellexpand = "1.0.0"
 openssl = "0.9"
 clippy = {version = "*", optional = true}
 fs_extra = "1.0"
+fnv = "1.0"
+metrohash = "1.0"
 
 [dependencies.chrono]
 version = "0.4"

@@ -1,9 +1,12 @@
-use std::collections::{HashSet, HashMap};
+use std::collections::HashSet;
 use std::net::IpAddr;
 use std::sync::{Arc, Mutex};
-use tracker::{Result, ResultExt, ErrorKind};
 use std::os::unix::io::{AsRawFd, RawFd};
+
 use {amy, c_ares};
+
+use tracker::{Result, ResultExt, ErrorKind};
+use util::FHashMap;
 
 #[derive(Debug)]
 pub struct QueryResponse {
@@ -13,8 +16,8 @@ pub struct QueryResponse {
 
 pub struct Resolver {
     reg: amy::Registrar,
-    socks: HashMap<usize, c_ares::Socket>,
-    csocks: HashMap<c_ares::Socket, usize>,
+    socks: FHashMap<usize, c_ares::Socket>,
+    csocks: FHashMap<c_ares::Socket, usize>,
     chan: c_ares::Channel,
     sender: Arc<Mutex<amy::Sender<QueryResponse>>>,
     marked: HashSet<usize>,
@@ -34,8 +37,8 @@ impl Resolver {
         opts.set_timeout(3000).set_tries(4);
         Resolver {
             reg,
-            socks: HashMap::new(),
-            csocks: HashMap::new(),
+            socks: FHashMap::default(),
+            csocks: FHashMap::default(),
             chan: c_ares::Channel::with_options(opts).unwrap(),
             sender: Arc::new(Mutex::new(send)),
             marked: HashSet::new(),

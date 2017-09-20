@@ -6,7 +6,7 @@ pub use self::job::Response;
 pub use self::job::Location;
 pub use self::job::Ctx;
 
-use std::collections::{HashMap, VecDeque};
+use std::collections::VecDeque;
 use std::{fs, thread, io};
 
 use amy;
@@ -14,6 +14,7 @@ use amy;
 use self::job::JobRes;
 use self::cache::FileCache;
 use {handle, CONFIG};
+use util::UHashMap;
 
 const POLL_INT_MS: usize = 1000;
 const JOB_TIME_SLICE: u64 = 150;
@@ -26,7 +27,7 @@ pub struct Disk {
     jobs: amy::Receiver<Request>,
     files: FileCache,
     active: VecDeque<Request>,
-    blocked: HashMap<usize, Request>,
+    blocked: UHashMap<Request>,
 }
 
 
@@ -44,7 +45,7 @@ impl Disk {
             jobs,
             files: FileCache::new(),
             active: VecDeque::new(),
-            blocked: HashMap::new(),
+            blocked: UHashMap::default(),
         }
     }
 

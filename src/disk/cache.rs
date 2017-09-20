@@ -1,15 +1,15 @@
 use std::{fs, path, io};
-use std::collections::HashMap;
 
 use CONFIG;
+use util::MHashMap;
 
 pub struct FileCache {
-    files: HashMap<path::PathBuf, fs::File>,
+    files: MHashMap<path::PathBuf, fs::File>,
 }
 
 impl FileCache {
     pub fn new() -> FileCache {
-        FileCache { files: HashMap::new() }
+        FileCache { files: MHashMap::default() }
     }
 
     pub fn get_file<R, F: FnMut(&mut fs::File) -> io::Result<R>>(

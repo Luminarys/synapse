@@ -5,7 +5,7 @@ mod picker;
 mod choker;
 
 use std::fmt;
-use std::collections::{HashMap, HashSet, BTreeMap};
+use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -23,6 +23,7 @@ use control::cio;
 use rpc::resource::{self, Resource, SResourceUpdate};
 use throttle::Throttle;
 use tracker::{self, TrackerResponse};
+use util::{UHashMap, MHashMap, FHashSet};
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub enum TrackerStatus {
@@ -67,8 +68,8 @@ pub struct Torrent<T: cio::CIO> {
     throttle: Throttle,
     tracker: TrackerStatus,
     tracker_update: Option<Instant>,
-    peers: HashMap<usize, Peer<T>>,
-    leechers: HashSet<usize>,
+    peers: UHashMap<Peer<T>>,
+    leechers: FHashSet<usize>,
     picker: Picker,
     status: Status,
     choker: choker::Choker,
@@ -124,9 +125,9 @@ impl<T: cio::CIO> Torrent<T> {
         start: bool,
     ) -> Torrent<T> {
         debug!("Creating {:?}", info);
-        let peers = HashMap::new();
+        let peers = UHashMap::default();
         let pieces = Bitfield::new(u64::from(info.pieces()));
-        let leechers = HashSet::new();
+        let leechers = FHashSet::default();
         let mut status = if start {
             Status::Pending
         } else {
@@ -196,8 +197,8 @@ impl<T: cio::CIO> Torrent<T> {
     ) -> Result<Torrent<T>, bincode::Error> {
         let d: TorrentData = bincode::deserialize(data)?;
         debug!("Torrent data deserialized!");
-        let peers = HashMap::new();
-        let leechers = HashSet::new();
+        let peers = UHashMap::default();
+        let leechers = FHashSet::default();
 
         let info = Arc::new(d.info);
         let info_idx = if info.complete() {
@@ -1138,7 +1139,7 @@ impl<T: cio::CIO> Torrent<T> {
             }
         }
 
-        let mut files = HashMap::new();
+        let mut files = MHashMap::default();
         for f in &self.info.files {
             files.insert(f.path.clone(), (0, f.length));
         }
@@ -1417,7 +1418,7 @@ impl<T: cio::CIO> Torrent<T> {
             }
         }
         if self.status.leeching() || self.status.validating() {
-            let mut files = HashMap::new();
+            let mut files = MHashMap::default();
             for (i, f) in self.info.files.iter().enumerate() {
                 if self.priorities[i] != 0 {
                     files.insert(f.path.clone(), (0, f.length));

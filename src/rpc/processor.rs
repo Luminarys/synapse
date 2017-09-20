@@ -16,10 +16,10 @@ use super::{CtlMessage, Message};
 use CONFIG;
 use disk;
 use torrent::info::Info;
-use util::random_string;
+use util::{random_string, SHashMap, MHashSet, FHashMap, FHashSet};
 
 const USER_DATA_FILE: &'static str = "rpc_user_data";
-type RpcDiskFmt = HashMap<String, Vec<u8>>;
+type RpcDiskFmt = SHashMap<Vec<u8>>;
 
 // TODO: Figure out a way to reduce allocations
 // in this entire file, ideally by taking pointers
@@ -27,16 +27,16 @@ type RpcDiskFmt = HashMap<String, Vec<u8>>;
 // inlining appropriately
 
 pub struct Processor {
-    subs: HashMap<String, HashSet<usize>>,
-    filter_subs: HashMap<(usize, u64), Filter>,
-    resources: HashMap<String, Resource>,
+    subs: SHashMap<FHashSet<usize>>,
+    filter_subs: FHashMap<(usize, u64), Filter>,
+    resources: SHashMap<Resource>,
     // Index by resource kind
-    kinds: Vec<HashSet<String>>,
+    kinds: Vec<MHashSet<String>>,
     // Index by torrent ID
-    torrent_idx: HashMap<String, HashSet<String>>,
-    tokens: HashMap<String, BearerToken>,
+    torrent_idx: SHashMap<MHashSet<String>>,
+    tokens: SHashMap<BearerToken>,
     db: amy::Sender<disk::Request>,
-    user_data: HashMap<String, json::Value>,
+    user_data: SHashMap<json::Value>,
 }
 
 struct Filter {
@@ -86,14 +86,14 @@ impl Processor {
                     "user data could not be read from disk, creating a fresh version: {}",
                     e
                 );
-                HashMap::new()
+                SHashMap::default()
             }
             Ok(Err(e)) => {
                 info!(
                     "user data could not be deserialized from disk, creating a fresh version: {:?}",
                     e
                 );
-                HashMap::new()
+                SHashMap::default()
             }
         };
         let user_data = json_data
@@ -102,12 +102,12 @@ impl Processor {
             .collect();
 
         Processor {
-            subs: HashMap::new(),
-            filter_subs: HashMap::new(),
-            resources: HashMap::new(),
-            tokens: HashMap::new(),
-            torrent_idx: HashMap::new(),
-            kinds: vec![HashSet::new(); 6],
+            subs: SHashMap::default(),
+            filter_subs: FHashMap::default(),
+            resources: SHashMap::default(),
+            tokens: SHashMap::default(),
+            torrent_idx: SHashMap::default(),
+            kinds: vec![MHashSet::default(); 6],
             db,
             user_data,
         }
@@ -498,14 +498,14 @@ impl Processor {
                 for mut r in e {
                     ids.push(r.id().to_owned());
 
-                    self.subs.insert(r.id().to_owned(), HashSet::new());
+                    self.subs.insert(r.id().to_owned(), FHashSet::default());
                     let id = r.id().to_owned();
 
                     self.kinds[r.kind() as usize].insert(id.clone());
 
                     if let Some(tid) = r.torrent_id() {
                         if !self.torrent_idx.contains_key(tid) {
-                            self.torrent_idx.insert(tid.to_owned(), HashSet::new());
+                            self.torrent_idx.insert(tid.to_owned(), MHashSet::default());
                         }
                         self.torrent_idx.get_mut(tid).unwrap().insert(id.clone());
                     }

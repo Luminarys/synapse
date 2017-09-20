@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::net::TcpStream;
 use std::io::Write;
 use std::time;
@@ -6,10 +5,10 @@ use std::time;
 use super::proto::message::Error;
 use super::EMPTY_HTTP_RESP;
 
-use util::{aread, IOR};
+use util::{aread, IOR, UHashMap};
 
 pub struct Transfers {
-    torrents: HashMap<usize, TorrentTx>,
+    torrents: UHashMap<TorrentTx>,
 }
 
 pub enum TransferResult {
@@ -44,7 +43,7 @@ const CONN_TIMEOUT: u64 = 2;
 
 impl Transfers {
     pub fn new() -> Transfers {
-        Transfers { torrents: HashMap::new() }
+        Transfers { torrents: UHashMap::default() }
     }
 
     pub fn add_torrent(

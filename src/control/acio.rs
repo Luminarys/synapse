@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::cell::UnsafeCell;
 use std::rc::Rc;
 use std::time;
@@ -8,6 +7,7 @@ use amy;
 use {rpc, tracker, disk, listener, torrent};
 use CONFIG;
 use control::cio::{self, Result, ResultExt, ErrorKind};
+use util::UHashMap;
 
 const POLL_INT_MS: usize = 1000;
 const PRUNE_GOAL: usize = 50;
@@ -34,7 +34,7 @@ pub struct ACChans {
 struct ACIOData {
     poll: amy::Poller,
     reg: amy::Registrar,
-    peers: HashMap<usize, torrent::PeerConn>,
+    peers: UHashMap<torrent::PeerConn>,
     events: Vec<cio::Event>,
     chans: ACChans,
 }
@@ -45,7 +45,7 @@ impl ACIO {
             poll,
             reg,
             chans,
-            peers: HashMap::new(),
+            peers: UHashMap::default(),
             events: Vec::new(),
         };
         ACIO { data: Rc::new(UnsafeCell::new(data)) }

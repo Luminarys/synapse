@@ -27,6 +27,8 @@ extern crate shellexpand;
 extern crate chrono;
 extern crate openssl;
 extern crate fs_extra;
+extern crate fnv;
+extern crate metrohash;
 
 // TODO: Get rid of this
 extern crate num;
