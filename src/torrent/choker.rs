@@ -141,7 +141,7 @@ mod tests {
     use super::{Choker, SwapRes};
     use torrent::{Peer, Bitfield};
     use std::time::{Instant, Duration};
-    use std::collections::HashMap;
+    use util::UHashMap;
 
     #[test]
     fn test_add_peers() {
@@ -159,7 +159,7 @@ mod tests {
     fn test_remove_peers() {
         let mut c = Choker::new();
         let mut v = Vec::new();
-        let mut h = HashMap::new();
+        let mut h = UHashMap::default();
         for i in 0..6 {
             let mut p = Peer::test_from_stats(i, 0, 0);
             c.add_peer(&mut p);
@@ -182,7 +182,7 @@ mod tests {
     #[test]
     fn test_update_upload() {
         let mut c = Choker::new();
-        let mut h = HashMap::new();
+        let mut h = UHashMap::default();
         assert_eq!(c.update_upload(&mut h).is_none(), true);
         for i in 0..6 {
             let mut p = Peer::test_from_stats(i, i as u32, 6 - i as u32);
@@ -199,7 +199,7 @@ mod tests {
     #[test]
     fn test_update_download() {
         let mut c = Choker::new();
-        let mut h = HashMap::new();
+        let mut h = UHashMap::default();
         assert_eq!(c.update_download(&mut h).is_none(), true);
         for i in 0..6 {
             let mut p = Peer::test_from_stats(i, 6 - i as u32, i as u32);
