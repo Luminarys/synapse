@@ -1,7 +1,7 @@
 use std::sync::Arc;
 use std::{fs, fmt, path, time, mem};
 use std::io::{self, Seek, SeekFrom, Write, Read};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::net::TcpStream;
 
 use fs_extra;
@@ -9,27 +9,28 @@ use sha1;
 use amy;
 
 use super::{EXDEV, JOB_TIME_SLICE, FileCache};
-use torrent::Info;
+use torrent::{Info, LocIter};
 use util::{hash_to_id, io_err, awrite, IOR};
 use CONFIG;
 
 pub struct Location {
-    pub file: PathBuf,
+    pub file: usize,
     pub offset: u64,
     pub start: usize,
     pub end: usize,
+    info: Arc<Info>,
 }
 
 pub enum Request {
     Write {
         tid: usize,
         data: Box<[u8; 16_384]>,
-        locations: Vec<Location>,
+        locations: LocIter,
         path: Option<String>,
     },
     Read {
         data: Box<[u8; 16_384]>,
-        locations: Vec<Location>,
+        locations: LocIter,
         context: Ctx,
         path: Option<String>,
     },
@@ -97,7 +98,7 @@ impl Request {
     pub fn write(
         tid: usize,
         data: Box<[u8; 16_384]>,
-        locations: Vec<Location>,
+        locations: LocIter,
         path: Option<String>,
     ) -> Request {
         Request::Write {
@@ -111,7 +112,7 @@ impl Request {
     pub fn read(
         context: Ctx,
         data: Box<[u8; 16_384]>,
-        locations: Vec<Location>,
+        locations: LocIter,
         path: Option<String>,
     ) -> Request {
         Request::Read {
@@ -198,7 +199,7 @@ impl Request {
             } => {
                 for loc in locations {
                     let mut pb = path::PathBuf::from(path.as_ref().unwrap_or(dd));
-                    pb.push(&loc.file);
+                    pb.push(loc.path());
                     fc.get_file(&pb, |f| {
                         f.seek(SeekFrom::Start(loc.offset))?;
                         f.write_all(&data[loc.start..loc.end])?;
@@ -215,7 +216,7 @@ impl Request {
             } => {
                 for loc in locations {
                     let mut pb = path::PathBuf::from(path.as_ref().unwrap_or(dd));
-                    pb.push(&loc.file);
+                    pb.push(loc.path());
                     fc.get_file(&pb, |f| {
                         f.seek(SeekFrom::Start(loc.offset))?;
                         f.read_exact(&mut data[loc.start..loc.end])?;
@@ -308,14 +309,14 @@ impl Request {
                 {
                     let mut valid = true;
                     let mut ctx = sha1::Sha1::new();
-                    let locs = info.piece_disk_locs(idx);
+                    let locs = Info::piece_disk_locs(&info, idx);
                     let mut pos = 0;
                     for loc in locs {
-                        if loc.file != cf {
+                        if loc.path() != cf {
                             pb = path::PathBuf::from(path.as_ref().unwrap_or(dd));
-                            pb.push(&loc.file);
+                            pb.push(loc.path());
                             f = fs::OpenOptions::new().read(true).open(&pb);
-                            cf = loc.file.clone();
+                            cf = loc.path().to_owned();
                         }
                         // Because this is pausable/resumable, we need to seek to the proper
                         // file position.
@@ -474,13 +475,31 @@ impl fmt::Debug for Request {
 }
 
 impl Location {
-    pub fn new(file: PathBuf, offset: u64, start: u64, end: u64) -> Location {
+    pub fn new(file: usize, offset: u64, start: u64, end: u64, info: Arc<Info>) -> Location {
         Location {
             file,
             offset,
             start: start as usize,
             end: end as usize,
+            info,
         }
+    }
+
+    pub fn path(&self) -> &Path {
+        &self.info.files[self.file].path
+    }
+}
+
+impl fmt::Debug for Location {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+            f,
+            "disk::Location {{ file: {}, off: {}, s: {}, e: {} }}",
+            self.file,
+            self.offset,
+            self.start,
+            self.end
+        )
     }
 }
 
@@ -516,7 +535,6 @@ impl fmt::Debug for Response {
         write!(f, "disk::Response")
     }
 }
-
 
 impl Ctx {
     pub fn new(pid: usize, tid: usize, idx: u32, begin: u32, length: u32) -> Ctx {
