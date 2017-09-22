@@ -330,54 +330,6 @@ impl Info {
         let len = info.piece_len(index);
         LocIter::new(info.clone(), index, 0, len)
     }
-
-    /*
-    /// Calculates the file offsets for a given index, begin, and block length.
-    fn calc_disk_locs(&self, index: u32, begin: u32, len: u32) -> LocIter {
-        let mut len = u64::from(len);
-        // The absolute byte offset where we start processing data.
-        let mut cur_start = u64::from(index) * u64::from(self.piece_len) + u64::from(begin);
-        // Current index of the data block we're writing
-        let mut data_start = 0;
-        // The current file end length.
-        let mut fidx = 0;
-        // Iterate over all file lengths, if we find any which end a bigger
-        // idx than cur_start, write from cur_start..cur_start + file_write_len for that file
-        // and continue if we're now at the end of the file.
-        let mut locs = Vec::new();
-        for f in &self.files {
-            fidx += f.length;
-            if cur_start < fidx {
-                let file_write_len = cmp::min(fidx - cur_start, len);
-                let offset = cur_start - (fidx - f.length);
-                if file_write_len == len {
-                    // The file is longer than our len, just write to it,
-                    // exit loop
-                    locs.push(disk::Location::new(
-                        f.path.clone(),
-                        offset,
-                        data_start,
-                        data_start + file_write_len,
-                    ));
-                    break;
-                } else {
-                    // Write to the end of file, continue
-                    locs.push(disk::Location::new(
-                        f.path,
-                        offset,
-                        data_start,
-                        data_start + file_write_len,
-                    ));
-                    len -= file_write_len;
-                    cur_start += file_write_len;
-                    data_start += file_write_len;
-                }
-            }
-        }
-        locs
-        unimplemented!();
-    }
-        */
 }
 
 pub struct LocIter {
