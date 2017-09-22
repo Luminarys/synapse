@@ -1,6 +1,7 @@
 use std::path::PathBuf;
-use std::collections::{HashMap, BTreeMap};
-use std::{fmt, cmp};
+use std::collections::BTreeMap;
+use std::{fmt, cmp, mem};
+use std::sync::Arc;
 
 use base32;
 use url::Url;
@@ -18,7 +19,6 @@ pub struct Info {
     pub hashes: Vec<Vec<u8>>,
     pub hash: [u8; 20],
     pub files: Vec<File>,
-    pub file_idx: HashMap<PathBuf, usize>,
     pub private: bool,
     pub be_name: Option<Vec<u8>>,
 }
@@ -122,7 +122,6 @@ impl Info {
             hashes: vec![],
             hash,
             files: vec![],
-            file_idx: HashMap::new(),
             private: false,
             be_name: None,
         })
@@ -244,10 +243,6 @@ impl Info {
                     unreachable!()
                 };
 
-                let mut file_idx = HashMap::new();
-                for (i, file) in files.iter().enumerate() {
-                    file_idx.insert(file.path.clone(), i);
-                }
                 let total_len = files.iter().map(|f| f.length).sum();
                 Ok(Info {
                     name,
@@ -256,7 +251,6 @@ impl Info {
                     hashes,
                     hash,
                     files,
-                    file_idx,
                     total_len,
                     private,
                     be_name,
@@ -274,7 +268,6 @@ impl Info {
             hashes: vec![vec![0u8]; pieces],
             hash: [0u8; 20],
             files: vec![],
-            file_idx: HashMap::new(),
             private: false,
             be_name: None,
         }
@@ -290,7 +283,6 @@ impl Info {
             hashes: vec![vec![0u8]; pieces as usize],
             hash: [0u8; 20],
             files: vec![],
-            file_idx: HashMap::new(),
             private: false,
             be_name: None,
         }
@@ -328,19 +320,20 @@ impl Info {
     }
 
     /// Calculates the file offsets for a given block at index/begin
-    pub fn block_disk_locs(&self, index: u32, begin: u32) -> Vec<disk::Location> {
-        let len = self.block_len(index, begin);
-        self.calc_disk_locs(index, begin, len)
+    pub fn block_disk_locs(info: &Arc<Info>, index: u32, begin: u32) -> LocIter {
+        let len = info.block_len(index, begin);
+        LocIter::new(info.clone(), index, begin, len)
     }
 
     /// Calculates the file offsets for a given piece at index
-    pub fn piece_disk_locs(&self, index: u32) -> Vec<disk::Location> {
-        let len = self.piece_len(index);
-        self.calc_disk_locs(index, 0, len)
+    pub fn piece_disk_locs(info: &Arc<Info>, index: u32) -> LocIter {
+        let len = info.piece_len(index);
+        LocIter::new(info.clone(), index, 0, len)
     }
 
+    /*
     /// Calculates the file offsets for a given index, begin, and block length.
-    fn calc_disk_locs(&self, index: u32, begin: u32, len: u32) -> Vec<disk::Location> {
+    fn calc_disk_locs(&self, index: u32, begin: u32, len: u32) -> LocIter {
         let mut len = u64::from(len);
         // The absolute byte offset where we start processing data.
         let mut cur_start = u64::from(index) * u64::from(self.piece_len) + u64::from(begin);
@@ -370,7 +363,7 @@ impl Info {
                 } else {
                     // Write to the end of file, continue
                     locs.push(disk::Location::new(
-                        f.path.clone(),
+                        f.path,
                         offset,
                         data_start,
                         data_start + file_write_len,
@@ -382,6 +375,124 @@ impl Info {
             }
         }
         locs
+        unimplemented!();
+    }
+        */
+}
+
+pub struct LocIter {
+    info: Arc<Info>,
+    priorities: Option<Vec<u8>>,
+    state: LocIterState,
+}
+
+enum LocIterState {
+    P(LocIterPos),
+    Done,
+}
+
+struct LocIterPos {
+    len: u64,
+    cur_start: u64,
+    data_start: u64,
+    fidx: u64,
+    file: usize,
+}
+
+impl LocIter {
+    pub fn new(info: Arc<Info>, index: u32, begin: u32, len: u32) -> LocIter {
+        let len = u64::from(len);
+        // The absolute byte offset where we start processing data.
+        let cur_start = u64::from(index) * u64::from(info.piece_len) + u64::from(begin);
+        // The current file end length.
+        let mut fidx = 0;
+        let mut file = 0;
+
+        for (i, f) in info.files.iter().enumerate() {
+            fidx += f.length;
+            file += 1;
+            if cur_start < fidx {
+                file = i;
+                break;
+            }
+        }
+
+        let p = LocIterPos {
+            len,
+            cur_start,
+            data_start: 0,
+            fidx,
+            file,
+        };
+        LocIter {
+            info,
+            state: LocIterState::P(p),
+            priorities: None,
+        }
+    }
+
+    pub fn set_priorities(&mut self, priorities: Vec<u8>) {
+        debug_assert!(priorities.len() == self.info.files.len());
+        self.priorities = Some(priorities);
+    }
+}
+
+impl Iterator for LocIter {
+    type Item = disk::Location;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match mem::replace(&mut self.state, LocIterState::Done) {
+            LocIterState::P(mut p) => {
+                let f_len = self.info.files[p.file].length;
+                let file_write_len = cmp::min(p.fidx - p.cur_start, p.len);
+                let offset = p.cur_start - (p.fidx - f_len);
+                if file_write_len == p.len {
+                    if self.priorities
+                        .as_ref()
+                        .map(|pri| pri[p.file] == 0)
+                        .unwrap_or(false)
+                    {
+                        return None;
+                    }
+                    // The file is longer than our len, just write to it,
+                    // exit loop
+                    Some(disk::Location::new(
+                        p.file,
+                        offset,
+                        p.data_start,
+                        p.data_start + file_write_len,
+                        self.info.clone(),
+                    ))
+                } else {
+                    // Write to the end of file, continue
+                    let res = disk::Location::new(
+                        p.file,
+                        offset,
+                        p.data_start,
+                        p.data_start + file_write_len,
+                        self.info.clone(),
+                    );
+                    p.len -= file_write_len;
+                    p.cur_start += file_write_len;
+                    p.data_start += file_write_len;
+                    p.file += 1;
+                    p.fidx += self.info.files[p.file].length;
+                    // TODO: Think about if stack overflow is a concern here
+                    if self.priorities
+                        .as_ref()
+                        .map(|pri| pri[p.file] == 0)
+                        .unwrap_or(false)
+                    {
+                        self.state = LocIterState::P(p);
+                        self.next()
+                    } else {
+                        self.state = LocIterState::P(p);
+                        Some(res)
+                    }
+                }
+            }
+            LocIterState::Done => None,
+        }
     }
 }
 

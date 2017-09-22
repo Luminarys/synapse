@@ -13,7 +13,7 @@ use chrono::{DateTime, Utc};
 use bincode;
 
 pub use self::bitfield::Bitfield;
-pub use self::info::Info;
+pub use self::info::{Info, LocIter};
 pub use self::peer::{Peer, PeerConn};
 pub use self::peer::Message;
 
@@ -429,8 +429,8 @@ impl<T: cio::CIO> Torrent<T> {
                 // refer to files which aren't being downloaded(pri. 1)
                 invalid.retain(|i| {
                     self.wanted.has_bit(u64::from(*i)) &&
-                        !self.info.piece_disk_locs(*i).into_iter().any(|l| {
-                            self.priorities[self.info.file_idx[&l.file]] == 0
+                        !Info::piece_disk_locs(&self.info, *i).into_iter().any(|l| {
+                            self.priorities[l.file] == 0
                         })
                 });
                 if invalid.is_empty() {
@@ -1047,9 +1047,9 @@ impl<T: cio::CIO> Torrent<T> {
                 self.priorities[i] = priority;
                 if priority == 0 {
                     for p in 0..self.info.pieces() {
-                        if self.info.piece_disk_locs(p).into_iter().all(
-                            |l| l.file == f.path,
-                        )
+                        if Info::piece_disk_locs(&self.info, p).into_iter().all(|l| {
+                            l.path() == f.path
+                        })
                         {
                             self.wanted.unset_bit(u64::from(p));
                         }
@@ -1139,21 +1139,24 @@ impl<T: cio::CIO> Torrent<T> {
             }
         }
 
-        let mut files = MHashMap::default();
-        for f in &self.info.files {
-            files.insert(f.path.clone(), (0, f.length));
+        let mut files = Vec::new();
+        for f in self.info.files.iter() {
+            files.push((0, f.length));
         }
 
         for p in self.pieces.iter() {
-            for loc in self.info.piece_disk_locs(p as u32) {
-                files.get_mut(&loc.file).unwrap().0 += loc.end - loc.start;
+            for loc in Info::piece_disk_locs(&self.info, p as u32) {
+                files[loc.file].0 += loc.end - loc.start;
             }
         }
 
-        for (i, (p, d)) in files.into_iter().enumerate() {
-            let id = util::file_rpc_id(&self.info.hash, p.as_path().to_string_lossy().as_ref());
+        for (i, (done, total)) in files.into_iter().enumerate() {
+            let id = util::file_rpc_id(
+                &self.info.hash,
+                self.info.files[i].path.to_string_lossy().as_ref(),
+            );
             let progress = if self.priorities[i] != 0 {
-                d.0 as f32 / d.1 as f32
+                done as f32 / total as f32
             } else {
                 0.
             };
@@ -1163,8 +1166,8 @@ impl<T: cio::CIO> Torrent<T> {
                 availability: 0.,
                 progress,
                 priority: self.priorities[i],
-                path: p.as_path().to_string_lossy().into_owned(),
-                size: d.1,
+                path: self.info.files[i].path.to_string_lossy().into_owned(),
+                size: total,
                 ..Default::default()
             }))
         }
@@ -1249,8 +1252,8 @@ impl<T: cio::CIO> Torrent<T> {
     /// piece offset begin, piece length of len, and data bytes.
     /// The disk send handle is also provided.
     fn write_piece(&mut self, index: u32, begin: u32, data: Box<[u8; 16_384]>) {
-        let mut locs = self.info.block_disk_locs(index, begin);
-        locs.retain(|l| self.priorities[self.info.file_idx[&l.file]] != 0);
+        let mut locs = Info::block_disk_locs(&self.info, index, begin);
+        locs.set_priorities(self.priorities.clone());
         self.cio.msg_disk(disk::Request::write(
             self.id,
             data,
@@ -1261,7 +1264,7 @@ impl<T: cio::CIO> Torrent<T> {
 
     /// Issues a read request of the given torrent
     fn request_read(&mut self, id: usize, index: u32, begin: u32, data: Box<[u8; 16_384]>) {
-        let locs = self.info.block_disk_locs(index, begin);
+        let locs = Info::block_disk_locs(&self.info, index, begin);
         let len = self.info.block_len(index, begin);
         let ctx = disk::Ctx::new(id, self.id, index, begin, len);
         self.cio.msg_disk(disk::Request::read(
@@ -1426,8 +1429,8 @@ impl<T: cio::CIO> Torrent<T> {
             }
 
             for p in self.pieces.iter() {
-                for loc in self.info.piece_disk_locs(p as u32) {
-                    if let Some(f) = files.get_mut(&loc.file) {
+                for loc in Info::piece_disk_locs(&self.info, p as u32) {
+                    if let Some(f) = files.get_mut(loc.path()) {
                         f.0 += loc.end - loc.start;
                     }
                 }

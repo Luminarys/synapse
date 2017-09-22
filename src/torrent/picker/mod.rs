@@ -274,10 +274,8 @@ impl Picker {
         // If a piece is completely in a file, just assign that pri.
         // Otherwise mark it as the higher pri piece
         for p in 0..self.info.pieces() {
-            let locs = self.info.piece_disk_locs(p);
-            let mp = locs.iter().fold(0, |mp, loc| {
-                cmp::max(mp, pri[self.info.file_idx[&loc.file]] as usize)
-            });
+            let locs = Info::piece_disk_locs(&self.info, p);
+            let mp = locs.fold(0, |mp, loc| cmp::max(mp, pri[loc.file] as usize));
             piece_map.insert(p, mp);
         }
 
