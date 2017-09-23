@@ -1,5 +1,6 @@
 use std::{fs, path, io};
-use std::io::{Seek, SeekFrom, Write};
+#[cfg(target_pointer_width = "32")]
+use std::io::{Seek, SeekFrom, Read, Write};
 
 use memmap::{Mmap, Protection};
 
@@ -52,6 +53,7 @@ impl FileCache {
         path: &path::Path,
         offset: u64,
         len: usize,
+        read: bool,
         mut f: F,
     ) -> io::Result<R> {
         self.ensure_exists(path)?;
@@ -66,10 +68,15 @@ impl FileCache {
                     Mmap::open_with_offset(&file, Protection::ReadWrite, offset as usize, len)?;
                 Ok(f(unsafe { mmap.as_mut_slice() }))
             } else {
-                let data = unsafe { &mut self.fallback.as_mut_slice()[0..len] };
-                let res = Ok(f(data));
                 file.seek(SeekFrom::Start(offset))?;
-                file.write_all(&data)?;
+                let data = unsafe { &mut self.fallback.as_mut_slice()[0..len] };
+                if read {
+                    file.read_exact(data)?;
+                }
+                let res = Ok(f(data));
+                if !read {
+                    file.write_all(&data)?;
+                }
                 res
             }
         }

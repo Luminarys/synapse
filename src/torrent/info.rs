@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 use std::collections::BTreeMap;
-use std::{fmt, cmp, mem};
+use std::{fmt, fs, cmp, mem, io, path};
 use std::sync::Arc;
 
 use base32;
@@ -78,6 +78,17 @@ impl File {
             _ => Err("File dict must contain length and name or path"),
         }
     }
+
+    fn create(&self, path: &path::Path) -> io::Result<()> {
+        let mut pb = path::PathBuf::from(path);
+        pb.push(&self.path);
+        if let Some(parent) = pb.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        let f = fs::OpenOptions::new().write(true).create(true).open(&pb)?;
+        f.set_len(self.length as u64)?;
+        Ok(())
+    }
 }
 
 impl Info {
@@ -129,6 +140,13 @@ impl Info {
 
     pub fn complete(&self) -> bool {
         !self.hashes.is_empty()
+    }
+
+    pub fn create_files(&self, path: &path::Path) -> io::Result<()> {
+        for file in self.files.iter() {
+            file.create(path)?;
+        }
+        Ok(())
     }
 
     pub fn to_bencode(&self) -> BEncode {

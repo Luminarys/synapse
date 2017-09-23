@@ -926,6 +926,11 @@ impl<T: cio::CIO> Torrent<T> {
 
     fn start(&mut self) {
         debug!("Starting torrent");
+        self.cio.msg_disk(disk::Request::create(
+            self.id,
+            self.info.clone(),
+            self.path.clone(),
+        ));
         // Update RPC of the torrent, tracker, files, and peers
         let mut resources = Vec::new();
         resources.push(self.rpc_info());

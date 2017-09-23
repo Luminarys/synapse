@@ -22,6 +22,11 @@ pub struct Location {
 }
 
 pub enum Request {
+    Create {
+        tid: usize,
+        path: Option<String>,
+        info: Arc<Info>,
+    },
     Write {
         tid: usize,
         data: Box<[u8; 16_384]>,
@@ -95,6 +100,10 @@ pub enum JobRes {
 }
 
 impl Request {
+    pub fn create(tid: usize, info: Arc<Info>, path: Option<String>) -> Request {
+        Request::Create { tid, info, path }
+    }
+
     pub fn write(
         tid: usize,
         data: Box<[u8; 16_384]>,
@@ -191,6 +200,13 @@ impl Request {
                     }
                 }
             }
+            Request::Create { info, path, .. } => {
+                if let Some(p) = path {
+                    info.create_files(&path::Path::new(&p))?;
+                } else {
+                    info.create_files(&path::Path::new(&dd))?;
+                }
+            }
             Request::Write {
                 data,
                 locations,
@@ -204,6 +220,7 @@ impl Request {
                         &pb,
                         loc.offset,
                         (loc.end - loc.start),
+                        false,
                         |b| { b.copy_from_slice(&data[loc.start..loc.end]); },
                     )?;
                 }
@@ -218,11 +235,15 @@ impl Request {
                 for loc in locations {
                     let mut pb = path::PathBuf::from(path.as_ref().unwrap_or(dd));
                     pb.push(loc.path());
-                    fc.get_file(&pb, |f| {
-                        f.seek(SeekFrom::Start(loc.offset))?;
-                        f.read_exact(&mut data[loc.start..loc.end])?;
-                        Ok(())
-                    })?;
+                    fc.get_file_range(
+                        &pb,
+                        loc.offset,
+                        (loc.end - loc.start),
+                        true,
+                        |b| {
+                            (&mut data[loc.start..loc.end]).copy_from_slice(b);
+                        },
+                    )?;
                 }
                 let data = Arc::new(data);
                 return Ok(JobRes::Resp(Response::read(context, data)));
@@ -460,6 +481,7 @@ impl Request {
             Request::Validate { tid, .. } |
             Request::Delete { tid, .. } |
             Request::Move { tid, .. } |
+            Request::Create { tid, .. } |
             Request::Write { tid, .. } => Some(tid),
             Request::Read { ref context, .. } => Some(context.tid),
             Request::WriteFile { .. } |
