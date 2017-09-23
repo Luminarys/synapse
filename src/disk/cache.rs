@@ -91,14 +91,15 @@ impl FileCache {
     }
 
     pub fn remove_file(&mut self, path: &path::Path) {
-        self.files.remove(path);
+        #[cfg(target_pointer_width = "32")] self.files.remove(path);
+        #[cfg(target_pointer_width = "64")] self.files.remove(path).map(|f| f.1.flush_async().ok());
     }
 
     fn ensure_exists(&mut self, path: &path::Path) -> io::Result<()> {
         if !self.files.contains_key(path) {
             if self.files.len() >= CONFIG.net.max_open_files {
                 let removal = self.files.iter().map(|(id, _)| id.clone()).next().unwrap();
-                self.files.remove(&removal);
+                self.remove_file(&removal);
             }
             fs::create_dir_all(path.parent().unwrap())?;
             let file = fs::OpenOptions::new()
@@ -116,5 +117,15 @@ impl FileCache {
             }
         }
         Ok(())
+    }
+}
+
+impl Drop for FileCache {
+    fn drop(&mut self) {
+        #[cfg(target_pointer_width = "64")]
+        self.files
+            .drain()
+            .map(|(_, f)| f.1.flush_async().ok())
+            .last();
     }
 }
