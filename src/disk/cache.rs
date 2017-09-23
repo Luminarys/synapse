@@ -1,8 +1,11 @@
 use std::{fs, path, io};
+use std::io::{Seek, SeekFrom, Write};
 
 use memmap::{Mmap, Protection};
 
 use CONFIG;
+#[cfg(target_pointer_width = "32")]
+use super::MAX_CHAINED_OPS;
 use util::MHashMap;
 
 /// Holds a file and mmap cache. Because 32 bit systems
@@ -10,13 +13,20 @@ use util::MHashMap;
 pub struct FileCache {
     #[cfg(target_pointer_width = "32")]
     files: MHashMap<path::PathBuf, fs::File>,
+    #[cfg(target_pointer_width = "32")]
+    fallback: Mmap,
     #[cfg(target_pointer_width = "64")]
     files: MHashMap<path::PathBuf, (fs::File, Mmap)>,
 }
 
 impl FileCache {
     pub fn new() -> FileCache {
-        FileCache { files: MHashMap::default() }
+        FileCache {
+            files: MHashMap::default(),
+            #[cfg(target_pointer_width = "32")]
+            fallback: Mmap::anonymous(MAX_CHAINED_OPS * 16_384, Protection::ReadWrite)
+                .expect("mmap failed!"),
+        }
     }
 
     pub fn get_file<R, F: FnMut(&mut fs::File) -> io::Result<R>>(
@@ -40,7 +50,7 @@ impl FileCache {
     pub fn get_file_range<R, F: FnMut(&mut [u8]) -> R>(
         &mut self,
         path: &path::Path,
-        offset: usize,
+        offset: u64,
         len: usize,
         mut f: F,
     ) -> io::Result<R> {
@@ -48,15 +58,27 @@ impl FileCache {
 
         #[cfg(target_pointer_width = "32")]
         {
-            let file = f(self.files.get_mut(path).unwrap());
-            let mmap = Mmap::open_with_offset(&file, Protection::ReadWrite, offset, len)?;
-            Ok(f(unsafe { mmap.as_mut_slice() }))
+            let file = self.files.get_mut(path).unwrap();
+            // TODO: Consider more portable solution based on setting _FILE_OFFSET_BITS=64 or
+            // mmap64 rather than this.
+            if offset < ::std::usize::MAX as u64 {
+                let mut mmap =
+                    Mmap::open_with_offset(&file, Protection::ReadWrite, offset as usize, len)?;
+                Ok(f(unsafe { mmap.as_mut_slice() }))
+            } else {
+                let data = unsafe { &mut self.fallback.as_mut_slice()[0..len] };
+                let res = Ok(f(data));
+                file.seek(SeekFrom::Start(offset))?;
+                file.write_all(&data)?;
+                res
+            }
         }
 
         #[cfg(target_pointer_width = "64")]
         {
             Ok(f(unsafe {
-                &mut self.files.get_mut(path).unwrap().1.as_mut_slice()[offset..offset + len]
+                &mut self.files.get_mut(path).unwrap().1.as_mut_slice()[offset as usize..
+                                                                            offset as usize + len]
             }))
         }
     }

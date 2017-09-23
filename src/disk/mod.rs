@@ -19,6 +19,7 @@ use util::UHashMap;
 const POLL_INT_MS: usize = 1000;
 const JOB_TIME_SLICE: u64 = 150;
 const EXDEV: i32 = 18;
+const MAX_CHAINED_OPS: usize = 128;
 
 pub struct Disk {
     poll: amy::Poller,

@@ -200,11 +200,12 @@ impl Request {
                 for loc in locations {
                     let mut pb = path::PathBuf::from(path.as_ref().unwrap_or(dd));
                     pb.push(loc.path());
-                    fc.get_file(&pb, |f| {
-                        f.seek(SeekFrom::Start(loc.offset))?;
-                        f.write_all(&data[loc.start..loc.end])?;
-                        Ok(())
-                    })?;
+                    fc.get_file_range(
+                        &pb,
+                        loc.offset,
+                        (loc.end - loc.start),
+                        |b| { b.copy_from_slice(&data[loc.start..loc.end]); },
+                    )?;
                 }
             }
             Request::Read {
