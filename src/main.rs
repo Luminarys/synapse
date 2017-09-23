@@ -29,6 +29,7 @@ extern crate openssl;
 extern crate fs_extra;
 extern crate fnv;
 extern crate metrohash;
+extern crate memmap;
 
 // TODO: Get rid of this
 extern crate num;
