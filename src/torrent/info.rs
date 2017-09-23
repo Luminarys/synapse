@@ -9,6 +9,7 @@ use url::Url;
 use disk;
 use bencode::BEncode;
 use util::{hash_to_id, id_to_hash, sha1_hash};
+use util::native::fallocate;
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct Info {
@@ -86,7 +87,7 @@ impl File {
             fs::create_dir_all(parent)?;
         }
         let f = fs::OpenOptions::new().write(true).create(true).open(&pb)?;
-        f.set_len(self.length as u64)?;
+        fallocate(&f, self.length)?;
         Ok(())
     }
 }

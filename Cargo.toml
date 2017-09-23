@@ -2,9 +2,13 @@
 name = "synapse"
 version = "0.1.0"
 authors = ["Luminarys <postmaster@gensok.io>"]
+build = "build.rs"
 
 [workspace]
 members = ["sycli", "rpc"]
+
+[build-dependencies]
+cc = "1.0"
 
 [dependencies]
 synapse-rpc = { path = "rpc" }
@@ -32,6 +36,7 @@ fs_extra = "1.0"
 fnv = "1.0"
 metrohash = "1.0"
 memmap = "0.5"
+libc = "0.2"
 
 [dependencies.amy]
 version = "0.8.0"

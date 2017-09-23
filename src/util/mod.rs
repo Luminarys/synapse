@@ -1,3 +1,5 @@
+pub mod native;
+
 use std::io;
 use std::fmt::Write as FWrite;
 use std::net::{SocketAddr, Ipv4Addr, SocketAddrV4};
