@@ -9,8 +9,8 @@ use sha1;
 use amy;
 
 use super::{EXDEV, JOB_TIME_SLICE, FileCache};
-use torrent::{Info, LocIter};
-use util::{hash_to_id, io_err, awrite, IOR};
+use torrent::{Info, LocIter, PeerConn, Block};
+use util::{hash_to_id, io_err, awrite, IOR, FHashSet};
 use CONFIG;
 
 pub struct Location {
@@ -38,6 +38,20 @@ pub enum Request {
         locations: LocIter,
         context: Ctx,
         path: Option<String>,
+    },
+    BatchWrite {
+        tid: usize,
+        info: Arc<Info>,
+        path: Option<String>,
+        conn: PeerConn,
+        blocks: FHashSet<Block>,
+    },
+    BatchRead {
+        tid: usize,
+        info: Arc<Info>,
+        path: Option<String>,
+        conn: PeerConn,
+        blocks: FHashSet<Block>,
     },
     Serialize {
         tid: usize,
@@ -206,6 +220,12 @@ impl Request {
                 } else {
                     info.create_files(&path::Path::new(&dd))?;
                 }
+            }
+            Request::BatchRead { .. } => {
+                unimplemented!();
+            }
+            Request::BatchWrite { .. } => {
+                unimplemented!();
             }
             Request::Write {
                 data,
@@ -482,6 +502,8 @@ impl Request {
             Request::Delete { tid, .. } |
             Request::Move { tid, .. } |
             Request::Create { tid, .. } |
+            Request::BatchWrite { tid, .. } |
+            Request::BatchRead { tid, .. } |
             Request::Write { tid, .. } => Some(tid),
             Request::Read { ref context, .. } => Some(context.tid),
             Request::WriteFile { .. } |

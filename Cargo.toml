@@ -36,6 +36,7 @@ fs_extra = "1.0"
 fnv = "1.0"
 metrohash = "1.0"
 memmap = "0.5"
+vecio = "0.1"
 libc = "0.2"
 
 [dependencies.amy]

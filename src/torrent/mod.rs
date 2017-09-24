@@ -16,6 +16,7 @@ pub use self::bitfield::Bitfield;
 pub use self::info::{Info, LocIter};
 pub use self::peer::{Peer, PeerConn};
 pub use self::peer::Message;
+pub use self::picker::Block;
 
 use self::picker::Picker;
 use {rpc, disk, util, CONFIG, bencode, EXT_PROTO, UT_META_ID};
@@ -630,11 +631,11 @@ impl<T: cio::CIO> Torrent<T> {
 
                 // We already have this block, don't do anything with it, could happen
                 // from endgame
-                if self.picker.have_block(picker::Block::new(index, begin)) {
+                if self.picker.have_block(Block::new(index, begin)) {
                     return Ok(());
                 }
 
-                let pr = self.picker.completed(picker::Block::new(index, begin));
+                let pr = self.picker.completed(Block::new(index, begin));
                 let (piece_done, peers) = if let Ok(r) = pr {
                     r
                 } else {

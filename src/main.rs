@@ -31,6 +31,7 @@ extern crate fnv;
 extern crate metrohash;
 extern crate libc;
 extern crate memmap;
+extern crate vecio;
 
 // TODO: Get rid of this
 extern crate num;
