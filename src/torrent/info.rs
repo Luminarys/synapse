@@ -83,6 +83,9 @@ impl File {
     fn create(&self, path: &path::Path) -> io::Result<()> {
         let mut pb = path::PathBuf::from(path);
         pb.push(&self.path);
+        if pb.exists() {
+            return Ok(());
+        }
         if let Some(parent) = pb.parent() {
             fs::create_dir_all(parent)?;
         }
@@ -143,8 +146,11 @@ impl Info {
         !self.hashes.is_empty()
     }
 
-    pub fn create_files(&self, path: &path::Path) -> io::Result<()> {
-        for file in self.files.iter() {
+    pub fn create_files(&self, path: &path::Path, priorities: &[u8]) -> io::Result<()> {
+        for (_, file) in self.files.iter().enumerate().filter(
+            |&(i, _)| priorities[i] != 0,
+        )
+        {
             file.create(path)?;
         }
         Ok(())
@@ -353,7 +359,6 @@ impl Info {
 
 pub struct LocIter {
     info: Arc<Info>,
-    priorities: Option<Vec<u8>>,
     state: LocIterState,
 }
 
@@ -398,13 +403,7 @@ impl LocIter {
         LocIter {
             info,
             state: LocIterState::P(p),
-            priorities: None,
         }
-    }
-
-    pub fn set_priorities(&mut self, priorities: Vec<u8>) {
-        debug_assert!(priorities.len() == self.info.files.len());
-        self.priorities = Some(priorities);
     }
 }
 
@@ -418,13 +417,6 @@ impl Iterator for LocIter {
                 let file_write_len = cmp::min(p.fidx - p.cur_start, p.len);
                 let offset = p.cur_start - (p.fidx - f_len);
                 if file_write_len == p.len {
-                    if self.priorities
-                        .as_ref()
-                        .map(|pri| pri[p.file] == 0)
-                        .unwrap_or(false)
-                    {
-                        return None;
-                    }
                     // The file is longer than our len, just write to it,
                     // exit loop
                     Some(disk::Location::new(
@@ -449,17 +441,8 @@ impl Iterator for LocIter {
                     p.file += 1;
                     p.fidx += self.info.files[p.file].length;
                     // TODO: Think about if stack overflow is a concern here
-                    if self.priorities
-                        .as_ref()
-                        .map(|pri| pri[p.file] == 0)
-                        .unwrap_or(false)
-                    {
-                        self.state = LocIterState::P(p);
-                        self.next()
-                    } else {
-                        self.state = LocIterState::P(p);
-                        Some(res)
-                    }
+                    self.state = LocIterState::P(p);
+                    Some(res)
                 }
             }
             LocIterState::Done => None,

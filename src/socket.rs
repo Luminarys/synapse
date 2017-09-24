@@ -64,6 +64,10 @@ impl Socket {
             addr: addr,
         })
     }
+
+    pub fn peek(&self, buf: &mut [u8]) -> io::Result<usize> {
+        self.conn.peek(buf)
+    }
 }
 
 impl AsRawFd for Socket {

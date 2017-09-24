@@ -29,7 +29,7 @@ pub struct Picker {
     info: Arc<Info>,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Block {
     pub index: u32,
     pub offset: u32,

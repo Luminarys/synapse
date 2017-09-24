@@ -400,6 +400,9 @@ impl<T: cio::CIO> Torrent<T> {
 
     pub fn handle_disk_resp(&mut self, resp: disk::Response) {
         match resp {
+            disk::Response::BatchWrite { .. } => {
+                unimplemented!();
+            }
             disk::Response::Read { context, data } => {
                 trace!("Received piece from disk, uploading!");
                 if let Some(peer) = self.peers.get_mut(&context.pid) {
@@ -927,11 +930,6 @@ impl<T: cio::CIO> Torrent<T> {
 
     fn start(&mut self) {
         debug!("Starting torrent");
-        self.cio.msg_disk(disk::Request::create(
-            self.id,
-            self.info.clone(),
-            self.path.clone(),
-        ));
         // Update RPC of the torrent, tracker, files, and peers
         let mut resources = Vec::new();
         resources.push(self.rpc_info());
@@ -950,7 +948,14 @@ impl<T: cio::CIO> Torrent<T> {
         if self.status.stopped() {
             return;
         }
-
+        if self.status.leeching() {
+            self.cio.msg_disk(disk::Request::create(
+                self.id,
+                self.info.clone(),
+                self.path.clone(),
+                self.priorities.clone(),
+            ));
+        }
         let req = tracker::Request::started(self);
         self.cio.msg_trk(req);
         // TODO: Consider repeatedly sending out these during annoucne intervals
@@ -1071,6 +1076,12 @@ impl<T: cio::CIO> Torrent<T> {
                 priority,
             },
         ]));
+        self.cio.msg_disk(disk::Request::create(
+            self.id,
+            self.info.clone(),
+            self.path.clone(),
+            self.priorities.clone(),
+        ));
     }
 
     fn rpc_info(&self) -> resource::Resource {
@@ -1259,7 +1270,6 @@ impl<T: cio::CIO> Torrent<T> {
     /// The disk send handle is also provided.
     fn write_piece(&mut self, index: u32, begin: u32, data: Box<[u8; 16_384]>) {
         let mut locs = Info::block_disk_locs(&self.info, index, begin);
-        locs.set_priorities(self.priorities.clone());
         self.cio.msg_disk(disk::Request::write(
             self.id,
             data,

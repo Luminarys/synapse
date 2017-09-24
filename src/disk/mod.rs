@@ -80,6 +80,7 @@ impl Disk {
         let mut rotate = 1;
         while let Some(j) = self.active.pop_front() {
             let tid = j.tid();
+            let pid = j.pid();
             match j.execute(&mut self.files) {
                 Ok(JobRes::Resp(r)) => {
                     self.ch.send(r).ok();
@@ -97,7 +98,7 @@ impl Disk {
                 Ok(JobRes::Done) => {}
                 Err(e) => {
                     if let Some(t) = tid {
-                        self.ch.send(Response::error(t, e)).ok();
+                        self.ch.send(Response::error(t, pid, e)).ok();
                     } else {
                         error!("Disk job failed: {}", e);
                     }
@@ -132,9 +133,10 @@ impl Disk {
                 Ok(mut r) => {
                     trace!("Handling disk job!");
                     let tid = r.tid();
+                    let pid = r.pid();
                     if let Err(e) = r.register(&self.reg) {
                         if let Some(t) = tid {
-                            self.ch.send(Response::error(t, e)).ok();
+                            self.ch.send(Response::error(t, pid, e)).ok();
                         }
                     }
                     match r.execute(&mut self.files) {
@@ -150,7 +152,7 @@ impl Disk {
                         Ok(JobRes::Done) => {}
                         Err(e) => {
                             if let Some(t) = tid {
-                                self.ch.send(Response::error(t, e)).ok();
+                                self.ch.send(Response::error(t, pid, e)).ok();
                             }
                         }
                     }
