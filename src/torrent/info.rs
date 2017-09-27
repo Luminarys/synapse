@@ -416,6 +416,7 @@ impl Iterator for LocIter {
                 let f_len = self.info.files[p.file].length;
                 let file_write_len = cmp::min(p.fidx - p.cur_start, p.len);
                 let offset = p.cur_start - (p.fidx - f_len);
+                println!("fwl {}, pl {}", file_write_len, p.len);
                 if file_write_len == p.len {
                     // The file is longer than our len, just write to it,
                     // exit loop
@@ -490,5 +491,55 @@ mod tests {
         assert_eq!(info.piece_len(pieces), end as u32);
         assert_eq!(info.block_len(pieces, 0), 16_384);
         assert_eq!(info.block_len(pieces, 16_384), (end % 16_384) as u32);
+    }
+
+    #[test]
+    fn loc_iter_bounds() {
+        let mut info = Info::with_pieces(4);
+        info.files.push(File {
+            path: PathBuf::from(""),
+            length: 40000,
+        });
+        info.files.push(File {
+            path: PathBuf::from(""),
+            length: 10000,
+        });
+        info.total_len = 50000;
+        let info = Arc::new(info);
+        let mut locs = Info::block_disk_locs(&info, 0, 0);
+        let n = locs.next().unwrap();
+        assert_eq!(n.start, 0);
+        assert_eq!(n.end, 16384);
+        assert_eq!(n.file, 0);
+        assert_eq!(n.offset, 0);
+        assert_eq!(locs.next().is_none(), true);
+
+        let mut locs = Info::block_disk_locs(&info, 1, 0);
+        let n = locs.next().unwrap();
+        assert_eq!(n.start, 0);
+        assert_eq!(n.end, 16384);
+        assert_eq!(n.file, 0);
+        assert_eq!(n.offset, 16384);
+        assert_eq!(locs.next().is_none(), true);
+
+        let mut locs = Info::block_disk_locs(&info, 2, 0);
+        let n = locs.next().unwrap();
+        assert_eq!(n.start, 0);
+        assert_eq!(n.end, 7232);
+        assert_eq!(n.file, 0);
+        assert_eq!(n.offset, 16384 * 2);
+
+        let n = locs.next().unwrap();
+        assert_eq!(n.start, 7232);
+        assert_eq!(n.end, 16384);
+        assert_eq!(n.file, 1);
+        assert_eq!(n.offset, 0);
+
+        let mut locs = Info::block_disk_locs(&info, 3, 0);
+        let n = locs.next().unwrap();
+        assert_eq!(n.start, 0);
+        assert_eq!(n.end, 848);
+        assert_eq!(n.file, 1);
+        assert_eq!(n.offset, 16384 - 7232);
     }
 }
