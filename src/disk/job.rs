@@ -571,6 +571,9 @@ impl Request {
                                 }
                             }
                         })?;
+                        if r == 0 {
+                            return Ok(JobRes::Done);
+                        }
                         'write: loop {
                             // Need the mod here because after the first 16 KiBs complete
                             // no will be too big
