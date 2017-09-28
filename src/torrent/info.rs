@@ -416,7 +416,6 @@ impl Iterator for LocIter {
                 let f_len = self.info.files[p.file].length;
                 let file_write_len = cmp::min(p.fidx - p.cur_start, p.len);
                 let offset = p.cur_start - (p.fidx - f_len);
-                println!("fwl {}, pl {}", file_write_len, p.len);
                 if file_write_len == p.len {
                     // The file is longer than our len, just write to it,
                     // exit loop
