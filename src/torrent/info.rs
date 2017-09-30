@@ -222,14 +222,19 @@ impl Info {
                 )?;
                 let hashes = i.remove("pieces")
                     .and_then(|p| p.into_bytes())
-                    .map(|mut p| {
+                    .and_then(|mut p| {
                         let mut v = Vec::new();
-                        while !p.is_empty() {
-                            let remaining = p.split_off(20);
-                            v.push(p);
-                            p = remaining;
+                        let mut s = &p[..];
+                        while s.len() >= 20 {
+                            let mut next = vec![0u8; 20];
+                            next.clone_from_slice(&s[..20]);
+                            v.push(next);
+                            s = &s[20..];
                         }
-                        v
+                        if s.len() != 0 {
+                            return None;
+                        }
+                        Some(v)
                     })
                     .ok_or("Info must provide valid hashes")?;
 
