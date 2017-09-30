@@ -1,6 +1,11 @@
-use std::cmp;
-use std::fmt;
-use std::mem;
+#![no_std]
+
+mod simd;
+use simd::*;
+
+use core::cmp;
+use core::fmt;
+use core::mem;
 
 /// The length of a SHA1 digest in bytes
 pub const DIGEST_LENGTH: usize = 20;
@@ -148,7 +153,6 @@ impl Digest {
 }
 
 impl Blocks {
-    #[inline(always)]
     fn input<F>(&mut self, mut input: &[u8], mut f: F)
     where
         F: FnMut(&[u8; 64]),
@@ -178,66 +182,244 @@ impl Blocks {
     }
 }
 
-impl Sha1State {
-    #[inline(always)]
-    fn process(&mut self, block: &[u8; 64]) {
-        let mut words = [0u32; 80];
+// Round key constants
+const K0: u32 = 0x5A827999u32;
+const K1: u32 = 0x6ED9EBA1u32;
+const K2: u32 = 0x8F1BBCDCu32;
+const K3: u32 = 0xCA62C1D6u32;
 
+/// Not an intrinsic, but gets the first element of a vector.
+#[inline]
+pub fn sha1_first(w0: u32x4) -> u32 {
+    w0.0
+}
+
+/// Not an intrinsic, but adds a word to the first element of a vector.
+#[inline]
+pub fn sha1_first_add(e: u32, w0: u32x4) -> u32x4 {
+    let u32x4(a, b, c, d) = w0;
+    u32x4(e.wrapping_add(a), b, c, d)
+}
+
+/// Emulates `llvm.x86.sha1msg1` intrinsic.
+fn sha1msg1(a: u32x4, b: u32x4) -> u32x4 {
+    let u32x4(_, _, w2, w3) = a;
+    let u32x4(w4, w5, _, _) = b;
+    a ^ u32x4(w2, w3, w4, w5)
+}
+
+/// Emulates `llvm.x86.sha1msg2` intrinsic.
+fn sha1msg2(a: u32x4, b: u32x4) -> u32x4 {
+    let u32x4(x0, x1, x2, x3) = a;
+    let u32x4(_, w13, w14, w15) = b;
+
+    let w16 = (x0 ^ w13).rotate_left(1);
+    let w17 = (x1 ^ w14).rotate_left(1);
+    let w18 = (x2 ^ w15).rotate_left(1);
+    let w19 = (x3 ^ w16).rotate_left(1);
+
+    u32x4(w16, w17, w18, w19)
+}
+
+/// Performs 4 rounds of the message schedule update.
+pub fn sha1_schedule_x4(v0: u32x4, v1: u32x4, v2: u32x4, v3: u32x4) -> u32x4 {
+    sha1msg2(sha1msg1(v0, v1) ^ v2, v3)
+}
+
+/// Emulates `llvm.x86.sha1nexte` intrinsic.
+#[inline]
+pub fn sha1_first_half(abcd: u32x4, msg: u32x4) -> u32x4 {
+    sha1_first_add(sha1_first(abcd).rotate_left(30), msg)
+}
+
+/// Emulates `llvm.x86.sha1rnds4` intrinsic.
+/// Performs 4 rounds of the message block digest.
+pub fn sha1_digest_round_x4(abcd: u32x4, work: u32x4, i: i8) -> u32x4 {
+    const K0V: u32x4 = u32x4(K0, K0, K0, K0);
+    const K1V: u32x4 = u32x4(K1, K1, K1, K1);
+    const K2V: u32x4 = u32x4(K2, K2, K2, K2);
+    const K3V: u32x4 = u32x4(K3, K3, K3, K3);
+
+    match i {
+        0 => sha1rnds4c(abcd, work + K0V),
+        1 => sha1rnds4p(abcd, work + K1V),
+        2 => sha1rnds4m(abcd, work + K2V),
+        3 => sha1rnds4p(abcd, work + K3V),
+        _ => panic!("unknown icosaround index"),
+    }
+}
+
+/// Not an intrinsic, but helps emulate `llvm.x86.sha1rnds4` intrinsic.
+fn sha1rnds4c(abcd: u32x4, msg: u32x4) -> u32x4 {
+    let u32x4(mut a, mut b, mut c, mut d) = abcd;
+    let u32x4(t, u, v, w) = msg;
+    let mut e = 0u32;
+
+    macro_rules! bool3ary_202 {
+        ($a:expr, $b:expr, $c:expr) => (($c ^ ($a & ($b ^ $c))))
+    } // Choose, MD5F, SHA1C
+
+    e = e.wrapping_add(a.rotate_left(5))
+        .wrapping_add(bool3ary_202!(b, c, d))
+        .wrapping_add(t);
+    b = b.rotate_left(30);
+
+    d = d.wrapping_add(e.rotate_left(5))
+        .wrapping_add(bool3ary_202!(a, b, c))
+        .wrapping_add(u);
+    a = a.rotate_left(30);
+
+    c = c.wrapping_add(d.rotate_left(5))
+        .wrapping_add(bool3ary_202!(e, a, b))
+        .wrapping_add(v);
+    e = e.rotate_left(30);
+
+    b = b.wrapping_add(c.rotate_left(5))
+        .wrapping_add(bool3ary_202!(d, e, a))
+        .wrapping_add(w);
+    d = d.rotate_left(30);
+
+    u32x4(b, c, d, e)
+}
+
+/// Not an intrinsic, but helps emulate `llvm.x86.sha1rnds4` intrinsic.
+fn sha1rnds4p(abcd: u32x4, msg: u32x4) -> u32x4 {
+    let u32x4(mut a, mut b, mut c, mut d) = abcd;
+    let u32x4(t, u, v, w) = msg;
+    let mut e = 0u32;
+
+    macro_rules! bool3ary_150 {
+        ($a:expr, $b:expr, $c:expr) => (($a ^ $b ^ $c))
+    } // Parity, XOR, MD5H, SHA1P
+
+    e = e.wrapping_add(a.rotate_left(5))
+        .wrapping_add(bool3ary_150!(b, c, d))
+        .wrapping_add(t);
+    b = b.rotate_left(30);
+
+    d = d.wrapping_add(e.rotate_left(5))
+        .wrapping_add(bool3ary_150!(a, b, c))
+        .wrapping_add(u);
+    a = a.rotate_left(30);
+
+    c = c.wrapping_add(d.rotate_left(5))
+        .wrapping_add(bool3ary_150!(e, a, b))
+        .wrapping_add(v);
+    e = e.rotate_left(30);
+
+    b = b.wrapping_add(c.rotate_left(5))
+        .wrapping_add(bool3ary_150!(d, e, a))
+        .wrapping_add(w);
+    d = d.rotate_left(30);
+
+    u32x4(b, c, d, e)
+}
+
+/// Not an intrinsic, but helps emulate `llvm.x86.sha1rnds4` intrinsic.
+fn sha1rnds4m(abcd: u32x4, msg: u32x4) -> u32x4 {
+    let u32x4(mut a, mut b, mut c, mut d) = abcd;
+    let u32x4(t, u, v, w) = msg;
+    let mut e = 0u32;
+
+    macro_rules! bool3ary_232 {
+        ($a:expr, $b:expr, $c:expr) => (($a & $b) ^ ($a & $c) ^ ($b & $c))
+    } // Majority, SHA1M
+
+    e = e.wrapping_add(a.rotate_left(5))
+        .wrapping_add(bool3ary_232!(b, c, d))
+        .wrapping_add(t);
+    b = b.rotate_left(30);
+
+    d = d.wrapping_add(e.rotate_left(5))
+        .wrapping_add(bool3ary_232!(a, b, c))
+        .wrapping_add(u);
+    a = a.rotate_left(30);
+
+    c = c.wrapping_add(d.rotate_left(5))
+        .wrapping_add(bool3ary_232!(e, a, b))
+        .wrapping_add(v);
+    e = e.rotate_left(30);
+
+    b = b.wrapping_add(c.rotate_left(5))
+        .wrapping_add(bool3ary_232!(d, e, a))
+        .wrapping_add(w);
+    d = d.rotate_left(30);
+
+    u32x4(b, c, d, e)
+}
+
+impl Sha1State {
+    fn process(&mut self, block: &[u8; 64]) {
+        let mut words = [0u32; 16];
         for i in 0..16 {
             let off = i * 4;
             words[i] = (block[off + 3] as u32) | ((block[off + 2] as u32) << 8) |
                 ((block[off + 1] as u32) << 16) |
                 ((block[off] as u32) << 24);
         }
-
-        #[inline(always)]
-        fn ff(b: u32, c: u32, d: u32) -> u32 {
-            d ^ (b & (c ^ d))
-        }
-        #[inline(always)]
-        fn gg(b: u32, c: u32, d: u32) -> u32 {
-            b ^ c ^ d
-        }
-        #[inline(always)]
-        fn hh(b: u32, c: u32, d: u32) -> u32 {
-            (b & c) | (d & (b | c))
-        }
-        #[inline(always)]
-        fn ii(b: u32, c: u32, d: u32) -> u32 {
-            b ^ c ^ d
+        macro_rules! schedule {
+            ($v0:expr, $v1:expr, $v2:expr, $v3:expr) => (
+                sha1msg2(sha1msg1($v0, $v1) ^ $v2, $v3)
+            )
         }
 
-        for i in 16..80 {
-            let n = words[i - 3] ^ words[i - 8] ^ words[i - 14] ^ words[i - 16];
-            words[i] = n.rotate_left(1);
+        macro_rules! rounds4 {
+            ($h0:ident, $h1:ident, $wk:expr, $i:expr) => (
+                sha1_digest_round_x4($h0, sha1_first_half($h1, $wk), $i)
+            )
         }
 
-        let mut a = self.state[0];
-        let mut b = self.state[1];
-        let mut c = self.state[2];
-        let mut d = self.state[3];
-        let mut e = self.state[4];
+        // Rounds 0..20
+        let mut h0 = u32x4(self.state[0], self.state[1], self.state[2], self.state[3]);
+        let mut w0 = u32x4(words[0], words[1], words[2], words[3]);
+        let mut h1 = sha1_digest_round_x4(h0, sha1_first_add(self.state[4], w0), 0);
+        let mut w1 = u32x4(words[4], words[5], words[6], words[7]);
+        h0 = rounds4!(h1, h0, w1, 0);
+        let mut w2 = u32x4(words[8], words[9], words[10], words[11]);
+        h1 = rounds4!(h0, h1, w2, 0);
+        let mut w3 = u32x4(words[12], words[13], words[14], words[15]);
+        h0 = rounds4!(h1, h0, w3, 0);
+        let mut w4 = schedule!(w0, w1, w2, w3);
+        h1 = rounds4!(h0, h1, w4, 0);
 
-        for i in 0..80 {
-            let (f, k) = match i {
-                0...19 => (ff(b, c, d), 0x5a827999),
-                20...39 => (gg(b, c, d), 0x6ed9eba1),
-                40...59 => (hh(b, c, d), 0x8f1bbcdc),
-                60...79 => (ii(b, c, d), 0xca62c1d6),
-                _ => (0, 0),
-            };
+        // Rounds 20..40
+        w0 = schedule!(w1, w2, w3, w4);
+        h0 = rounds4!(h1, h0, w0, 1);
+        w1 = schedule!(w2, w3, w4, w0);
+        h1 = rounds4!(h0, h1, w1, 1);
+        w2 = schedule!(w3, w4, w0, w1);
+        h0 = rounds4!(h1, h0, w2, 1);
+        w3 = schedule!(w4, w0, w1, w2);
+        h1 = rounds4!(h0, h1, w3, 1);
+        w4 = schedule!(w0, w1, w2, w3);
+        h0 = rounds4!(h1, h0, w4, 1);
 
-            let tmp = a.rotate_left(5)
-                .wrapping_add(f)
-                .wrapping_add(e)
-                .wrapping_add(k)
-                .wrapping_add(words[i]);
-            e = d;
-            d = c;
-            c = b.rotate_left(30);
-            b = a;
-            a = tmp;
-        }
+        // Rounds 40..60
+        w0 = schedule!(w1, w2, w3, w4);
+        h1 = rounds4!(h0, h1, w0, 2);
+        w1 = schedule!(w2, w3, w4, w0);
+        h0 = rounds4!(h1, h0, w1, 2);
+        w2 = schedule!(w3, w4, w0, w1);
+        h1 = rounds4!(h0, h1, w2, 2);
+        w3 = schedule!(w4, w0, w1, w2);
+        h0 = rounds4!(h1, h0, w3, 2);
+        w4 = schedule!(w0, w1, w2, w3);
+        h1 = rounds4!(h0, h1, w4, 2);
+
+        // Rounds 60..80
+        w0 = schedule!(w1, w2, w3, w4);
+        h0 = rounds4!(h1, h0, w0, 3);
+        w1 = schedule!(w2, w3, w4, w0);
+        h1 = rounds4!(h0, h1, w1, 3);
+        w2 = schedule!(w3, w4, w0, w1);
+        h0 = rounds4!(h1, h0, w2, 3);
+        w3 = schedule!(w4, w0, w1, w2);
+        h1 = rounds4!(h0, h1, w3, 3);
+        w4 = schedule!(w0, w1, w2, w3);
+        h0 = rounds4!(h1, h0, w4, 3);
+
+        let e = sha1_first(h1).rotate_left(30);
+        let u32x4(a, b, c, d) = h0;
 
         self.state[0] = self.state[0].wrapping_add(a);
         self.state[1] = self.state[1].wrapping_add(b);
