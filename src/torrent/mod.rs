@@ -1132,7 +1132,6 @@ impl<T: cio::CIO> Torrent<T> {
 
     fn rpc_rel_info(&self) -> Vec<resource::Resource> {
         let mut r = Vec::new();
-        /*
         for i in 0..self.info.pieces() {
             let id = util::piece_rpc_id(&self.info.hash, u64::from(i));
             if self.pieces.has_bit(u64::from(i)) {
@@ -1155,7 +1154,6 @@ impl<T: cio::CIO> Torrent<T> {
                 }))
             }
         }
-        */
 
         let mut files = Vec::new();
         for f in self.info.files.iter() {
@@ -1209,10 +1207,10 @@ impl<T: cio::CIO> Torrent<T> {
     pub fn send_rpc_removal(&mut self) {
         let mut r = Vec::new();
         r.push(self.rpc_id());
-        //for i in 0..self.info.pieces() {
-        //    let id = util::piece_rpc_id(&self.info.hash, u64::from(i));
-        //    r.push(id)
-        //}
+        for i in 0..self.info.pieces() {
+            let id = util::piece_rpc_id(&self.info.hash, u64::from(i));
+            r.push(id)
+        }
         for f in &self.info.files {
             let id =
                 util::file_rpc_id(&self.info.hash, f.path.as_path().to_string_lossy().as_ref());
