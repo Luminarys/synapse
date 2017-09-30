@@ -184,9 +184,8 @@ impl<T: cio::CIO> Torrent<T> {
             t.validate();
         } else {
             t.announce_start();
+            t.set_status(status);
         }
-        t.set_status(status);
-
         t
     }
 
