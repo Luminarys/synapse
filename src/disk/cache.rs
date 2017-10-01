@@ -135,7 +135,7 @@ impl Drop for FileCache {
     fn drop(&mut self) {
         #[cfg(target_pointer_width = "32")]
         {
-            for file in self.files.drain() {
+            for (_, file) in self.files.drain() {
                 file.sync_all().ok();
             }
         }
