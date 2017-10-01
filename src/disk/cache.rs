@@ -141,7 +141,7 @@ impl Drop for FileCache {
         }
         #[cfg(target_pointer_width = "64")]
         {
-            for (_, mmap) in self.files.drain() {
+            for (_, (_, mmap)) in self.files.drain() {
                 mmap.flush().ok();
             }
         }
