@@ -1268,7 +1268,7 @@ impl<T: cio::CIO> Torrent<T> {
     /// piece offset begin, piece length of len, and data bytes.
     /// The disk send handle is also provided.
     fn write_piece(&mut self, index: u32, begin: u32, data: Box<[u8; 16_384]>) {
-        let mut locs = Info::block_disk_locs(&self.info, index, begin);
+        let locs = Info::block_disk_locs(&self.info, index, begin);
         self.cio.msg_disk(disk::Request::write(
             self.id,
             data,

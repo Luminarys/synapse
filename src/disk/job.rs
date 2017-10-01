@@ -400,6 +400,9 @@ impl Request {
                         false,
                         |b| { b.copy_from_slice(&data[loc.start..loc.end]); },
                     )?;
+                    if loc.end - loc.start != 16_384 {
+                        fc.flush_file(&pb);
+                    }
                 }
             }
             Request::Read {

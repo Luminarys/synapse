@@ -95,6 +95,17 @@ impl FileCache {
         #[cfg(target_pointer_width = "64")] self.files.remove(path).map(|f| f.1.flush_async().ok());
     }
 
+    pub fn flush_file(&mut self, path: &path::Path) {
+        #[cfg(target_pointer_width = "32")]
+        {
+            self.files.get_mut(path).map(|f| f.sync_all().ok());
+        }
+        #[cfg(target_pointer_width = "64")]
+        {
+            self.files.get_mut(path).map(|f| f.1.flush_async().ok());
+        }
+    }
+
     fn ensure_exists(&mut self, path: &path::Path) -> io::Result<()> {
         if !self.files.contains_key(path) {
             if self.files.len() >= CONFIG.net.max_open_files {
@@ -122,10 +133,17 @@ impl FileCache {
 
 impl Drop for FileCache {
     fn drop(&mut self) {
+        #[cfg(target_pointer_width = "32")]
+        {
+            for file in self.files.drain() {
+                file.sync_all().ok();
+            }
+        }
         #[cfg(target_pointer_width = "64")]
-        self.files
-            .drain()
-            .map(|(_, f)| f.1.flush_async().ok())
-            .last();
+        {
+            for (_, mmap) in self.files.drain() {
+                mmap.flush().ok();
+            }
+        }
     }
 }
