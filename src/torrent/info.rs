@@ -83,15 +83,13 @@ impl File {
     fn create(&self, path: &path::Path) -> io::Result<()> {
         let mut pb = path::PathBuf::from(path);
         pb.push(&self.path);
-        let f = if !pb.exists() {
-            if let Some(parent) = pb.parent() {
-                fs::create_dir_all(parent)?;
-            }
-            fs::OpenOptions::new().write(true).create(true).open(&pb)?
-        } else {
-            fs::OpenOptions::new().write(true).open(&pb)?
-        };
-        fallocate(&f, self.length)?;
+        if let Some(parent) = pb.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        let f = fs::OpenOptions::new().write(true).create(true).open(&pb)?;
+        if f.metadata()?.len() != self.length {
+            fallocate(&f, self.length)?;
+        }
         Ok(())
     }
 }

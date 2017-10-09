@@ -947,14 +947,12 @@ impl<T: cio::CIO> Torrent<T> {
         if self.status.stopped() {
             return;
         }
-        if self.status.leeching() {
-            self.cio.msg_disk(disk::Request::create(
-                self.id,
-                self.info.clone(),
-                self.path.clone(),
-                self.priorities.clone(),
-            ));
-        }
+        self.cio.msg_disk(disk::Request::create(
+            self.id,
+            self.info.clone(),
+            self.path.clone(),
+            self.priorities.clone(),
+        ));
         let req = tracker::Request::started(self);
         self.cio.msg_trk(req);
         // TODO: Consider repeatedly sending out these during annoucne intervals
@@ -1490,6 +1488,12 @@ impl<T: cio::CIO> Torrent<T> {
         match self.status {
             Status::Paused => {
                 debug!("Sending started request to trk");
+                self.cio.msg_disk(disk::Request::create(
+                    self.id,
+                    self.info.clone(),
+                    self.path.clone(),
+                    self.priorities.clone(),
+                ));
                 let req = tracker::Request::started(self);
                 self.cio.msg_trk(req);
                 self.request_all();
