@@ -49,7 +49,9 @@ impl Picker {
         // pick we never underflow, and can keep track of which pieces
         // are unpicked(odd) and picked(even).
         for i in (0..pieces.len()).rev() {
-            p.piece_available(i as u32);
+            for _ in 0..6 {
+                p.piece_available(i as u32);
+            }
             if pieces.has_bit(i) {
                 p.completed(i as u32);
             }

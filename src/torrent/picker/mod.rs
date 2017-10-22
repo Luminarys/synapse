@@ -284,7 +284,7 @@ impl Picker {
             let mut picker = rarest::Picker::new(&self.unpicked);
             for (piece, pri) in piece_map {
                 for _ in 0..pri {
-                    picker.piece_available(piece);
+                    picker.piece_unavailable(piece);
                 }
             }
             PickerKind::Rarest(picker)
