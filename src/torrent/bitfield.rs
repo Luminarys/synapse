@@ -40,6 +40,10 @@ impl Bitfield {
     }
 
     pub fn complete(&self) -> bool {
+        // Fail safe for magnets
+        if self.data.len() == 0 {
+            return false;
+        }
         for i in 0..self.data.len() - 1 {
             if !(self.data[i]) != 0 {
                 return false;
