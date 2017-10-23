@@ -1332,7 +1332,9 @@ impl<T: cio::CIO> Torrent<T> {
         if let Ok(p) = Peer::new(conn, self, Some(id), Some(rsv)) {
             let pid = p.id();
             debug!("Adding peer {:?}!", pid);
-            self.picker.add_peer(&p);
+            if self.info_idx.is_none() {
+                self.picker.add_peer(&p);
+            }
             self.peers.insert(pid, p);
             Some(pid)
         } else {
