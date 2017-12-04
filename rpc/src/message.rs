@@ -3,14 +3,14 @@ use chrono::{DateTime, Utc};
 use super::resource::{ResourceKind, CResourceUpdate, SResourceUpdate};
 use super::criterion::Criterion;
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Copy, Clone, Debug, Serialize, Deserialize)]
 pub struct Version {
     pub major: u16,
     pub minor: u16,
 }
 
 /// Client -> server messages
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 #[serde(tag = "type")]
 #[serde(deny_unknown_fields)]
@@ -65,7 +65,7 @@ pub enum CMessage {
 }
 
 /// Server -> client message
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 #[serde(tag = "type")]
 #[serde(deny_unknown_fields)]
@@ -99,7 +99,7 @@ pub enum SMessage<'a> {
     // ServerError(Error),
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Error {
     pub serial: Option<u64>,

@@ -3,7 +3,7 @@ use chrono::{DateTime, Utc};
 
 use resource::ResourceKind;
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Criterion {
     pub field: String,
@@ -36,7 +36,7 @@ pub enum Operation {
     NotIn,
 }
 
-#[derive(Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(untagged)]
 #[serde(deny_unknown_fields)]
 pub enum Value {
