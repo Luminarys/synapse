@@ -9,3 +9,4 @@ perf*
 *.swp
 *.bk
 rr.sh
+*.vi
