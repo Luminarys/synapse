@@ -118,9 +118,16 @@ impl Tracker {
 
         debug!("Initialized!");
         'outer: loop {
-            for event in self.poll.wait(POLL_INT_MS).unwrap() {
-                if self.handle_event(event).is_err() {
-                    break 'outer;
+            match self.poll.wait(POLL_INT_MS) {
+                Ok(events) => {
+                    for event in events {
+                        if self.handle_event(event).is_err() {
+                            break 'outer;
+                        }
+                    }
+                }
+                Err(e) => {
+                    error!("Failed to poll for events: {:?}", e);
                 }
             }
         }
