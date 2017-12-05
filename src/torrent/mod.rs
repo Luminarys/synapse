@@ -45,7 +45,6 @@ struct TorrentData {
     downloaded: u64,
     status: Status,
     path: Option<String>,
-    wanted: Bitfield,
     priority: u8,
     priorities: Vec<u8>,
     created: DateTime<Utc>,
@@ -56,7 +55,6 @@ struct TorrentData {
 pub struct Torrent<T: cio::CIO> {
     id: usize,
     pieces: Bitfield,
-    wanted: Bitfield,
     info: Arc<Info>,
     cio: T,
     uploaded: u64,
@@ -135,10 +133,6 @@ impl<T: cio::CIO> Torrent<T> {
             Status::Paused
         };
         let priorities = vec![3; info.files.len()];
-        let mut wanted = Bitfield::new(u64::from(info.pieces()));
-        for i in 0..info.pieces() {
-            wanted.set_bit(u64::from(i));
-        }
         let info_idx = if info.complete() {
             None
         } else {
@@ -158,7 +152,6 @@ impl<T: cio::CIO> Torrent<T> {
             path,
             peers,
             pieces,
-            wanted,
             picker,
             priority: 3,
             priorities,
@@ -220,7 +213,6 @@ impl<T: cio::CIO> Torrent<T> {
             info,
             peers,
             pieces: d.pieces,
-            wanted: d.wanted,
             picker,
             uploaded: d.uploaded,
             downloaded: d.downloaded,
@@ -255,7 +247,6 @@ impl<T: cio::CIO> Torrent<T> {
             }
             _ => {}
         };
-        t.refresh_picker();
         t.start();
         t.announce_start();
         Ok(t)
@@ -271,7 +262,6 @@ impl<T: cio::CIO> Torrent<T> {
             path: self.path.clone(),
             priorities: self.priorities.clone(),
             priority: self.priority,
-            wanted: self.wanted.clone(),
             created: self.created,
             throttle_ul: self.throttle.ul_rate(),
             throttle_dl: self.throttle.dl_rate(),
@@ -399,9 +389,6 @@ impl<T: cio::CIO> Torrent<T> {
 
     pub fn handle_disk_resp(&mut self, resp: disk::Response) {
         match resp {
-            disk::Response::BatchWrite { .. } => {
-                unimplemented!();
-            }
             disk::Response::Read { context, data } => {
                 trace!("Received piece from disk, uploading!");
                 if let Some(peer) = self.peers.get_mut(&context.pid) {
@@ -425,8 +412,9 @@ impl<T: cio::CIO> Torrent<T> {
                     },
                 ]));
             }
-            disk::Response::ValidationComplete { mut invalid, .. } => {
+            disk::Response::ValidationComplete { invalid, .. } => {
                 debug!("Validation completed!");
+                /*
                 // Ignore invalid pieces which are not in wanted, or
                 // are part of an invalid file(none of the disk locations
                 // refer to files which aren't being downloaded(pri. 1)
@@ -436,14 +424,8 @@ impl<T: cio::CIO> Torrent<T> {
                             self.priorities[l.file] == 0
                         })
                 });
+                */
                 if invalid.is_empty() {
-                    if !self.completed() {
-                        for i in 0..self.pieces.len() {
-                            if self.wanted.has_bit(i) {
-                                self.pieces.set_bit(i);
-                            }
-                        }
-                    }
                     info!("Torrent succesfully downloaded!");
                     self.set_complete();
                 } else {
@@ -455,11 +437,6 @@ impl<T: cio::CIO> Torrent<T> {
                         // set the pieces appropriately, then reset the
                         // picker to use the new bitfield
                         if invalid.len() != self.pieces.len() as usize {
-                            for i in 0..self.pieces.len() {
-                                if self.wanted.has_bit(i) {
-                                    self.pieces.set_bit(i);
-                                }
-                            }
                             for piece in invalid {
                                 self.pieces.unset_bit(u64::from(piece));
                             }
@@ -472,7 +449,6 @@ impl<T: cio::CIO> Torrent<T> {
                                 });
                             }
                             self.cio.msg_rpc(rpc::CtlMessage::Update(rpc_updates));
-                            self.refresh_picker();
                         }
                         self.announce_start();
                     } else {
@@ -951,7 +927,6 @@ impl<T: cio::CIO> Torrent<T> {
             self.id,
             self.info.clone(),
             self.path.clone(),
-            self.priorities.clone(),
         ));
         let req = tracker::Request::started(self);
         self.cio.msg_trk(req);
@@ -993,10 +968,6 @@ impl<T: cio::CIO> Torrent<T> {
         self.set_status(Status::Pending);
         self.pieces = Bitfield::new(u64::from(self.info.pieces()));
         self.priorities = vec![3; self.info.files.len()];
-        self.wanted = Bitfield::new(u64::from(self.info.pieces()));
-        for i in 0..self.info.pieces() {
-            self.wanted.set_bit(u64::from(i));
-        }
         for peer in self.peers.values_mut() {
             peer.magnet_complete(&self.info);
         }
@@ -1013,11 +984,6 @@ impl<T: cio::CIO> Torrent<T> {
         self.picker = Picker::new(self.info.clone(), &self.pieces);
         self.change_picker(seq);
         self.validate();
-    }
-
-    fn refresh_picker(&mut self) {
-        let should_pick = self.should_pick();
-        self.picker.refresh_picker(&should_pick, &self.priorities);
     }
 
     fn set_path(&mut self, path: String) {
@@ -1048,6 +1014,7 @@ impl<T: cio::CIO> Torrent<T> {
     }
 
     fn set_file_priority(&mut self, id: String, priority: u8) {
+        /*
         for (i, f) in self.info.files.iter().enumerate() {
             let fid =
                 util::file_rpc_id(&self.info.hash, f.path.as_path().to_string_lossy().as_ref());
@@ -1065,7 +1032,13 @@ impl<T: cio::CIO> Torrent<T> {
                 }
             }
         }
-        self.refresh_picker();
+        self.cio.msg_disk(disk::Request::create(
+            self.id,
+            self.info.clone(),
+            self.path.clone(),
+            self.priorities.clone(),
+        ));
+        */
         self.cio.msg_rpc(rpc::CtlMessage::Update(vec![
             resource::SResourceUpdate::FilePriority {
                 id,
@@ -1073,12 +1046,6 @@ impl<T: cio::CIO> Torrent<T> {
                 priority,
             },
         ]));
-        self.cio.msg_disk(disk::Request::create(
-            self.id,
-            self.info.clone(),
-            self.path.clone(),
-            self.priorities.clone(),
-        ));
     }
 
     fn rpc_info(&self) -> resource::Resource {
@@ -1494,7 +1461,6 @@ impl<T: cio::CIO> Torrent<T> {
                     self.id,
                     self.info.clone(),
                     self.path.clone(),
-                    self.priorities.clone(),
                 ));
                 let req = tracker::Request::started(self);
                 self.cio.msg_trk(req);
@@ -1556,6 +1522,7 @@ impl<T: cio::CIO> Torrent<T> {
         ]));
     }
 
+    /*
     fn should_pick(&self) -> Bitfield {
         let mut b = Bitfield::new(self.pieces.len());
         // Only DL pieces which we don't yet have, and are in wanted.
@@ -1566,10 +1533,11 @@ impl<T: cio::CIO> Torrent<T> {
         }
         b
     }
+    */
 
     fn completed(&self) -> bool {
         for i in 0..self.pieces.len() {
-            if !self.pieces.has_bit(i) && self.wanted.has_bit(i) {
+            if !self.pieces.has_bit(i) {
                 return false;
             }
         }

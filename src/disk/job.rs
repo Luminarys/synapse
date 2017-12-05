@@ -7,11 +7,10 @@ use std::net::TcpStream;
 use fs_extra;
 use sha1;
 use amy;
-use byteorder::{BigEndian, ReadBytesExt};
 
 use super::{EXDEV, JOB_TIME_SLICE, FileCache};
-use torrent::{Info, LocIter, PeerConn, Block};
-use util::{hash_to_id, io_err, awrite, IOR, FHashSet};
+use torrent::{Info, LocIter};
+use util::{hash_to_id, io_err, awrite, IOR};
 use CONFIG;
 
 pub struct Location {
@@ -25,7 +24,6 @@ pub struct Location {
 pub enum Request {
     Create {
         tid: usize,
-        priorities: Vec<u8>,
         path: Option<String>,
         info: Arc<Info>,
     },
@@ -40,25 +38,6 @@ pub enum Request {
         locations: LocIter,
         context: Ctx,
         path: Option<String>,
-    },
-    BatchWrite {
-        tid: usize,
-        pid: usize,
-        info: Arc<Info>,
-        path: Option<String>,
-        conn: PeerConn,
-        id: usize,
-        blocks: FHashSet<Block>,
-        state: WriteState,
-    },
-    BatchRead {
-        tid: usize,
-        pid: usize,
-        info: Arc<Info>,
-        path: Option<String>,
-        conn: PeerConn,
-        id: usize,
-        blocks: FHashSet<Block>,
     },
     Serialize {
         tid: usize,
@@ -95,29 +74,14 @@ pub enum Request {
     Shutdown,
 }
 
-pub enum WriteState {
-    Metadata([u8; 13]),
-    Data { locs: LocIter, cloc: Location },
-}
-
 pub enum Response {
     Read {
         context: Ctx,
         data: Arc<Box<[u8; 16_384]>>,
     },
-    BatchWrite {
-        tid: usize,
-        pid: usize,
-        conn: PeerConn,
-        blocks: FHashSet<Block>,
-    },
     ValidationComplete { tid: usize, invalid: Vec<u32> },
     Moved { tid: usize, path: String },
-    Error {
-        tid: usize,
-        pid: Option<usize>,
-        err: io::Error,
-    },
+    Error { tid: usize, err: io::Error },
 }
 
 pub struct Ctx {
@@ -136,18 +100,8 @@ pub enum JobRes {
 }
 
 impl Request {
-    pub fn create(
-        tid: usize,
-        info: Arc<Info>,
-        path: Option<String>,
-        priorities: Vec<u8>,
-    ) -> Request {
-        Request::Create {
-            tid,
-            info,
-            path,
-            priorities,
-        }
+    pub fn create(tid: usize, info: Arc<Info>, path: Option<String>) -> Request {
+        Request::Create { tid, info, path }
     }
 
     pub fn write(
@@ -246,143 +200,12 @@ impl Request {
                     }
                 }
             }
-            Request::Create {
-                info,
-                path,
-                priorities,
-                ..
-            } => {
+            Request::Create { info, path, .. } => {
                 if let Some(p) = path {
-                    info.create_files(&path::Path::new(&p), &priorities)?;
+                    info.create_files(&path::Path::new(&p))?;
                 } else {
-                    info.create_files(&path::Path::new(&dd), &priorities)?;
+                    info.create_files(&path::Path::new(&dd))?;
                 }
-            }
-            Request::BatchWrite {
-                info,
-                path,
-                mut blocks,
-                mut conn,
-                mut state,
-                id,
-                tid,
-                pid,
-            } => {
-                let start = time::Instant::now();
-                while start.elapsed() < time::Duration::from_millis(JOB_TIME_SLICE) {
-                    match state {
-                        WriteState::Metadata(mut buf) => {
-                            match conn.sock().peek(&mut buf) {
-                                Ok(0) => return io_err("EOF"),
-                                Ok(a) if a == buf.len() => {
-                                    let len = (&buf[0..4]).read_u32::<BigEndian>().unwrap();
-                                    if buf[4] != 7 {
-                                        return Ok(JobRes::Resp(Response::BatchWrite {
-                                            tid,
-                                            pid,
-                                            conn,
-                                            blocks,
-                                        }));
-                                    }
-                                    let index = (&buf[5..9]).read_u32::<BigEndian>().unwrap();
-                                    let offset = (&buf[9..13]).read_u32::<BigEndian>().unwrap();
-                                    if blocks.remove(&Block { index, offset }) {
-                                        let mut locs = Info::block_disk_locs(&info, index, offset);
-                                        let cloc = locs.next().unwrap();
-                                        state = WriteState::Data { locs, cloc };
-                                    } else {
-                                        return io_err("Bad block!");
-                                    }
-                                }
-                                Ok(a) => {
-                                    state = WriteState::Metadata(buf);
-                                }
-                                Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
-                                    return Ok(JobRes::Blocked((
-                                        id,
-                                        Request::BatchWrite {
-                                            pid,
-                                            info,
-                                            path,
-                                            blocks,
-                                            conn,
-                                            id,
-                                            tid,
-                                            state: WriteState::Metadata(buf),
-                                        },
-                                    )));
-                                }
-                                Err(e) => return Err(e),
-                            }
-                        }
-                        WriteState::Data { mut locs, mut cloc } => {
-                            let mut pb = path::PathBuf::from(path.as_ref().unwrap_or(dd));
-                            pb.push(cloc.path());
-                            let amnt = fc.get_file_range(
-                                &pb,
-                                cloc.offset,
-                                (cloc.end - cloc.start),
-                                false,
-                                |b| match conn.sock_mut().read(b) {
-                                    Ok(0) => io_err("EOF"),
-                                    Ok(a) => Ok(Some(a)),
-                                    Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => Ok(None),
-                                    Err(e) => Err(e),
-                                },
-                            )??;
-                            if let Some(a) = amnt {
-                                cloc.start += a;
-                                cloc.offset += a as u64;
-                            } else {
-                                return Ok(JobRes::Blocked((
-                                    id,
-                                    Request::BatchWrite {
-                                        pid,
-                                        info,
-                                        path,
-                                        blocks,
-                                        conn,
-                                        id,
-                                        tid,
-                                        state: WriteState::Data { locs, cloc },
-                                    },
-                                )));
-                            }
-                            if cloc.start == cloc.end {
-                                match locs.next() {
-                                    Some(loc) => state = WriteState::Data { cloc: loc, locs },
-                                    None => {
-                                        if blocks.is_empty() {
-                                            return Ok(JobRes::Resp(Response::BatchWrite {
-                                                conn,
-                                                blocks,
-                                                tid,
-                                                pid,
-                                            }));
-                                        } else {
-                                            state = WriteState::Metadata([0u8; 13])
-                                        }
-                                    }
-                                }
-                            } else {
-                                state = WriteState::Data { cloc, locs }
-                            }
-                        }
-                    }
-                }
-                return Ok(JobRes::Paused(Request::BatchWrite {
-                    info,
-                    path,
-                    blocks,
-                    conn,
-                    state,
-                    id,
-                    tid,
-                    pid,
-                }));
-            }
-            Request::BatchRead { .. } => {
-                unimplemented!();
             }
             Request::Write {
                 data,
@@ -654,22 +477,6 @@ impl Request {
                 *id = reg.register(client, amy::Event::Write)?;
                 Ok(())
             }
-            Request::BatchWrite {
-                ref conn,
-                ref mut id,
-                ..
-            } => {
-                *id = reg.register(conn.sock(), amy::Event::Read)?;
-                Ok(())
-            }
-            Request::BatchRead {
-                ref conn,
-                ref mut id,
-                ..
-            } => {
-                *id = reg.register(conn.sock(), amy::Event::Write)?;
-                Ok(())
-            }
             _ => Ok(()),
         }
     }
@@ -681,21 +488,11 @@ impl Request {
             Request::Delete { tid, .. } |
             Request::Move { tid, .. } |
             Request::Create { tid, .. } |
-            Request::BatchWrite { tid, .. } |
-            Request::BatchRead { tid, .. } |
             Request::Write { tid, .. } => Some(tid),
             Request::Read { ref context, .. } => Some(context.tid),
             Request::WriteFile { .. } |
             Request::Download { .. } |
             Request::Shutdown => None,
-        }
-    }
-
-    pub fn pid(&self) -> Option<usize> {
-        match *self {
-            Request::BatchWrite { pid, .. } |
-            Request::BatchRead { pid, .. } => Some(pid),
-            _ => None,
         }
     }
 }
@@ -740,8 +537,8 @@ impl Response {
         Response::Read { context, data }
     }
 
-    pub fn error(tid: usize, pid: Option<usize>, err: io::Error) -> Response {
-        Response::Error { tid, err, pid }
+    pub fn error(tid: usize, err: io::Error) -> Response {
+        Response::Error { tid, err }
     }
 
     pub fn moved(tid: usize, path: String) -> Response {
@@ -756,7 +553,6 @@ impl Response {
         match *self {
             Response::Read { ref context, .. } => context.tid,
             Response::ValidationComplete { tid, .. } |
-            Response::BatchWrite { tid, .. } |
             Response::Moved { tid, .. } |
             Response::Error { tid, .. } => tid,
         }

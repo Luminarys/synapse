@@ -1,7 +1,6 @@
 use std::collections::HashMap;
 use std::{mem, time};
 use std::sync::Arc;
-use std::cmp;
 use torrent::{Info, Peer, Bitfield};
 use control::cio;
 
@@ -268,6 +267,7 @@ impl Picker {
         }
     }
 
+    /*
     pub fn refresh_picker(&mut self, pieces: &Bitfield, pri: &[u8]) {
         // Map piece -> priority
         let mut piece_map = HashMap::new();
@@ -296,6 +296,7 @@ impl Picker {
             PickerKind::Sequential(sequential::Picker::new_pri(pieces))
         };
     }
+    */
 }
 
 #[cfg(test)]

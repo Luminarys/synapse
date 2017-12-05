@@ -145,11 +145,8 @@ impl Info {
         !self.hashes.is_empty()
     }
 
-    pub fn create_files(&self, path: &path::Path, priorities: &[u8]) -> io::Result<()> {
-        for (_, file) in self.files.iter().enumerate().filter(
-            |&(i, _)| priorities[i] != 0,
-        )
-        {
+    pub fn create_files(&self, path: &path::Path) -> io::Result<()> {
+        for (_, file) in self.files.iter().enumerate() {
             file.create(path)?;
         }
         Ok(())
