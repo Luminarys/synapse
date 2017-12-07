@@ -1,6 +1,6 @@
 use std::time;
 
-use torrent::{Torrent, Status};
+use torrent::Torrent;
 use control::cio;
 use util::UHashMap;
 
@@ -142,12 +142,6 @@ impl<T: cio::CIO> Job<T> for TorrentStatusUpdate {
                 ));
             }
             let tx = self.transferred.get_mut(id).unwrap();
-            if torrent.status() == Status::Seeding && ul == tx.0 {
-                torrent.set_status(Status::Idle);
-            }
-            if torrent.status() == Status::Leeching && dl == tx.1 {
-                torrent.set_status(Status::Pending);
-            }
             tx.0 = ul;
             tx.1 = dl;
         }

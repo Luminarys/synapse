@@ -79,22 +79,20 @@ pub struct Torrent<T: cio::CIO> {
     created: DateTime<Utc>,
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum Status {
-    Pending,
-    Paused,
-    Leeching,
-    Idle,
-    Seeding,
-    Validating,
     Magnet,
-    DiskError,
+    Incomplete,
+    Complete,
+    Validating,
+    Paused(Box<Status>),
+    Error { err: String, prev: Box<Status> },
 }
 
 impl Status {
     pub fn leeching(&self) -> bool {
         match *self {
-            Status::Leeching | Status::Pending => true,
+            Status::Incomplete => true,
             _ => false,
         }
     }
@@ -108,8 +106,44 @@ impl Status {
 
     pub fn stopped(&self) -> bool {
         match *self {
-            Status::Paused | Status::DiskError => true,
+            Status::Paused(_) |
+            Status::Error { .. } => true,
             _ => false,
+        }
+    }
+
+    pub fn completed(&self) -> bool {
+        match *self {
+            Status::Complete => true,
+            Status::Paused(ref s) |
+            Status::Error {
+                err: _,
+                prev: ref s,
+            } => s.completed(),
+            _ => false,
+        }
+    }
+
+    fn as_rpc(&self, ul: u64, dl: u64) -> rpc::resource::Status {
+        match *self {
+            Status::Incomplete => {
+                if dl == 0 {
+                    rpc::resource::Status::Idle
+                } else {
+                    rpc::resource::Status::Leeching
+                }
+            }
+            Status::Complete => {
+                if ul == 0 {
+                    rpc::resource::Status::Idle
+                } else {
+                    rpc::resource::Status::Seeding
+                }
+            }
+            Status::Paused(_) => rpc::resource::Status::Paused,
+            Status::Validating => rpc::resource::Status::Hashing,
+            Status::Magnet => rpc::resource::Status::Magnet,
+            Status::Error { .. } => rpc::resource::Status::Error,
         }
     }
 }
@@ -128,9 +162,9 @@ impl<T: cio::CIO> Torrent<T> {
         let pieces = Bitfield::new(u64::from(info.pieces()));
         let leechers = FHashSet::default();
         let mut status = if start {
-            Status::Pending
+            Status::Incomplete
         } else {
-            Status::Paused
+            Status::Paused(Box::new(Status::Incomplete))
         };
         let priorities = vec![3; info.files.len()];
         let info_idx = if info.complete() {
@@ -167,7 +201,7 @@ impl<T: cio::CIO> Torrent<T> {
             tracker_update: None,
             choker: choker::Choker::new(),
             dirty: true,
-            status,
+            status: status.clone(),
             info_bytes,
             info_idx,
             created: Utc::now(),
@@ -235,13 +269,6 @@ impl<T: cio::CIO> Torrent<T> {
             created: d.created,
         };
         match t.status {
-            Status::DiskError | Status::Seeding | Status::Leeching => {
-                if t.pieces.complete() {
-                    t.status = Status::Idle;
-                } else {
-                    t.status = Status::Pending;
-                }
-            }
             Status::Validating => {
                 t.validate();
             }
@@ -258,7 +285,7 @@ impl<T: cio::CIO> Torrent<T> {
             pieces: self.pieces.clone(),
             uploaded: self.uploaded,
             downloaded: self.downloaded,
-            status: self.status,
+            status: self.status.clone(),
             path: self.path.clone(),
             priorities: self.priorities.clone(),
             priority: self.priority,
@@ -431,7 +458,7 @@ impl<T: cio::CIO> Torrent<T> {
                 } else {
                     // If this is an initialization hash, start the torrent
                     // immediatly.
-                    if !self.completed() {
+                    if !self.complete() {
                         debug!("initial validation complete, starting torrent");
                         // If there was some partial completion,
                         // set the pieces appropriately, then reset the
@@ -466,7 +493,7 @@ impl<T: cio::CIO> Torrent<T> {
                         self.request_all();
                     }
                     if !self.status.stopped() {
-                        self.set_status(Status::Pending);
+                        self.set_status(Status::Incomplete);
                     }
                 }
                 // update the RPC stats once done
@@ -474,7 +501,11 @@ impl<T: cio::CIO> Torrent<T> {
             }
             disk::Response::Error { err, .. } => {
                 error!("Disk error: {:?}", err);
-                self.set_status(Status::DiskError);
+                let prev = Box::new(self.status.clone());
+                self.set_status(Status::Error {
+                    err: format!("{:?}", err),
+                    prev,
+                });
             }
         }
     }
@@ -486,7 +517,7 @@ impl<T: cio::CIO> Torrent<T> {
         // rpc updates don't occur.
         self.update_rpc_transfer();
         if !self.status.stopped() {
-            self.set_status(Status::Idle);
+            self.set_status(Status::Complete);
         }
         // Remove all seeding peers.
         let leechers = &self.leechers;
@@ -596,9 +627,7 @@ impl<T: cio::CIO> Torrent<T> {
 
                 // Even though we have the data, if we are stopped we shouldn't use the disk
                 // regardless.
-                if !self.status.stopped() {
-                    self.set_status(Status::Leeching);
-                } else {
+                if self.status.stopped() {
                     return Ok(());
                 }
 
@@ -637,7 +666,7 @@ impl<T: cio::CIO> Torrent<T> {
                     ]));
 
                     // Begin validation, and save state if the torrent is done
-                    if self.completed() {
+                    if self.complete() {
                         self.serialize();
                         if CONFIG.disk.validate {
                             debug!("Beginning validation");
@@ -684,7 +713,7 @@ impl<T: cio::CIO> Torrent<T> {
                     }
                 }
 
-                if !self.completed() && !self.status.stopped() {
+                if !self.complete() && !self.status.stopped() {
                     Torrent::make_requests(peer, &mut self.picker, &self.info);
                 }
             }
@@ -694,7 +723,6 @@ impl<T: cio::CIO> Torrent<T> {
                 length,
             } => {
                 if !self.status.stopped() && !self.status.leeching() {
-                    self.set_status(Status::Seeding);
                     // TODO get this from some sort of allocator.
                     if length != self.info.block_len(index, begin) {
                         return Err(());
@@ -943,11 +971,7 @@ impl<T: cio::CIO> Torrent<T> {
     }
 
     pub fn complete(&self) -> bool {
-        match self.status {
-            Status::Leeching | Status::Validating | Status::Pending | Status::Magnet => false,
-            Status::Idle | Status::Seeding | Status::Paused => true,
-            Status::DiskError => self.completed(),
-        }
+        self.status.completed()
     }
 
     fn set_throttle(&mut self, ul: Option<i64>, dl: Option<i64>) {
@@ -965,7 +989,7 @@ impl<T: cio::CIO> Torrent<T> {
     }
 
     fn magnet_complete(&mut self) {
-        self.set_status(Status::Pending);
+        self.set_status(Status::Incomplete);
         self.pieces = Bitfield::new(u64::from(self.info.pieces()));
         self.priorities = vec![3; self.info.files.len()];
         for peer in self.peers.values_mut() {
@@ -1073,7 +1097,7 @@ impl<T: cio::CIO> Torrent<T> {
             path: self.path.as_ref().unwrap_or(&CONFIG.disk.directory).clone(),
             created: self.created,
             modified: Utc::now(),
-            status: self.status.into(),
+            status: self.status.as_rpc(self.last_ul, self.last_dl),
             error: self.error(),
             priority: self.priority,
             progress: self.progress(),
@@ -1188,7 +1212,7 @@ impl<T: cio::CIO> Torrent<T> {
 
     fn error(&self) -> Option<String> {
         match self.status {
-            Status::DiskError => Some("Disk error!".to_owned()),
+            Status::Error { ref err, .. } => Some(err.clone()),
             _ => None,
         }
     }
@@ -1313,23 +1337,19 @@ impl<T: cio::CIO> Torrent<T> {
         if self.status == status {
             return;
         }
-        self.status = status;
         let id = self.rpc_id();
         self.cio.msg_rpc(rpc::CtlMessage::Update(vec![
             SResourceUpdate::TorrentStatus {
                 id,
                 kind: resource::ResourceKind::Torrent,
-                error: match status {
-                    Status::DiskError => Some("Disk error".to_owned()),
+                error: match &status {
+                    &Status::Error { ref err, .. } => Some(err.clone()),
                     _ => None,
                 },
-                status: status.into(),
+                status: status.as_rpc(self.last_ul, self.last_dl),
             },
         ]));
-    }
-
-    pub fn status(&self) -> Status {
-        self.status
+        self.status = status;
     }
 
     pub fn update_rpc_peers(&mut self) {
@@ -1362,18 +1382,25 @@ impl<T: cio::CIO> Torrent<T> {
     }
 
     pub fn update_rpc_transfer(&mut self) {
+        debug!("Updating rpc tx!");
         let progress = self.progress();
         let (rate_up, rate_down) = self.get_last_tx_rate();
         let id = self.rpc_id();
         let mut updates = Vec::new();
         updates.push(SResourceUpdate::TorrentTransfer {
-            id,
+            id: id.clone(),
             kind: resource::ResourceKind::Torrent,
             rate_up,
             rate_down,
             transferred_up: self.uploaded,
             transferred_down: self.downloaded,
             progress,
+        });
+        updates.push(SResourceUpdate::TorrentStatus {
+            id,
+            kind: resource::ResourceKind::Torrent,
+            error: None,
+            status: self.status.as_rpc(rate_up, rate_down),
         });
         if !self.status.leeching() {
             for pid in self.choker.unchoked().iter() {
@@ -1442,20 +1469,21 @@ impl<T: cio::CIO> Torrent<T> {
     pub fn pause(&mut self) {
         debug!("Pausing torrent!");
         match self.status {
-            Status::Paused => {}
+            Status::Paused(_) => {}
             _ => {
                 debug!("Sending stopped request to trk");
                 let req = tracker::Request::stopped(self);
                 self.cio.msg_trk(req);
             }
         }
-        self.set_status(Status::Paused);
+        let prev = Box::new(self.status.clone());
+        self.set_status(Status::Paused(prev));
     }
 
     pub fn resume(&mut self) {
         debug!("Resuming torrent!");
-        match self.status {
-            Status::Paused => {
+        let ps = match self.status.clone() {
+            Status::Paused(prev) => {
                 debug!("Sending started request to trk");
                 self.cio.msg_disk(disk::Request::create(
                     self.id,
@@ -1465,21 +1493,13 @@ impl<T: cio::CIO> Torrent<T> {
                 let req = tracker::Request::started(self);
                 self.cio.msg_trk(req);
                 self.request_all();
+                Some(prev)
             }
-            Status::DiskError => {
-                if self.completed() {
-                    self.validate();
-                } else {
-                    self.request_all();
-                    self.set_status(Status::Idle);
-                }
-            }
-            _ => {}
-        }
-        if self.completed() {
-            self.set_status(Status::Idle);
-        } else {
-            self.set_status(Status::Pending);
+            Status::Error { err: _, prev } => Some(prev),
+            _ => None,
+        };
+        if let Some(p) = ps {
+            self.set_status(*p);
         }
     }
 
@@ -1534,15 +1554,6 @@ impl<T: cio::CIO> Torrent<T> {
         b
     }
     */
-
-    fn completed(&self) -> bool {
-        for i in 0..self.pieces.len() {
-            if !self.pieces.has_bit(i) {
-                return false;
-            }
-        }
-        true
-    }
 }
 
 impl<T: cio::CIO> fmt::Debug for Torrent<T> {
@@ -1565,28 +1576,13 @@ impl<T: cio::CIO> Drop for Torrent<T> {
             self.leechers.remove(&id);
         }
         match self.status {
-            Status::Paused => {}
+            Status::Paused(_) => {}
             _ => {
                 let req = tracker::Request::stopped(self);
                 self.cio.msg_trk(req);
             }
         }
         self.send_rpc_removal();
-    }
-}
-
-impl Into<rpc::resource::Status> for Status {
-    fn into(self) -> rpc::resource::Status {
-        match self {
-            Status::Pending => rpc::resource::Status::Pending,
-            Status::Paused => rpc::resource::Status::Paused,
-            Status::Idle => rpc::resource::Status::Idle,
-            Status::Leeching => rpc::resource::Status::Leeching,
-            Status::Seeding => rpc::resource::Status::Seeding,
-            Status::Validating => rpc::resource::Status::Hashing,
-            Status::DiskError => rpc::resource::Status::Error,
-            Status::Magnet => rpc::resource::Status::Magnet,
-        }
     }
 }
 
