@@ -403,7 +403,12 @@ impl RPC {
                                 return;
                             }
                         }
-                        Ok(Some(_)) | Err(_) => {
+                        Err(Error(ErrorKind::Complete, _)) => {
+                            info!("Client disconnected");
+                            self.remove_client(not.id, c);
+                            return;
+                        }
+                        Ok(_) | Err(_) => {
                             debug!("Client error, disconnecting");
                             self.remove_client(not.id, c);
                             return;
