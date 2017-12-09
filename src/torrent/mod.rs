@@ -79,71 +79,71 @@ pub struct Torrent<T: cio::CIO> {
     created: DateTime<Utc>,
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Status {
+    paused: bool,
+    validating: bool,
+    error: Option<String>,
+    state: StatusState,
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub enum Status {
+pub enum StatusState {
     Magnet,
     Incomplete,
     Complete,
-    Validating,
-    Paused(Box<Status>),
-    Error { err: String, prev: Box<Status> },
 }
 
 impl Status {
     pub fn leeching(&self) -> bool {
-        match *self {
-            Status::Incomplete => true,
+        match self.state {
+            StatusState::Incomplete => true,
             _ => false,
         }
     }
 
     pub fn validating(&self) -> bool {
-        match *self {
-            Status::Validating => true,
-            _ => false,
-        }
+        self.validating
     }
 
     pub fn stopped(&self) -> bool {
-        match *self {
-            Status::Paused(_) |
-            Status::Error { .. } => true,
-            _ => false,
-        }
+        self.paused || self.error.is_some()
     }
 
     pub fn completed(&self) -> bool {
-        match *self {
-            Status::Complete => true,
-            Status::Paused(ref s) |
-            Status::Error {
-                err: _,
-                prev: ref s,
-            } => s.completed(),
+        match self.state {
+            StatusState::Complete => true,
             _ => false,
         }
     }
 
-    fn as_rpc(&self, ul: u64, dl: u64) -> rpc::resource::Status {
-        match *self {
-            Status::Incomplete => {
+    pub fn as_rpc(&self, ul: u64, dl: u64) -> rpc::resource::Status {
+        if self.paused {
+            return rpc::resource::Status::Paused;
+        }
+        if self.validating {
+            return rpc::resource::Status::Hashing;
+        }
+        if self.error.is_some() {
+            return rpc::resource::Status::Error;
+        }
+
+        match self.state {
+            StatusState::Incomplete => {
                 if dl == 0 {
                     rpc::resource::Status::Idle
                 } else {
                     rpc::resource::Status::Leeching
                 }
             }
-            Status::Complete => {
+            StatusState::Complete => {
                 if ul == 0 {
                     rpc::resource::Status::Idle
                 } else {
                     rpc::resource::Status::Seeding
                 }
             }
-            Status::Paused(_) => rpc::resource::Status::Paused,
-            Status::Validating => rpc::resource::Status::Hashing,
-            Status::Magnet => rpc::resource::Status::Magnet,
-            Status::Error { .. } => rpc::resource::Status::Error,
+            StatusState::Magnet => rpc::resource::Status::Magnet,
         }
     }
 }
@@ -161,16 +161,17 @@ impl<T: cio::CIO> Torrent<T> {
         let peers = UHashMap::default();
         let pieces = Bitfield::new(u64::from(info.pieces()));
         let leechers = FHashSet::default();
-        let mut status = if start {
-            Status::Incomplete
-        } else {
-            Status::Paused(Box::new(Status::Incomplete))
+        let mut status = Status {
+            paused: !start,
+            validating: false,
+            error: None,
+            state: StatusState::Incomplete,
         };
         let priorities = vec![3; info.files.len()];
         let info_idx = if info.complete() {
             None
         } else {
-            status = Status::Magnet;
+            status.state = StatusState::Magnet;
             Some(::std::usize::MAX)
         };
         let info_bytes = if info_idx.is_none() {
@@ -211,7 +212,7 @@ impl<T: cio::CIO> Torrent<T> {
             t.validate();
         } else {
             t.announce_start();
-            t.set_status(status);
+            t.announce_status();
         }
         t
     }
@@ -268,12 +269,8 @@ impl<T: cio::CIO> Torrent<T> {
             info_idx,
             created: d.created,
         };
-        match t.status {
-            Status::Validating => {
-                t.validate();
-            }
-            _ => {}
-        };
+        t.status.error = None;
+        t.status.validating = false;
         t.start();
         t.announce_start();
         Ok(t)
@@ -441,6 +438,7 @@ impl<T: cio::CIO> Torrent<T> {
             }
             disk::Response::ValidationComplete { invalid, .. } => {
                 debug!("Validation completed!");
+                self.status.validating = false;
                 /*
                 // Ignore invalid pieces which are not in wanted, or
                 // are part of an invalid file(none of the disk locations
@@ -493,7 +491,7 @@ impl<T: cio::CIO> Torrent<T> {
                         self.request_all();
                     }
                     if !self.status.stopped() {
-                        self.set_status(Status::Incomplete);
+                        self.status.state = StatusState::Incomplete;
                     }
                 }
                 // update the RPC stats once done
@@ -501,13 +499,10 @@ impl<T: cio::CIO> Torrent<T> {
             }
             disk::Response::Error { err, .. } => {
                 error!("Disk error: {:?}", err);
-                let prev = Box::new(self.status.clone());
-                self.set_status(Status::Error {
-                    err: format!("{:?}", err),
-                    prev,
-                });
+                self.status.error = Some(format!("{:?}", err));
             }
         }
+        self.announce_status();
     }
 
     fn set_complete(&mut self) {
@@ -517,7 +512,8 @@ impl<T: cio::CIO> Torrent<T> {
         // rpc updates don't occur.
         self.update_rpc_transfer();
         if !self.status.stopped() {
-            self.set_status(Status::Complete);
+            self.status.state = StatusState::Complete;
+            self.announce_status();
         }
         // Remove all seeding peers.
         let leechers = &self.leechers;
@@ -989,7 +985,8 @@ impl<T: cio::CIO> Torrent<T> {
     }
 
     fn magnet_complete(&mut self) {
-        self.set_status(Status::Incomplete);
+        self.status.state = StatusState::Incomplete;
+        self.announce_status();
         self.pieces = Bitfield::new(u64::from(self.info.pieces()));
         self.priorities = vec![3; self.info.files.len()];
         for peer in self.peers.values_mut() {
@@ -1211,10 +1208,7 @@ impl<T: cio::CIO> Torrent<T> {
     }
 
     fn error(&self) -> Option<String> {
-        match self.status {
-            Status::Error { ref err, .. } => Some(err.clone()),
-            _ => None,
-        }
+        self.status.error.clone()
     }
 
     fn sequential(&self) -> bool {
@@ -1333,23 +1327,16 @@ impl<T: cio::CIO> Torrent<T> {
         }
     }
 
-    pub fn set_status(&mut self, status: Status) {
-        if self.status == status {
-            return;
-        }
+    pub fn announce_status(&mut self) {
         let id = self.rpc_id();
         self.cio.msg_rpc(rpc::CtlMessage::Update(vec![
             SResourceUpdate::TorrentStatus {
                 id,
                 kind: resource::ResourceKind::Torrent,
-                error: match &status {
-                    &Status::Error { ref err, .. } => Some(err.clone()),
-                    _ => None,
-                },
-                status: status.as_rpc(self.last_ul, self.last_dl),
+                error: self.status.error.clone(),
+                status: self.status.as_rpc(self.last_ul, self.last_dl),
             },
         ]));
-        self.status = status;
     }
 
     pub fn update_rpc_peers(&mut self) {
@@ -1468,38 +1455,34 @@ impl<T: cio::CIO> Torrent<T> {
 
     pub fn pause(&mut self) {
         debug!("Pausing torrent!");
-        match self.status {
-            Status::Paused(_) => {}
-            _ => {
-                debug!("Sending stopped request to trk");
-                let req = tracker::Request::stopped(self);
-                self.cio.msg_trk(req);
-            }
+        if !self.status.paused {
+            debug!("Sending stopped request to trk");
+            let req = tracker::Request::stopped(self);
+            self.cio.msg_trk(req);
+            self.status.paused = true;
+            self.announce_status();
         }
-        let prev = Box::new(self.status.clone());
-        self.set_status(Status::Paused(prev));
     }
 
     pub fn resume(&mut self) {
         debug!("Resuming torrent!");
-        let ps = match self.status.clone() {
-            Status::Paused(prev) => {
+        if self.status.error.is_some() || self.status.paused {
+            if self.status.error.is_some() {
+                self.status.error = None;
+            }
+            if self.status.paused {
                 debug!("Sending started request to trk");
-                self.cio.msg_disk(disk::Request::create(
-                    self.id,
-                    self.info.clone(),
-                    self.path.clone(),
-                ));
                 let req = tracker::Request::started(self);
                 self.cio.msg_trk(req);
-                self.request_all();
-                Some(prev)
+                self.status.paused = false;
             }
-            Status::Error { err: _, prev } => Some(prev),
-            _ => None,
-        };
-        if let Some(p) = ps {
-            self.set_status(*p);
+            self.cio.msg_disk(disk::Request::create(
+                self.id,
+                self.info.clone(),
+                self.path.clone(),
+            ));
+            self.request_all();
+            self.announce_status();
         }
     }
 
@@ -1509,7 +1492,8 @@ impl<T: cio::CIO> Torrent<T> {
             self.info.clone(),
             self.path.clone(),
         ));
-        self.set_status(Status::Validating);
+        self.status.validating = true;
+        self.announce_status();
     }
 
     fn request_all(&mut self) {
@@ -1575,12 +1559,9 @@ impl<T: cio::CIO> Drop for Torrent<T> {
             trace!("Removing peer {:?}", peer);
             self.leechers.remove(&id);
         }
-        match self.status {
-            Status::Paused(_) => {}
-            _ => {
-                let req = tracker::Request::stopped(self);
-                self.cio.msg_trk(req);
-            }
+        if !self.status.paused {
+            let msg = tracker::Request::stopped(self);
+            self.cio.msg_trk(msg);
         }
         self.send_rpc_removal();
     }
