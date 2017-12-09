@@ -15,6 +15,7 @@ use CONFIG;
 
 pub struct Location {
     pub file: usize,
+    pub file_len: u64,
     pub offset: u64,
     pub start: usize,
     pub end: usize,
@@ -22,11 +23,6 @@ pub struct Location {
 }
 
 pub enum Request {
-    Create {
-        tid: usize,
-        path: Option<String>,
-        info: Arc<Info>,
-    },
     Write {
         tid: usize,
         data: Box<[u8; 16_384]>,
@@ -100,10 +96,6 @@ pub enum JobRes {
 }
 
 impl Request {
-    pub fn create(tid: usize, info: Arc<Info>, path: Option<String>) -> Request {
-        Request::Create { tid, info, path }
-    }
-
     pub fn write(
         tid: usize,
         data: Box<[u8; 16_384]>,
@@ -200,13 +192,6 @@ impl Request {
                     }
                 }
             }
-            Request::Create { info, path, .. } => {
-                if let Some(p) = path {
-                    info.create_files(&path::Path::new(&p))?;
-                } else {
-                    info.create_files(&path::Path::new(&dd))?;
-                }
-            }
             Request::Write {
                 data,
                 locations,
@@ -218,6 +203,7 @@ impl Request {
                     pb.push(loc.path());
                     fc.get_file_range(
                         &pb,
+                        Some(loc.file_len),
                         loc.offset,
                         (loc.end - loc.start),
                         false,
@@ -240,6 +226,7 @@ impl Request {
                     pb.push(loc.path());
                     fc.get_file_range(
                         &pb,
+                        None,
                         loc.offset,
                         (loc.end - loc.start),
                         true,
@@ -385,7 +372,7 @@ impl Request {
                     let start = time::Instant::now();
                     let mut buf: [u8; 16_384] = unsafe { mem::uninitialized() };
                     'read: while start.elapsed() < time::Duration::from_millis(JOB_TIME_SLICE) {
-                        let r = fc.get_file(path::Path::new(&path), |f| {
+                        let r = fc.get_file(path::Path::new(&path), None, |f| {
                             f.seek(SeekFrom::Start(no))?;
                             loop {
                                 match f.read(&mut buf) {
@@ -434,7 +421,7 @@ impl Request {
                         id,
                     }));
                 } else {
-                    fc.get_file(path::Path::new(&path), |f| {
+                    fc.get_file(path::Path::new(&path), None, |f| {
                         let len = f.metadata()?.len();
                         let lines = vec![
                             format!("HTTP/1.1 200 OK"),
@@ -487,7 +474,6 @@ impl Request {
             Request::Validate { tid, .. } |
             Request::Delete { tid, .. } |
             Request::Move { tid, .. } |
-            Request::Create { tid, .. } |
             Request::Write { tid, .. } => Some(tid),
             Request::Read { ref context, .. } => Some(context.tid),
             Request::WriteFile { .. } |
@@ -504,9 +490,17 @@ impl fmt::Debug for Request {
 }
 
 impl Location {
-    pub fn new(file: usize, offset: u64, start: u64, end: u64, info: Arc<Info>) -> Location {
+    pub fn new(
+        file: usize,
+        file_len: u64,
+        offset: u64,
+        start: u64,
+        end: u64,
+        info: Arc<Info>,
+    ) -> Location {
         Location {
             file,
+            file_len,
             offset,
             start: start as usize,
             end: end as usize,

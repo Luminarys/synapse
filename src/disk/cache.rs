@@ -7,7 +7,7 @@ use memmap::{Mmap, Protection};
 use CONFIG;
 #[cfg(target_pointer_width = "32")]
 use super::MAX_CHAINED_OPS;
-use util::MHashMap;
+use util::{MHashMap, native};
 
 /// Holds a file and mmap cache. Because 32 bit systems
 /// can't mmap large files, we load them as needed.
@@ -33,9 +33,10 @@ impl FileCache {
     pub fn get_file<R, F: FnMut(&mut fs::File) -> io::Result<R>>(
         &mut self,
         path: &path::Path,
+        size: Option<u64>,
         mut f: F,
     ) -> io::Result<R> {
-        self.ensure_exists(path)?;
+        self.ensure_exists(path, size)?;
 
         #[cfg(target_pointer_width = "32")]
         {
@@ -51,12 +52,13 @@ impl FileCache {
     pub fn get_file_range<R, F: FnMut(&mut [u8]) -> R>(
         &mut self,
         path: &path::Path,
+        size: Option<u64>,
         offset: u64,
         len: usize,
         read: bool,
         mut f: F,
     ) -> io::Result<R> {
-        self.ensure_exists(path)?;
+        self.ensure_exists(path, size)?;
 
         #[cfg(target_pointer_width = "32")]
         {
@@ -106,18 +108,23 @@ impl FileCache {
         }
     }
 
-    fn ensure_exists(&mut self, path: &path::Path) -> io::Result<()> {
+    fn ensure_exists(&mut self, path: &path::Path, len: Option<u64>) -> io::Result<()> {
         if !self.files.contains_key(path) {
             if self.files.len() >= CONFIG.net.max_open_files {
                 let removal = self.files.iter().map(|(id, _)| id.clone()).next().unwrap();
                 self.remove_file(&removal);
             }
+
             fs::create_dir_all(path.parent().unwrap())?;
             let file = fs::OpenOptions::new()
                 .write(true)
-                .create(true)
+                .create(len.is_some())
                 .read(true)
                 .open(path)?;
+
+            if len.is_some() && file.metadata()?.len() != len.unwrap() {
+                native::fallocate(&file, len.unwrap())?;
+            }
 
             #[cfg(target_pointer_width = "32")] self.files.insert(path.to_path_buf(), file);
 

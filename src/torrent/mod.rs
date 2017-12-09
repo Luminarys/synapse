@@ -947,11 +947,6 @@ impl<T: cio::CIO> Torrent<T> {
         if self.status.stopped() {
             return;
         }
-        self.cio.msg_disk(disk::Request::create(
-            self.id,
-            self.info.clone(),
-            self.path.clone(),
-        ));
         let req = tracker::Request::started(self);
         self.cio.msg_trk(req);
         // TODO: Consider repeatedly sending out these during annoucne intervals
@@ -1053,12 +1048,6 @@ impl<T: cio::CIO> Torrent<T> {
                 }
             }
         }
-        self.cio.msg_disk(disk::Request::create(
-            self.id,
-            self.info.clone(),
-            self.path.clone(),
-            self.priorities.clone(),
-        ));
         */
         self.cio.msg_rpc(rpc::CtlMessage::Update(vec![
             resource::SResourceUpdate::FilePriority {
@@ -1476,11 +1465,6 @@ impl<T: cio::CIO> Torrent<T> {
                 self.cio.msg_trk(req);
                 self.status.paused = false;
             }
-            self.cio.msg_disk(disk::Request::create(
-                self.id,
-                self.info.clone(),
-                self.path.clone(),
-            ));
             self.request_all();
             self.announce_status();
         }

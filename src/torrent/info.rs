@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 use std::collections::BTreeMap;
-use std::{fmt, fs, cmp, mem, io, path};
+use std::{fmt, cmp, mem};
 use std::sync::Arc;
 
 use base32;
@@ -9,7 +9,6 @@ use url::Url;
 use disk;
 use bencode::BEncode;
 use util::{hash_to_id, id_to_hash, sha1_hash};
-use util::native::fallocate;
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct Info {
@@ -79,19 +78,6 @@ impl File {
             _ => Err("File dict must contain length and name or path"),
         }
     }
-
-    fn create(&self, path: &path::Path) -> io::Result<()> {
-        let mut pb = path::PathBuf::from(path);
-        pb.push(&self.path);
-        if let Some(parent) = pb.parent() {
-            fs::create_dir_all(parent)?;
-        }
-        let f = fs::OpenOptions::new().write(true).create(true).open(&pb)?;
-        if f.metadata()?.len() != self.length {
-            fallocate(&f, self.length)?;
-        }
-        Ok(())
-    }
 }
 
 impl Info {
@@ -143,13 +129,6 @@ impl Info {
 
     pub fn complete(&self) -> bool {
         !self.hashes.is_empty()
-    }
-
-    pub fn create_files(&self, path: &path::Path) -> io::Result<()> {
-        for (_, file) in self.files.iter().enumerate() {
-            file.create(path)?;
-        }
-        Ok(())
     }
 
     pub fn to_bencode(&self) -> BEncode {
@@ -422,6 +401,7 @@ impl Iterator for LocIter {
                     // exit loop
                     Some(disk::Location::new(
                         p.file,
+                        self.info.files[p.file].length,
                         offset,
                         p.data_start,
                         p.data_start + file_write_len,
@@ -431,6 +411,7 @@ impl Iterator for LocIter {
                     // Write to the end of file, continue
                     let res = disk::Location::new(
                         p.file,
+                        self.info.files[p.file].length,
                         offset,
                         p.data_start,
                         p.data_start + file_write_len,
