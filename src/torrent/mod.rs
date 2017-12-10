@@ -89,7 +89,9 @@ pub struct Status {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum StatusState {
     Magnet,
+    // Torrent has not acquired all pieces
     Incomplete,
+    // Torrent has acquired all pieces, regardless of validity
     Complete,
 }
 
@@ -130,7 +132,7 @@ impl Status {
         match self.state {
             StatusState::Incomplete => {
                 if dl == 0 {
-                    rpc::resource::Status::Idle
+                    rpc::resource::Status::Pending
                 } else {
                     rpc::resource::Status::Leeching
                 }
@@ -447,7 +449,12 @@ impl<T: cio::CIO> Torrent<T> {
                 */
                 if invalid.is_empty() {
                     info!("Torrent succesfully downloaded!");
-                    self.set_complete();
+                    if !self.complete() {
+                        for i in 0..self.pieces.len() {
+                            self.pieces.set_bit(i);
+                        }
+                    }
+                    self.set_finished();
                 } else {
                     // If this is an initialization hash, start the torrent
                     // immediatly.
@@ -473,9 +480,7 @@ impl<T: cio::CIO> Torrent<T> {
                         self.cio.msg_rpc(rpc::CtlMessage::Update(rpc_updates));
                         self.request_all();
                     }
-                    if !self.status.stopped() {
-                        self.status.state = StatusState::Incomplete;
-                    }
+                    self.status.state = StatusState::Incomplete;
                 }
                 // update the RPC stats once done
                 self.update_rpc_transfer();
@@ -488,16 +493,16 @@ impl<T: cio::CIO> Torrent<T> {
         self.announce_status();
     }
 
-    fn set_complete(&mut self) {
+    /// Signal that we've downloaded and verified the torrent
+    fn set_finished(&mut self) {
         let req = tracker::Request::completed(self);
         self.cio.msg_trk(req);
         // Order here is important, if we're in an idle status,
         // rpc updates don't occur.
         self.update_rpc_transfer();
-        if !self.status.stopped() {
-            self.status.state = StatusState::Complete;
-            self.announce_status();
-        }
+        self.status.state = StatusState::Complete;
+        self.announce_status();
+
         // Remove all seeding peers.
         let leechers = &self.leechers;
         let seeders = self.peers
@@ -642,14 +647,15 @@ impl<T: cio::CIO> Torrent<T> {
                     self.pieces.set_bit(u64::from(index));
 
                     // Begin validation, and save state if the torrent is done
-                    if self.complete() {
+                    if self.pieces.complete() {
+                        self.status.state = StatusState::Complete;
                         self.serialize();
                         if CONFIG.disk.validate {
                             debug!("Beginning validation");
                             self.validate();
                         } else {
                             debug!("Torrent complete");
-                            self.set_complete();
+                            self.set_finished();
                         }
                     }
 
