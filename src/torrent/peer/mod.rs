@@ -6,8 +6,6 @@ use std::net::SocketAddr;
 use std::{io, fmt, mem, time, cmp};
 use std::net::TcpStream;
 
-use chrono::{DateTime, Utc};
-
 pub use self::message::Message;
 use self::reader::Reader;
 use self::writer::Writer;
@@ -19,6 +17,7 @@ use rpc::{self, resource};
 use bencode;
 use tracker;
 use util;
+use stat;
 use {DHT_EXT, CONFIG};
 
 error_chain! {
@@ -48,9 +47,7 @@ pub struct Peer<T: cio::CIO> {
     tid: usize,
     downloaded: u32,
     uploaded: u32,
-    downloaded_bytes: u64,
-    uploaded_bytes: u64,
-    last_flush: DateTime<Utc>,
+    stat: stat::EMA,
     addr: SocketAddr,
     t_hash: [u8; 20],
     cid: Option<[u8; 20]>,
@@ -166,8 +163,7 @@ impl Peer<cio::test::TCIO> {
             local_status: Status::new(),
             uploaded,
             downloaded,
-            uploaded_bytes: 0,
-            downloaded_bytes: 0,
+            stat: stat::EMA::new(),
             addr: "127.0.0.1:0".parse().unwrap(),
             cio: cio::test::TCIO::new(),
             queued,
@@ -177,7 +173,6 @@ impl Peer<cio::test::TCIO> {
             t_hash: [0u8; 20],
             rsv: None,
             cid: None,
-            last_flush: Utc::now(),
             ext_ids: ExtIDs::new(),
         }
     }
@@ -218,8 +213,7 @@ impl<T: cio::CIO> Peer<T> {
             local_status: Status::new(),
             uploaded: 0,
             downloaded: 0,
-            uploaded_bytes: 0,
-            downloaded_bytes: 0,
+            stat: stat::EMA::new(),
             cio: t.cio.new_handle(),
             queued: 0,
             max_queue: INIT_MAX_QUEUE,
@@ -228,7 +222,6 @@ impl<T: cio::CIO> Peer<T> {
             t_hash: t.info.hash,
             rsv,
             cid,
-            last_flush: Utc::now(),
             ext_ids: ExtIDs::new(),
         };
         p.send_message(Message::handshake(&t.info));
@@ -284,19 +277,12 @@ impl<T: cio::CIO> Peer<T> {
         &self.remote_status
     }
 
-    pub fn get_tx_rates(&mut self) -> (u64, u64) {
-        let dur = Utc::now()
-            .signed_duration_since(self.last_flush)
-            .num_milliseconds() as u64;
-        if dur == 0 {
-            return (0, 0);
+    pub fn tick(&mut self) -> bool {
+        self.stat.tick();
+        if !self.stat.active() {
+            return false;
         }
-        let ub = mem::replace(&mut self.uploaded_bytes, 0);
-        let db = mem::replace(&mut self.downloaded_bytes, 0);
-        let ul = (1000 * ub) / dur;
-        let dl = (1000 * db) / dur;
-        self.last_flush = Utc::now();
-
+        let (_, dl) = (self.stat.avg_ul(), self.stat.avg_dl());
         let rate = (dl / 1024) as u16;
         // Taken from rtorrent's pipeline calculation
         let nmq = if rate < 20 { rate + 2 } else { rate / 5 + 18 };
@@ -307,7 +293,11 @@ impl<T: cio::CIO> Peer<T> {
         );
         // Keep it under the max cap
         self.max_queue = cmp::min(self.max_queue, MAX_QUEUE_CAP);
-        (ul, dl)
+        true
+    }
+
+    pub fn get_tx_rates(&self) -> (u64, u64) {
+        (self.stat.avg_ul(), self.stat.avg_dl())
     }
 
     pub fn queue_reqs(&mut self) -> Option<u16> {
@@ -330,7 +320,7 @@ impl<T: cio::CIO> Peer<T> {
             }
             Message::Piece { length, .. } |
             Message::SharedPiece { length, .. } => {
-                self.downloaded_bytes += u64::from(length);
+                self.stat.add_dl(u64::from(length));
                 self.downloaded += 1;
                 self.queued -= 1;
             }
@@ -446,7 +436,7 @@ impl<T: cio::CIO> Peer<T> {
             Message::SharedPiece { length, .. } |
             Message::Piece { length, .. } => {
                 self.uploaded += 1;
-                self.uploaded_bytes += u64::from(length);
+                self.stat.add_ul(u64::from(length));
             }
             _ => {}
         }

@@ -7,7 +7,7 @@ use chrono::Utc;
 use bincode;
 use amy;
 
-use {rpc, tracker, disk, listener, CONFIG, SHUTDOWN};
+use {rpc, tracker, disk, listener, stat, CONFIG, SHUTDOWN};
 use util::{io_err, io_err_val, id_to_hash, hash_to_id, random_string, UHashMap, MHashMap};
 use torrent::{self, peer, Torrent};
 use throttle::Throttler;
@@ -35,8 +35,7 @@ pub struct Control<T: cio::CIO> {
     cio: T,
     tid_cnt: usize,
     job_timer: usize,
-    last_tx: (u64, u64),
-    last_tx_time: time::Instant,
+    stat: stat::EMA,
     jobs: job::JobManager<T>,
     torrents: UHashMap<Torrent<T>>,
     peers: UHashMap<usize>,
@@ -94,8 +93,7 @@ impl<T: cio::CIO> Control<T> {
             torrents,
             peers,
             hash_idx,
-            last_tx: (0, 0),
-            last_tx_time: time::Instant::now(),
+            stat: stat::EMA::new(),
             data: Default::default(),
             db,
         })
@@ -230,6 +228,8 @@ impl<T: cio::CIO> Control<T> {
                     self.data.dl += dl;
                     self.data.session_ul += ul;
                     self.data.session_dl += dl;
+                    self.stat.add_ul(ul);
+                    self.stat.add_dl(dl);
                 } else if t == self.throttler.fid() {
                     self.flush_blocked_peers();
                 } else if t == self.job_timer {
@@ -504,59 +504,21 @@ impl<T: cio::CIO> Control<T> {
     }
 
     fn update_rpc_tx(&mut self) {
-        let elapsed = self.last_tx_time.elapsed();
-        let linger_start = time::Duration::from_millis(1000);
-        let cutoff_start = time::Duration::from_millis(2000);
-        let cutoff_end = time::Duration::from_millis(3000);
-
-        if self.last_tx.0 != self.data.session_ul || self.last_tx.1 != self.data.session_dl {
-            let d = elapsed.as_secs() * 1000 + elapsed.subsec_nanos() as u64 / 1_000_000;
-            let rate_up = ((self.data.session_ul - self.last_tx.0) * 1000) / d;
-            let rate_down = ((self.data.session_dl - self.last_tx.1) * 1000) / d;
+        self.stat.tick();
+        if self.stat.active() {
+            let (ul, dl) = (self.stat.avg_ul(), self.stat.avg_dl());
             self.cio.msg_rpc(rpc::CtlMessage::Update(vec![
                 rpc::resource::SResourceUpdate::ServerTransfer {
                     id: self.data.id.clone(),
                     kind: rpc::resource::ResourceKind::Server,
-                    rate_up,
-                    rate_down,
+                    rate_up: ul,
+                    rate_down: dl,
                     transferred_up: self.data.ul,
                     transferred_down: self.data.dl,
                     ses_transferred_up: self.data.session_ul,
                     ses_transferred_down: self.data.session_dl,
                 },
             ]));
-            self.last_tx_time = time::Instant::now();
-            self.last_tx.0 = self.data.session_ul;
-            self.last_tx.1 = self.data.session_dl;
-        } else if elapsed > linger_start && elapsed < cutoff_start {
-            // Handle linger at 1-3 second
-            let d = elapsed.as_secs() * 1000 + elapsed.subsec_nanos() as u64 / 1_000_000;
-            let rate_up = ((self.data.session_ul - self.last_tx.0) * 1000) / d;
-            let rate_down = ((self.data.session_dl - self.last_tx.1) * 1000) / d;
-            self.cio.msg_rpc(rpc::CtlMessage::Update(vec![
-                rpc::resource::SResourceUpdate::Rate {
-                    id: self.data.id.clone(),
-                    kind: rpc::resource::ResourceKind::Server,
-                    rate_up,
-                    rate_down,
-                },
-            ]));
-            if rate_up == 0 && rate_down == 0 {
-                self.last_tx_time = time::Instant::now() - cutoff_end;
-            }
-        } else if elapsed > cutoff_start && elapsed < cutoff_end {
-            // Handle linger at 3 seconds by just cutting off to 0.
-            self.cio.msg_rpc(rpc::CtlMessage::Update(vec![
-                rpc::resource::SResourceUpdate::Rate {
-                    id: self.data.id.clone(),
-                    kind: rpc::resource::ResourceKind::Server,
-                    rate_up: 0,
-                    rate_down: 0,
-                },
-            ]));
-            self.last_tx_time = time::Instant::now() - cutoff_end;
-        } else if elapsed > cutoff_end {
-            self.last_tx_time = time::Instant::now() - cutoff_end;
         }
     }
 

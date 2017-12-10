@@ -10,7 +10,7 @@ use disk;
 use bencode::BEncode;
 use util::{hash_to_id, id_to_hash, sha1_hash};
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct Info {
     pub name: String,
     pub announce: String,

@@ -25,6 +25,7 @@ use rpc::resource::{self, Resource, SResourceUpdate};
 use throttle::Throttle;
 use tracker::{self, TrackerResponse};
 use util::{UHashMap, MHashMap, FHashSet};
+use stat;
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub enum TrackerStatus {
@@ -59,11 +60,9 @@ pub struct Torrent<T: cio::CIO> {
     cio: T,
     uploaded: u64,
     downloaded: u64,
-    last_ul: u64,
-    last_dl: u64,
+    stat: stat::EMA,
     priority: u8,
     priorities: Vec<u8>,
-    last_clear: DateTime<Utc>,
     throttle: Throttle,
     tracker: TrackerStatus,
     tracker_update: Option<Instant>,
@@ -192,9 +191,7 @@ impl<T: cio::CIO> Torrent<T> {
             priorities,
             uploaded: 0,
             downloaded: 0,
-            last_ul: 0,
-            last_dl: 0,
-            last_clear: Utc::now(),
+            stat: stat::EMA::new(),
             cio,
             leechers,
             throttle,
@@ -251,11 +248,9 @@ impl<T: cio::CIO> Torrent<T> {
             picker,
             uploaded: d.uploaded,
             downloaded: d.downloaded,
-            last_ul: 0,
-            last_dl: 0,
+            stat: stat::EMA::new(),
             priorities: d.priorities,
             priority: d.priority,
-            last_clear: Utc::now(),
             cio,
             leechers,
             throttle,
@@ -419,7 +414,7 @@ impl<T: cio::CIO> Torrent<T> {
                     let p = Message::s_piece(context.idx, context.begin, context.length, data);
                     // This may not be 100% accurate, but close enough for now.
                     self.uploaded += u64::from(context.length);
-                    self.last_ul += u64::from(context.length);
+                    self.stat.add_ul(u64::from(context.length));
                     self.dirty = true;
                     peer.send_message(p);
                 }
@@ -649,7 +644,7 @@ impl<T: cio::CIO> Torrent<T> {
                 self.write_piece(index, begin, data);
 
                 self.downloaded += u64::from(length);
-                self.last_dl += u64::from(length);
+                self.stat.add_dl(u64::from(length));
 
                 if piece_done {
                     self.pieces.set_bit(u64::from(index));
@@ -1083,7 +1078,7 @@ impl<T: cio::CIO> Torrent<T> {
             path: self.path.as_ref().unwrap_or(&CONFIG.disk.directory).clone(),
             created: self.created,
             modified: Utc::now(),
-            status: self.status.as_rpc(self.last_ul, self.last_dl),
+            status: self.status.as_rpc(self.stat.avg_ul(), self.stat.avg_dl()),
             error: self.error(),
             priority: self.priority,
             progress: self.progress(),
@@ -1215,25 +1210,18 @@ impl<T: cio::CIO> Torrent<T> {
 
     /// Resets the last upload/download statistics, adjusting the internal
     /// status if nothing has been uploaded/downloaded in the interval.
-    pub fn reset_last_tx_rate(&mut self) -> (u64, u64) {
-        let res = self.get_last_tx_rate();
-        self.last_clear = Utc::now();
-        self.last_ul = 0;
-        self.last_dl = 0;
-        res
+    pub fn tick(&mut self) -> bool {
+        self.stat.tick();
+        let mut active = self.stat.active();
+
+        for (_, peer) in self.peers.iter_mut() {
+            active |= peer.tick();
+        }
+        active
     }
 
-    // TODO: Implement Exp Moving Avg Somewhere
     pub fn get_last_tx_rate(&self) -> (u64, u64) {
-        let dur = Utc::now()
-            .signed_duration_since(self.last_clear)
-            .num_milliseconds() as u64;
-        if dur == 0 {
-            return (0, 0);
-        }
-        let ul = (1000 * self.last_ul) / dur;
-        let dl = (1000 * self.last_dl) / dur;
-        (ul, dl)
+        (self.stat.avg_ul(), self.stat.avg_dl())
     }
 
     /// Writes a piece of torrent info, with piece index idx,
@@ -1323,7 +1311,7 @@ impl<T: cio::CIO> Torrent<T> {
                 id,
                 kind: resource::ResourceKind::Torrent,
                 error: self.status.error.clone(),
-                status: self.status.as_rpc(self.last_ul, self.last_dl),
+                status: self.status.as_rpc(self.stat.avg_ul(), self.stat.avg_dl()),
             },
         ]));
     }
