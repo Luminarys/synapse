@@ -36,10 +36,6 @@ impl Choker {
         }
     }
 
-    pub fn unchoked(&self) -> &Vec<usize> {
-        &self.unchoked
-    }
-
     fn unchoke_random<T: cio::CIO>(&mut self, peers: &mut UHashMap<Peer<T>>) -> Option<usize> {
         if let Some(random_id) = random_sample(self.interested.iter()).cloned() {
             let mut peer = peers.get_mut(&random_id).unwrap();

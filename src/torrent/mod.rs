@@ -461,13 +461,6 @@ impl<T: cio::CIO> Torrent<T> {
                                 self.pieces.unset_bit(u64::from(piece));
                             }
                             let mut rpc_updates = vec![];
-                            for i in self.pieces.iter() {
-                                rpc_updates.push(SResourceUpdate::PieceDownloaded {
-                                    id: util::piece_rpc_id(&self.info.hash, i),
-                                    kind: resource::ResourceKind::Piece,
-                                    downloaded: true,
-                                });
-                            }
                             self.cio.msg_rpc(rpc::CtlMessage::Update(rpc_updates));
                         }
                         self.announce_start();
@@ -476,11 +469,6 @@ impl<T: cio::CIO> Torrent<T> {
                         for piece in invalid {
                             self.picker.invalidate_piece(piece);
                             self.pieces.unset_bit(u64::from(piece));
-                            rpc_updates.push(SResourceUpdate::PieceDownloaded {
-                                id: util::piece_rpc_id(&self.info.hash, u64::from(piece)),
-                                kind: resource::ResourceKind::Piece,
-                                downloaded: false,
-                            });
                         }
                         self.cio.msg_rpc(rpc::CtlMessage::Update(rpc_updates));
                         self.request_all();
@@ -541,7 +529,11 @@ impl<T: cio::CIO> Torrent<T> {
                 }
             }
             Err(e) => {
-                debug!("Removing peer: {}", e);
+                debug!(
+                    "Removing peer {}, {}",
+                    util::peer_rpc_id(&self.info.hash, pid as u64),
+                    e
+                );
                 self.cleanup_peer(&mut peer);
             }
         }
@@ -648,13 +640,6 @@ impl<T: cio::CIO> Torrent<T> {
 
                 if piece_done {
                     self.pieces.set_bit(u64::from(index));
-                    self.cio.msg_rpc(rpc::CtlMessage::Update(vec![
-                        resource::SResourceUpdate::PieceDownloaded {
-                            id: util::piece_rpc_id(&self.info.hash, u64::from(index)),
-                            kind: resource::ResourceKind::Piece,
-                            downloaded: true,
-                        },
-                    ]));
 
                     // Begin validation, and save state if the torrent is done
                     if self.complete() {
@@ -1102,29 +1087,6 @@ impl<T: cio::CIO> Torrent<T> {
 
     fn rpc_rel_info(&self) -> Vec<resource::Resource> {
         let mut r = Vec::new();
-        for i in 0..self.info.pieces() {
-            let id = util::piece_rpc_id(&self.info.hash, u64::from(i));
-            if self.pieces.has_bit(u64::from(i)) {
-                r.push(Resource::Piece(resource::Piece {
-                    id,
-                    torrent_id: self.rpc_id(),
-                    available: true,
-                    downloaded: true,
-                    index: i,
-                    ..Default::default()
-                }))
-            } else {
-                r.push(Resource::Piece(resource::Piece {
-                    id,
-                    torrent_id: self.rpc_id(),
-                    available: true,
-                    downloaded: false,
-                    index: i,
-                    ..Default::default()
-                }))
-            }
-        }
-
         let mut files = Vec::new();
         for f in self.info.files.iter() {
             files.push((0, f.length));
@@ -1177,10 +1139,6 @@ impl<T: cio::CIO> Torrent<T> {
     pub fn send_rpc_removal(&mut self) {
         let mut r = Vec::new();
         r.push(self.rpc_id());
-        for i in 0..self.info.pieces() {
-            let id = util::piece_rpc_id(&self.info.hash, u64::from(i));
-            r.push(id)
-        }
         for f in &self.info.files {
             let id =
                 util::file_rpc_id(&self.info.hash, f.path.as_path().to_string_lossy().as_ref());
@@ -1346,7 +1304,6 @@ impl<T: cio::CIO> Torrent<T> {
     }
 
     pub fn update_rpc_transfer(&mut self) {
-        debug!("Updating rpc tx!");
         let progress = self.progress();
         let (rate_up, rate_down) = self.get_last_tx_rate();
         let id = self.rpc_id();
@@ -1366,33 +1323,20 @@ impl<T: cio::CIO> Torrent<T> {
             error: None,
             status: self.status.as_rpc(rate_up, rate_down),
         });
-        if !self.status.leeching() {
-            for pid in self.choker.unchoked().iter() {
-                if let Some(p) = self.peers.get_mut(pid) {
-                    let (rate_up, rate_down) = p.get_tx_rates();
-                    updates.push(SResourceUpdate::Rate {
-                        id: util::peer_rpc_id(&self.info.hash, *pid as u64),
-                        kind: resource::ResourceKind::Peer,
-                        rate_up,
-                        rate_down,
-                    });
-                }
+
+        for (pid, p) in &mut self.peers {
+            if !p.active() {
+                continue;
             }
-        } else {
-            for (pid, p) in &mut self.peers {
-                if p.remote_status().choked || !p.ready() {
-                    continue;
-                }
-                let (rate_up, rate_down) = p.get_tx_rates();
-                let id = util::peer_rpc_id(&self.info.hash, *pid as u64);
-                updates.push(SResourceUpdate::Rate {
-                    id,
-                    kind: resource::ResourceKind::Peer,
-                    rate_up,
-                    rate_down,
-                });
-            }
+            let (rate_up, rate_down) = p.get_tx_rates();
+            updates.push(SResourceUpdate::Rate {
+                id: util::peer_rpc_id(&self.info.hash, *pid as u64),
+                kind: resource::ResourceKind::Peer,
+                rate_up,
+                rate_down,
+            });
         }
+
         if self.status.leeching() || self.status.validating() {
             let mut files = MHashMap::default();
             for (i, f) in self.info.files.iter().enumerate() {
@@ -1544,43 +1488,4 @@ mod tests {
     use super::*;
     use control::cio::{CIO, test};
     use throttle::*;
-
-    fn test_piece_update() {
-        let mut tcio = test::TCIO::new();
-        let mut t = Torrent::new(
-            0,
-            None,
-            Info::with_pieces(10),
-            Throttler::test(None, None, 0).get_throttle(1),
-            tcio.new_handle(),
-            true,
-        );
-        tcio.clear();
-        assert_eq!(t.pieces.iter().count(), 0);
-
-        t.handle_disk_resp(disk::Response::ValidationComplete {
-            tid: 0,
-            invalid: vec![0],
-        });
-        let mut d = tcio.data();
-        assert_eq!(d.rpc_msgs.len(), 1);
-        match d.rpc_msgs.remove(0) {
-            rpc::CtlMessage::Update(v) => {
-                assert_eq!(v.len(), 9);
-                let mut idx = 1;
-                for msg in v {
-                    assert_eq!(
-                        msg,
-                        SResourceUpdate::PieceDownloaded {
-                            id: util::piece_rpc_id(&t.info.hash, idx),
-                            kind: resource::ResourceKind::Piece,
-                            downloaded: true,
-                        }
-                    );
-                    idx += 1;
-                }
-            }
-            _ => panic!(),
-        }
-    }
 }

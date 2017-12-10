@@ -277,6 +277,10 @@ impl<T: cio::CIO> Peer<T> {
         &self.remote_status
     }
 
+    pub fn active(&self) -> bool {
+        self.stat.active()
+    }
+
     pub fn tick(&mut self) -> bool {
         self.stat.tick();
         if !self.stat.active() {

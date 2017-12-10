@@ -93,18 +93,6 @@ pub fn sha1_hash(data: &[u8]) -> [u8; 20] {
     ctx.finish()
 }
 
-pub fn piece_rpc_id(torrent: &[u8; 20], piece: u64) -> String {
-    const PIECE_ID: &'static [u8] = b"PIECE";
-    let mut idx = [0u8; 8];
-    (&mut idx[..]).write_u64::<BigEndian>(piece).unwrap();
-
-    let mut ctx = sha1::Sha1::new();
-    ctx.update(torrent);
-    ctx.update(PIECE_ID);
-    ctx.update(&idx[..]);
-    hash_to_id(ctx.finish().as_ref())
-}
-
 pub fn peer_rpc_id(torrent: &[u8; 20], peer: u64) -> String {
     const PEER_ID: &'static [u8] = b"PEER";
     let mut idx = [0u8; 8];
