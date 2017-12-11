@@ -1337,7 +1337,7 @@ impl<T: cio::CIO> Torrent<T> {
             });
         }
 
-        if self.status.leeching() || self.status.validating() {
+        if self.stat.active() {
             let mut files = MHashMap::default();
             for (i, f) in self.info.files.iter().enumerate() {
                 if self.priorities[i] != 0 {
