@@ -21,6 +21,7 @@ pub struct Info {
     pub files: Vec<File>,
     pub private: bool,
     pub be_name: Option<Vec<u8>>,
+    piece_idx: Vec<(usize, u64)>,
 }
 
 impl fmt::Debug for Info {
@@ -124,6 +125,7 @@ impl Info {
             files: vec![],
             private: false,
             be_name: None,
+            piece_idx: vec![],
         })
     }
 
@@ -194,7 +196,7 @@ impl Info {
                 )?;
                 let pl = i.remove("piece length").and_then(|i| i.into_int()).ok_or(
                     "Info must specify piece length",
-                )?;
+                )? as u64;
                 let hashes = i.remove("pieces")
                     .and_then(|p| p.into_bytes())
                     .and_then(|p| {
@@ -249,6 +251,8 @@ impl Info {
                 };
 
                 let total_len = files.iter().map(|f| f.length).sum();
+                let piece_idx = Info::generate_piece_idx(hashes.len(), pl, &files);
+
                 Ok(Info {
                     name,
                     announce: a,
@@ -259,8 +263,24 @@ impl Info {
                     total_len,
                     private,
                     be_name,
+                    piece_idx,
                 })
             })
+    }
+
+    fn generate_piece_idx(pieces: usize, pl: u64, files: &[File]) -> Vec<(usize, u64)> {
+        let mut piece_idx = Vec::with_capacity(pieces);
+        let mut file = 0;
+        let mut offset = 0u64;
+        for i in 0..pieces {
+            piece_idx.push((file, offset));
+            offset += pl;
+            while file < files.len() && offset >= files[file].length {
+                offset -= files[file].length;
+                file += 1;
+            }
+        }
+        piece_idx
     }
 
     #[cfg(test)]
@@ -275,6 +295,7 @@ impl Info {
             files: vec![],
             private: false,
             be_name: None,
+            piece_idx: vec![],
         }
     }
 
@@ -290,6 +311,7 @@ impl Info {
             files: vec![],
             private: false,
             be_name: None,
+            piece_idx: vec![],
         }
     }
 
@@ -349,7 +371,6 @@ enum LocIterState {
 
 struct LocIterPos {
     len: u64,
-    cur_start: u64,
     data_start: u64,
     fidx: u64,
     file: usize,
@@ -359,27 +380,22 @@ impl LocIter {
     pub fn new(info: Arc<Info>, index: u32, begin: u32, len: u32) -> LocIter {
         let len = u64::from(len);
         // The absolute byte offset where we start processing data.
-        let cur_start = u64::from(index) * u64::from(info.piece_len) + u64::from(begin);
+        let cur_start = u64::from(begin);
         // The current file end length.
-        let mut fidx = 0;
-        let mut file = 0;
-
-        for (i, f) in info.files.iter().enumerate() {
-            fidx += f.length;
+        let (mut file, mut fidx) = info.piece_idx[index as usize];
+        fidx += begin as u64;
+        while info.files[file].length < fidx {
+            fidx -= info.files[file].length;
             file += 1;
-            if cur_start < fidx {
-                file = i;
-                break;
-            }
         }
 
         let p = LocIterPos {
             len,
-            cur_start,
             data_start: 0,
             fidx,
             file,
         };
+
         LocIter {
             info,
             state: LocIterState::P(p),
@@ -394,15 +410,15 @@ impl Iterator for LocIter {
         match mem::replace(&mut self.state, LocIterState::Done) {
             LocIterState::P(mut p) => {
                 let f_len = self.info.files[p.file].length;
-                let file_write_len = cmp::min(p.fidx - p.cur_start, p.len);
-                let offset = p.cur_start - (p.fidx - f_len);
+                let file_write_len = cmp::min(f_len - p.fidx, p.len);
+
                 if file_write_len == p.len {
                     // The file is longer than our len, just write to it,
                     // exit loop
                     Some(disk::Location::new(
                         p.file,
                         self.info.files[p.file].length,
-                        offset,
+                        p.fidx,
                         p.data_start,
                         p.data_start + file_write_len,
                         self.info.clone(),
@@ -412,17 +428,18 @@ impl Iterator for LocIter {
                     let res = disk::Location::new(
                         p.file,
                         self.info.files[p.file].length,
-                        offset,
+                        p.fidx,
                         p.data_start,
                         p.data_start + file_write_len,
                         self.info.clone(),
                     );
-                    p.len -= file_write_len;
-                    p.cur_start += file_write_len;
-                    p.data_start += file_write_len;
+
+                    // Use the next file, updating state as needed
+                    p.fidx -= (self.info.files[p.file].length - file_write_len);
                     p.file += 1;
-                    p.fidx += self.info.files[p.file].length;
-                    // TODO: Think about if stack overflow is a concern here
+                    p.len -= file_write_len;
+                    p.data_start += file_write_len;
+
                     self.state = LocIterState::P(p);
                     Some(res)
                 }
@@ -486,6 +503,8 @@ mod tests {
             length: 10000,
         });
         info.total_len = 50000;
+        info.piece_idx =
+            Info::generate_piece_idx(info.hashes.len(), info.piece_len as u64, &info.files);
         let info = Arc::new(info);
         let mut locs = Info::block_disk_locs(&info, 0, 0);
         let n = locs.next().unwrap();
