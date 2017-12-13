@@ -1,6 +1,7 @@
 use std::{fs, cmp};
 use std::path::Path;
 use std::io::{self, Read};
+use std::borrow::Cow;
 
 use reqwest::{Client as HClient, header};
 use serde_json;
@@ -52,7 +53,7 @@ fn add_file(c: &mut Client, url: &str, file: &str, dir: Option<&str>, start: boo
         .send()
         .chain_err(|| ErrorKind::HTTP)?;
 
-    if let SMessage::OResourcesExtant { .. } = c.recv()? {
+    if let SMessage::ResourcesExtant { .. } = c.recv()? {
     } else {
         bail!("Failed to receieve upload acknowledgement from synapse!");
     };
@@ -106,8 +107,8 @@ pub fn dl(mut c: Client, url: &str, name: &str) -> Result<()> {
                 },
             ],
         };
-        if let SMessage::OResourcesExtant { ids, .. } = c.rr(msg)? {
-            get_resources(&mut c, ids)?
+        if let SMessage::ResourcesExtant { ids, .. } = c.rr(msg)? {
+            get_resources(&mut c, ids.iter().map(Cow::to_string).collect())?
         } else {
             bail!("Could not get files for torrent!");
         }
@@ -353,7 +354,7 @@ pub fn watch(mut c: Client, id: &str, output: &str) -> Result<()> {
 
     let mut results = Vec::new();
     for r in resources {
-        if let SResourceUpdate::OResource(res) = r {
+        if let SResourceUpdate::Resource(res) = r {
             results.push(res);
         } else {
             bail!("Failed to received full resource!");
@@ -363,7 +364,7 @@ pub fn watch(mut c: Client, id: &str, output: &str) -> Result<()> {
     if results.is_empty() {
         bail!("Could not find specified resource!");
     }
-    let mut res = results.remove(0);
+    let mut res = results.remove(0).into_owned();
     loop {
         match output {
             "text" => {
@@ -452,13 +453,13 @@ fn search(c: &mut Client, kind: ResourceKind, criteria: Vec<Criterion>) -> Resul
         kind,
         criteria,
     };
-    if let SMessage::OResourcesExtant { ids, .. } = c.rr(msg)? {
+    if let SMessage::ResourcesExtant { ids, .. } = c.rr(msg)? {
         let ns = c.next_serial();
         c.send(CMessage::FilterUnsubscribe {
             serial: ns,
             filter_serial: s,
         })?;
-        get_resources(c, ids)
+        get_resources(c, ids.iter().map(Cow::to_string).collect())
     } else {
         bail!("Failed to receive extant resource list!");
     }
@@ -484,8 +485,8 @@ fn get_resources(c: &mut Client, ids: Vec<String>) -> Result<Vec<Resource>> {
 
     let mut results = Vec::new();
     for r in resources {
-        if let SResourceUpdate::OResource(res) = r {
-            results.push(res);
+        if let SResourceUpdate::Resource(res) = r {
+            results.push(res.into_owned());
         } else {
             bail!("Failed to received full resource!");
         }

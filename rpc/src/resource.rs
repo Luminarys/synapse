@@ -1,5 +1,6 @@
 use std::mem;
 use std::fmt;
+use std::borrow::Cow;
 
 use chrono::{DateTime, Utc};
 use serde;
@@ -39,10 +40,7 @@ pub enum ResourceKind {
 #[serde(untagged)]
 #[serde(deny_unknown_fields)]
 pub enum SResourceUpdate<'a> {
-    #[serde(skip_deserializing)]
-    Resource(&'a Resource),
-    #[serde(rename = "RESOURCE")]
-    OResource(Resource),
+    Resource(Cow<'a, Resource>),
     Throttle {
         id: String,
         #[serde(rename = "type")]
@@ -283,7 +281,6 @@ impl<'a> SResourceUpdate<'a> {
     pub fn id(&self) -> &str {
         match self {
             &SResourceUpdate::Resource(ref r) => r.id(),
-            &SResourceUpdate::OResource(ref r) => r.id(),
             &SResourceUpdate::Throttle { ref id, .. } |
             &SResourceUpdate::Rate { ref id, .. } |
             &SResourceUpdate::UserData { ref id, .. } |

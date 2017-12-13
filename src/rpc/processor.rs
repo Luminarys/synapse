@@ -3,6 +3,7 @@ use std::mem;
 use std::io::Read;
 use std::fs::OpenOptions;
 use std::path::Path;
+use std::borrow::Cow;
 
 use amy;
 use bincode;
@@ -165,7 +166,7 @@ impl Processor {
                 let mut resources = Vec::new();
                 for id in ids {
                     if let Some(r) = self.resources.get(&id) {
-                        resources.push(SResourceUpdate::Resource(r));
+                        resources.push(SResourceUpdate::Resource(Cow::Borrowed(r)));
                     } else {
                         resp.push(SMessage::UnknownResource(Error {
                             serial: Some(serial),
@@ -179,7 +180,7 @@ impl Processor {
                 let mut resources = Vec::new();
                 for id in ids {
                     if let Some(r) = self.resources.get(&id) {
-                        resources.push(SResourceUpdate::Resource(r));
+                        resources.push(SResourceUpdate::Resource(Cow::Borrowed(r)));
                         self.subs.get_mut(&id).map(|s| s.insert(client));
                     } else {
                         resp.push(SMessage::UnknownResource(Error {
@@ -322,14 +323,14 @@ impl Processor {
                         for id in rkind.intersection(t) {
                             let r = resources.get(id).unwrap();
                             if f.matches(r) {
-                                added.insert(r.id());
+                                added.insert(Cow::Borrowed(r.id()));
                             }
                         }
                     } else {
                         for id in rkind.iter() {
                             let r = resources.get(id).unwrap();
                             if f.matches(r) {
-                                added.insert(r.id());
+                                added.insert(Cow::Borrowed(r.id()));
                             }
                         }
                     }
@@ -343,7 +344,7 @@ impl Processor {
                     let added: Vec<_> = matching.difference(&prev_matching).cloned().collect();
                     let removed: Vec<_> = prev_matching
                         .difference(&matching)
-                        .map(|s| (*s).to_owned())
+                        .map(Cow::to_string)
                         .collect();
 
                     if !added.is_empty() {
@@ -551,7 +552,7 @@ impl Processor {
                         client,
                         SMessage::ResourcesRemoved {
                             serial,
-                            ids: ids.into_iter().map(|s| s.to_owned()).collect(),
+                            ids: ids.into_iter().map(|s| s.into_owned()).collect(),
                         },
                     ));
                 }
@@ -588,7 +589,7 @@ impl Processor {
                         client,
                         SMessage::ResourcesExtant {
                             serial,
-                            ids: vec![r.id()],
+                            ids: vec![Cow::Borrowed(r.id())],
                         },
                     ))
                 } else {
@@ -611,7 +612,7 @@ impl Processor {
     fn get_matching_filters<'a, I: Iterator<Item = &'a str>>(
         &'a self,
         ids: I,
-    ) -> HashMap<(usize, u64), Vec<&'a str>> {
+    ) -> HashMap<(usize, u64), Vec<Cow<'a, str>>> {
         let mut matched = HashMap::new();
         for id in ids {
             let res = self.resources.get(id).expect(
@@ -622,7 +623,7 @@ impl Processor {
                     if !matched.contains_key(k) {
                         matched.insert(k.clone(), Vec::new());
                     }
-                    matched.get_mut(&k).unwrap().push(id);
+                    matched.get_mut(&k).unwrap().push(Cow::Borrowed(id));
                 }
             }
         }

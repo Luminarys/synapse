@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use chrono::{DateTime, Utc};
 
 use super::resource::{ResourceKind, CResourceUpdate, SResourceUpdate};
@@ -71,11 +73,7 @@ pub enum CMessage {
 #[serde(deny_unknown_fields)]
 pub enum SMessage<'a> {
     // Standard messages
-    #[serde(skip_deserializing)]
-    ResourcesExtant { serial: u64, ids: Vec<&'a str> },
-    #[serde(skip_serializing)]
-    #[serde(rename = "RESOURCES_EXTANT")]
-    OResourcesExtant { serial: u64, ids: Vec<String> },
+    ResourcesExtant { serial: u64, ids: Vec<Cow<'a, str>> },
     ResourcesRemoved { serial: u64, ids: Vec<String> },
     UpdateResources { resources: Vec<SResourceUpdate<'a>> },
 

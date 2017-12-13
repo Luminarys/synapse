@@ -272,7 +272,7 @@ impl Info {
         let mut piece_idx = Vec::with_capacity(pieces);
         let mut file = 0;
         let mut offset = 0u64;
-        for i in 0..pieces {
+        for _ in 0..pieces {
             piece_idx.push((file, offset));
             offset += pl;
             while file < files.len() && offset >= files[file].length {
@@ -379,8 +379,6 @@ struct LocIterPos {
 impl LocIter {
     pub fn new(info: Arc<Info>, index: u32, begin: u32, len: u32) -> LocIter {
         let len = u64::from(len);
-        // The absolute byte offset where we start processing data.
-        let cur_start = u64::from(begin);
         // The current file end length.
         let (mut file, mut fidx) = info.piece_idx[index as usize];
         fidx += begin as u64;
@@ -435,7 +433,7 @@ impl Iterator for LocIter {
                     );
 
                     // Use the next file, updating state as needed
-                    p.fidx -= (self.info.files[p.file].length - file_write_len);
+                    p.fidx -= self.info.files[p.file].length - file_write_len;
                     p.file += 1;
                     p.len -= file_write_len;
                     p.data_start += file_write_len;

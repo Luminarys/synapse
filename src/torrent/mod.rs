@@ -8,6 +8,7 @@ use std::fmt;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+use std::borrow::Cow;
 
 use chrono::{DateTime, Utc};
 use bincode;
@@ -101,10 +102,6 @@ impl Status {
             StatusState::Incomplete => true,
             _ => false,
         }
-    }
-
-    pub fn validating(&self) -> bool {
-        self.validating
     }
 
     pub fn stopped(&self) -> bool {
@@ -978,7 +975,7 @@ impl<T: cio::CIO> Torrent<T> {
         self.cio.msg_rpc(rpc::CtlMessage::Extant(resources));
         let update = self.rpc_info();
         self.cio.msg_rpc(rpc::CtlMessage::Update(
-            vec![SResourceUpdate::OResource(update)],
+            vec![SResourceUpdate::Resource(Cow::Owned(update))],
         ));
         self.serialize();
 
