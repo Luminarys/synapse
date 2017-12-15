@@ -10,8 +10,8 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 use std::borrow::Cow;
 
-use chrono::{DateTime, Utc};
 use bincode;
+use chrono::{DateTime, Utc};
 
 pub use self::bitfield::Bitfield;
 pub use self::info::{Info, LocIter};
@@ -20,12 +20,12 @@ pub use self::peer::Message;
 pub use self::picker::Block;
 
 use self::picker::Picker;
-use {rpc, disk, util, CONFIG, bencode, EXT_PROTO, UT_META_ID};
+use {bencode, disk, rpc, util, CONFIG, EXT_PROTO, UT_META_ID};
 use control::cio;
 use rpc::resource::{self, Resource, SResourceUpdate};
 use throttle::Throttle;
 use tracker::{self, TrackerResponse};
-use util::{UHashMap, MHashMap, FHashSet};
+use util::{FHashSet, MHashMap, UHashMap};
 use stat;
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -339,7 +339,13 @@ impl<T: cio::CIO> Torrent<T> {
                 self.tracker = TrackerStatus::Failure(s.clone());
             }
             Err(ref e) => {
-                error!("Failed to query tracker {}: {}", self.info.announce, e);
+                error!(
+                    "Failed to query tracker {}: {}",
+                    self.info.announce.as_ref().map(|u| u.as_str()).unwrap_or(
+                        "",
+                    ),
+                    e
+                );
                 // Wait 5 minutes before trying again
                 time += Duration::from_secs(300);
                 self.tracker_update = Some(time);
@@ -352,7 +358,7 @@ impl<T: cio::CIO> Torrent<T> {
 
     pub fn try_update_tracker(&mut self) {
         if let Some(end) = self.tracker_update {
-            debug!("Updating tracker at inteval!");
+            debug!("Updating tracker at interval!");
             let cur = Instant::now();
             if cur >= end {
                 self.update_tracker();
@@ -837,7 +843,15 @@ impl<T: cio::CIO> Torrent<T> {
                             let bni = bencode::decode_buf(&self.info_bytes).map_err(|_| ())?;
                             b.insert(
                                 "announce".to_owned(),
-                                bencode::BEncode::String(self.info.announce.clone().into_bytes()),
+                                bencode::BEncode::String(
+                                    self.info
+                                        .announce
+                                        .as_ref()
+                                        .map(|u| u.as_str())
+                                        .unwrap_or("")
+                                        .as_bytes()
+                                        .to_vec(),
+                                ),
                             );
                             b.insert("info".to_owned(), bni);
                             let ni = Info::from_bencode(bencode::BEncode::Dict(b)).map_err(
@@ -1129,7 +1143,12 @@ impl<T: cio::CIO> Torrent<T> {
     fn rpc_trk_info(&self) -> Vec<resource::Resource> {
         let mut r = Vec::new();
         r.push(resource::Resource::Tracker(resource::Tracker {
-            id: util::trk_rpc_id(&self.info.hash, &self.info.announce),
+            id: util::trk_rpc_id(
+                &self.info.hash,
+                self.info.announce.as_ref().map(|u| u.as_str()).unwrap_or(
+                    "",
+                ),
+            ),
             torrent_id: self.rpc_id(),
             url: self.info.announce.clone(),
             last_report: Utc::now(),
@@ -1147,8 +1166,13 @@ impl<T: cio::CIO> Torrent<T> {
                 util::file_rpc_id(&self.info.hash, f.path.as_path().to_string_lossy().as_ref());
             r.push(id)
         }
-        r.push(util::trk_rpc_id(&self.info.hash, &self.info.announce));
-        // TOOD: Tracker removal too
+        r.push(util::trk_rpc_id(
+            &self.info.hash,
+            self.info.announce.as_ref().map(|u| u.as_str()).unwrap_or(
+                "",
+            ),
+        ));
+        // TODO: Tracker removal too
         self.cio.msg_rpc(rpc::CtlMessage::Removed(r));
     }
 
@@ -1291,7 +1315,12 @@ impl<T: cio::CIO> Torrent<T> {
     }
 
     pub fn update_rpc_tracker(&mut self) {
-        let id = util::trk_rpc_id(&self.info.hash, &self.info.announce);
+        let id = util::trk_rpc_id(
+            &self.info.hash,
+            self.info.announce.as_ref().map(|u| u.as_str()).unwrap_or(
+                "",
+            ),
+        );
         let error = match self.tracker {
             TrackerStatus::Failure(ref r) => Some(r.clone()),
             _ => None,
@@ -1484,6 +1513,6 @@ impl<T: cio::CIO> Drop for Torrent<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use control::cio::{CIO, test};
+    use control::cio::{test, CIO};
     use throttle::*;
 }

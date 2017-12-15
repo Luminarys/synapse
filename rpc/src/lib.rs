@@ -1,9 +1,11 @@
+extern crate chrono;
+extern crate regex;
+extern crate serde;
 #[macro_use]
 extern crate serde_derive;
 extern crate serde_json;
-extern crate serde;
-extern crate regex;
-extern crate chrono;
+extern crate url;
+extern crate url_serde;
 
 pub mod resource;
 pub mod criterion;

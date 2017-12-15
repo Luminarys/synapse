@@ -1,10 +1,11 @@
 use std::path::PathBuf;
 use std::collections::BTreeMap;
-use std::{fmt, cmp, mem};
+use std::{cmp, fmt, mem};
 use std::sync::Arc;
 
 use base32;
 use url::Url;
+use url_serde;
 
 use disk;
 use bencode::BEncode;
@@ -13,7 +14,8 @@ use util::{hash_to_id, id_to_hash, sha1_hash};
 #[derive(Clone, Serialize, Deserialize)]
 pub struct Info {
     pub name: String,
-    pub announce: String,
+    #[serde(with = "url_serde")]
+    pub announce: Option<Url>,
     pub piece_len: u32,
     pub total_len: u64,
     pub hashes: Vec<Vec<u8>>,
@@ -107,10 +109,12 @@ impl Info {
                 })
             })
             .ok_or("No hash found in magnet")?;
-        let announce = url.query_pairs()
-            .find(|&(ref k, _)| k == "tr")
-            .map(|(_, ref v)| v.to_string())
-            .unwrap_or_else(|| "".to_owned());
+        let announce = url.query_pairs().find(|&(ref k, _)| k == "tr").and_then(
+            |(_,
+              ref v)| {
+                Url::parse(v).map(|u| Some(u)).unwrap_or(None)
+            },
+        );
         let name = url.query_pairs()
             .find(|&(ref k, _)| k == "dn")
             .map(|(_, ref v)| v.to_string())
@@ -191,9 +195,17 @@ impl Info {
                 BEncode::Dict(i.clone()).encode(&mut info_bytes).unwrap();
                 let hash = sha1_hash(&info_bytes);
 
-                let a = d.remove("announce").and_then(|a| a.into_string()).ok_or(
-                    "Info must have announce url",
-                )?;
+                let a = d.remove("announce")
+                    .ok_or_else(|| "Info must have announce URL")?
+                    .into_string()
+                    .ok_or_else(|| "Info must have announce URL")
+                    .and_then(|a| if a.is_empty() {
+                        Ok(None)
+                    } else {
+                        Url::parse(&a).map(|u| Some(u)).map_err(
+                            |_| "Info has invalid announce URL",
+                        )
+                    })?;
                 let pl = i.remove("piece length").and_then(|i| i.into_int()).ok_or(
                     "Info must specify piece length",
                 )? as u64;
@@ -287,7 +299,7 @@ impl Info {
     pub fn with_pieces(pieces: usize) -> Info {
         Info {
             name: String::from(""),
-            announce: String::from(""),
+            announce: None,
             piece_len: 16_384,
             total_len: 16_384 * pieces as u64,
             hashes: vec![vec![0u8]; pieces],
@@ -303,7 +315,7 @@ impl Info {
     pub fn with_pieces_scale(pieces: u32, scale: u32) -> Info {
         Info {
             name: String::from(""),
-            announce: String::from(""),
+            announce: None,
             piece_len: 16_384 * scale,
             total_len: 16_384 * pieces as u64 * scale as u64,
             hashes: vec![vec![0u8]; pieces as usize],

@@ -5,14 +5,14 @@ mod dns;
 mod dht;
 
 use std::collections::VecDeque;
-use std::net::{SocketAddr, SocketAddrV4, Ipv4Addr};
-use std::{result, io, thread};
+use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
+use std::{io, result, thread};
 
 use byteorder::{BigEndian, ReadBytesExt};
 use url::Url;
 use amy;
 
-pub use self::errors::{Result, ResultExt, Error, ErrorKind};
+pub use self::errors::{Error, ErrorKind, Result, ResultExt};
 use torrent::Torrent;
 use bencode::BEncode;
 use control::cio;
@@ -60,7 +60,6 @@ pub struct GetPeers {
     pub id: usize,
     pub hash: [u8; 20],
 }
-
 
 #[derive(Debug)]
 pub enum Event {
@@ -245,7 +244,6 @@ impl Tracker {
         self.dht.tick();
     }
 
-
     fn handle_socket(&mut self, event: amy::Notification) {
         if self.http.contains(event.id) {
             let resp = if event.event.readable() {
@@ -273,7 +271,6 @@ impl Tracker {
         } else {
             unreachable!();
         };
-
     }
 
     fn send_response(&mut self, r: Response) {
@@ -292,7 +289,13 @@ impl Request {
     pub fn new_announce<T: cio::CIO>(torrent: &Torrent<T>, event: Option<Event>) -> Request {
         Request::Announce(Announce {
             id: torrent.id(),
-            url: torrent.info().announce.clone(),
+            url: torrent
+                .info()
+                .announce
+                .as_ref()
+                .map(|u| u.as_str())
+                .unwrap_or("")
+                .to_owned(),
             hash: torrent.info().hash,
             port: CONFIG.port,
             uploaded: torrent.uploaded(),

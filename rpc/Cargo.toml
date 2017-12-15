@@ -17,6 +17,8 @@ regex = "0.2"
 serde = "1"
 serde_derive = "1"
 serde_json = "1"
+url = "1"
+url_serde = "0.2"
 
 [dependencies.chrono]
 version = "0.4"
