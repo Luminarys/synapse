@@ -2,7 +2,7 @@ use std::{fs, path, io};
 #[cfg(target_pointer_width = "32")]
 use std::io::{Seek, SeekFrom, Read, Write};
 
-use memmap::{Mmap, Protection};
+use memmap::MmapMut;
 
 use CONFIG;
 #[cfg(target_pointer_width = "32")]
@@ -15,9 +15,9 @@ pub struct FileCache {
     #[cfg(target_pointer_width = "32")]
     files: MHashMap<path::PathBuf, fs::File>,
     #[cfg(target_pointer_width = "32")]
-    fallback: Mmap,
+    fallback: MmapMut,
     #[cfg(target_pointer_width = "64")]
-    files: MHashMap<path::PathBuf, (fs::File, Mmap)>,
+    files: MHashMap<path::PathBuf, (fs::File, MmapMut)>,
 }
 
 impl FileCache {
@@ -25,8 +25,7 @@ impl FileCache {
         FileCache {
             files: MHashMap::default(),
             #[cfg(target_pointer_width = "32")]
-            fallback: Mmap::anonymous(MAX_CHAINED_OPS * 16_384, Protection::ReadWrite)
-                .expect("mmap failed!"),
+            fallback: MmapMut::map_anon(MAX_CHAINED_OPS * 16_384).expect("mmap failed!"),
         }
     }
 
@@ -85,10 +84,11 @@ impl FileCache {
 
         #[cfg(target_pointer_width = "64")]
         {
-            Ok(f(unsafe {
-                &mut self.files.get_mut(path).unwrap().1.as_mut_slice()[offset as usize..
-                                                                            offset as usize + len]
-            }))
+            Ok(f(
+                &mut self.files.get_mut(path).unwrap().1[offset as usize..
+                                                             offset as usize +
+                                                                 len],
+            ))
         }
     }
 
@@ -130,7 +130,7 @@ impl FileCache {
 
             #[cfg(target_pointer_width = "64")]
             {
-                let mmap = Mmap::open(&file, Protection::ReadWrite)?;
+                let mmap = unsafe { MmapMut::map_mut(&file)? };
                 self.files.insert(path.to_path_buf(), (file, mmap));
             }
         }

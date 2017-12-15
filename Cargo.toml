@@ -11,34 +11,34 @@ members = ["sycli", "rpc"]
 cc = "1.0"
 
 [dependencies]
-synapse-rpc = { path = "rpc" }
-sha1 = { path = "sha1" }
-byteorder = "1.0"
-lazy_static = "*"
-rand = "0.3"
-ring = "0.11"
-url = "1.4.0"
-url_serde = "0.2"
-net2 = "0.2"
-serde = "1.0"
-serde_derive = "1.0"
-serde_json = "1.0"
-toml = "0.4"
-bincode = "0.8"
-ctrlc = "3.0"
-c-ares = "2"
-httparse = "1.2.3"
-base64 = "0.6.0"
 base32 = "0.3.1"
-shellexpand = "1.0.0"
-openssl = "0.9"
+base64 = "0.8.0"
+bincode = "0.9.2"
+byteorder = "1"
+c-ares = "4"
 clippy = {version = "*", optional = true}
-fs_extra = "1.0"
-fnv = "1.0"
-metrohash = "1.0"
-memmap = "0.5"
-vecio = "0.1"
+ctrlc = "3"
+fnv = "1"
+fs_extra = "1"
+httparse = "1"
+lazy_static = "1"
 libc = "0.2"
+memmap = "0.6"
+metrohash = "1"
+net2 = "0.2"
+openssl = "0.9"
+rand = "0.3"
+ring = "0.12.1"
+serde = "1"
+serde_derive = "1"
+serde_json = "1"
+sha1 = "0.3"
+shellexpand = "1"
+synapse-rpc = { path = "rpc" }
+toml = "0.4"
+url = "1"
+url_serde = "0.2"
+vecio = "0.1"
 
 [dependencies.amy]
 version = "0.8.0"
@@ -50,16 +50,16 @@ version = "0.4"
 default-features = false
 features = ["serde"]
 
+[dependencies.error-chain]
+version = "0.11"
+default-features = false
+features = []
+
 [dependencies.num]
 git = "https://github.com/rust-num/num"
 branch = "next"
 default-features = false
 features = ["bigint", "serde"]
-
-[dependencies.error-chain]
-version = "0.10"
-default-features = false
-features = []
 
 [profile.bench]
 opt-level = 3
