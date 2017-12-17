@@ -7,6 +7,7 @@ extern crate byteorder;
 extern crate rand;
 extern crate sha1;
 extern crate url;
+extern crate url_serde;
 #[macro_use]
 extern crate lazy_static;
 extern crate net2;

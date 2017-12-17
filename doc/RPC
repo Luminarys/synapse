@@ -498,7 +498,7 @@ All error messages share a common format and are only sent from server->client.
 The various error types are:
 
 UNKNOWN_RESOURCE: the client used a resource ID the server does not recognize
-INVALID_RESOURCE: the client an inappropriate resource type for the operation
+INVALID_RESOURCE: the client used an inappropriate resource type for the operation
 INVALID_MESSAGE: the client used an invalid message type
 INVALID_SCHEMA: the schema of the message was invalid
 INVALID_REQUEST: the message was logically invalid (i.e. string > number)

@@ -5,6 +5,8 @@ use std::borrow::Cow;
 use chrono::{DateTime, Utc};
 use serde;
 use serde_json as json;
+use url::Url;
+use url_serde;
 
 use super::criterion::{Field, Queryable};
 
@@ -271,7 +273,8 @@ pub struct Peer {
 pub struct Tracker {
     pub id: String,
     pub torrent_id: String,
-    pub url: String,
+    #[serde(with = "url_serde")]
+    pub url: Option<Url>,
     pub last_report: DateTime<Utc>,
     pub error: Option<String>,
     pub user_data: json::Value,
@@ -845,7 +848,9 @@ impl Queryable for Tracker {
         match f {
             "id" => Some(Field::S(&self.id)),
             "torrent_id" => Some(Field::S(&self.torrent_id)),
-            "url" => Some(Field::S(&self.url)),
+            "url" => Some(Field::O(
+                Box::new(self.url.as_ref().map(|u| Field::S(u.as_str()))),
+            )),
             "error" => Some(Field::O(
                 Box::new(self.error.as_ref().map(|v| Field::S(v.as_str()))),
             )),
@@ -954,7 +959,7 @@ impl Default for Tracker {
         Tracker {
             id: "".to_owned(),
             torrent_id: "".to_owned(),
-            url: "".to_owned(),
+            url: None,
             last_report: Utc::now(),
             error: None,
             user_data: json::Value::Null,

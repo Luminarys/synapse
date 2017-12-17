@@ -228,7 +228,7 @@ pub fn list(mut c: Client, kind: &str, crit: Vec<Criterion>, output: &str) -> Re
                 ResourceKind::Tracker => {
                     let t = res.as_tracker();
                     table.add_row(row![
-                        t.url,
+                        t.url.as_ref().map(|s| s.as_str()).unwrap_or(""),
                         t.torrent_id,
                         t.error.as_ref().map(|s| s.as_str()).unwrap_or("")
                     ]);

@@ -342,8 +342,8 @@ impl Request {
                             valid = false;
                         }
                     }
-                    let digest = ctx.finish();
-                    if !valid || digest.as_ref() != &info.hashes[idx as usize][..] {
+                    let digest = ctx.digest();
+                    if !valid || &digest.bytes() != &info.hashes[idx as usize][..] {
                         invalid.push(idx);
                     }
 
