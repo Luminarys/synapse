@@ -339,11 +339,19 @@ fn generate_piece_pri(pri: &[u8], info: &Arc<Info>) -> Vec<u8> {
 #[cfg(test)]
 impl Picker {
     pub fn new_rarest(info: &Info, pieces: &Bitfield) -> Picker {
-        Picker::new(Arc::new(info.clone()), pieces)
+        Picker::new(
+            &Arc::new(info.clone()),
+            pieces,
+            &vec![3u8; info.files.len()],
+        )
     }
 
     pub fn new_sequential(info: &Info, pieces: &Bitfield) -> Picker {
-        let mut p = Picker::new(Arc::new(info.clone()), pieces);
+        let mut p = Picker::new(
+            &Arc::new(info.clone()),
+            pieces,
+            &vec![3u8; info.files.len()],
+        );
         p.change_picker(true);
         p
     }

@@ -235,7 +235,8 @@ fn test_rarest_efficiency() {
 
 #[test]
 fn test_seq_picker() {
-    let i = Info::with_pieces(10);
+    let mut i = Info::with_pieces(10);
+    i.piece_idx = Info::generate_piece_idx(i.hashes.len(), i.piece_len as u64, &i.files);
     let b = Bitfield::new(10);
     let mut p = Picker::new_sequential(&i, &b);
     let mut pb = Bitfield::new(10);
