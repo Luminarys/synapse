@@ -728,7 +728,7 @@ dependencies = [
 [[package]]
 name = "num"
 version = "0.2.0-git"
-source = "git+https://github.com/rust-num/num?branch=next#95ac5f28dd184b9706a8af95c654d6284208cb28"
+source = "git+https://github.com/rust-num/num?branch=next#e19ad6eae0c3b62465fe13bcf27a026af52178af"
 dependencies = [
  "num-bigint 0.2.0-git (git+https://github.com/rust-num/num?branch=next)",
  "num-complex 0.2.0-git (git+https://github.com/rust-num/num?branch=next)",
@@ -741,7 +741,7 @@ dependencies = [
 [[package]]
 name = "num-bigint"
 version = "0.2.0-git"
-source = "git+https://github.com/rust-num/num?branch=next#95ac5f28dd184b9706a8af95c654d6284208cb28"
+source = "git+https://github.com/rust-num/num?branch=next#e19ad6eae0c3b62465fe13bcf27a026af52178af"
 dependencies = [
  "num-integer 0.2.0-git (git+https://github.com/rust-num/num?branch=next)",
  "num-traits 0.2.0-git (git+https://github.com/rust-num/num?branch=next)",
@@ -752,7 +752,7 @@ dependencies = [
 [[package]]
 name = "num-complex"
 version = "0.2.0-git"
-source = "git+https://github.com/rust-num/num?branch=next#95ac5f28dd184b9706a8af95c654d6284208cb28"
+source = "git+https://github.com/rust-num/num?branch=next#e19ad6eae0c3b62465fe13bcf27a026af52178af"
 dependencies = [
  "num-traits 0.2.0-git (git+https://github.com/rust-num/num?branch=next)",
  "serde 1.0.24 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -769,7 +769,7 @@ dependencies = [
 [[package]]
 name = "num-integer"
 version = "0.2.0-git"
-source = "git+https://github.com/rust-num/num?branch=next#95ac5f28dd184b9706a8af95c654d6284208cb28"
+source = "git+https://github.com/rust-num/num?branch=next#e19ad6eae0c3b62465fe13bcf27a026af52178af"
 dependencies = [
  "num-traits 0.2.0-git (git+https://github.com/rust-num/num?branch=next)",
 ]
@@ -786,7 +786,7 @@ dependencies = [
 [[package]]
 name = "num-iter"
 version = "0.2.0-git"
-source = "git+https://github.com/rust-num/num?branch=next#95ac5f28dd184b9706a8af95c654d6284208cb28"
+source = "git+https://github.com/rust-num/num?branch=next#e19ad6eae0c3b62465fe13bcf27a026af52178af"
 dependencies = [
  "num-integer 0.2.0-git (git+https://github.com/rust-num/num?branch=next)",
  "num-traits 0.2.0-git (git+https://github.com/rust-num/num?branch=next)",
@@ -795,7 +795,7 @@ dependencies = [
 [[package]]
 name = "num-rational"
 version = "0.2.0-git"
-source = "git+https://github.com/rust-num/num?branch=next#95ac5f28dd184b9706a8af95c654d6284208cb28"
+source = "git+https://github.com/rust-num/num?branch=next#e19ad6eae0c3b62465fe13bcf27a026af52178af"
 dependencies = [
  "num-bigint 0.2.0-git (git+https://github.com/rust-num/num?branch=next)",
  "num-integer 0.2.0-git (git+https://github.com/rust-num/num?branch=next)",
@@ -811,7 +811,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 [[package]]
 name = "num-traits"
 version = "0.2.0-git"
-source = "git+https://github.com/rust-num/num?branch=next#95ac5f28dd184b9706a8af95c654d6284208cb28"
+source = "git+https://github.com/rust-num/num?branch=next#e19ad6eae0c3b62465fe13bcf27a026af52178af"
 
 [[package]]
 name = "num_cpus"
