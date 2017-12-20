@@ -131,18 +131,22 @@ impl Picker {
     }
 
     pub fn incomplete(&mut self, piece: u32) {
-        self.piece_idx[piece as usize].status = PieceStatus::Incomplete;
-        for _ in 0..PIECE_COMPLETE_DEC {
-            self.inc_pri(piece);
+        if self.piece_idx[piece as usize].status != PieceStatus::Incomplete {
+            self.piece_idx[piece as usize].status = PieceStatus::Incomplete;
+            for _ in 0..PIECE_COMPLETE_DEC {
+                self.inc_pri(piece);
+            }
         }
     }
 
     pub fn completed(&mut self, piece: u32) {
-        self.piece_idx[piece as usize].status = PieceStatus::Complete;
-        // As hacky as this is, it's a good way to ensure that
-        // we never waste time picking already selected pieces
-        for _ in 0..PIECE_COMPLETE_DEC {
-            self.dec_pri(piece);
+        if self.piece_idx[piece as usize].status != PieceStatus::Complete {
+            self.piece_idx[piece as usize].status = PieceStatus::Complete;
+            // As hacky as this is, it's a good way to ensure that
+            // we never waste time picking already selected pieces
+            for _ in 0..PIECE_COMPLETE_DEC {
+                self.dec_pri(piece);
+            }
         }
     }
 

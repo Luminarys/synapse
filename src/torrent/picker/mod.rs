@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::{mem, time, cmp};
+use std::{mem, time};
 use std::sync::Arc;
 use torrent::{Info, Peer, Bitfield};
 use control::cio;
@@ -329,9 +329,11 @@ fn generate_piece_pri(pri: &[u8], info: &Arc<Info>) -> Vec<u8> {
     // If a piece is completely in a file, just assign that pri.
     // Otherwise mark it as the higher pri piece
     for p in 0..info.pieces() {
-        let locs = Info::piece_disk_locs(&info, p);
-        let mp = locs.fold(0, |mp, loc| cmp::max(mp, pri[loc.file] as usize));
-        priorities.push(mp as u8);
+        let max = Info::piece_disk_locs(&info, p)
+            .map(|loc| pri[loc.file])
+            .max()
+            .expect("Piece must have locations!");
+        priorities.push(max);
     }
     priorities
 }

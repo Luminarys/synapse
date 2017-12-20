@@ -137,10 +137,6 @@ impl Info {
         !self.hashes.is_empty()
     }
 
-    pub fn file_in(&self, piece: u32) -> usize {
-        self.piece_idx[piece as usize].0
-    }
-
     pub fn to_bencode(&self) -> BEncode {
         let mut info = BTreeMap::new();
         if let Some(ref n) = self.be_name {

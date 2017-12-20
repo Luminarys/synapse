@@ -439,15 +439,22 @@ impl<T: cio::CIO> Torrent<T> {
             disk::Response::ValidationComplete { mut invalid, .. } => {
                 debug!("Validation completed!");
                 self.status.validating = false;
-                // Ignore invalid pieces which are not in wanted, or
-                // are part of an invalid file(none of the disk locations
+                // Ignore invalid pieces which are
+                // part of an invalid file(none of the disk locations
                 // refer to files which aren't being downloaded(pri. 1)
-                invalid.retain(|i| self.priorities[self.info.file_in(*i)] != 0);
+                invalid.retain(|i| {
+                    Info::piece_disk_locs(&self.info, *i).all(|loc| self.priorities[loc.file] != 0)
+                });
                 if invalid.is_empty() {
                     info!("Torrent succesfully downloaded!");
                     if !self.complete() {
                         for i in 0..self.pieces.len() {
-                            self.pieces.set_bit(i);
+                            let complete = Info::piece_disk_locs(&self.info, i as u32).all(|loc| {
+                                self.priorities[loc.file] != 0
+                            });
+                            if complete {
+                                self.pieces.set_bit(i);
+                            }
                         }
                     }
                     self.set_finished();
@@ -460,6 +467,16 @@ impl<T: cio::CIO> Torrent<T> {
                         // set the pieces appropriately, then reset the
                         // picker to use the new bitfield
                         if invalid.len() != self.pieces.len() as usize {
+                            for i in 0..self.pieces.len() {
+                                let complete =
+                                    Info::piece_disk_locs(&self.info, i as u32).all(|loc| {
+                                        self.priorities[loc.file] != 0
+                                    });
+                                if complete {
+                                    self.pieces.set_bit(i);
+                                }
+                            }
+
                             for piece in invalid {
                                 self.pieces.unset_bit(u64::from(piece));
                             }
@@ -489,6 +506,31 @@ impl<T: cio::CIO> Torrent<T> {
         self.announce_status();
     }
 
+    fn check_complete(&mut self) {
+        let mut idx = 0;
+        for piece in self.pieces.iter() {
+            while idx != piece {
+                if Info::piece_disk_locs(&self.info, piece as u32).all(|loc| {
+                    self.priorities[loc.file] != 0
+                })
+                {
+                    return;
+                }
+                idx += 1
+            }
+            idx += 1
+        }
+
+        self.status.state = StatusState::Complete;
+        self.serialize();
+        if CONFIG.disk.validate {
+            debug!("Beginning validation");
+            self.validate();
+        } else {
+            debug!("Torrent complete");
+            self.set_finished();
+        }
+    }
     /// Signal that we've downloaded and verified the torrent
     fn set_finished(&mut self) {
         let req = tracker::Request::completed(self);
@@ -643,17 +685,7 @@ impl<T: cio::CIO> Torrent<T> {
                     self.pieces.set_bit(u64::from(index));
 
                     // Begin validation, and save state if the torrent is done
-                    if self.pieces.complete() {
-                        self.status.state = StatusState::Complete;
-                        self.serialize();
-                        if CONFIG.disk.validate {
-                            debug!("Beginning validation");
-                            self.validate();
-                        } else {
-                            debug!("Torrent complete");
-                            self.set_finished();
-                        }
-                    }
+                    self.check_complete();
 
                     // Tell all relevant peers we got the piece
                     let m = Message::Have(index);
@@ -923,6 +955,8 @@ impl<T: cio::CIO> Torrent<T> {
         }
 
         self.picker.set_priorities(&self.priorities, &self.info);
+
+        self.check_complete();
 
         self.dirty = true;
 
