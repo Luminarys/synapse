@@ -61,6 +61,7 @@ struct Request {
 }
 
 const MAX_DUP_REQS: usize = 5;
+const MAX_DL_Q: usize = 15;
 
 impl Picker {
     /// Creates a new picker, which will select over
@@ -103,6 +104,11 @@ impl Picker {
     pub fn pick<T: cio::CIO>(&mut self, peer: &Peer<T>) -> Option<Block> {
         if let Some(b) = self.pick_expired(peer) {
             return Some(b);
+        }
+        if self.downloading.len() > MAX_DL_Q {
+            if let Some(b) =  self.pick_downloading(peer) {
+                return Some(b)
+            }
         }
 
         let piece = match self.picker {
