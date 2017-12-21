@@ -106,7 +106,7 @@ impl Picker {
             return Some(b);
         }
         if self.downloading.len() > MAX_DL_Q {
-            if let Some(b) = self.pick_downloading(peer) {
+            if let Some(b) = self.pick_pri(peer) {
                 return Some(b);
             }
         }
@@ -155,6 +155,26 @@ impl Picker {
             offset,
         })
     }
+
+    /// Attempts to pick the highest priority piece in the dl q
+    fn pick_pri<T: cio::CIO>(&mut self, peer: &Peer<T>) -> Option<Block> {
+        let pri = &mut self.priorities;
+        self.downloading
+            .iter_mut()
+            .max_by_key(|&(idx, _)| pri[*idx as usize])
+            .and_then(|(idx, dl)| {
+                dl.iter_mut()
+                    .find(|r| {
+                        !r.completed && r.requested.len() < MAX_DUP_REQS &&
+                            r.requested.iter().all(|req| req.peer != peer.id())
+                    })
+                    .map(|r| {
+                        r.requested.push(Request::new(peer.id()));
+                        Block::new(*idx, r.offset)
+                    })
+            })
+    }
+
 
     /// Attempts to pick an already requested block
     fn pick_downloading<T: cio::CIO>(&mut self, peer: &Peer<T>) -> Option<Block> {
