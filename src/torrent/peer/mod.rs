@@ -273,10 +273,6 @@ impl<T: cio::CIO> Peer<T> {
         )
     }
 
-    pub fn remote_status(&self) -> &Status {
-        &self.remote_status
-    }
-
     pub fn active(&self) -> bool {
         self.stat.active()
     }

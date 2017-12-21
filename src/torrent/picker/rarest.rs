@@ -27,7 +27,7 @@ struct PieceInfo {
     status: PieceStatus,
 }
 
-const PIECE_COMPLETE_INC: usize = 100;
+const PIECE_COMPLETE_DEC: usize = 100;
 
 impl Picker {
     pub fn new(pieces: &Bitfield) -> Picker {
@@ -44,7 +44,8 @@ impl Picker {
             piece_idx,
             priorities: vec![pieces.len() as usize],
         };
-        // Start every piece at an availability of 5.
+
+        // Start every piece at an availability of 6.
         // This way when we decrement availability for an initial
         // pick we never underflow, and can keep track of which pieces
         // are unpicked(odd) and picked(even).
@@ -72,11 +73,11 @@ impl Picker {
     }
 
     pub fn piece_available(&mut self, piece: u32) {
-        self.inc_avail(piece);
-        self.inc_avail(piece);
+        self.dec_pri(piece);
+        self.dec_pri(piece);
     }
 
-    pub fn inc_avail(&mut self, piece: u32) {
+    pub fn dec_pri(&mut self, piece: u32) {
         let (idx, avail) = {
             let piece = self.piece_idx.index_mut(piece as usize);
             self.priorities[piece.availability] -= 1;
@@ -92,11 +93,11 @@ impl Picker {
     }
 
     pub fn piece_unavailable(&mut self, piece: u32) {
-        self.dec_avail(piece);
-        self.dec_avail(piece);
+        self.inc_pri(piece);
+        self.inc_pri(piece);
     }
 
-    pub fn dec_avail(&mut self, piece: u32) {
+    pub fn inc_pri(&mut self, piece: u32) {
         let (idx, avail) = {
             let piece = self.piece_idx.index_mut(piece as usize);
             piece.availability -= 1;
@@ -116,29 +117,36 @@ impl Picker {
             .cloned()
             .filter(|p| {
                 self.piece_idx[*p as usize].status == PieceStatus::Incomplete
+                    // TODO: Ensure PIECE_COMPLETE_DEC is always above max availability
+                    // ceiling, could exceed it with a large incomplete swarm
+                    && self.piece_idx[*p as usize].availability < PIECE_COMPLETE_DEC
             })
             .find(|p| peer.pieces().has_bit(u64::from(*p)))
             .map(|p| {
                 if (self.piece_idx[p as usize].availability % 2) == 0 {
-                    self.dec_avail(p);
+                    self.dec_pri(p);
                 }
                 p
             })
     }
 
     pub fn incomplete(&mut self, piece: u32) {
-        self.piece_idx[piece as usize].status = PieceStatus::Incomplete;
-        for _ in 0..PIECE_COMPLETE_INC {
-            self.piece_unavailable(piece);
+        if self.piece_idx[piece as usize].status != PieceStatus::Incomplete {
+            self.piece_idx[piece as usize].status = PieceStatus::Incomplete;
+            for _ in 0..PIECE_COMPLETE_DEC {
+                self.inc_pri(piece);
+            }
         }
     }
 
     pub fn completed(&mut self, piece: u32) {
-        self.piece_idx[piece as usize].status = PieceStatus::Complete;
-        // As hacky as this is, it's a good way to ensure that
-        // we never waste time picking already selected pieces
-        for _ in 0..PIECE_COMPLETE_INC {
-            self.piece_available(piece);
+        if self.piece_idx[piece as usize].status != PieceStatus::Complete {
+            self.piece_idx[piece as usize].status = PieceStatus::Complete;
+            // As hacky as this is, it's a good way to ensure that
+            // we never waste time picking already selected pieces
+            for _ in 0..PIECE_COMPLETE_DEC {
+                self.dec_pri(piece);
+            }
         }
     }
 

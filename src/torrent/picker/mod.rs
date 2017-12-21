@@ -25,7 +25,8 @@ pub struct Picker {
     unpicked: Bitfield,
     /// The current picker in use
     picker: PickerKind,
-    info: Arc<Info>,
+    /// Piece priorities
+    priorities: Vec<u8>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -60,13 +61,14 @@ struct Request {
 }
 
 const MAX_DUP_REQS: usize = 5;
+const MAX_DL_Q: usize = 50;
 
 impl Picker {
     /// Creates a new picker, which will select over
     /// the given pieces. The algorithm used for selection
     /// will vary based on the current swarm state, but
     /// will default to rarest first.
-    pub fn new(info: Arc<Info>, pieces: &Bitfield) -> Picker {
+    pub fn new(info: &Arc<Info>, pieces: &Bitfield, priorities: &[u8]) -> Picker {
         let scale = info.piece_len / 16_384;
         let picker = rarest::Picker::new(pieces);
         let last_piece = info.pieces().saturating_sub(1);
@@ -76,7 +78,7 @@ impl Picker {
         } else {
             lpl / 16_384 + 1
         };
-        Picker {
+        let mut picker = Picker {
             picker: PickerKind::Rarest(picker),
             scale,
             last_piece,
@@ -84,8 +86,10 @@ impl Picker {
             seeders: 0,
             unpicked: pieces.clone(),
             downloading: HashMap::new(),
-            info,
-        }
+            priorities: vec![3; info.pieces() as usize],
+        };
+        picker.set_priorities(priorities, info);
+        picker
     }
 
     /// Returns true if the current picker algorithm is sequential
@@ -100,6 +104,11 @@ impl Picker {
     pub fn pick<T: cio::CIO>(&mut self, peer: &Peer<T>) -> Option<Block> {
         if let Some(b) = self.pick_expired(peer) {
             return Some(b);
+        }
+        if self.downloading.len() > MAX_DL_Q {
+            if let Some(b) = self.pick_pri(peer) {
+                return Some(b);
+            }
         }
 
         let piece = match self.picker {
@@ -146,6 +155,26 @@ impl Picker {
             offset,
         })
     }
+
+    /// Attempts to pick the highest priority piece in the dl q
+    fn pick_pri<T: cio::CIO>(&mut self, peer: &Peer<T>) -> Option<Block> {
+        let pri = &mut self.priorities;
+        self.downloading
+            .iter_mut()
+            .max_by_key(|&(idx, _)| pri[*idx as usize])
+            .and_then(|(idx, dl)| {
+                dl.iter_mut()
+                    .find(|r| {
+                        !r.completed && r.requested.len() < MAX_DUP_REQS &&
+                            r.requested.iter().all(|req| req.peer != peer.id())
+                    })
+                    .map(|r| {
+                        r.requested.push(Request::new(peer.id()));
+                        Block::new(*idx, r.offset)
+                    })
+            })
+    }
+
 
     /// Attempts to pick an already requested block
     fn pick_downloading<T: cio::CIO>(&mut self, peer: &Peer<T>) -> Option<Block> {
@@ -260,53 +289,97 @@ impl Picker {
         } else {
             PickerKind::Rarest(rarest::Picker::new(&self.unpicked))
         };
+        self.apply_priorities();
         for i in self.downloading.keys() {
             if let PickerKind::Rarest(ref mut p) = self.picker {
-                p.dec_avail(*i);
+                p.inc_pri(*i);
             }
         }
     }
 
-    /*
-    pub fn refresh_picker(&mut self, pieces: &Bitfield, pri: &[u8]) {
-        // Map piece -> priority
-        let mut piece_map = HashMap::new();
-        // If a piece is completely in a file, just assign that pri.
-        // Otherwise mark it as the higher pri piece
-        for p in 0..self.info.pieces() {
-            let locs = Info::piece_disk_locs(&self.info, p);
-            let mp = locs.fold(0, |mp, loc| cmp::max(mp, pri[loc.file] as usize));
-            piece_map.insert(p, mp);
-        }
+    pub fn set_priorities(&mut self, pri: &[u8], info: &Arc<Info>) {
+        self.unapply_priorities();
+        self.priorities = generate_piece_pri(pri, info);
+        self.apply_priorities();
+    }
 
-        self.unpicked = pieces.clone();
-        self.picker = if self.is_sequential() {
-            let mut picker = rarest::Picker::new(&self.unpicked);
-            for (piece, pri) in piece_map {
-                for _ in 0..pri {
-                    picker.piece_unavailable(piece);
+
+    pub fn apply_priorities(&mut self) {
+        if self.is_sequential() {
+            let mut pieces = [vec![], vec![], vec![], vec![], vec![], vec![]];
+            for (piece, pri) in self.priorities.iter().enumerate() {
+                pieces[*pri as usize].push(piece as u32);
+            }
+            self.picker = PickerKind::Sequential(sequential::Picker::new_pri(pieces));
+        } else {
+            for (piece, pri) in self.priorities.iter().enumerate() {
+                for _ in 0..*pri {
+                    if let PickerKind::Rarest(ref mut p) = self.picker {
+                        p.piece_unavailable(piece as u32);
+                    }
+                }
+
+                if *pri == 0 {
+                    match self.picker {
+                        PickerKind::Rarest(ref mut p) => p.completed(piece as u32),
+                        _ => unreachable!(),
+                    }
                 }
             }
-            PickerKind::Rarest(picker)
-        } else {
-            let mut pieces = [vec![], vec![], vec![], vec![], vec![], vec![]];
-            for (piece, pri) in piece_map {
-                pieces[pri].push(piece);
-            }
-            PickerKind::Sequential(sequential::Picker::new_pri(pieces))
-        };
+        }
     }
-    */
+
+    pub fn unapply_priorities(&mut self) {
+        if !self.is_sequential() {
+            for (piece, pri) in self.priorities.iter().enumerate() {
+                for _ in 0..*pri {
+                    if let PickerKind::Rarest(ref mut p) = self.picker {
+                        p.piece_available(piece as u32);
+                    }
+                }
+
+                if *pri == 0 {
+                    match self.picker {
+                        PickerKind::Rarest(ref mut p) => p.incomplete(piece as u32),
+                        _ => unreachable!(),
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn generate_piece_pri(pri: &[u8], info: &Arc<Info>) -> Vec<u8> {
+    // Map piece -> priority
+    let mut priorities = Vec::with_capacity(info.pieces() as usize);
+    // If a piece is completely in a file, just assign that pri.
+    // Otherwise mark it as the higher pri piece
+    for p in 0..info.pieces() {
+        let max = Info::piece_disk_locs(&info, p)
+            .map(|loc| pri[loc.file])
+            .max()
+            .expect("Piece must have locations!");
+        priorities.push(max);
+    }
+    priorities
 }
 
 #[cfg(test)]
 impl Picker {
     pub fn new_rarest(info: &Info, pieces: &Bitfield) -> Picker {
-        Picker::new(Arc::new(info.clone()), pieces)
+        Picker::new(
+            &Arc::new(info.clone()),
+            pieces,
+            &vec![3u8; info.files.len()],
+        )
     }
 
     pub fn new_sequential(info: &Info, pieces: &Bitfield) -> Picker {
-        let mut p = Picker::new(Arc::new(info.clone()), pieces);
+        let mut p = Picker::new(
+            &Arc::new(info.clone()),
+            pieces,
+            &vec![3u8; info.files.len()],
+        );
         p.change_picker(true);
         p
     }

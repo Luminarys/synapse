@@ -23,7 +23,7 @@ pub struct Info {
     pub files: Vec<File>,
     pub private: bool,
     pub be_name: Option<Vec<u8>>,
-    piece_idx: Vec<(usize, u64)>,
+    pub piece_idx: Vec<(usize, u64)>,
 }
 
 impl fmt::Debug for Info {
@@ -280,7 +280,7 @@ impl Info {
             })
     }
 
-    fn generate_piece_idx(pieces: usize, pl: u64, files: &[File]) -> Vec<(usize, u64)> {
+    pub fn generate_piece_idx(pieces: usize, pl: u64, files: &[File]) -> Vec<(usize, u64)> {
         let mut piece_idx = Vec::with_capacity(pieces);
         let mut file = 0;
         let mut offset = 0u64;
@@ -304,7 +304,13 @@ impl Info {
             total_len: 16_384 * pieces as u64,
             hashes: vec![vec![0u8]; pieces],
             hash: [0u8; 20],
-            files: vec![],
+            files: vec![
+                File {
+                    path: PathBuf::new(),
+                    length: 16_384 * pieces as u64,
+                };
+                1
+            ],
             private: false,
             be_name: None,
             piece_idx: vec![],
@@ -504,6 +510,7 @@ mod tests {
     #[test]
     fn loc_iter_bounds() {
         let mut info = Info::with_pieces(4);
+        info.files.clear();
         info.files.push(File {
             path: PathBuf::from(""),
             length: 40000,
