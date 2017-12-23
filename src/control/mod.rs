@@ -179,7 +179,7 @@ impl<T: cio::CIO> Control<T> {
 
         let tid = self.tid_cnt;
         let throttle = self.throttler.get_throttle(tid);
-        if let Ok(t) = Torrent::deserialize(tid, &data, throttle, self.cio.new_handle()) {
+        if let Some(t) = Torrent::deserialize(tid, &data, throttle, self.cio.new_handle()) {
             trace!("Succesfully parsed torrent file {:?}", dir.path());
             self.hash_idx.insert(t.info().hash, tid);
             self.tid_cnt += 1;

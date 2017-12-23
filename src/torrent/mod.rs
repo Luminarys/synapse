@@ -26,7 +26,8 @@ use rpc::resource::{self, Resource, SResourceUpdate};
 use throttle::Throttle;
 use tracker::{self, TrackerResponse};
 use util::{FHashSet, MHashMap, UHashMap};
-use stat;
+use session::torrent::current::{Session, Status, StatusState};
+use {session, stat};
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub enum TrackerStatus {
@@ -37,21 +38,6 @@ pub enum TrackerStatus {
         interval: u32,
     },
     Failure(String),
-}
-
-#[derive(Serialize, Deserialize)]
-struct TorrentData {
-    info: Info,
-    pieces: Bitfield,
-    uploaded: u64,
-    downloaded: u64,
-    status: Status,
-    path: Option<String>,
-    priority: u8,
-    priorities: Vec<u8>,
-    created: DateTime<Utc>,
-    throttle_ul: Option<i64>,
-    throttle_dl: Option<i64>,
 }
 
 pub struct Torrent<T: cio::CIO> {
@@ -77,23 +63,6 @@ pub struct Torrent<T: cio::CIO> {
     info_bytes: Vec<u8>,
     info_idx: Option<usize>,
     created: DateTime<Utc>,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct Status {
-    paused: bool,
-    validating: bool,
-    error: Option<String>,
-    state: StatusState,
-}
-
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub enum StatusState {
-    Magnet,
-    // Torrent has not acquired all pieces
-    Incomplete,
-    // Torrent has acquired all pieces, regardless of validity
-    Complete,
 }
 
 impl Status {
@@ -218,8 +187,12 @@ impl<T: cio::CIO> Torrent<T> {
         data: &[u8],
         mut throttle: Throttle,
         cio: T,
-    ) -> Result<Torrent<T>, bincode::Error> {
-        let d: TorrentData = bincode::deserialize(data)?;
+    ) -> Option<Torrent<T>> {
+        let d = if let Some(d) = session::torrent::load(data) {
+            d
+        } else {
+            return None;
+        };
         debug!("Torrent data deserialized!");
         let peers = UHashMap::default();
         let leechers = FHashSet::default();
@@ -267,11 +240,11 @@ impl<T: cio::CIO> Torrent<T> {
         t.status.validating = false;
         t.start();
         t.announce_start();
-        Ok(t)
+        Some(t)
     }
 
     pub fn serialize(&mut self) {
-        let d = TorrentData {
+        let d = Session {
             info: self.info.as_ref().clone(),
             pieces: self.pieces.clone(),
             uploaded: self.uploaded,

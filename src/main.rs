@@ -53,6 +53,7 @@ mod rpc;
 mod throttle;
 mod config;
 mod stat;
+mod session;
 
 use std::{thread, process};
 use std::sync::{atomic, mpsc};
