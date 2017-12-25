@@ -45,29 +45,25 @@ pub enum SResourceUpdate<'a> {
     Resource(Cow<'a, Resource>),
     Throttle {
         id: String,
-        #[serde(rename = "type")]
-        kind: ResourceKind,
+        #[serde(rename = "type")] kind: ResourceKind,
         throttle_up: Option<i64>,
         throttle_down: Option<i64>,
     },
     Rate {
         id: String,
-        #[serde(rename = "type")]
-        kind: ResourceKind,
+        #[serde(rename = "type")] kind: ResourceKind,
         rate_up: u64,
         rate_down: u64,
     },
     UserData {
         id: String,
-        #[serde(rename = "type")]
-        kind: ResourceKind,
+        #[serde(rename = "type")] kind: ResourceKind,
         user_data: json::Value,
     },
 
     ServerTransfer {
         id: String,
-        #[serde(rename = "type")]
-        kind: ResourceKind,
+        #[serde(rename = "type")] kind: ResourceKind,
         rate_up: u64,
         rate_down: u64,
         transferred_up: u64,
@@ -78,15 +74,13 @@ pub enum SResourceUpdate<'a> {
 
     TorrentStatus {
         id: String,
-        #[serde(rename = "type")]
-        kind: ResourceKind,
+        #[serde(rename = "type")] kind: ResourceKind,
         error: Option<String>,
         status: Status,
     },
     TorrentTransfer {
         id: String,
-        #[serde(rename = "type")]
-        kind: ResourceKind,
+        #[serde(rename = "type")] kind: ResourceKind,
         rate_up: u64,
         rate_down: u64,
         transferred_up: u64,
@@ -95,61 +89,52 @@ pub enum SResourceUpdate<'a> {
     },
     TorrentPeers {
         id: String,
-        #[serde(rename = "type")]
-        kind: ResourceKind,
+        #[serde(rename = "type")] kind: ResourceKind,
         peers: u16,
         availability: f32,
     },
     TorrentPicker {
         id: String,
-        #[serde(rename = "type")]
-        kind: ResourceKind,
+        #[serde(rename = "type")] kind: ResourceKind,
         sequential: bool,
     },
     TorrentPriority {
         id: String,
-        #[serde(rename = "type")]
-        kind: ResourceKind,
+        #[serde(rename = "type")] kind: ResourceKind,
         priority: u8,
     },
     TorrentPath {
         id: String,
-        #[serde(rename = "type")]
-        kind: ResourceKind,
+        #[serde(rename = "type")] kind: ResourceKind,
         path: String,
     },
 
     TrackerStatus {
         id: String,
-        #[serde(rename = "type")]
-        kind: ResourceKind,
+        #[serde(rename = "type")] kind: ResourceKind,
         last_report: DateTime<Utc>,
         error: Option<String>,
     },
 
     FilePriority {
         id: String,
-        #[serde(rename = "type")]
-        kind: ResourceKind,
+        #[serde(rename = "type")] kind: ResourceKind,
         priority: u8,
     },
     FileProgress {
         id: String,
-        #[serde(rename = "type")]
-        kind: ResourceKind,
+        #[serde(rename = "type")] kind: ResourceKind,
         progress: f32,
     },
 
     PieceAvailable {
         id: String,
-        #[serde(rename = "type")]
-        kind: ResourceKind,
+        #[serde(rename = "type")] kind: ResourceKind,
         available: bool,
     },
     PieceDownloaded {
         id: String,
-        #[serde(rename = "type")]
-        kind: ResourceKind,
+        #[serde(rename = "type")] kind: ResourceKind,
         downloaded: bool,
     },
 }
@@ -215,7 +200,9 @@ impl Server {
                 self.ses_transferred_up = ses_transferred_up;
                 self.ses_transferred_down = ses_transferred_down;
             }
-            &SResourceUpdate::Rate { rate_up, rate_down, .. } => {
+            &SResourceUpdate::Rate {
+                rate_up, rate_down, ..
+            } => {
                 self.rate_up = rate_up;
                 self.rate_down = rate_down;
             }
@@ -265,7 +252,9 @@ impl Torrent {
                 self.throttle_up = throttle_up;
                 self.throttle_down = throttle_down;
             }
-            &SResourceUpdate::TorrentStatus { ref error, status, .. } => {
+            &SResourceUpdate::TorrentStatus {
+                ref error, status, ..
+            } => {
                 self.error = error.clone();
                 self.status = status;
             }
@@ -384,7 +373,9 @@ pub struct Peer {
 impl Peer {
     pub fn update(&mut self, update: &SResourceUpdate) {
         match update {
-            &SResourceUpdate::Rate { rate_up, rate_down, .. } => {
+            &SResourceUpdate::Rate {
+                rate_up, rate_down, ..
+            } => {
                 self.rate_up = rate_up;
                 self.rate_down = rate_down;
             }
@@ -398,8 +389,7 @@ impl Peer {
 pub struct Tracker {
     pub id: String,
     pub torrent_id: String,
-    #[serde(with = "url_serde")]
-    pub url: Option<Url>,
+    #[serde(with = "url_serde")] pub url: Option<Url>,
     pub last_report: DateTime<Utc>,
     pub error: Option<String>,
     pub user_data: json::Value,
@@ -425,21 +415,21 @@ impl<'a> SResourceUpdate<'a> {
     pub fn id(&self) -> &str {
         match self {
             &SResourceUpdate::Resource(ref r) => r.id(),
-            &SResourceUpdate::Throttle { ref id, .. } |
-            &SResourceUpdate::Rate { ref id, .. } |
-            &SResourceUpdate::UserData { ref id, .. } |
-            &SResourceUpdate::ServerTransfer { ref id, .. } |
-            &SResourceUpdate::TorrentStatus { ref id, .. } |
-            &SResourceUpdate::TorrentTransfer { ref id, .. } |
-            &SResourceUpdate::TorrentPeers { ref id, .. } |
-            &SResourceUpdate::TorrentPicker { ref id, .. } |
-            &SResourceUpdate::TorrentPriority { ref id, .. } |
-            &SResourceUpdate::TorrentPath { ref id, .. } |
-            &SResourceUpdate::FilePriority { ref id, .. } |
-            &SResourceUpdate::FileProgress { ref id, .. } |
-            &SResourceUpdate::TrackerStatus { ref id, .. } |
-            &SResourceUpdate::PieceAvailable { ref id, .. } |
-            &SResourceUpdate::PieceDownloaded { ref id, .. } => id,
+            &SResourceUpdate::Throttle { ref id, .. }
+            | &SResourceUpdate::Rate { ref id, .. }
+            | &SResourceUpdate::UserData { ref id, .. }
+            | &SResourceUpdate::ServerTransfer { ref id, .. }
+            | &SResourceUpdate::TorrentStatus { ref id, .. }
+            | &SResourceUpdate::TorrentTransfer { ref id, .. }
+            | &SResourceUpdate::TorrentPeers { ref id, .. }
+            | &SResourceUpdate::TorrentPicker { ref id, .. }
+            | &SResourceUpdate::TorrentPriority { ref id, .. }
+            | &SResourceUpdate::TorrentPath { ref id, .. }
+            | &SResourceUpdate::FilePriority { ref id, .. }
+            | &SResourceUpdate::FileProgress { ref id, .. }
+            | &SResourceUpdate::TrackerStatus { ref id, .. }
+            | &SResourceUpdate::PieceAvailable { ref id, .. }
+            | &SResourceUpdate::PieceDownloaded { ref id, .. } => id,
         }
     }
 }
@@ -791,14 +781,14 @@ impl Queryable for Torrent {
     fn field(&self, f: &str) -> Option<Field> {
         match f {
             "id" => Some(Field::S(&self.id)),
-            "name" => Some(Field::O(
-                Box::new(self.name.as_ref().map(|v| Field::S(v.as_str()))),
-            )),
+            "name" => Some(Field::O(Box::new(
+                self.name.as_ref().map(|v| Field::S(v.as_str())),
+            ))),
             "path" => Some(Field::S(&self.path)),
             "status" => Some(Field::S(self.status.as_str())),
-            "error" => Some(Field::O(
-                Box::new(self.error.as_ref().map(|v| Field::S(v.as_str()))),
-            )),
+            "error" => Some(Field::O(Box::new(
+                self.error.as_ref().map(|v| Field::S(v.as_str())),
+            ))),
 
             "priority" => Some(Field::N(self.priority as i64)),
             "rate_up" => Some(Field::N(self.rate_up as i64)),
@@ -811,9 +801,9 @@ impl Queryable for Torrent {
             "trackers" => Some(Field::N(self.trackers as i64)),
             "size" => Some(Field::O(Box::new(self.size.map(|v| Field::N(v as i64))))),
             "pieces" => Some(Field::O(Box::new(self.pieces.map(|v| Field::N(v as i64))))),
-            "piece_size" => Some(Field::O(
-                Box::new(self.piece_size.map(|v| Field::N(v as i64))),
-            )),
+            "piece_size" => Some(Field::O(Box::new(
+                self.piece_size.map(|v| Field::N(v as i64)),
+            ))),
             "files" => Some(Field::O(Box::new(self.files.map(|v| Field::N(v as i64))))),
 
             "created" => Some(Field::D(self.created)),
@@ -891,12 +881,12 @@ impl Queryable for Tracker {
         match f {
             "id" => Some(Field::S(&self.id)),
             "torrent_id" => Some(Field::S(&self.torrent_id)),
-            "url" => Some(Field::O(
-                Box::new(self.url.as_ref().map(|u| Field::S(u.as_str()))),
-            )),
-            "error" => Some(Field::O(
-                Box::new(self.error.as_ref().map(|v| Field::S(v.as_str()))),
-            )),
+            "url" => Some(Field::O(Box::new(
+                self.url.as_ref().map(|u| Field::S(u.as_str())),
+            ))),
+            "error" => Some(Field::O(Box::new(
+                self.error.as_ref().map(|v| Field::S(v.as_str())),
+            ))),
 
             "last_report" => Some(Field::D(self.last_report)),
 

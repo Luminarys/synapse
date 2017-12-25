@@ -7,7 +7,7 @@ pub use self::job::Location;
 pub use self::job::Ctx;
 
 use std::collections::VecDeque;
-use std::{fs, thread, io};
+use std::{fs, io, thread};
 
 use amy;
 
@@ -29,7 +29,6 @@ pub struct Disk {
     active: VecDeque<Request>,
     blocked: UHashMap<Request>,
 }
-
 
 impl Disk {
     pub fn new(
@@ -177,7 +176,13 @@ impl Disk {
 
 pub fn start(
     creg: &mut amy::Registrar,
-) -> io::Result<(handle::Handle<Response, Request>, amy::Sender<Request>, thread::JoinHandle<()>)> {
+) -> io::Result<
+    (
+        handle::Handle<Response, Request>,
+        amy::Sender<Request>,
+        thread::JoinHandle<()>,
+    ),
+> {
     let poll = amy::Poller::new()?;
     let mut reg = poll.get_registrar()?;
     let (ch, dh) = handle::Handle::new(creg, &mut reg)?;

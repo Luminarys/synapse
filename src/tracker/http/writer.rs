@@ -1,5 +1,5 @@
 use std::io;
-use tracker::errors::{Result, ErrorKind};
+use tracker::errors::{ErrorKind, Result};
 
 pub struct Writer {
     data: Vec<u8>,

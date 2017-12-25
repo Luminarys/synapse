@@ -96,7 +96,7 @@ impl Picker {
 
 #[cfg(test)]
 mod tests {
-    use torrent::{Info, Peer, Bitfield};
+    use torrent::{Bitfield, Info, Peer};
     use super::Picker;
 
     #[test]

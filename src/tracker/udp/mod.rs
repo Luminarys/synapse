@@ -1,15 +1,15 @@
-use std::net::{UdpSocket, SocketAddr};
-use std::io::{self, Write, Read, Cursor};
+use std::net::{SocketAddr, UdpSocket};
+use std::io::{self, Cursor, Read, Write};
 use std::time;
 
 use amy;
-use byteorder::{ReadBytesExt, WriteBytesExt, BigEndian};
+use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use url::Url;
 use rand::random;
 
 use {CONFIG, PEER_ID};
-use tracker::{Announce, Result, ResultExt, Response, TrackerResponse, Event, Error, ErrorKind, dns};
-use util::{bytes_to_addr, UHashMap, FHashMap};
+use tracker::{dns, Announce, Error, ErrorKind, Event, Response, Result, ResultExt, TrackerResponse};
+use util::{bytes_to_addr, FHashMap, UHashMap};
 
 // We're not going to bother with backoff, if the tracker/network aren't working now
 // the torrent can just resend a request later.
@@ -183,12 +183,8 @@ impl Handler {
         let mut resps = Vec::new();
         let mut retrans = Vec::new();
         {
-            self.connections.retain(
-                |id, conn| if conn.last_updated.elapsed() >
-                    time::Duration::from_millis(
-                        TIMEOUT_MS,
-                    )
-                {
+            self.connections.retain(|id, conn| {
+                if conn.last_updated.elapsed() > time::Duration::from_millis(TIMEOUT_MS) {
                     resps.push((conn.torrent, Err(ErrorKind::Timeout.into())));
                     debug!("Announce {:?} timed out", id);
                     false
@@ -198,8 +194,8 @@ impl Handler {
                         retrans.push(*id);
                     }
                     true
-                },
-            );
+                }
+            });
 
             let c = &self.connections;
             self.transactions.retain(|_, id| c.contains_key(id));
@@ -336,11 +332,7 @@ impl Handler {
         if connect_resp.read_to_string(&mut s).is_err() {
             Some((
                 conn.torrent,
-                Err(
-                    ErrorKind::InvalidResponse(
-                        "Tracker error response was invalid UTF8",
-                    ).into(),
-                ),
+                Err(ErrorKind::InvalidResponse("Tracker error response was invalid UTF8").into()),
             ))
         } else {
             Some((conn.torrent, Err(ErrorKind::TrackerError(s).into())))

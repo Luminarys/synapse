@@ -1,6 +1,6 @@
 // Implementation based off of http://blog.libtorrent.org/2011/11/writing-a-fast-piece-picker/
 
-use torrent::{Peer, Bitfield};
+use torrent::{Bitfield, Peer};
 use std::ops::IndexMut;
 use control::cio;
 
@@ -160,7 +160,7 @@ impl Picker {
 #[cfg(test)]
 mod tests {
     use super::Picker;
-    use torrent::{Peer, Bitfield};
+    use torrent::{Bitfield, Peer};
 
     #[test]
     fn test_available() {

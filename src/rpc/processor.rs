@@ -7,17 +7,17 @@ use std::borrow::Cow;
 
 use amy;
 use bincode;
-use chrono::{DateTime, Utc, Duration};
+use chrono::{DateTime, Duration, Utc};
 use serde_json as json;
 
-use super::proto::message::{CMessage, SMessage, Error};
+use super::proto::message::{CMessage, Error, SMessage};
 use super::proto::criterion::{self, Criterion};
-use super::proto::resource::{Resource, ResourceKind, SResourceUpdate, merge_json};
+use super::proto::resource::{merge_json, Resource, ResourceKind, SResourceUpdate};
 use super::{CtlMessage, Message};
 use CONFIG;
 use disk;
 use torrent::info::Info;
-use util::{random_string, SHashMap, MHashSet, FHashMap, FHashSet};
+use util::{random_string, FHashMap, FHashSet, MHashSet, SHashMap};
 
 const USER_DATA_FILE: &'static str = "rpc_user_data";
 type RpcDiskFmt = SHashMap<Vec<u8>>;
@@ -59,7 +59,10 @@ pub enum TransferKind {
         path: Option<String>,
         start: bool,
     },
-    UploadFiles { size: u64, path: String },
+    UploadFiles {
+        size: u64,
+        path: String,
+    },
 }
 
 const EXPIRATION_DUR: i64 = 120;
@@ -120,12 +123,10 @@ impl Processor {
 
     pub fn get_dl(&self, id: &str) -> Option<String> {
         match self.resources.get(id) {
-            Some(&Resource::File(ref f)) => {
-                match self.resources.get(&f.torrent_id) {
-                    Some(&Resource::Torrent(ref t)) => Some(t.path.clone() + "/" + &f.path),
-                    _ => None,
-                }
-            }
+            Some(&Resource::File(ref f)) => match self.resources.get(&f.torrent_id) {
+                Some(&Resource::Torrent(ref t)) => Some(t.path.clone() + "/" + &f.path),
+                _ => None,
+            },
             _ => None,
         }
     }
@@ -133,15 +134,13 @@ impl Processor {
     pub fn get_transfer(&mut self, tok: String) -> Option<(usize, u64, TransferKind)> {
         let mut res = None;
         let rem = match self.tokens.get(&tok) {
-            Some(bt) => {
-                match &bt.kind {
-                    s @ &TransferKind::UploadTorrent { .. } => {
-                        res = Some((bt.client, bt.serial, s.clone()));
-                        false
-                    }
-                    _ => true,
+            Some(bt) => match &bt.kind {
+                s @ &TransferKind::UploadTorrent { .. } => {
+                    res = Some((bt.client, bt.serial, s.clone()));
+                    false
                 }
-            }
+                _ => true,
+            },
             None => {
                 res = None;
                 false
@@ -191,11 +190,9 @@ impl Processor {
                 }
                 resp.push(SMessage::UpdateResources { resources });
             }
-            CMessage::Unsubscribe { ids, .. } => {
-                for id in ids {
-                    self.subs.get_mut(&id).map(|s| s.remove(&client));
-                }
-            }
+            CMessage::Unsubscribe { ids, .. } => for id in ids {
+                self.subs.get_mut(&id).map(|s| s.remove(&client));
+            },
             CMessage::UpdateResource {
                 serial,
                 mut resource,
@@ -206,10 +203,8 @@ impl Processor {
                     if let Some(res) = self.resources.get_mut(&resource.id) {
                         modified = true;
                         merge_json(res.user_data(), &mut user_data.clone());
-                        self.user_data.insert(
-                            res.id().to_owned(),
-                            res.user_data().clone(),
-                        );
+                        self.user_data
+                            .insert(res.id().to_owned(), res.user_data().clone());
                         resp.push(SMessage::UpdateResources {
                             resources: vec![
                                 SResourceUpdate::UserData {
@@ -259,46 +254,44 @@ impl Processor {
                 serial,
                 id,
                 artifacts,
-            } => {
-                match self.resources.get(&id) {
-                    Some(&Resource::Torrent(_)) => {
-                        rmsg = Some(Message::RemoveTorrent {
-                            id,
-                            client,
-                            serial,
-                            artifacts: artifacts.unwrap_or(false),
-                        });
-                    }
-                    Some(&Resource::Tracker(ref t)) => {
-                        rmsg = Some(Message::RemoveTracker {
-                            id,
-                            torrent_id: t.id.to_owned(),
-                            client,
-                            serial,
-                        });
-                    }
-                    Some(&Resource::Peer(ref p)) => {
-                        rmsg = Some(Message::RemovePeer {
-                            id,
-                            torrent_id: p.id.to_owned(),
-                            client,
-                            serial,
-                        });
-                    }
-                    Some(_) => {
-                        resp.push(SMessage::InvalidResource(Error {
-                            serial: Some(serial),
-                            reason: format!("Only torrents, trackers, and peers may be removed"),
-                        }));
-                    }
-                    None => {
-                        resp.push(SMessage::UnknownResource(Error {
-                            serial: Some(serial),
-                            reason: format!("unknown resource id {}", id),
-                        }));
-                    }
+            } => match self.resources.get(&id) {
+                Some(&Resource::Torrent(_)) => {
+                    rmsg = Some(Message::RemoveTorrent {
+                        id,
+                        client,
+                        serial,
+                        artifacts: artifacts.unwrap_or(false),
+                    });
                 }
-            }
+                Some(&Resource::Tracker(ref t)) => {
+                    rmsg = Some(Message::RemoveTracker {
+                        id,
+                        torrent_id: t.id.to_owned(),
+                        client,
+                        serial,
+                    });
+                }
+                Some(&Resource::Peer(ref p)) => {
+                    rmsg = Some(Message::RemovePeer {
+                        id,
+                        torrent_id: p.id.to_owned(),
+                        client,
+                        serial,
+                    });
+                }
+                Some(_) => {
+                    resp.push(SMessage::InvalidResource(Error {
+                        serial: Some(serial),
+                        reason: format!("Only torrents, trackers, and peers may be removed"),
+                    }));
+                }
+                None => {
+                    resp.push(SMessage::UnknownResource(Error {
+                        serial: Some(serial),
+                        reason: format!("unknown resource id {}", id),
+                    }));
+                }
+            },
             CMessage::FilterSubscribe {
                 serial,
                 kind,
@@ -367,62 +360,44 @@ impl Processor {
                 self.filter_subs.remove(&(client, filter_serial));
             }
 
-            CMessage::PauseTorrent { serial, id } => {
-                match self.resources.get(&id) {
-                    Some(&Resource::Torrent(_)) => rmsg = Some(Message::Pause(id)),
-                    Some(_) => {
-                        resp.push(SMessage::InvalidResource(Error {
-                            serial: Some(serial),
-                            reason: "Only torrents can be paused".to_owned(),
-                        }))
-                    }
-                    None => {
-                        resp.push(SMessage::UnknownResource(Error {
-                            serial: Some(serial),
-                            reason: format!("Unknown resource {}", id),
-                        }))
-                    }
+            CMessage::PauseTorrent { serial, id } => match self.resources.get(&id) {
+                Some(&Resource::Torrent(_)) => rmsg = Some(Message::Pause(id)),
+                Some(_) => resp.push(SMessage::InvalidResource(Error {
+                    serial: Some(serial),
+                    reason: "Only torrents can be paused".to_owned(),
+                })),
+                None => resp.push(SMessage::UnknownResource(Error {
+                    serial: Some(serial),
+                    reason: format!("Unknown resource {}", id),
+                })),
+            },
+            CMessage::ResumeTorrent { serial, id } => match self.resources.get(&id) {
+                Some(&Resource::Torrent(_)) => rmsg = Some(Message::Resume(id)),
+                Some(_) => resp.push(SMessage::InvalidResource(Error {
+                    serial: Some(serial),
+                    reason: "Only torrents can be resumed".to_owned(),
+                })),
+                None => resp.push(SMessage::UnknownResource(Error {
+                    serial: Some(serial),
+                    reason: format!("Unknown resource {}", id),
+                })),
+            },
+            CMessage::UpdateTracker { serial, id } => match self.resources.get(&id) {
+                Some(&Resource::Tracker(ref t)) => {
+                    rmsg = Some(Message::UpdateTracker {
+                        id,
+                        torrent_id: t.torrent_id.clone(),
+                    })
                 }
-            }
-            CMessage::ResumeTorrent { serial, id } => {
-                match self.resources.get(&id) {
-                    Some(&Resource::Torrent(_)) => rmsg = Some(Message::Resume(id)),
-                    Some(_) => {
-                        resp.push(SMessage::InvalidResource(Error {
-                            serial: Some(serial),
-                            reason: "Only torrents can be resumed".to_owned(),
-                        }))
-                    }
-                    None => {
-                        resp.push(SMessage::UnknownResource(Error {
-                            serial: Some(serial),
-                            reason: format!("Unknown resource {}", id),
-                        }))
-                    }
-                }
-            }
-            CMessage::UpdateTracker { serial, id } => {
-                match self.resources.get(&id) {
-                    Some(&Resource::Tracker(ref t)) => {
-                        rmsg = Some(Message::UpdateTracker {
-                            id,
-                            torrent_id: t.torrent_id.clone(),
-                        })
-                    }
-                    Some(_) => {
-                        resp.push(SMessage::InvalidResource(Error {
-                            serial: Some(serial),
-                            reason: "UPDATE_TRACKER not used with tracker".to_owned(),
-                        }))
-                    }
-                    None => {
-                        resp.push(SMessage::UnknownResource(Error {
-                            serial: Some(serial),
-                            reason: format!("Unknown resource {}", id),
-                        }))
-                    }
-                }
-            }
+                Some(_) => resp.push(SMessage::InvalidResource(Error {
+                    serial: Some(serial),
+                    reason: "UPDATE_TRACKER not used with tracker".to_owned(),
+                })),
+                None => resp.push(SMessage::UnknownResource(Error {
+                    serial: Some(serial),
+                    reason: format!("Unknown resource {}", id),
+                })),
+            },
             CMessage::ValidateResources { serial, mut ids } => {
                 ids.retain(|id| match self.resources.get(id) {
                     Some(&Resource::Torrent(_)) => true,
@@ -460,25 +435,23 @@ impl Processor {
                 uri,
                 path,
                 start,
-            } => {
-                match Info::from_magnet(&uri) {
-                    Ok(info) => {
-                        rmsg = Some(Message::Torrent {
-                            info,
-                            path,
-                            start,
-                            client,
-                            serial,
-                        })
-                    }
-                    Err(e) => {
-                        resp.push(SMessage::InvalidRequest(Error {
-                            serial: Some(serial),
-                            reason: format!("Invalid magnet: {}", e),
-                        }));
-                    }
+            } => match Info::from_magnet(&uri) {
+                Ok(info) => {
+                    rmsg = Some(Message::Torrent {
+                        info,
+                        path,
+                        start,
+                        client,
+                        serial,
+                    })
                 }
-            }
+                Err(e) => {
+                    resp.push(SMessage::InvalidRequest(Error {
+                        serial: Some(serial),
+                        reason: format!("Invalid magnet: {}", e),
+                    }));
+                }
+            },
             CMessage::UploadFiles { serial, size, path } => {
                 resp.push(self.new_transfer(
                     client,
@@ -615,9 +588,9 @@ impl Processor {
     ) -> HashMap<(usize, u64), Vec<Cow<'a, str>>> {
         let mut matched = HashMap::new();
         for id in ids {
-            let res = self.resources.get(id).expect(
-                "Bad resource requested from a CtlMessage",
-            );
+            let res = self.resources
+                .get(id)
+                .expect("Bad resource requested from a CtlMessage");
             for (k, f) in self.filter_subs.iter() {
                 if f.kind == res.kind() && f.matches(&res) {
                     if !matched.contains_key(k) {

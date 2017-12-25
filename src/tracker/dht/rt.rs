@@ -4,9 +4,9 @@ use std::collections::{HashMap, VecDeque};
 use chrono::{DateTime, Utc};
 use num::bigint::BigUint;
 use rand::{self, Rng};
-use super::{proto, ID, BUCKET_MAX, MIN_BOOTSTRAP_BKTS, TX_TIMEOUT_SECS};
-use byteorder::{ReadBytesExt, WriteBytesExt, BigEndian};
-use {tracker, bincode};
+use super::{proto, BUCKET_MAX, ID, MIN_BOOTSTRAP_BKTS, TX_TIMEOUT_SECS};
+use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
+use {bincode, tracker};
 
 const MAX_SEARCH_DEPTH: u8 = 5;
 
@@ -196,9 +196,9 @@ impl RoutingTable {
                     }
                     node.update();
                 }
-                self.torrents.entry(hash).or_insert(
-                    Torrent { peers: Vec::new() },
-                );
+                self.torrents
+                    .entry(hash)
+                    .or_insert(Torrent { peers: Vec::new() });
                 if !implied_port {
                     addr.set_port(port);
                 }
@@ -252,11 +252,7 @@ impl RoutingTable {
                 if self.add_node(n).is_ok() && self.bootstrapping {
                     let tx = self.new_query_tx(id);
                     reqs.push((
-                        proto::Request::find_node(
-                            tx,
-                            self.id.clone(),
-                            self.id.clone(),
-                        ),
+                        proto::Request::find_node(tx, self.id.clone(), self.id.clone()),
                         addr,
                     ));
                 }
@@ -270,21 +266,20 @@ impl RoutingTable {
                 if self.bootstrapping {
                     let tx = self.new_query_tx(id1.clone());
                     reqs.push((
-                        proto::Request::find_node(
-                            tx,
-                            self.id.clone(),
-                            self.id.clone(),
-                        ),
+                        proto::Request::find_node(tx, self.id.clone(), self.id.clone()),
                         addr,
                     ));
                 }
             }
 
-            (TransactionKind::Query(ref id1),
-             proto::ResponseKind::FindNode {
-                 id: ref id2,
-                 ref mut nodes,
-             }) if id1 == id2 => {
+            (
+                TransactionKind::Query(ref id1),
+                proto::ResponseKind::FindNode {
+                    id: ref id2,
+                    ref mut nodes,
+                },
+            ) if id1 == id2 =>
+            {
                 if !self.contains_id(id1) {
                     return Err(reqs);
                 }
@@ -302,12 +297,15 @@ impl RoutingTable {
             }
 
             // Token refresh query
-            (TransactionKind::Query(ref id1),
-             proto::ResponseKind::GetPeers {
-                 id: ref id2,
-                 ref mut token,
-                 ..
-             }) if id1 == id2 => {
+            (
+                TransactionKind::Query(ref id1),
+                proto::ResponseKind::GetPeers {
+                    id: ref id2,
+                    ref mut token,
+                    ..
+                },
+            ) if id1 == id2 =>
+            {
                 if !self.contains_id(id1) {
                     return Err(reqs);
                 }
@@ -320,18 +318,21 @@ impl RoutingTable {
                 }
             }
 
-            (TransactionKind::TSearch {
-                 id: ref id1,
-                 torrent,
-                 hash,
-                 depth,
-             },
-             proto::ResponseKind::GetPeers {
-                 id: ref id2,
-                 ref mut values,
-                 ref mut nodes,
-                 ref mut token,
-             }) if id1 == id2 => {
+            (
+                TransactionKind::TSearch {
+                    id: ref id1,
+                    torrent,
+                    hash,
+                    depth,
+                },
+                proto::ResponseKind::GetPeers {
+                    id: ref id2,
+                    ref mut values,
+                    ref mut nodes,
+                    ref mut token,
+                },
+            ) if id1 == id2 =>
+            {
                 if self.contains_id(id1) {
                     let node = self.get_node_mut(id1);
                     node.update();
@@ -368,11 +369,11 @@ impl RoutingTable {
             }
 
             // Mismatched IDs
-            (TransactionKind::Query(id), proto::ResponseKind::ID(_)) |
-            (TransactionKind::Query(id), proto::ResponseKind::FindNode { .. }) |
-            (TransactionKind::Query(id), proto::ResponseKind::GetPeers { .. }) |
-            (TransactionKind::TSearch { id, .. }, proto::ResponseKind::GetPeers { .. }) |
-            (TransactionKind::TSearch { id, .. }, _) => {
+            (TransactionKind::Query(id), proto::ResponseKind::ID(_))
+            | (TransactionKind::Query(id), proto::ResponseKind::FindNode { .. })
+            | (TransactionKind::Query(id), proto::ResponseKind::GetPeers { .. })
+            | (TransactionKind::TSearch { id, .. }, proto::ResponseKind::GetPeers { .. })
+            | (TransactionKind::TSearch { id, .. }, _) => {
                 self.remove_node(&id);
             }
 
@@ -564,10 +565,12 @@ impl RoutingTable {
 
     fn bucket_idx(&self, id: &ID) -> usize {
         self.buckets
-            .binary_search_by(|bucket| if bucket.could_hold(id) {
-                cmp::Ordering::Equal
-            } else {
-                bucket.start.cmp(id)
+            .binary_search_by(|bucket| {
+                if bucket.could_hold(id) {
+                    cmp::Ordering::Equal
+                } else {
+                    bucket.start.cmp(id)
+                }
             })
             .unwrap()
     }
@@ -695,7 +698,7 @@ fn id_from_pow(pow: usize) -> ID {
 
 #[cfg(test)]
 mod tests {
-    use super::{Bucket, Node, RoutingTable, id_from_pow};
+    use super::{id_from_pow, Bucket, Node, RoutingTable};
     use num::bigint::BigUint;
 
     #[test]

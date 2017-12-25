@@ -3,7 +3,7 @@ use std::mem;
 use torrent::peer::Message;
 use torrent::Bitfield;
 use byteorder::{BigEndian, ReadBytesExt};
-use util::{aread, IOR, io_err};
+use util::{aread, io_err, IOR};
 
 pub struct Reader {
     blocks_read: usize,
@@ -20,15 +20,22 @@ enum State {
     Request,
     Cancel,
     Port,
-    Handshake { data: [u8; 68] },
+    Handshake {
+        data: [u8; 68],
+    },
     PiecePrefix,
     Piece {
         data: Option<Box<[u8; 16_384]>>,
         len: u32,
     },
-    Bitfield { data: Vec<u8> },
+    Bitfield {
+        data: Vec<u8>,
+    },
     ExtensionID,
-    Extension { id: u8, payload: Vec<u8> },
+    Extension {
+        id: u8,
+        payload: Vec<u8>,
+    },
 }
 
 impl Reader {
@@ -54,228 +61,204 @@ impl Reader {
         loop {
             let len = self.state.len();
             match self.state {
-                State::Handshake { ref mut data } => {
-                    match aread(&mut data[self.idx..len], conn) {
-                        IOR::Complete => {
-                            if &data[1..20] != b"BitTorrent protocol" {
-                                return io_err("Handshake was not for 'BitTorrent protocol'");
-                            }
-                            let mut rsv = [0; 8];
-                            rsv.clone_from_slice(&data[20..28]);
-                            let mut hash = [0; 20];
-                            hash.clone_from_slice(&data[28..48]);
-                            let mut id = [0; 20];
-                            id.clone_from_slice(&data[48..68]);
+                State::Handshake { ref mut data } => match aread(&mut data[self.idx..len], conn) {
+                    IOR::Complete => {
+                        if &data[1..20] != b"BitTorrent protocol" {
+                            return io_err("Handshake was not for 'BitTorrent protocol'");
+                        }
+                        let mut rsv = [0; 8];
+                        rsv.clone_from_slice(&data[20..28]);
+                        let mut hash = [0; 20];
+                        hash.clone_from_slice(&data[28..48]);
+                        let mut id = [0; 20];
+                        id.clone_from_slice(&data[48..68]);
 
-                            return Ok(Some(Message::Handshake { rsv, hash, id }));
-                        }
-                        IOR::Incomplete(a) => self.idx += a,
-                        IOR::Blocked => return Ok(None),
-                        IOR::EOF => return io_err("EOF"),
-                        IOR::Err(e) => return Err(e),
+                        return Ok(Some(Message::Handshake { rsv, hash, id }));
                     }
-                }
-                State::Len => {
-                    match aread(&mut self.prefix[self.idx..len], conn) {
-                        IOR::Complete => {
-                            let mlen = (&self.prefix[0..4]).read_u32::<BigEndian>().unwrap();
-                            if mlen == 0 {
-                                return Ok(Some(Message::KeepAlive));
-                            } else {
-                                self.idx = 4;
-                                self.state = State::ID;
+                    IOR::Incomplete(a) => self.idx += a,
+                    IOR::Blocked => return Ok(None),
+                    IOR::EOF => return io_err("EOF"),
+                    IOR::Err(e) => return Err(e),
+                },
+                State::Len => match aread(&mut self.prefix[self.idx..len], conn) {
+                    IOR::Complete => {
+                        let mlen = (&self.prefix[0..4]).read_u32::<BigEndian>().unwrap();
+                        if mlen == 0 {
+                            return Ok(Some(Message::KeepAlive));
+                        } else {
+                            self.idx = 4;
+                            self.state = State::ID;
+                        }
+                    }
+                    IOR::Incomplete(a) => self.idx += a,
+                    IOR::Blocked => return Ok(None),
+                    IOR::EOF => return io_err("EOF"),
+                    IOR::Err(e) => return Err(e),
+                },
+                State::ID => match aread(&mut self.prefix[self.idx..len], conn) {
+                    IOR::Complete => {
+                        self.idx = 5;
+                        match self.prefix[4] {
+                            0...3 => {
+                                let id = self.prefix[4];
+                                let msg = if id == 0 {
+                                    Message::Choke
+                                } else if id == 1 {
+                                    Message::Unchoke
+                                } else if id == 2 {
+                                    Message::Interested
+                                } else {
+                                    Message::Uninterested
+                                };
+                                return Ok(Some(msg));
                             }
-                        }
-                        IOR::Incomplete(a) => self.idx += a,
-                        IOR::Blocked => return Ok(None),
-                        IOR::EOF => return io_err("EOF"),
-                        IOR::Err(e) => return Err(e),
-                    }
-                }
-                State::ID => {
-                    match aread(&mut self.prefix[self.idx..len], conn) {
-                        IOR::Complete => {
-                            self.idx = 5;
-                            match self.prefix[4] {
-                                0...3 => {
-                                    let id = self.prefix[4];
-                                    let msg = if id == 0 {
-                                        Message::Choke
-                                    } else if id == 1 {
-                                        Message::Unchoke
-                                    } else if id == 2 {
-                                        Message::Interested
-                                    } else {
-                                        Message::Uninterested
-                                    };
-                                    return Ok(Some(msg));
-                                }
-                                4 => self.state = State::Have,
-                                5 => {
-                                    let mlen =
-                                        (&self.prefix[0..4]).read_u32::<BigEndian>().unwrap();
-                                    self.idx = 0;
-                                    self.state =
-                                        State::Bitfield { data: vec![0u8; mlen as usize - 1] };
-                                }
-                                6 => self.state = State::Request,
-                                7 => self.state = State::PiecePrefix,
-                                8 => self.state = State::Cancel,
-                                9 => self.state = State::Port,
-                                20 => self.state = State::ExtensionID,
-                                _ => return io_err("Invalid ID used!"),
+                            4 => self.state = State::Have,
+                            5 => {
+                                let mlen = (&self.prefix[0..4]).read_u32::<BigEndian>().unwrap();
+                                self.idx = 0;
+                                self.state = State::Bitfield {
+                                    data: vec![0u8; mlen as usize - 1],
+                                };
                             }
+                            6 => self.state = State::Request,
+                            7 => self.state = State::PiecePrefix,
+                            8 => self.state = State::Cancel,
+                            9 => self.state = State::Port,
+                            20 => self.state = State::ExtensionID,
+                            _ => return io_err("Invalid ID used!"),
                         }
-                        IOR::Blocked => return Ok(None),
-                        IOR::EOF => return io_err("EOF"),
-                        IOR::Err(e) => return Err(e),
-                        IOR::Incomplete(_) => unreachable!(),
                     }
-                }
-                State::Have => {
-                    match aread(&mut self.prefix[self.idx..len], conn) {
-                        IOR::Complete => {
-                            let have = (&self.prefix[5..9]).read_u32::<BigEndian>().unwrap();
-                            return Ok(Some(Message::Have(have)));
-                        }
-                        IOR::Incomplete(a) => self.idx += a,
-                        IOR::Blocked => return Ok(None),
-                        IOR::EOF => return io_err("EOF"),
-                        IOR::Err(e) => return Err(e),
+                    IOR::Blocked => return Ok(None),
+                    IOR::EOF => return io_err("EOF"),
+                    IOR::Err(e) => return Err(e),
+                    IOR::Incomplete(_) => unreachable!(),
+                },
+                State::Have => match aread(&mut self.prefix[self.idx..len], conn) {
+                    IOR::Complete => {
+                        let have = (&self.prefix[5..9]).read_u32::<BigEndian>().unwrap();
+                        return Ok(Some(Message::Have(have)));
                     }
-                }
-                State::Bitfield { ref mut data } => {
-                    match aread(&mut data[self.idx..len], conn) {
-                        IOR::Complete => {
-                            let d = mem::replace(data, vec![]).into_boxed_slice();
-                            let bf = Bitfield::from(d, len as u64 * 8);
-                            return Ok(Some(Message::Bitfield(bf)));
-                        }
-                        IOR::Incomplete(a) => self.idx += a,
-                        IOR::Blocked => return Ok(None),
-                        IOR::EOF => return io_err("EOF"),
-                        IOR::Err(e) => return Err(e),
+                    IOR::Incomplete(a) => self.idx += a,
+                    IOR::Blocked => return Ok(None),
+                    IOR::EOF => return io_err("EOF"),
+                    IOR::Err(e) => return Err(e),
+                },
+                State::Bitfield { ref mut data } => match aread(&mut data[self.idx..len], conn) {
+                    IOR::Complete => {
+                        let d = mem::replace(data, vec![]).into_boxed_slice();
+                        let bf = Bitfield::from(d, len as u64 * 8);
+                        return Ok(Some(Message::Bitfield(bf)));
                     }
-                }
-                State::Request => {
-                    match aread(&mut self.prefix[self.idx..len], conn) {
-                        IOR::Complete => {
-                            let index = (&self.prefix[5..9]).read_u32::<BigEndian>().unwrap();
-                            let begin = (&self.prefix[9..13]).read_u32::<BigEndian>().unwrap();
-                            let length = (&self.prefix[13..17]).read_u32::<BigEndian>().unwrap();
-                            return Ok(Some(Message::Request {
-                                index,
-                                begin,
-                                length,
-                            }));
-                        }
-                        IOR::Incomplete(a) => self.idx += a,
-                        IOR::Blocked => return Ok(None),
-                        IOR::EOF => return io_err("EOF"),
-                        IOR::Err(e) => return Err(e),
+                    IOR::Incomplete(a) => self.idx += a,
+                    IOR::Blocked => return Ok(None),
+                    IOR::EOF => return io_err("EOF"),
+                    IOR::Err(e) => return Err(e),
+                },
+                State::Request => match aread(&mut self.prefix[self.idx..len], conn) {
+                    IOR::Complete => {
+                        let index = (&self.prefix[5..9]).read_u32::<BigEndian>().unwrap();
+                        let begin = (&self.prefix[9..13]).read_u32::<BigEndian>().unwrap();
+                        let length = (&self.prefix[13..17]).read_u32::<BigEndian>().unwrap();
+                        return Ok(Some(Message::Request {
+                            index,
+                            begin,
+                            length,
+                        }));
                     }
-                }
-                State::PiecePrefix => {
-                    match aread(&mut self.prefix[self.idx..len], conn) {
-                        IOR::Complete => {
-                            let plen = (&self.prefix[0..4]).read_u32::<BigEndian>().unwrap() - 9;
-                            self.idx = 0;
-                            self.state = State::Piece {
-                                data: Some(Box::new(unsafe { mem::uninitialized() })),
-                                len: plen,
-                            };
-                        }
-                        IOR::Incomplete(a) => self.idx += a,
-                        IOR::Blocked => return Ok(None),
-                        IOR::EOF => return io_err("EOF"),
-                        IOR::Err(e) => return Err(e),
+                    IOR::Incomplete(a) => self.idx += a,
+                    IOR::Blocked => return Ok(None),
+                    IOR::EOF => return io_err("EOF"),
+                    IOR::Err(e) => return Err(e),
+                },
+                State::PiecePrefix => match aread(&mut self.prefix[self.idx..len], conn) {
+                    IOR::Complete => {
+                        let plen = (&self.prefix[0..4]).read_u32::<BigEndian>().unwrap() - 9;
+                        self.idx = 0;
+                        self.state = State::Piece {
+                            data: Some(Box::new(unsafe { mem::uninitialized() })),
+                            len: plen,
+                        };
                     }
-                }
+                    IOR::Incomplete(a) => self.idx += a,
+                    IOR::Blocked => return Ok(None),
+                    IOR::EOF => return io_err("EOF"),
+                    IOR::Err(e) => return Err(e),
+                },
                 State::Piece {
                     ref mut data,
                     len: length,
-                } => {
-                    match aread(&mut data.as_mut().unwrap()[self.idx..len], conn) {
-                        IOR::Complete => {
-                            self.blocks_read += 1;
-                            let index = (&self.prefix[5..9]).read_u32::<BigEndian>().unwrap();
-                            let begin = (&self.prefix[9..13]).read_u32::<BigEndian>().unwrap();
-                            return Ok(Some(Message::Piece {
-                                index,
-                                begin,
-                                length,
-                                data: mem::replace(data, None).unwrap(),
-                            }));
-                        }
-                        IOR::Incomplete(a) => self.idx += a,
-                        IOR::Blocked => return Ok(None),
-                        IOR::EOF => return io_err("EOF"),
-                        IOR::Err(e) => return Err(e),
+                } => match aread(&mut data.as_mut().unwrap()[self.idx..len], conn) {
+                    IOR::Complete => {
+                        self.blocks_read += 1;
+                        let index = (&self.prefix[5..9]).read_u32::<BigEndian>().unwrap();
+                        let begin = (&self.prefix[9..13]).read_u32::<BigEndian>().unwrap();
+                        return Ok(Some(Message::Piece {
+                            index,
+                            begin,
+                            length,
+                            data: mem::replace(data, None).unwrap(),
+                        }));
                     }
-                }
-                State::Cancel => {
-                    match aread(&mut self.prefix[self.idx..len], conn) {
-                        IOR::Complete => {
-                            let index = (&self.prefix[5..9]).read_u32::<BigEndian>().unwrap();
-                            let begin = (&self.prefix[9..13]).read_u32::<BigEndian>().unwrap();
-                            let length = (&self.prefix[13..17]).read_u32::<BigEndian>().unwrap();
-                            return Ok(Some(Message::Cancel {
-                                index,
-                                begin,
-                                length,
-                            }));
-                        }
-                        IOR::Incomplete(a) => self.idx += a,
-                        IOR::Blocked => return Ok(None),
-                        IOR::EOF => return io_err("EOF"),
-                        IOR::Err(e) => return Err(e),
+                    IOR::Incomplete(a) => self.idx += a,
+                    IOR::Blocked => return Ok(None),
+                    IOR::EOF => return io_err("EOF"),
+                    IOR::Err(e) => return Err(e),
+                },
+                State::Cancel => match aread(&mut self.prefix[self.idx..len], conn) {
+                    IOR::Complete => {
+                        let index = (&self.prefix[5..9]).read_u32::<BigEndian>().unwrap();
+                        let begin = (&self.prefix[9..13]).read_u32::<BigEndian>().unwrap();
+                        let length = (&self.prefix[13..17]).read_u32::<BigEndian>().unwrap();
+                        return Ok(Some(Message::Cancel {
+                            index,
+                            begin,
+                            length,
+                        }));
                     }
-                }
-                State::Port => {
-                    match aread(&mut self.prefix[self.idx..len], conn) {
-                        IOR::Complete => {
-                            let port = (&self.prefix[5..7]).read_u16::<BigEndian>().unwrap();
-                            return Ok(Some(Message::Port(port)));
-                        }
-                        IOR::Incomplete(a) => self.idx += a,
-                        IOR::Blocked => return Ok(None),
-                        IOR::EOF => return io_err("EOF"),
-                        IOR::Err(e) => return Err(e),
+                    IOR::Incomplete(a) => self.idx += a,
+                    IOR::Blocked => return Ok(None),
+                    IOR::EOF => return io_err("EOF"),
+                    IOR::Err(e) => return Err(e),
+                },
+                State::Port => match aread(&mut self.prefix[self.idx..len], conn) {
+                    IOR::Complete => {
+                        let port = (&self.prefix[5..7]).read_u16::<BigEndian>().unwrap();
+                        return Ok(Some(Message::Port(port)));
                     }
-                }
-                State::ExtensionID => {
-                    match aread(&mut self.prefix[5..6], conn) {
-                        IOR::Complete => {
-                            let id = self.prefix[5];
-                            self.idx = 0;
-                            let plen = (&self.prefix[0..4]).read_u32::<BigEndian>().unwrap() - 2;
-                            let mut payload = Vec::with_capacity(plen as usize);
-                            unsafe {
-                                payload.set_len(plen as usize);
-                            }
-                            self.state = State::Extension { id, payload };
+                    IOR::Incomplete(a) => self.idx += a,
+                    IOR::Blocked => return Ok(None),
+                    IOR::EOF => return io_err("EOF"),
+                    IOR::Err(e) => return Err(e),
+                },
+                State::ExtensionID => match aread(&mut self.prefix[5..6], conn) {
+                    IOR::Complete => {
+                        let id = self.prefix[5];
+                        self.idx = 0;
+                        let plen = (&self.prefix[0..4]).read_u32::<BigEndian>().unwrap() - 2;
+                        let mut payload = Vec::with_capacity(plen as usize);
+                        unsafe {
+                            payload.set_len(plen as usize);
                         }
-                        IOR::Blocked => return Ok(None),
-                        IOR::EOF => return io_err("EOF"),
-                        IOR::Err(e) => return Err(e),
-                        IOR::Incomplete(_) => unreachable!(),
+                        self.state = State::Extension { id, payload };
                     }
-                }
+                    IOR::Blocked => return Ok(None),
+                    IOR::EOF => return io_err("EOF"),
+                    IOR::Err(e) => return Err(e),
+                    IOR::Incomplete(_) => unreachable!(),
+                },
                 State::Extension {
                     id,
                     ref mut payload,
-                } => {
-                    match aread(&mut payload[self.idx..len], conn) {
-                        IOR::Complete => {
-                            let p = mem::replace(payload, Vec::with_capacity(0));
-                            return Ok(Some(Message::Extension { id, payload: p }));
-                        }
-                        IOR::Incomplete(a) => self.idx += a,
-                        IOR::Blocked => return Ok(None),
-                        IOR::EOF => return io_err("EOF"),
-                        IOR::Err(e) => return Err(e),
+                } => match aread(&mut payload[self.idx..len], conn) {
+                    IOR::Complete => {
+                        let p = mem::replace(payload, Vec::with_capacity(0));
+                        return Ok(Some(Message::Extension { id, payload: p }));
                     }
-                }
+                    IOR::Incomplete(a) => self.idx += a,
+                    IOR::Blocked => return Ok(None),
+                    IOR::EOF => return io_err("EOF"),
+                    IOR::Err(e) => return Err(e),
+                },
             }
         }
     }
@@ -333,7 +316,6 @@ mod tests {
             Ok(self.idx - start)
         }
     }
-
 
     fn test_message(data: Vec<u8>, msg: Message) {
         let mut r = Reader::new();
@@ -398,11 +380,9 @@ mod tests {
         let mut data = Cursor::new(&v);
         // Test one shot
         match r.readable(&mut data).unwrap().unwrap() {
-            Message::Bitfield(ref pf) => {
-                for i in 0..32 {
-                    assert!(pf.has_bit(i as u64));
-                }
-            }
+            Message::Bitfield(ref pf) => for i in 0..32 {
+                assert!(pf.has_bit(i as u64));
+            },
             _ => {
                 unreachable!();
             }

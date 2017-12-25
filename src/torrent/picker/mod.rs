@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::{mem, time};
 use std::sync::Arc;
-use torrent::{Info, Peer, Bitfield};
+use torrent::{Bitfield, Info, Peer};
 use control::cio;
 
 mod rarest;
@@ -115,11 +115,9 @@ impl Picker {
             PickerKind::Sequential(ref mut p) => p.pick(peer),
             PickerKind::Rarest(ref mut p) => p.pick(peer),
         };
-        piece.and_then(|p| self.pick_piece(p, peer.id())).or_else(
-            || {
-                self.pick_downloading(peer)
-            },
-        )
+        piece
+            .and_then(|p| self.pick_piece(p, peer.id()))
+            .or_else(|| self.pick_downloading(peer))
     }
 
     /// Attempts to pick an expired block
@@ -141,8 +139,8 @@ impl Picker {
             requested: vec![Request::new(id)],
         });
 
-        if dl.len() == self.scale as usize ||
-            (piece == self.last_piece && dl.len() == self.last_piece_scale as usize)
+        if dl.len() == self.scale as usize
+            || (piece == self.last_piece && dl.len() == self.last_piece_scale as usize)
         {
             match self.picker {
                 PickerKind::Sequential(ref mut p) => p.completed(piece),
@@ -165,8 +163,8 @@ impl Picker {
             .and_then(|(idx, dl)| {
                 dl.iter_mut()
                     .find(|r| {
-                        !r.completed && r.requested.len() < MAX_DUP_REQS &&
-                            r.requested.iter().all(|req| req.peer != peer.id())
+                        !r.completed && r.requested.len() < MAX_DUP_REQS
+                            && r.requested.iter().all(|req| req.peer != peer.id())
                     })
                     .map(|r| {
                         r.requested.push(Request::new(peer.id()));
@@ -175,15 +173,14 @@ impl Picker {
             })
     }
 
-
     /// Attempts to pick an already requested block
     fn pick_downloading<T: cio::CIO>(&mut self, peer: &Peer<T>) -> Option<Block> {
         for (idx, dl) in &mut self.downloading {
             if peer.pieces().has_bit(u64::from(*idx)) {
                 let r = dl.iter_mut()
                     .find(|r| {
-                        !r.completed && r.requested.len() < MAX_DUP_REQS &&
-                            r.requested.iter().all(|req| req.peer != peer.id())
+                        !r.completed && r.requested.len() < MAX_DUP_REQS
+                            && r.requested.iter().all(|req| req.peer != peer.id())
                     })
                     .map(|r| {
                         r.requested.push(Request::new(peer.id()));
@@ -207,9 +204,9 @@ impl Picker {
         let res = self.downloading
             .get_mut(&b.index)
             .and_then(|dl| {
-                dl.iter_mut().find(|r| r.offset == b.offset).map(
-                    |r| r.complete(),
-                )
+                dl.iter_mut()
+                    .find(|r| r.offset == b.offset)
+                    .map(|r| r.complete())
             })
             .map(|r| r.into_iter().map(|e| e.peer).collect());
 
@@ -221,8 +218,8 @@ impl Picker {
         let complete = self.downloading
             .get_mut(&b.index)
             .map(|r| {
-                (r.len() as u32 == scale || (b.index == lp && r.len() as u32 == lps)) &&
-                    r.iter().all(|d| d.completed)
+                (r.len() as u32 == scale || (b.index == lp && r.len() as u32 == lps))
+                    && r.iter().all(|d| d.completed)
             })
             .unwrap_or(false);
 
@@ -237,9 +234,9 @@ impl Picker {
         self.downloading
             .get_mut(&b.index)
             .and_then(|dl| {
-                dl.iter().find(|r| r.offset == b.offset).map(
-                    |r| r.completed,
-                )
+                dl.iter()
+                    .find(|r| r.offset == b.offset)
+                    .map(|r| r.completed)
             })
             .unwrap_or(false)
     }
@@ -302,7 +299,6 @@ impl Picker {
         self.priorities = generate_piece_pri(pri, info);
         self.apply_priorities();
     }
-
 
     pub fn apply_priorities(&mut self) {
         if self.is_sequential() {

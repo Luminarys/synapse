@@ -1,8 +1,8 @@
-use std::time::{Instant, Duration};
+use std::time::{Duration, Instant};
 
 use torrent::Peer;
 use control::cio;
-use util::{random_sample, UHashMap, FHashSet};
+use util::{random_sample, FHashSet, UHashMap};
 
 pub struct Choker {
     unchoked: Vec<usize>,
@@ -15,7 +15,6 @@ pub struct SwapRes {
     pub choked: usize,
     pub unchoked: usize,
 }
-
 
 impl Choker {
     pub fn new() -> Choker {
@@ -55,11 +54,9 @@ impl Choker {
         if let Some(idx) = self.unchoked.iter().position(|&id| id == peer.id()) {
             self.unchoked.remove(idx);
             peer.choke();
-            self.unchoke_random(peers).map(|unchoked| {
-                SwapRes {
-                    choked: peer.id(),
-                    unchoked,
-                }
+            self.unchoke_random(peers).map(|unchoked| SwapRes {
+                choked: peer.id(),
+                unchoked,
             })
         } else {
             self.interested.remove(&peer.id());
@@ -68,8 +65,8 @@ impl Choker {
     }
 
     fn update_timer(&mut self) -> Result<(), ()> {
-        if self.last_updated.elapsed() < Duration::from_secs(10) || self.unchoked.len() < 5 ||
-            self.interested.is_empty()
+        if self.last_updated.elapsed() < Duration::from_secs(10) || self.unchoked.len() < 5
+            || self.interested.is_empty()
         {
             Err(())
         } else {
@@ -87,10 +84,13 @@ impl Choker {
         }
         let (slowest, _) = self.unchoked.iter().enumerate().fold(
             (0, ::std::u32::MAX),
-            |(slowest, min),
-             (idx, id)| {
+            |(slowest, min), (idx, id)| {
                 let (ul, _) = peers.get_mut(id).unwrap().flush();
-                if ul < min { (idx, ul) } else { (slowest, min) }
+                if ul < min {
+                    (idx, ul)
+                } else {
+                    (slowest, min)
+                }
             },
         );
         Some(self.swap_peer(slowest, peers))
@@ -106,10 +106,13 @@ impl Choker {
 
         let (slowest, _) = self.unchoked.iter().enumerate().fold(
             (0, ::std::u32::MAX),
-            |(slowest, min),
-             (idx, id)| {
+            |(slowest, min), (idx, id)| {
                 let (_, dl) = peers.get_mut(id).unwrap().flush();
-                if dl < min { (idx, dl) } else { (slowest, min) }
+                if dl < min {
+                    (idx, dl)
+                } else {
+                    (slowest, min)
+                }
             },
         );
         Some(self.swap_peer(slowest, peers))
@@ -135,8 +138,8 @@ impl Choker {
 #[cfg(test)]
 mod tests {
     use super::{Choker, SwapRes};
-    use torrent::{Peer, Bitfield};
-    use std::time::{Instant, Duration};
+    use torrent::{Bitfield, Peer};
+    use std::time::{Duration, Instant};
     use util::UHashMap;
 
     #[test]

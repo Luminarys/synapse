@@ -14,8 +14,7 @@ use util::{hash_to_id, id_to_hash, sha1_hash};
 #[derive(Clone, Serialize, Deserialize)]
 pub struct Info {
     pub name: String,
-    #[serde(with = "url_serde")]
-    pub announce: Option<Url>,
+    #[serde(with = "url_serde")] pub announce: Option<Url>,
     pub piece_len: u32,
     pub total_len: u64,
     pub hashes: Vec<Vec<u8>>,
@@ -68,9 +67,8 @@ impl File {
             (None, Some(path), Some(l)) => {
                 let mut p = PathBuf::new();
                 for dir in path.into_list().ok_or("File path should be a list")? {
-                    p.push(
-                        dir.into_string().ok_or("File path parts should be strings")?,
-                    );
+                    p.push(dir.into_string()
+                        .ok_or("File path parts should be strings")?);
                 }
                 let f = File {
                     path: p,
@@ -97,24 +95,22 @@ impl Info {
             .find(|&(ref k, ref v)| k == "xt" && v.starts_with("urn:btih:"))
             .and_then(|(_, ref v)| {
                 id_to_hash(&v[9..]).or_else(|| {
-                    base32::decode(base32::Alphabet::RFC4648 { padding: true }, &v[9..])
-                        .and_then(|b| {
+                    base32::decode(base32::Alphabet::RFC4648 { padding: true }, &v[9..]).and_then(
+                        |b| {
                             if b.len() != 20 {
                                 return None;
                             }
                             let mut a = [0; 20];
                             (&mut a[..]).copy_from_slice(&b);
                             Some(a)
-                        })
+                        },
+                    )
                 })
             })
             .ok_or("No hash found in magnet")?;
-        let announce = url.query_pairs().find(|&(ref k, _)| k == "tr").and_then(
-            |(_,
-              ref v)| {
-                Url::parse(v).map(|u| Some(u)).unwrap_or(None)
-            },
-        );
+        let announce = url.query_pairs()
+            .find(|&(ref k, _)| k == "tr")
+            .and_then(|(_, ref v)| Url::parse(v).map(|u| Some(u)).unwrap_or(None));
         let name = url.query_pairs()
             .find(|&(ref k, _)| k == "dn")
             .map(|(_, ref v)| v.to_string())
@@ -186,9 +182,7 @@ impl Info {
 
     pub fn from_bencode(data: BEncode) -> Result<Info, &'static str> {
         data.into_dict()
-            .and_then(|mut d| {
-                d.remove("info").and_then(|i| i.into_dict()).map(|i| (d, i))
-            })
+            .and_then(|mut d| d.remove("info").and_then(|i| i.into_dict()).map(|i| (d, i)))
             .ok_or("invalid info field")
             .and_then(|(mut d, mut i)| {
                 let mut info_bytes = Vec::new();
@@ -199,16 +193,18 @@ impl Info {
                     .ok_or_else(|| "Info must have announce URL")?
                     .into_string()
                     .ok_or_else(|| "Info must have announce URL")
-                    .and_then(|a| if a.is_empty() {
-                        Ok(None)
-                    } else {
-                        Url::parse(&a).map(|u| Some(u)).map_err(
-                            |_| "Info has invalid announce URL",
-                        )
+                    .and_then(|a| {
+                        if a.is_empty() {
+                            Ok(None)
+                        } else {
+                            Url::parse(&a)
+                                .map(|u| Some(u))
+                                .map_err(|_| "Info has invalid announce URL")
+                        }
                     })?;
-                let pl = i.remove("piece length").and_then(|i| i.into_int()).ok_or(
-                    "Info must specify piece length",
-                )? as u64;
+                let pl = i.remove("piece length")
+                    .and_then(|i| i.into_int())
+                    .ok_or("Info must specify piece length")? as u64;
                 let hashes = i.remove("pieces")
                     .and_then(|p| p.into_bytes())
                     .and_then(|p| {
@@ -469,9 +465,9 @@ fn parse_bencode_files(mut data: BTreeMap<String, BEncode>) -> Result<Vec<File>,
     match data.remove("files").and_then(|l| l.into_list()) {
         Some(fs) => {
             let mut path = PathBuf::new();
-            path.push(data.remove("name").and_then(|v| v.into_string()).ok_or(
-                "Multifile mode must have a name field",
-            )?);
+            path.push(data.remove("name")
+                .and_then(|v| v.into_string())
+                .ok_or("Multifile mode must have a name field")?);
             let mut files = Vec::new();
             for f in fs {
                 let mut file = File::from_bencode(f)?;

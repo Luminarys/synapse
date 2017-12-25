@@ -7,8 +7,8 @@ use chrono::Utc;
 use bincode;
 use amy;
 
-use {rpc, tracker, disk, listener, stat, CONFIG, SHUTDOWN};
-use util::{io_err, io_err_val, id_to_hash, hash_to_id, random_string, UHashMap, MHashMap};
+use {disk, listener, rpc, stat, tracker, CONFIG, SHUTDOWN};
+use util::{hash_to_id, id_to_hash, io_err, io_err_val, random_string, MHashMap, UHashMap};
 use torrent::{self, peer, Torrent};
 use throttle::Throttler;
 
@@ -49,10 +49,8 @@ struct ServerData {
     id: String,
     ul: u64,
     dl: u64,
-    #[serde(skip)]
-    session_ul: u64,
-    #[serde(skip)]
-    session_dl: u64,
+    #[serde(skip)] session_ul: u64,
+    #[serde(skip)] session_dl: u64,
     throttle_ul: Option<i64>,
     throttle_dl: Option<i64>,
 }
@@ -81,9 +79,8 @@ impl<T: cio::CIO> Control<T> {
             job::TorrentTxUpdate::new(),
             time::Duration::from_millis(TX_JOB_MS),
         );
-        let job_timer = cio.set_timer(JOB_INT_MS).map_err(
-            |_| io_err_val("timer failure!"),
-        )?;
+        let job_timer = cio.set_timer(JOB_INT_MS)
+            .map_err(|_| io_err_val("timer failure!"))?;
         Ok(Control {
             throttler,
             cio,
@@ -145,9 +142,8 @@ impl<T: cio::CIO> Control<T> {
         debug!("Deserializing server data!");
         let mut pb = PathBuf::from(sd);
         pb.push("syn_data");
-        if let Ok(Ok(data)) = fs::File::open(pb).map(|mut f| {
-            bincode::deserialize_from(&mut f, bincode::Infinite)
-        })
+        if let Ok(Ok(data)) =
+            fs::File::open(pb).map(|mut f| bincode::deserialize_from(&mut f, bincode::Infinite))
         {
             self.data = data;
         } else {
@@ -300,12 +296,15 @@ impl<T: cio::CIO> Control<T> {
         let p = &mut self.peers;
         let t = &mut self.torrents;
 
-        p.get(&peer).cloned().and_then(|id| t.get_mut(&id)).map(
-            |torrent| if torrent.peer_ev(peer, ev).is_err() {
-                p.remove(&peer);
-                torrent.update_rpc_peers();
-            },
-        );
+        p.get(&peer)
+            .cloned()
+            .and_then(|id| t.get_mut(&id))
+            .map(|torrent| {
+                if torrent.peer_ev(peer, ev).is_err() {
+                    p.remove(&peer);
+                    torrent.update_rpc_peers();
+                }
+            });
     }
 
     fn flush_blocked_peers(&mut self) {
@@ -334,9 +333,8 @@ impl<T: cio::CIO> Control<T> {
         self.hash_idx.insert(t.info().hash, tid);
         self.tid_cnt += 1;
         self.torrents.insert(tid, t);
-        self.cio.msg_rpc(
-            rpc::CtlMessage::Uploaded { id, client, serial },
-        )
+        self.cio
+            .msg_rpc(rpc::CtlMessage::Uploaded { id, client, serial })
     }
 
     fn handle_rpc_ev(&mut self, req: rpc::Message) -> bool {
@@ -405,11 +403,8 @@ impl<T: cio::CIO> Control<T> {
                     .and_then(|d| hash_idx.remove(d.as_ref()))
                     .and_then(|i| torrents.remove(&i))
                     .map(|mut t| t.delete(artifacts));
-                self.cio.msg_rpc(rpc::CtlMessage::ClientRemoved {
-                    id,
-                    client,
-                    serial,
-                });
+                self.cio
+                    .msg_rpc(rpc::CtlMessage::ClientRemoved { id, client, serial });
             }
             rpc::Message::Pause(id) => {
                 let hash_idx = &mut self.hash_idx;
@@ -449,11 +444,8 @@ impl<T: cio::CIO> Control<T> {
                     .and_then(|d| hash_idx.get(d.as_ref()))
                     .and_then(|i| torrents.get_mut(i))
                     .map(|t| t.remove_peer(&id));
-                self.cio.msg_rpc(rpc::CtlMessage::ClientRemoved {
-                    id,
-                    client,
-                    serial,
-                });
+                self.cio
+                    .msg_rpc(rpc::CtlMessage::ClientRemoved { id, client, serial });
             }
             rpc::Message::RemoveTracker {
                 id,
@@ -467,11 +459,8 @@ impl<T: cio::CIO> Control<T> {
                     .and_then(|d| hash_idx.get(d.as_ref()))
                     .and_then(|i| torrents.get_mut(i))
                     .map(|t| t.remove_tracker(&id));
-                self.cio.msg_rpc(rpc::CtlMessage::ClientRemoved {
-                    id,
-                    client,
-                    serial,
-                });
+                self.cio
+                    .msg_rpc(rpc::CtlMessage::ClientRemoved { id, client, serial });
             }
             rpc::Message::UpdateTracker { id, torrent_id } => {
                 let hash_idx = &self.hash_idx;

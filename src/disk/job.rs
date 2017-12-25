@@ -1,6 +1,6 @@
 use std::sync::Arc;
-use std::{fs, fmt, path, time, mem};
-use std::io::{self, Seek, SeekFrom, Write, Read};
+use std::{fmt, fs, mem, path, time};
+use std::io::{self, Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use std::net::TcpStream;
 
@@ -8,9 +8,9 @@ use fs_extra;
 use sha1;
 use amy;
 
-use super::{EXDEV, JOB_TIME_SLICE, FileCache};
+use super::{FileCache, EXDEV, JOB_TIME_SLICE};
 use torrent::{Info, LocIter};
-use util::{hash_to_id, io_err, awrite, IOR};
+use util::{awrite, hash_to_id, io_err, IOR};
 use CONFIG;
 
 pub struct Location {
@@ -60,7 +60,10 @@ pub enum Request {
         idx: u32,
         invalid: Vec<u32>,
     },
-    WriteFile { data: Vec<u8>, path: PathBuf },
+    WriteFile {
+        data: Vec<u8>,
+        path: PathBuf,
+    },
     Download {
         client: TcpStream,
         path: String,
@@ -75,9 +78,18 @@ pub enum Response {
         context: Ctx,
         data: Arc<Box<[u8; 16_384]>>,
     },
-    ValidationComplete { tid: usize, invalid: Vec<u32> },
-    Moved { tid: usize, path: String },
-    Error { tid: usize, err: io::Error },
+    ValidationComplete {
+        tid: usize,
+        invalid: Vec<u32>,
+    },
+    Moved {
+        tid: usize,
+        path: String,
+    },
+    Error {
+        tid: usize,
+        err: io::Error,
+    },
 }
 
 pub struct Ctx {
@@ -197,23 +209,23 @@ impl Request {
                 locations,
                 path,
                 ..
-            } => {
-                for loc in locations {
-                    let mut pb = path::PathBuf::from(path.as_ref().unwrap_or(dd));
-                    pb.push(loc.path());
-                    fc.get_file_range(
-                        &pb,
-                        Some(loc.file_len),
-                        loc.offset,
-                        (loc.end - loc.start),
-                        false,
-                        |b| { b.copy_from_slice(&data[loc.start..loc.end]); },
-                    )?;
-                    if loc.end - loc.start != 16_384 {
-                        fc.flush_file(&pb);
-                    }
+            } => for loc in locations {
+                let mut pb = path::PathBuf::from(path.as_ref().unwrap_or(dd));
+                pb.push(loc.path());
+                fc.get_file_range(
+                    &pb,
+                    Some(loc.file_len),
+                    loc.offset,
+                    (loc.end - loc.start),
+                    false,
+                    |b| {
+                        b.copy_from_slice(&data[loc.start..loc.end]);
+                    },
+                )?;
+                if loc.end - loc.start != 16_384 {
+                    fc.flush_file(&pb);
                 }
-            }
+            },
             Request::Read {
                 context,
                 mut data,
@@ -224,16 +236,9 @@ impl Request {
                 for loc in locations {
                     let mut pb = path::PathBuf::from(path.as_ref().unwrap_or(dd));
                     pb.push(loc.path());
-                    fc.get_file_range(
-                        &pb,
-                        None,
-                        loc.offset,
-                        (loc.end - loc.start),
-                        true,
-                        |b| {
-                            (&mut data[loc.start..loc.end]).copy_from_slice(b);
-                        },
-                    )?;
+                    fc.get_file_range(&pb, None, loc.offset, (loc.end - loc.start), true, |b| {
+                        (&mut data[loc.start..loc.end]).copy_from_slice(b);
+                    })?;
                 }
                 let data = Arc::new(data);
                 return Ok(JobRes::Resp(Response::read(context, data)));
@@ -316,8 +321,8 @@ impl Request {
 
                 let start = time::Instant::now();
 
-                while idx < info.pieces() &&
-                    start.elapsed() < time::Duration::from_millis(JOB_TIME_SLICE)
+                while idx < info.pieces()
+                    && start.elapsed() < time::Duration::from_millis(JOB_TIME_SLICE)
                 {
                     let mut valid = true;
                     let mut ctx = sha1::Sha1::new();
@@ -470,15 +475,13 @@ impl Request {
 
     pub fn tid(&self) -> Option<usize> {
         match *self {
-            Request::Serialize { tid, .. } |
-            Request::Validate { tid, .. } |
-            Request::Delete { tid, .. } |
-            Request::Move { tid, .. } |
-            Request::Write { tid, .. } => Some(tid),
+            Request::Serialize { tid, .. }
+            | Request::Validate { tid, .. }
+            | Request::Delete { tid, .. }
+            | Request::Move { tid, .. }
+            | Request::Write { tid, .. } => Some(tid),
             Request::Read { ref context, .. } => Some(context.tid),
-            Request::WriteFile { .. } |
-            Request::Download { .. } |
-            Request::Shutdown => None,
+            Request::WriteFile { .. } | Request::Download { .. } | Request::Shutdown => None,
         }
     }
 }
@@ -518,10 +521,7 @@ impl fmt::Debug for Location {
         write!(
             f,
             "disk::Location {{ file: {}, off: {}, s: {}, e: {} }}",
-            self.file,
-            self.offset,
-            self.start,
-            self.end
+            self.file, self.offset, self.start, self.end
         )
     }
 }
@@ -546,9 +546,9 @@ impl Response {
     pub fn tid(&self) -> usize {
         match *self {
             Response::Read { ref context, .. } => context.tid,
-            Response::ValidationComplete { tid, .. } |
-            Response::Moved { tid, .. } |
-            Response::Error { tid, .. } => tid,
+            Response::ValidationComplete { tid, .. }
+            | Response::Moved { tid, .. }
+            | Response::Error { tid, .. } => tid,
         }
     }
 }

@@ -154,17 +154,13 @@ impl Opcode {
         match *self {
             Opcode::Continuation | Opcode::Text | Opcode::Binary | Opcode::Other(_) => false,
 
-            Opcode::Close |
-            Opcode::Ping |
-            Opcode::Pong |
-            Opcode::OtherControl(_) => true,
+            Opcode::Close | Opcode::Ping | Opcode::Pong | Opcode::OtherControl(_) => true,
         }
     }
 
     pub fn is_other(&self) -> bool {
         match *self {
-            Opcode::OtherControl(_) |
-            Opcode::Other(_) => true,
+            Opcode::OtherControl(_) | Opcode::Other(_) => true,
             _ => false,
         }
     }
@@ -174,8 +170,7 @@ impl Opcode {
             Opcode::Continuation => 0,
             Opcode::Text => 1,
             Opcode::Binary => 2,
-            Opcode::Other(o) |
-            Opcode::OtherControl(o) => o,
+            Opcode::Other(o) | Opcode::OtherControl(o) => o,
             Opcode::Close => 8,
             Opcode::Ping => 9,
             Opcode::Pong => 10,

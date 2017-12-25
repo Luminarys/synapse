@@ -14,26 +14,16 @@ pub struct Criterion {
 #[derive(Copy, Clone, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub enum Operation {
-    #[serde(rename = "==")]
-    Eq,
-    #[serde(rename = "!=")]
-    Neq,
-    #[serde(rename = ">")]
-    GT,
-    #[serde(rename = ">=")]
-    GTE,
-    #[serde(rename = "<")]
-    LT,
-    #[serde(rename = "<=")]
-    LTE,
-    #[serde(rename = "like")]
-    Like,
-    #[serde(rename = "ilike")]
-    ILike,
-    #[serde(rename = "in")]
-    In,
-    #[serde(rename = "!in")]
-    NotIn,
+    #[serde(rename = "==")] Eq,
+    #[serde(rename = "!=")] Neq,
+    #[serde(rename = ">")] GT,
+    #[serde(rename = ">=")] GTE,
+    #[serde(rename = "<")] LT,
+    #[serde(rename = "<=")] LTE,
+    #[serde(rename = "like")] Like,
+    #[serde(rename = "ilike")] ILike,
+    #[serde(rename = "in")] In,
+    #[serde(rename = "!in")] NotIn,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
@@ -74,88 +64,64 @@ impl Criterion {
 
     fn match_field(&self, field: &Field, op: Operation, value: &Value) -> bool {
         match (field, value) {
-            (f, &Value::V(ref v)) => {
-                match op {
-                    Operation::In => {
-                        v.iter().any(
-                            |item| self.match_field(f, Operation::Eq, item),
-                        )
-                    }
-                    Operation::NotIn => {
-                        v.iter().all(
-                            |item| self.match_field(f, Operation::Neq, item),
-                        )
-                    }
+            (f, &Value::V(ref v)) => match op {
+                Operation::In => v.iter()
+                    .any(|item| self.match_field(f, Operation::Eq, item)),
+                Operation::NotIn => v.iter()
+                    .all(|item| self.match_field(f, Operation::Neq, item)),
+                _ => false,
+            },
+            (&Field::B(f), &Value::B(v)) => match op {
+                Operation::Eq => f == v,
+                Operation::Neq => f != v,
+                _ => false,
+            },
+            (&Field::S(ref f), &Value::S(ref v)) => match op {
+                Operation::Eq => f == v,
+                Operation::Neq => f != v,
+                Operation::Like => match_like(v, f),
+                Operation::ILike => match_ilike(v, f),
+                _ => false,
+            },
+            (&Field::N(f), &Value::N(v)) => match op {
+                Operation::Eq => f == v,
+                Operation::Neq => f != v,
+                Operation::GTE => f >= v,
+                Operation::GT => f > v,
+                Operation::LTE => f <= v,
+                Operation::LT => f < v,
+                _ => false,
+            },
+            (&Field::F(f), &Value::F(v)) => match op {
+                Operation::Eq => f == v,
+                Operation::Neq => f != v,
+                Operation::GTE => f >= v,
+                Operation::GT => f > v,
+                Operation::LTE => f <= v,
+                Operation::LT => f < v,
+                _ => false,
+            },
+            (&Field::D(f), &Value::D(v)) => match op {
+                Operation::Eq => f == v,
+                Operation::Neq => f != v,
+                Operation::GTE => f >= v,
+                Operation::GT => f > v,
+                Operation::LTE => f <= v,
+                Operation::LT => f < v,
+                _ => false,
+            },
+            (&Field::O(ref f), &Value::E(_)) => match op {
+                Operation::Eq => f.is_none(),
+                Operation::Neq => f.is_some(),
+                _ => false,
+            },
+            (&Field::O(ref b), v) => match b.as_ref().as_ref() {
+                Some(f) => self.match_field(f, op, v),
+                None => match op {
+                    Operation::Neq => true,
                     _ => false,
-                }
-            }
-            (&Field::B(f), &Value::B(v)) => {
-                match op {
-                    Operation::Eq => f == v,
-                    Operation::Neq => f != v,
-                    _ => false,
-                }
-            }
-            (&Field::S(ref f), &Value::S(ref v)) => {
-                match op {
-                    Operation::Eq => f == v,
-                    Operation::Neq => f != v,
-                    Operation::Like => match_like(v, f),
-                    Operation::ILike => match_ilike(v, f),
-                    _ => false,
-                }
-            }
-            (&Field::N(f), &Value::N(v)) => {
-                match op {
-                    Operation::Eq => f == v,
-                    Operation::Neq => f != v,
-                    Operation::GTE => f >= v,
-                    Operation::GT => f > v,
-                    Operation::LTE => f <= v,
-                    Operation::LT => f < v,
-                    _ => false,
-                }
-            }
-            (&Field::F(f), &Value::F(v)) => {
-                match op {
-                    Operation::Eq => f == v,
-                    Operation::Neq => f != v,
-                    Operation::GTE => f >= v,
-                    Operation::GT => f > v,
-                    Operation::LTE => f <= v,
-                    Operation::LT => f < v,
-                    _ => false,
-                }
-            }
-            (&Field::D(f), &Value::D(v)) => {
-                match op {
-                    Operation::Eq => f == v,
-                    Operation::Neq => f != v,
-                    Operation::GTE => f >= v,
-                    Operation::GT => f > v,
-                    Operation::LTE => f <= v,
-                    Operation::LT => f < v,
-                    _ => false,
-                }
-            }
-            (&Field::O(ref f), &Value::E(_)) => {
-                match op {
-                    Operation::Eq => f.is_none(),
-                    Operation::Neq => f.is_some(),
-                    _ => false,
-                }
-            }
-            (&Field::O(ref b), v) => {
-                match b.as_ref().as_ref() {
-                    Some(f) => self.match_field(f, op, v),
-                    None => {
-                        match op {
-                            Operation::Neq => true,
-                            _ => false,
-                        }
-                    }
-                }
-            }
+                },
+            },
             _ => false,
         }
     }

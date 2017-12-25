@@ -4,9 +4,9 @@ use std::time;
 
 use amy;
 
-use {rpc, tracker, disk, listener, torrent};
+use {disk, listener, rpc, torrent, tracker};
 use CONFIG;
-use control::cio::{self, Result, ResultExt, ErrorKind};
+use control::cio::{self, ErrorKind, Result, ResultExt};
 use util::UHashMap;
 
 const POLL_INT_MS: usize = 1000;
@@ -48,7 +48,9 @@ impl ACIO {
             peers: UHashMap::default(),
             events: Vec::new(),
         };
-        ACIO { data: Rc::new(UnsafeCell::new(data)) }
+        ACIO {
+            data: Rc::new(UnsafeCell::new(data)),
+        }
     }
 
     fn process_event(&mut self, not: amy::Notification, events: &mut Vec<cio::Event>) {
@@ -117,11 +119,9 @@ impl cio::CIO for ACIO {
             events.push(event);
         }
         match self.d().poll.wait(POLL_INT_MS) {
-            Ok(evs) => {
-                for event in evs {
-                    self.process_event(event, events);
-                }
-            }
+            Ok(evs) => for event in evs {
+                self.process_event(event, events);
+            },
             Err(e) => {
                 error!("Failed to poll for events: {:?}", e);
             }
@@ -132,8 +132,8 @@ impl cio::CIO for ACIO {
         if self.d().peers.len() > CONFIG.net.max_open_sockets {
             let mut pruned = Vec::new();
             for (id, peer) in &self.d().peers {
-                if peer.last_action().elapsed() >
-                    time::Duration::from_secs(CONFIG.peer.prune_timeout)
+                if peer.last_action().elapsed()
+                    > time::Duration::from_secs(CONFIG.peer.prune_timeout)
                 {
                     pruned.push(*id)
                 }
@@ -171,7 +171,6 @@ impl cio::CIO for ACIO {
             None
         }
     }
-
 
     fn remove_peer(&mut self, peer: cio::PID) {
         self.d().remove_peer(peer);
@@ -217,44 +216,53 @@ impl cio::CIO for ACIO {
 
     fn msg_rpc(&mut self, msg: rpc::CtlMessage) {
         if self.d().chans.rpc_tx.send(msg).is_err() {
-            self.d().events.push(cio::Event::RPC(
-                Err(ErrorKind::Channel("Couldn't send to RPC chan").into()),
-            ));
+            self.d().events.push(cio::Event::RPC(Err(ErrorKind::Channel(
+                "Couldn't send to RPC chan",
+            ).into())));
         }
     }
 
     fn msg_trk(&mut self, msg: tracker::Request) {
         if self.d().chans.trk_tx.send(msg).is_err() {
-            self.d().events.push(cio::Event::Tracker(
-                Err(ErrorKind::Channel("Couldn't send to trk chan").into()),
-            ));
+            self.d()
+                .events
+                .push(cio::Event::Tracker(Err(ErrorKind::Channel(
+                    "Couldn't send to trk chan",
+                ).into())));
         }
     }
 
     fn msg_disk(&mut self, msg: disk::Request) {
         if self.d().chans.disk_tx.send(msg).is_err() {
-            self.d().events.push(cio::Event::Disk(
-                Err(ErrorKind::Channel("Couldn't send to disk chan").into()),
-            ));
+            self.d()
+                .events
+                .push(cio::Event::Disk(Err(ErrorKind::Channel(
+                    "Couldn't send to disk chan",
+                ).into())));
         }
     }
 
     fn msg_listener(&mut self, msg: listener::Request) {
         if self.d().chans.lst_tx.send(msg).is_err() {
-            self.d().events.push(cio::Event::Listener(
-                Err(ErrorKind::Channel("Couldn't send to disk chan").into()),
-            ));
+            self.d()
+                .events
+                .push(cio::Event::Listener(Err(ErrorKind::Channel(
+                    "Couldn't send to disk chan",
+                ).into())));
         }
     }
 
     fn set_timer(&mut self, interval: usize) -> Result<cio::TID> {
-        self.d().reg.set_interval(interval).chain_err(
-            || ErrorKind::IO,
-        )
+        self.d()
+            .reg
+            .set_interval(interval)
+            .chain_err(|| ErrorKind::IO)
     }
 
     fn new_handle(&self) -> Self {
-        ACIO { data: self.data.clone() }
+        ACIO {
+            data: self.data.clone(),
+        }
     }
 }
 

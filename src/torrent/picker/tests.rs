@@ -1,9 +1,9 @@
 use super::{Block, Picker};
 use std::collections::HashMap;
 use std::cell::UnsafeCell;
-use torrent::{Bitfield, Peer as TGPeer, Info};
+use torrent::{Bitfield, Info, Peer as TGPeer};
 use rand::distributions::{IndependentSample, Range};
-use {rand, control};
+use {control, rand};
 
 type TPeer = TGPeer<control::cio::test::TCIO>;
 
@@ -33,9 +33,7 @@ impl Simulation {
                 requests: Vec::new(),
                 requested_pieces: HashMap::new(),
                 compl: None,
-                data: {
-                    TPeer::test(i as usize, 0, 0, 0, Bitfield::new(cfg.pieces as u64))
-                },
+                data: { TPeer::test(i as usize, 0, 0, 0, Bitfield::new(cfg.pieces as u64)) },
             };
             peers.push(peer);
         }
@@ -94,8 +92,8 @@ impl Simulation {
                     if received.data.pieces().complete() {
                         received.compl = Some(self.ticks);
                         for p in self.peers().iter_mut() {
-                            if !p.data.pieces().complete() &&
-                                !p.unchoked_by.contains(&peer.data.id())
+                            if !p.data.pieces().complete()
+                                && !p.unchoked_by.contains(&peer.data.id())
                             {
                                 p.unchoked_by.push(peer.data.id());
                             }
@@ -131,7 +129,11 @@ impl Simulation {
             .filter(|p| !p.data.pieces().complete())
             .map(|p| p.data.id())
             .collect::<Vec<_>>();
-        if inc.is_empty() { Ok(()) } else { Err(()) }
+        if inc.is_empty() {
+            Ok(())
+        } else {
+            Err(())
+        }
     }
 
     fn peers<'f>(&self) -> &'f mut Vec<Peer> {

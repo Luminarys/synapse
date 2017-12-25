@@ -3,7 +3,7 @@ use std::mem;
 
 use httparse;
 
-use tracker::errors::{Result, ErrorKind};
+use tracker::errors::{ErrorKind, Result};
 use util::{aread, IOR};
 
 pub struct Reader {
@@ -59,17 +59,13 @@ impl Reader {
                                         .map(|c| redirect_codes.contains(c))
                                         .unwrap_or(false)
                                     {
-                                        let loc =
-                                            resp.headers
-                                                .iter()
-                                                .find(|h| h.name == "Location")
-                                                .and_then(
-                                                    |h| String::from_utf8(h.value.to_vec()).ok(),
-                                                );
+                                        let loc = resp.headers
+                                            .iter()
+                                            .find(|h| h.name == "Location")
+                                            .and_then(|h| String::from_utf8(h.value.to_vec()).ok());
                                         if loc.is_none() {
                                             return Err(
-                                                ErrorKind::InvalidResponse("malformed HTTP")
-                                                    .into(),
+                                                ErrorKind::InvalidResponse("malformed HTTP").into(),
                                             );
                                         }
                                         return Ok(ReadRes::Redirect(loc.unwrap()));
@@ -91,16 +87,14 @@ impl Reader {
                     }
                 }
                 IOR::Blocked => return Ok(ReadRes::None),
-                IOR::EOF => {
-                    match self.state {
-                        ReadState::Body => {
-                            let mut data = mem::replace(&mut self.data, Vec::with_capacity(0));
-                            data.truncate(self.idx);
-                            return Ok(ReadRes::Done(data));
-                        }
-                        _ => return Err(ErrorKind::EOF.into()),
+                IOR::EOF => match self.state {
+                    ReadState::Body => {
+                        let mut data = mem::replace(&mut self.data, Vec::with_capacity(0));
+                        data.truncate(self.idx);
+                        return Ok(ReadRes::Done(data));
                     }
-                }
+                    _ => return Err(ErrorKind::EOF.into()),
+                },
                 IOR::Err(_) => return Err(ErrorKind::IO.into()),
             }
         }

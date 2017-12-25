@@ -6,20 +6,20 @@ mod client;
 mod processor;
 mod transfer;
 
-use std::{io, str, result, thread};
+use std::{io, result, str, thread};
 use std::io::Write;
-use std::net::{TcpListener, TcpStream, Ipv4Addr, SocketAddrV4};
+use std::net::{Ipv4Addr, SocketAddrV4, TcpListener, TcpStream};
 
 use amy;
 use serde_json;
 
 pub use self::proto::resource;
-pub use self::errors::{Result, ResultExt, ErrorKind, Error};
+pub use self::errors::{Error, ErrorKind, Result, ResultExt};
 use self::proto::message::{self, SMessage};
 use self::proto::ws;
-use self::client::{Incoming, IncomingStatus, Client};
+use self::client::{Client, Incoming, IncomingStatus};
 use self::processor::{Processor, TransferKind};
-use self::transfer::{Transfers, TransferResult};
+use self::transfer::{TransferResult, Transfers};
 use bencode;
 use handle;
 use torrent;
@@ -100,7 +100,10 @@ pub enum Message {
         client: usize,
         serial: u64,
     },
-    UpdateTracker { id: String, torrent_id: String },
+    UpdateTracker {
+        id: String,
+        torrent_id: String,
+    },
     RemoveTracker {
         id: String,
         torrent_id: String,
@@ -236,53 +239,49 @@ impl RPC {
                 self.reg.deregister(&conn).unwrap();
                 // TODO: Send this to the client in an error msg
                 match bencode::decode_buf(&data) {
-                    Ok(b) => {
-                        match torrent::info::Info::from_bencode(b) {
-                            Ok(i) => {
-                                if self.ch
-                                    .send(Message::Torrent {
-                                        info: i,
-                                        path,
-                                        start,
-                                        client,
-                                        serial,
-                                    })
-                                    .is_err()
-                                {
-                                    error!("Failed to pass message to ctrl!");
-                                }
-                            }
-                            Err(e) => {
-                                error!("Failed to parse torrent data: {}!", e);
-                                self.clients.get_mut(&client).map(|c| {
-                                    c.send(ws::Frame::Text(
-                                        serde_json::to_string(
-                                            &SMessage::TransferFailed(message::Error {
-                                                serial: Some(serial),
-                                                reason: format!(
-                                                    "Invalid torrent file uploaded, {}.",
-                                                    e
-                                                ),
-                                            }),
-                                        ).unwrap(),
-                                    ))
-                                });
+                    Ok(b) => match torrent::info::Info::from_bencode(b) {
+                        Ok(i) => {
+                            if self.ch
+                                .send(Message::Torrent {
+                                    info: i,
+                                    path,
+                                    start,
+                                    client,
+                                    serial,
+                                })
+                                .is_err()
+                            {
+                                error!("Failed to pass message to ctrl!");
                             }
                         }
-                    }
+                        Err(e) => {
+                            error!("Failed to parse torrent data: {}!", e);
+                            self.clients.get_mut(&client).map(|c| {
+                                c.send(ws::Frame::Text(
+                                    serde_json::to_string(&SMessage::TransferFailed(
+                                        message::Error {
+                                            serial: Some(serial),
+                                            reason: format!(
+                                                "Invalid torrent file uploaded, {}.",
+                                                e
+                                            ),
+                                        },
+                                    )).unwrap(),
+                                ))
+                            });
+                        }
+                    },
                     Err(e) => {
                         error!("Failed to decode BE data: {}!", e);
                         self.clients.get_mut(&client).map(|c| {
                             c.send(ws::Frame::Text(
-                                serde_json::to_string(
-                                    &SMessage::TransferFailed(message::Error {
-                                        serial: Some(serial),
-                                        reason: format!(
-                                            "Invalid torrent file uploaded, bad bencoded data: {}.",
-                                            e
-                                        ),
-                                    }),
-                                ).unwrap(),
+                                serde_json::to_string(&SMessage::TransferFailed(message::Error {
+                                    serial: Some(serial),
+                                    reason: format!(
+                                        "Invalid torrent file uploaded, bad bencoded data: {}.",
+                                        e
+                                    ),
+                                })).unwrap(),
                             ))
                         });
                     }
@@ -298,8 +297,7 @@ impl RPC {
                     .get_mut(&id)
                     .map(|c| {
                         c.send(ws::Frame::Text(
-                            serde_json::to_string(&SMessage::TransferFailed(err))
-                                .unwrap(),
+                            serde_json::to_string(&SMessage::TransferFailed(err)).unwrap(),
                         ))
                     })
                     .unwrap_or(Ok(()));
@@ -342,9 +340,11 @@ impl RPC {
                 Ok(IncomingStatus::Transfer { data, token }) => {
                     debug!("File transfer requested, validating");
                     match self.processor.get_transfer(token) {
-                        Some((client,
-                              serial,
-                              TransferKind::UploadTorrent { path, size, start })) => {
+                        Some((
+                            client,
+                            serial,
+                            TransferKind::UploadTorrent { path, size, start },
+                        )) => {
                             debug!("Torrent transfer initiated");
                             self.transfers.add_torrent(
                                 id,
@@ -500,8 +500,7 @@ impl RPC {
             reg.deregister(&conn).unwrap();
             self.clients.get_mut(&id).map(|c| {
                 c.send(ws::Frame::Text(
-                    serde_json::to_string(&SMessage::TransferFailed(err))
-                        .unwrap(),
+                    serde_json::to_string(&SMessage::TransferFailed(err)).unwrap(),
                 ))
             });
         }

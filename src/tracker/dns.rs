@@ -5,7 +5,7 @@ use std::os::unix::io::{AsRawFd, RawFd};
 
 use {amy, c_ares};
 
-use tracker::{Result, ResultExt, ErrorKind};
+use tracker::{ErrorKind, Result, ResultExt};
 use util::FHashMap;
 
 #[derive(Debug)]
@@ -80,30 +80,28 @@ impl Resolver {
         let csocks = &mut self.csocks;
         let marked = &self.marked;
         let reg = &self.reg;
-        socks.retain(|id, fd| if marked.contains(id) {
-            true
-        } else {
-            csocks.remove(fd);
-            reg.deregister(&CSockWrapper(*fd)).ok();
-            false
+        socks.retain(|id, fd| {
+            if marked.contains(id) {
+                true
+            } else {
+                csocks.remove(fd);
+                reg.deregister(&CSockWrapper(*fd)).ok();
+                false
+            }
         });
     }
 
     pub fn new_query(&mut self, id: usize, host: &str) {
         // TODO: handle ipv6 too
         let s = self.sender.clone();
-        self.chan.get_host_by_name(
-            host,
-            c_ares::AddressFamily::INET,
-            move |res| {
-                let res = res.chain_err(|| ErrorKind::DNS).and_then(|ips| {
-                    ips.addresses().next().ok_or_else(|| ErrorKind::DNS.into())
-                });
+        self.chan
+            .get_host_by_name(host, c_ares::AddressFamily::INET, move |res| {
+                let res = res.chain_err(|| ErrorKind::DNS)
+                    .and_then(|ips| ips.addresses().next().ok_or_else(|| ErrorKind::DNS.into()));
                 let resp = QueryResponse { id, res };
                 if s.lock().unwrap().send(resp).is_err() {
                     // Other end was shutdown, ignore
                 }
-            },
-        );
+            });
     }
 }

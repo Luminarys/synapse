@@ -2,12 +2,12 @@ pub mod native;
 
 use std::io;
 use std::fmt::Write as FWrite;
-use std::net::{SocketAddr, Ipv4Addr, SocketAddrV4};
+use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
 use std::hash::BuildHasherDefault;
 use std::collections::{HashMap, HashSet};
 
 use rand::{self, Rng};
-use byteorder::{ReadBytesExt, WriteBytesExt, BigEndian};
+use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use metrohash::MetroHash;
 use sha1;
 use fnv;
@@ -195,9 +195,9 @@ pub fn addr_to_bytes(addr: &SocketAddr) -> [u8; 6] {
 }
 
 pub fn find_subseq(haystack: &[u8], needle: &[u8]) -> Option<usize> {
-    haystack.windows(needle.len()).position(
-        |window| window == needle,
-    )
+    haystack
+        .windows(needle.len())
+        .position(|window| window == needle)
 }
 
 #[test]

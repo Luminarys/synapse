@@ -1,4 +1,4 @@
-use {rpc, tracker, disk, listener, torrent};
+use {disk, listener, rpc, torrent, tracker};
 
 error_chain! {
     errors {
@@ -85,8 +85,8 @@ pub trait CIO {
 
 #[cfg(test)]
 pub mod test {
-    use super::{CIO, PID, TID, Event, Result};
-    use {rpc, tracker, disk, listener, torrent};
+    use super::{Event, Result, CIO, PID, TID};
+    use {disk, listener, rpc, torrent, tracker};
     use std::collections::HashMap;
     use std::sync::{Arc, Mutex, MutexGuard};
 
@@ -120,7 +120,9 @@ pub mod test {
                 timers: 0,
                 peer_cnt: 0,
             };
-            TCIO { data: Arc::new(Mutex::new(d)) }
+            TCIO {
+                data: Arc::new(Mutex::new(d)),
+            }
         }
 
         pub fn clear(&mut self) {
@@ -210,7 +212,9 @@ pub mod test {
         }
 
         fn new_handle(&self) -> Self {
-            TCIO { data: self.data.clone() }
+            TCIO {
+                data: self.data.clone(),
+            }
         }
     }
 }

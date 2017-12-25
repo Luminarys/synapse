@@ -3,14 +3,14 @@ mod writer;
 mod message;
 
 use std::net::SocketAddr;
-use std::{io, fmt, mem, time, cmp};
+use std::{cmp, fmt, io, mem, time};
 use std::net::TcpStream;
 
 pub use self::message::Message;
 use self::reader::Reader;
 use self::writer::Writer;
 use socket::Socket;
-use torrent::{Torrent, Bitfield, Info};
+use torrent::{Bitfield, Info, Torrent};
 use throttle::Throttle;
 use control::cio;
 use rpc::{self, resource};
@@ -18,7 +18,7 @@ use bencode;
 use tracker;
 use util;
 use stat;
-use {DHT_EXT, CONFIG};
+use {CONFIG, DHT_EXT};
 
 error_chain! {
     errors {
@@ -318,17 +318,14 @@ impl<T: cio::CIO> Peer<T> {
                 self.cid = Some(id);
                 self.send_rpc_info();
             }
-            Message::Piece { length, .. } |
-            Message::SharedPiece { length, .. } => {
+            Message::Piece { length, .. } | Message::SharedPiece { length, .. } => {
                 self.stat.add_dl(u64::from(length));
                 self.downloaded += 1;
                 self.queued -= 1;
             }
             Message::Request { .. } => {
                 if self.local_status.choked {
-                    return Err(
-                        ErrorKind::ProtocolError("Peer requested while choked!").into(),
-                    );
+                    return Err(ErrorKind::ProtocolError("Peer requested while choked!").into());
                 }
             }
             Message::Choke => {
@@ -345,9 +342,7 @@ impl<T: cio::CIO> Peer<T> {
             }
             Message::Have(idx) => {
                 if idx >= self.pieces.len() as u32 {
-                    return Err(
-                        ErrorKind::ProtocolError("Invalid piece provided in HAVE!").into(),
-                    );
+                    return Err(ErrorKind::ProtocolError("Invalid piece provided in HAVE!").into());
                 }
                 self.pieces.set_bit(u64::from(idx));
             }
@@ -365,7 +360,10 @@ impl<T: cio::CIO> Peer<T> {
             Message::Cancel { index, begin, .. } => {
                 self.cio.get_peer(self.id, |conn| {
                     conn.writer.write_queue.retain(|m| {
-                        if let Message::Piece { index: i, begin: b, .. } = *m {
+                        if let Message::Piece {
+                            index: i, begin: b, ..
+                        } = *m
+                        {
                             return !(i == index && b == begin);
                         }
                         true
@@ -379,9 +377,8 @@ impl<T: cio::CIO> Peer<T> {
             }
             Message::Extension { id, ref payload } => {
                 if id == 0 {
-                    let b = bencode::decode_buf(payload).map_err(|_| {
-                        ErrorKind::ProtocolError("Invalid bencode in ext handshake")
-                    })?;
+                    let b = bencode::decode_buf(payload)
+                        .map_err(|_| ErrorKind::ProtocolError("Invalid bencode in ext handshake"))?;
                     let mut d = b.into_dict().ok_or_else(|| {
                         ErrorKind::ProtocolError("Invalid bencode type in ext handshake")
                     })?;
@@ -433,8 +430,7 @@ impl<T: cio::CIO> Peer<T> {
 
     pub fn send_message(&mut self, msg: Message) {
         match msg {
-            Message::SharedPiece { length, .. } |
-            Message::Piece { length, .. } => {
+            Message::SharedPiece { length, .. } | Message::Piece { length, .. } => {
                 self.uploaded += 1;
                 self.stat.add_ul(u64::from(length));
             }
@@ -463,9 +459,9 @@ impl<T: cio::CIO> Peer<T> {
 
     pub fn send_rpc_removal(&mut self) {
         if self.ready() {
-            self.cio.msg_rpc(rpc::CtlMessage::Removed(
-                vec![util::peer_rpc_id(&self.t_hash, self.id as u64)],
-            ));
+            self.cio.msg_rpc(rpc::CtlMessage::Removed(vec![
+                util::peer_rpc_id(&self.t_hash, self.id as u64),
+            ]));
         }
     }
 }
@@ -481,10 +477,7 @@ impl<T: cio::CIO> fmt::Debug for Peer<T> {
         write!(
             f,
             "Peer {{ id: {}, tid: {}, local_status: {:?}, remote_status: {:?} }}",
-            self.id,
-            self.tid,
-            self.local_status,
-            self.remote_status
+            self.id, self.tid, self.local_status, self.remote_status
         )
     }
 }
@@ -498,7 +491,7 @@ impl ExtIDs {
 #[cfg(test)]
 mod tests {
     use super::Peer;
-    use control::cio::{CIO, test};
+    use control::cio::{test, CIO};
     use torrent::Message;
 
     #[test]

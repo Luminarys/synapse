@@ -1,6 +1,6 @@
 use std::{fmt, thread};
 use std::io::{self, ErrorKind};
-use std::net::{SocketAddrV4, Ipv4Addr, TcpListener};
+use std::net::{Ipv4Addr, SocketAddrV4, TcpListener};
 
 use amy::{self, Poller, Registrar};
 

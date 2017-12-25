@@ -1,11 +1,11 @@
-use std::net::{TcpStream, SocketAddr};
-use std::os::unix::io::{RawFd, AsRawFd};
+use std::net::{SocketAddr, TcpStream};
+use std::os::unix::io::{AsRawFd, RawFd};
 use std::io::{self, ErrorKind};
 use std::mem;
 
 use net2::{TcpBuilder, TcpStreamExt};
-use openssl::ssl::{SslConnectorBuilder, SslMethod, MidHandshakeSslStream, SslStream,
-                   HandshakeError};
+use openssl::ssl::{HandshakeError, MidHandshakeSslStream, SslConnectorBuilder, SslMethod,
+                   SslStream};
 use amy;
 
 use throttle::Throttle;
@@ -24,9 +24,9 @@ pub struct Socket {
 impl Socket {
     pub fn new(addr: &SocketAddr) -> io::Result<Socket> {
         let sock = (match *addr {
-                        SocketAddr::V4(..) => TcpBuilder::new_v4(),
-                        SocketAddr::V6(..) => TcpBuilder::new_v6(),
-                    })?;
+            SocketAddr::V4(..) => TcpBuilder::new_v4(),
+            SocketAddr::V6(..) => TcpBuilder::new_v6(),
+        })?;
         let conn = sock.to_tcp_stream()?;
         conn.set_nonblocking(true)?;
         if let Err(e) = conn.connect(addr) {
@@ -84,18 +84,17 @@ impl io::Read for Socket {
         }
         if let Some(ref mut t) = self.throttle {
             match t.get_bytes_dl(buf.len()) {
-                Ok(()) => {
-                    match self.conn.read(buf) {
-                        Ok(amnt) => { t.restore_bytes_dl(buf.len() - amnt); Ok(amnt) }
-                        Err(e) => {
-                            t.restore_bytes_dl(buf.len());
-                            Err(e)
-                        }
+                Ok(()) => match self.conn.read(buf) {
+                    Ok(amnt) => {
+                        t.restore_bytes_dl(buf.len() - amnt);
+                        Ok(amnt)
                     }
-                }
-                Err(()) => {
-                    Err(io::Error::new(ErrorKind::WouldBlock, ""))
-                }
+                    Err(e) => {
+                        t.restore_bytes_dl(buf.len());
+                        Err(e)
+                    }
+                },
+                Err(()) => Err(io::Error::new(ErrorKind::WouldBlock, "")),
             }
         } else {
             self.conn.read(buf)
@@ -110,18 +109,17 @@ impl io::Write for Socket {
         }
         if let Some(ref mut t) = self.throttle {
             match t.get_bytes_ul(buf.len()) {
-                Ok(()) => {
-                    match self.conn.write(buf) {
-                        Ok(amnt) => { t.restore_bytes_ul(buf.len() - amnt); Ok(amnt) }
-                        Err(e) => {
-                            t.restore_bytes_ul(buf.len());
-                            Err(e)
-                        }
+                Ok(()) => match self.conn.write(buf) {
+                    Ok(amnt) => {
+                        t.restore_bytes_ul(buf.len() - amnt);
+                        Ok(amnt)
                     }
-                }
-                Err(()) => {
-                    Err(io::Error::new(ErrorKind::WouldBlock, ""))
-                }
+                    Err(e) => {
+                        t.restore_bytes_ul(buf.len());
+                        Err(e)
+                    }
+                },
+                Err(()) => Err(io::Error::new(ErrorKind::WouldBlock, "")),
             }
         } else {
             self.conn.write(buf)
@@ -221,22 +219,20 @@ impl io::Read for TSocket {
                 res = c.read(buf);
                 TConn::Plain(c)
             }
-            TConn::SSLC(conn) => {
-                match conn.handshake() {
-                    Ok(s) => {
-                        res = Ok(::std::usize::MAX);
-                        TConn::SSL(s)
-                    }
-                    Err(HandshakeError::Interrupted(s)) => {
-                        res = Ok(0);
-                        TConn::SSLC(s)
-                    }
-                    Err(_) => {
-                        res = util::io_err("SSL Connection failed!");
-                        TConn::Empty
-                    }
+            TConn::SSLC(conn) => match conn.handshake() {
+                Ok(s) => {
+                    res = Ok(::std::usize::MAX);
+                    TConn::SSL(s)
                 }
-            }
+                Err(HandshakeError::Interrupted(s)) => {
+                    res = Ok(0);
+                    TConn::SSLC(s)
+                }
+                Err(_) => {
+                    res = util::io_err("SSL Connection failed!");
+                    TConn::Empty
+                }
+            },
             TConn::SSL(mut conn) => {
                 res = conn.read(buf);
                 TConn::SSL(conn)
@@ -257,19 +253,17 @@ impl io::Write for TSocket {
                 res = c.write(buf);
                 TConn::Plain(c)
             }
-            TConn::SSLC(conn) => {
-                match conn.handshake() {
-                    Ok(s) => {
-                        res = Ok(::std::usize::MAX);
-                        TConn::SSL(s)
-                    }
-                    Err(HandshakeError::Interrupted(s)) => {
-                        res = Ok(0);
-                        TConn::SSLC(s)
-                    }
-                    Err(_) => return util::io_err("SSL Connection failed!"),
+            TConn::SSLC(conn) => match conn.handshake() {
+                Ok(s) => {
+                    res = Ok(::std::usize::MAX);
+                    TConn::SSL(s)
                 }
-            }
+                Err(HandshakeError::Interrupted(s)) => {
+                    res = Ok(0);
+                    TConn::SSLC(s)
+                }
+                Err(_) => return util::io_err("SSL Connection failed!"),
+            },
             TConn::SSL(mut conn) => {
                 res = conn.write(buf);
                 TConn::SSL(conn)
@@ -294,7 +288,6 @@ impl AsRawFd for TSocket {
         self.fd
     }
 }
-
 
 impl Drop for TSocket {
     fn drop(&mut self) {

@@ -64,7 +64,7 @@ pub mod torrent {
     pub mod ver_5f166d {
         use super::ver_249b1b as next;
 
-        use torrent::{info, Info as TInfo, Bitfield};
+        use torrent::{info, Bitfield, Info as TInfo};
 
         use chrono::{DateTime, Utc};
         use url::Url;
@@ -160,7 +160,7 @@ pub mod torrent {
 
     pub mod ver_8e1121 {
         use super::ver_5f166d as next;
-        use self::next::{Status, Info};
+        use self::next::{Info, Status};
 
         use torrent::Bitfield;
 

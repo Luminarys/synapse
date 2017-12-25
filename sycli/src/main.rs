@@ -1,14 +1,14 @@
 #![allow(unused_doc_comment)]
 
+extern crate clap;
 #[macro_use]
 extern crate error_chain;
 #[macro_use]
 extern crate prettytable;
-extern crate clap;
-extern crate synapse_rpc as rpc;
+extern crate reqwest;
 extern crate serde;
 extern crate serde_json;
-extern crate reqwest;
+extern crate synapse_rpc as rpc;
 extern crate url;
 extern crate websocket;
 
@@ -124,9 +124,7 @@ fn main() {
                 .about("Lists resources of a given type in synapse.")
                 .arg(
                     Arg::with_name("filter")
-                        .help(
-                            "Apply an array of json formatted criterion to the resources.",
-                        )
+                        .help("Apply an array of json formatted criterion to the resources.")
                         .short("f")
                         .long("filter")
                         .takes_value(true),

@@ -118,13 +118,11 @@ impl Tracker {
         debug!("Initialized!");
         'outer: loop {
             match self.poll.wait(POLL_INT_MS) {
-                Ok(events) => {
-                    for event in events {
-                        if self.handle_event(event).is_err() {
-                            break 'outer;
-                        }
+                Ok(events) => for event in events {
+                    if self.handle_event(event).is_err() {
+                        break 'outer;
                     }
-                }
+                },
                 Err(e) => {
                     error!("Failed to poll for events: {:?}", e);
                 }
@@ -184,8 +182,7 @@ impl Tracker {
 
     fn handle_announce(&mut self, req: Announce) {
         debug!("Handling announce request!");
-        if self.udp.active_requests() + self.http.active_requests() >
-            CONFIG.net.max_open_announces
+        if self.udp.active_requests() + self.http.active_requests() > CONFIG.net.max_open_announces
         {
             self.queue.push_back(req);
         } else {
@@ -194,15 +191,13 @@ impl Tracker {
                 match url.scheme() {
                     "http" | "https" => self.http.new_announce(req, &url, &mut self.dns),
                     "udp" => self.udp.new_announce(req, &url, &mut self.dns),
-                    s => Err(
-                        ErrorKind::InvalidRequest(format!("Unknown tracker url scheme: {}", s))
-                            .into(),
-                    ),
+                    s => Err(ErrorKind::InvalidRequest(format!(
+                        "Unknown tracker url scheme: {}",
+                        s
+                    )).into()),
                 }
             } else {
-                Err(
-                    ErrorKind::InvalidRequest(format!("Invalid url: {}", req.url)).into(),
-                )
+                Err(ErrorKind::InvalidRequest(format!("Invalid url: {}", req.url)).into())
             };
             if let Err(e) = response {
                 self.send_response((id, Err(e)));
@@ -233,9 +228,10 @@ impl Tracker {
     }
 
     fn handle_timer(&mut self) {
-        for r in self.http.tick().into_iter().chain(
-            self.udp.tick().into_iter(),
-        )
+        for r in self.http
+            .tick()
+            .into_iter()
+            .chain(self.udp.tick().into_iter())
         {
             self.send_response(r);
         }
@@ -304,8 +300,7 @@ impl Request {
             // piece_len * pieces_dld (due to shorter last piece), so we always get
             // either the correct amount left or 0.
             left: torrent.info().total_len.saturating_sub(
-                torrent.pieces().iter().count() as u64 *
-                    torrent.info().piece_len as u64,
+                torrent.pieces().iter().count() as u64 * torrent.info().piece_len as u64,
             ),
             // TODO: Develop better heuristics here.
             // For now, only request peers if we're leeching,
@@ -358,20 +353,17 @@ impl TrackerResponse {
             "Tracker response must be a dictionary type!",
         ))?;
         if let Some(BEncode::String(data)) = d.remove("failure reason") {
-            let reason = String::from_utf8(data).chain_err(|| {
-                ErrorKind::InvalidResponse("Failure reason must be UTF8!")
-            })?;
+            let reason = String::from_utf8(data)
+                .chain_err(|| ErrorKind::InvalidResponse("Failure reason must be UTF8!"))?;
             return Err(ErrorKind::TrackerError(reason).into());
         }
         let mut resp = TrackerResponse::empty();
         match d.remove("peers") {
-            Some(BEncode::String(ref data)) => {
-                for p in data.chunks(6) {
-                    let ip = Ipv4Addr::new(p[0], p[1], p[2], p[3]);
-                    let socket = SocketAddrV4::new(ip, (&p[4..]).read_u16::<BigEndian>().unwrap());
-                    resp.peers.push(SocketAddr::V4(socket));
-                }
-            }
+            Some(BEncode::String(ref data)) => for p in data.chunks(6) {
+                let ip = Ipv4Addr::new(p[0], p[1], p[2], p[3]);
+                let socket = SocketAddrV4::new(ip, (&p[4..]).read_u16::<BigEndian>().unwrap());
+                resp.peers.push(SocketAddr::V4(socket));
+            },
             _ => {}
         };
         match d.remove("interval") {
@@ -379,9 +371,7 @@ impl TrackerResponse {
                 resp.interval = *i as u32;
             }
             _ => {
-                return Err(
-                    ErrorKind::InvalidResponse("Response must have interval!").into(),
-                );
+                return Err(ErrorKind::InvalidResponse("Response must have interval!").into());
             }
         };
         Ok(resp)

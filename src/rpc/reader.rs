@@ -1,7 +1,7 @@
 use std::{io, mem};
 use byteorder::{BigEndian, ReadBytesExt};
 use super::proto::ws::Message;
-use util::{IOR, aread};
+use util::{aread, IOR};
 
 pub struct Reader {
     msg: Message,
@@ -82,8 +82,7 @@ impl Reader {
                     self.pos = 0;
                 }
 
-                (IOR::Complete, State::PayloadLen2) |
-                (IOR::Complete, State::PayloadLen8) => {
+                (IOR::Complete, State::PayloadLen2) | (IOR::Complete, State::PayloadLen8) => {
                     {
                         let mut buf = &self.msg.data[start..end];
                         match self.state {

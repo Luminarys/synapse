@@ -1,23 +1,20 @@
-use std::{fs, path, io};
+use std::{fs, io, path};
 #[cfg(target_pointer_width = "32")]
-use std::io::{Seek, SeekFrom, Read, Write};
+use std::io::{Read, Seek, SeekFrom, Write};
 
 use memmap::MmapMut;
 
 use CONFIG;
 #[cfg(target_pointer_width = "32")]
 use super::MAX_CHAINED_OPS;
-use util::{MHashMap, native};
+use util::{native, MHashMap};
 
 /// Holds a file and mmap cache. Because 32 bit systems
 /// can't mmap large files, we load them as needed.
 pub struct FileCache {
-    #[cfg(target_pointer_width = "32")]
-    files: MHashMap<path::PathBuf, fs::File>,
-    #[cfg(target_pointer_width = "32")]
-    fallback: MmapMut,
-    #[cfg(target_pointer_width = "64")]
-    files: MHashMap<path::PathBuf, (fs::File, MmapMut)>,
+    #[cfg(target_pointer_width = "32")] files: MHashMap<path::PathBuf, fs::File>,
+    #[cfg(target_pointer_width = "32")] fallback: MmapMut,
+    #[cfg(target_pointer_width = "64")] files: MHashMap<path::PathBuf, (fs::File, MmapMut)>,
 }
 
 impl FileCache {
@@ -84,17 +81,16 @@ impl FileCache {
 
         #[cfg(target_pointer_width = "64")]
         {
-            Ok(f(
-                &mut self.files.get_mut(path).unwrap().1[offset as usize..
-                                                             offset as usize +
-                                                                 len],
-            ))
+            Ok(f(&mut self.files.get_mut(path).unwrap().1
+                [offset as usize..offset as usize + len]))
         }
     }
 
     pub fn remove_file(&mut self, path: &path::Path) {
-        #[cfg(target_pointer_width = "32")] self.files.remove(path);
-        #[cfg(target_pointer_width = "64")] self.files.remove(path).map(|f| f.1.flush_async().ok());
+        #[cfg(target_pointer_width = "32")]
+        self.files.remove(path);
+        #[cfg(target_pointer_width = "64")]
+        self.files.remove(path).map(|f| f.1.flush_async().ok());
     }
 
     pub fn flush_file(&mut self, path: &path::Path) {
@@ -126,7 +122,8 @@ impl FileCache {
                 native::fallocate(&file, len.unwrap())?;
             }
 
-            #[cfg(target_pointer_width = "32")] self.files.insert(path.to_path_buf(), file);
+            #[cfg(target_pointer_width = "32")]
+            self.files.insert(path.to_path_buf(), file);
 
             #[cfg(target_pointer_width = "64")]
             {

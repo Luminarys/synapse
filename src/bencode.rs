@@ -237,7 +237,7 @@ fn decode_int(v: Vec<u8>) -> Result<i64, BError> {
 
 #[cfg(test)]
 mod tests {
-    use super::{BEncode, decode_buf};
+    use super::{decode_buf, BEncode};
     use std::collections::BTreeMap;
 
     #[test]

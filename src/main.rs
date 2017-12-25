@@ -1,37 +1,37 @@
 #![allow(unknown_lints)]
 #![allow(unused_doc_comment)]
-#![cfg_attr(feature="clippy", feature(plugin))]
+#![cfg_attr(feature = "clippy", feature(plugin))]
 
 extern crate amy;
-extern crate byteorder;
-extern crate rand;
-extern crate sha1;
-extern crate url;
-extern crate url_serde;
-#[macro_use]
-extern crate lazy_static;
-extern crate net2;
-extern crate serde;
-extern crate serde_json;
-#[macro_use]
-extern crate serde_derive;
+extern crate base32;
+extern crate base64;
 extern crate bincode;
-extern crate toml;
+extern crate byteorder;
+extern crate c_ares;
+extern crate chrono;
 extern crate ctrlc;
 #[macro_use]
 extern crate error_chain;
-extern crate c_ares;
-extern crate httparse;
-extern crate base64;
-extern crate base32;
-extern crate shellexpand;
-extern crate chrono;
-extern crate openssl;
-extern crate fs_extra;
 extern crate fnv;
-extern crate metrohash;
+extern crate fs_extra;
+extern crate httparse;
+#[macro_use]
+extern crate lazy_static;
 extern crate libc;
 extern crate memmap;
+extern crate metrohash;
+extern crate net2;
+extern crate openssl;
+extern crate rand;
+extern crate serde;
+#[macro_use]
+extern crate serde_derive;
+extern crate serde_json;
+extern crate sha1;
+extern crate shellexpand;
+extern crate toml;
+extern crate url;
+extern crate url_serde;
 extern crate vecio;
 
 // TODO: Get rid of this
@@ -55,7 +55,7 @@ mod config;
 mod stat;
 mod session;
 
-use std::{thread, process};
+use std::{process, thread};
 use std::sync::{atomic, mpsc};
 use std::io;
 
@@ -139,12 +139,16 @@ fn init() -> io::Result<Vec<thread::JoinHandle<()>>> {
     });
     rx.recv().unwrap()?;
 
-    ctrlc::set_handler(|| if SHUTDOWN.load(atomic::Ordering::SeqCst) {
-        info!("Shutting down immediately!");
-        process::abort();
-    } else {
-        info!("Caught SIGINT, shutting down cleanly. Interrupt again to shut down immediately.");
-        SHUTDOWN.store(true, atomic::Ordering::SeqCst);
+    ctrlc::set_handler(|| {
+        if SHUTDOWN.load(atomic::Ordering::SeqCst) {
+            info!("Shutting down immediately!");
+            process::abort();
+        } else {
+            info!(
+                "Caught SIGINT, shutting down cleanly. Interrupt again to shut down immediately."
+            );
+            SHUTDOWN.store(true, atomic::Ordering::SeqCst);
+        }
     }).map_err(|_| util::io_err_val("Signal installation failed!"))?;
 
     Ok(vec![chj, dhj, lhj, rhj, thj])

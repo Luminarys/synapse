@@ -1,7 +1,7 @@
 use std::collections::VecDeque;
 use std::io;
 use super::proto::ws::Message;
-use util::{IOR, awrite};
+use util::{awrite, IOR};
 
 // TODO: Consider how to handle larger streamed messages(maybe)
 // may be better to just offer an http interface for chunked DL anyways
@@ -50,18 +50,16 @@ impl Writer {
             State::Writing {
                 ref mut pos,
                 ref buf,
-            } => {
-                match awrite(&buf[*pos..], w) {
-                    IOR::Complete => Ok(WR::Complete),
-                    IOR::Incomplete(a) => {
-                        *pos += a;
-                        Ok(WR::Incomplete)
-                    }
-                    IOR::Blocked => Ok(WR::Blocked),
-                    IOR::EOF => Err(io::ErrorKind::UnexpectedEof.into()),
-                    IOR::Err(e) => Err(e),
+            } => match awrite(&buf[*pos..], w) {
+                IOR::Complete => Ok(WR::Complete),
+                IOR::Incomplete(a) => {
+                    *pos += a;
+                    Ok(WR::Incomplete)
                 }
-            }
+                IOR::Blocked => Ok(WR::Blocked),
+                IOR::EOF => Err(io::ErrorKind::UnexpectedEof.into()),
+                IOR::Err(e) => Err(e),
+            },
         }
     }
 

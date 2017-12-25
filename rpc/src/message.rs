@@ -2,7 +2,7 @@ use std::borrow::Cow;
 
 use chrono::{DateTime, Utc};
 
-use super::resource::{ResourceKind, CResourceUpdate, SResourceUpdate};
+use super::resource::{CResourceUpdate, ResourceKind, SResourceUpdate};
 use super::criterion::Criterion;
 
 #[derive(Copy, Clone, Debug, Serialize, Deserialize)]
@@ -18,9 +18,18 @@ pub struct Version {
 #[serde(deny_unknown_fields)]
 pub enum CMessage {
     // Standard messages
-    GetResources { serial: u64, ids: Vec<String> },
-    Subscribe { serial: u64, ids: Vec<String> },
-    Unsubscribe { serial: u64, ids: Vec<String> },
+    GetResources {
+        serial: u64,
+        ids: Vec<String>,
+    },
+    Subscribe {
+        serial: u64,
+        ids: Vec<String>,
+    },
+    Unsubscribe {
+        serial: u64,
+        ids: Vec<String>,
+    },
     UpdateResource {
         serial: u64,
         resource: CResourceUpdate,
@@ -28,42 +37,52 @@ pub enum CMessage {
     RemoveResource {
         serial: u64,
         id: String,
-        #[serde(default)]
-        artifacts: Option<bool>,
+        #[serde(default)] artifacts: Option<bool>,
     },
     FilterSubscribe {
         serial: u64,
-        #[serde(default)]
-        kind: ResourceKind,
-        #[serde(default)]
-        criteria: Vec<Criterion>,
+        #[serde(default)] kind: ResourceKind,
+        #[serde(default)] criteria: Vec<Criterion>,
     },
-    FilterUnsubscribe { serial: u64, filter_serial: u64 },
+    FilterUnsubscribe {
+        serial: u64,
+        filter_serial: u64,
+    },
 
     // Special messages
     UploadTorrent {
         serial: u64,
         size: u64,
         path: Option<String>,
-        #[serde(default = "default_start")]
-        start: bool,
+        #[serde(default = "default_start")] start: bool,
     },
     UploadMagnet {
         serial: u64,
         uri: String,
         path: Option<String>,
-        #[serde(default = "default_start")]
-        start: bool,
+        #[serde(default = "default_start")] start: bool,
     },
     UploadFiles {
         serial: u64,
         size: u64,
         path: String,
     },
-    PauseTorrent { serial: u64, id: String },
-    ResumeTorrent { serial: u64, id: String },
-    UpdateTracker { id: String, serial: u64 },
-    ValidateResources { serial: u64, ids: Vec<String> },
+    PauseTorrent {
+        serial: u64,
+        id: String,
+    },
+    ResumeTorrent {
+        serial: u64,
+        id: String,
+    },
+    UpdateTracker {
+        id: String,
+        serial: u64,
+    },
+    ValidateResources {
+        serial: u64,
+        ids: Vec<String>,
+    },
 }
 
 /// Server -> client message
@@ -73,9 +92,17 @@ pub enum CMessage {
 #[serde(deny_unknown_fields)]
 pub enum SMessage<'a> {
     // Standard messages
-    ResourcesExtant { serial: u64, ids: Vec<Cow<'a, str>> },
-    ResourcesRemoved { serial: u64, ids: Vec<String> },
-    UpdateResources { resources: Vec<SResourceUpdate<'a>> },
+    ResourcesExtant {
+        serial: u64,
+        ids: Vec<Cow<'a, str>>,
+    },
+    ResourcesRemoved {
+        serial: u64,
+        ids: Vec<String>,
+    },
+    UpdateResources {
+        resources: Vec<SResourceUpdate<'a>>,
+    },
 
     // Special messages
     RpcVersion(Version),
@@ -121,7 +148,7 @@ fn default_start() -> bool {
 mod tests {
     extern crate serde_json;
     use super::*;
-    use super::super::{resource, criterion};
+    use super::super::{criterion, resource};
 
     #[test]
     fn test_json_repr() {

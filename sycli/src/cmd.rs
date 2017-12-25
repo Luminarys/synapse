@@ -1,19 +1,19 @@
-use std::{fs, cmp};
+use std::{cmp, fs};
 use std::path::Path;
 use std::io::{self, Read};
 use std::borrow::Cow;
 
-use reqwest::{Client as HClient, header};
+use reqwest::{header, Client as HClient};
 use serde_json;
 use prettytable::Table;
 use url::Url;
 
 use rpc::message::{CMessage, SMessage};
-use rpc::criterion::{Criterion, Value, Operation};
+use rpc::criterion::{Criterion, Operation, Value};
 use rpc::resource::{Resource, ResourceKind, SResourceUpdate};
 
 use client::Client;
-use error::{Result, ResultExt, ErrorKind};
+use error::{ErrorKind, Result, ResultExt};
 
 pub fn add(
     mut c: Client,
@@ -130,9 +130,11 @@ pub fn dl(mut c: Client, url: &str, name: &str) -> Result<()> {
 
     for file in files {
         let mut dl_url = Url::parse(url).unwrap();
-        dl_url.path_segments_mut().unwrap().push("dl").push(
-            file.id(),
-        );
+        dl_url
+            .path_segments_mut()
+            .unwrap()
+            .push("dl")
+            .push(file.id());
 
         let client = HClient::new().chain_err(|| ErrorKind::HTTP)?;
         let mut resp = client
@@ -166,9 +168,7 @@ pub fn get(mut c: Client, id: &str, output: &str) -> Result<()> {
         "json" => {
             println!(
                 "{}",
-                serde_json::to_string_pretty(&res[0]).chain_err(|| {
-                    ErrorKind::Serialization
-                })?
+                serde_json::to_string_pretty(&res[0]).chain_err(|| ErrorKind::Serialization)?
             );
         }
         _ => unreachable!(),
@@ -265,9 +265,7 @@ pub fn list(mut c: Client, kind: &str, crit: Vec<Criterion>, output: &str) -> Re
     } else {
         println!(
             "{}",
-            serde_json::to_string_pretty(&results).chain_err(|| {
-                ErrorKind::Serialization
-            })?
+            serde_json::to_string_pretty(&results).chain_err(|| ErrorKind::Serialization)?
         );
     }
     Ok(())
@@ -373,9 +371,7 @@ pub fn watch(mut c: Client, id: &str, output: &str) -> Result<()> {
             "json" => {
                 println!(
                     "{}",
-                    serde_json::to_string(&res).chain_err(
-                        || ErrorKind::Serialization,
-                    )?
+                    serde_json::to_string(&res).chain_err(|| ErrorKind::Serialization)?
                 );
             }
             _ => unreachable!(),
@@ -390,7 +386,6 @@ pub fn watch(mut c: Client, id: &str, output: &str) -> Result<()> {
         }
     }
 }
-
 
 pub fn status(mut c: Client) -> Result<()> {
     match search(&mut c, ResourceKind::Server, vec![])?.pop() {

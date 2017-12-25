@@ -1,5 +1,5 @@
 use std::net::TcpStream;
-use std::{time, str, result, mem};
+use std::{mem, result, str, time};
 use std::io::{self, Write};
 
 use base64;
@@ -9,11 +9,11 @@ use url::Url;
 
 use super::reader::Reader;
 use super::writer::Writer;
-use super::proto::ws::{Message, Frame, Opcode};
+use super::proto::ws::{Frame, Message, Opcode};
 use super::proto::message::{SMessage, Version};
-use super::{Result, ResultExt, ErrorKind};
+use super::{ErrorKind, Result, ResultExt};
 use super::EMPTY_HTTP_RESP;
-use util::{IOR, aread, sha1_hash};
+use util::{aread, sha1_hash, IOR};
 use CONFIG;
 
 pub struct Client {
@@ -69,19 +69,13 @@ impl Client {
             return Err(ErrorKind::BadPayload("Control frame too long!").into());
         }
         if m.opcode().is_control() && !m.fin() {
-            return Err(
-                ErrorKind::BadPayload("Control frame must not be fragmented!").into(),
-            );
+            return Err(ErrorKind::BadPayload("Control frame must not be fragmented!").into());
         }
         if m.opcode().is_other() {
-            return Err(
-                ErrorKind::BadPayload("Non standard opcodes unsupported!").into(),
-            );
+            return Err(ErrorKind::BadPayload("Non standard opcodes unsupported!").into());
         }
         if m.extensions() {
-            return Err(
-                ErrorKind::BadPayload("Connection should not contain RSV bits!").into(),
-            );
+            return Err(ErrorKind::BadPayload("Connection should not contain RSV bits!").into());
         }
         match m.opcode() {
             Opcode::Close => {
@@ -90,8 +84,10 @@ impl Client {
             }
             Opcode::Text | Opcode::Binary | Opcode::Continuation => {
                 if let Some(f) = self.buf.process(m)? {
-                    #[cfg(feature = "autobahn")] self.send(f)?;
-                    #[cfg(not(feature = "autobahn"))] return Ok(Ok(f));
+                    #[cfg(feature = "autobahn")]
+                    self.send(f)?;
+                    #[cfg(not(feature = "autobahn"))]
+                    return Ok(Ok(f));
                 }
             }
             Opcode::Ping => {
@@ -122,8 +118,8 @@ impl Client {
         if self.last_action.elapsed().as_secs() > CONN_TIMEOUT {
             return true;
         }
-        if self.last_action.elapsed().as_secs() > CONN_PING &&
-            self.send_msg(Message::ping(vec![0xDE, 0xAD])).is_err()
+        if self.last_action.elapsed().as_secs() > CONN_PING
+            && self.send_msg(Message::ping(vec![0xDE, 0xAD])).is_err()
         {
             true
         } else {
@@ -162,9 +158,7 @@ impl Into<Client> for Incoming {
         };
 
         c.send(Frame::Text(
-            serde_json::to_string(
-                &SMessage::RpcVersion(Version::current()),
-            ).unwrap(),
+            serde_json::to_string(&SMessage::RpcVersion(Version::current())).unwrap(),
         )).ok();
         c
     }
@@ -265,22 +259,19 @@ impl FragBuf {
                 b.extend(msg.data.into_iter());
                 FragBuf::Binary(b)
             }
-            (FragBuf::Text(_), Opcode::Text) |
-            (FragBuf::Text(_), Opcode::Binary) |
-            (FragBuf::Binary(_), Opcode::Text) |
-            (FragBuf::Binary(_), Opcode::Binary) => {
-                return Err(
-                    ErrorKind::BadPayload("Expected continuation of data frame").into(),
-                );
+            (FragBuf::Text(_), Opcode::Text)
+            | (FragBuf::Text(_), Opcode::Binary)
+            | (FragBuf::Binary(_), Opcode::Text)
+            | (FragBuf::Binary(_), Opcode::Binary) => {
+                return Err(ErrorKind::BadPayload("Expected continuation of data frame").into());
             }
             _ => return Ok(None),
         };
         if fin {
             match mem::replace(self, FragBuf::None) {
                 FragBuf::Text(b) => {
-                    let t = String::from_utf8(b).chain_err(|| {
-                        ErrorKind::BadPayload("Invalid Utf8 in text!")
-                    })?;
+                    let t = String::from_utf8(b)
+                        .chain_err(|| ErrorKind::BadPayload("Invalid Utf8 in text!"))?;
                     Ok(Some(Frame::Text(t)))
                 }
                 FragBuf::Binary(b) => Ok(Some(Frame::Binary(b))),
@@ -319,17 +310,14 @@ fn validate_dl(req: &httparse::Request) -> Option<String> {
 fn validate_tx(req: &httparse::Request) -> Option<String> {
     for header in req.headers.iter() {
         if header.name.to_lowercase() == "authorization" {
-            return str::from_utf8(header.value).ok().and_then(
-                |v| if v.starts_with(
-                    "Bearer ",
-                )
-                {
+            return str::from_utf8(header.value).ok().and_then(|v| {
+                if v.starts_with("Bearer ") {
                     let (_, tok) = v.split_at(7);
                     Some(tok.to_owned())
                 } else {
                     None
-                },
-            );
+                }
+            });
         }
     }
     None

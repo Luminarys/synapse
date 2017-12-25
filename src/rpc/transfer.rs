@@ -5,7 +5,7 @@ use std::time;
 use super::proto::message::Error;
 use super::EMPTY_HTTP_RESP;
 
-use util::{aread, IOR, UHashMap};
+use util::{aread, UHashMap, IOR};
 
 pub struct Transfers {
     torrents: UHashMap<TorrentTx>,
@@ -43,7 +43,9 @@ const CONN_TIMEOUT: u64 = 2;
 
 impl Transfers {
     pub fn new() -> Transfers {
-        Transfers { torrents: UHashMap::default() }
+        Transfers {
+            torrents: UHashMap::default(),
+        }
     }
 
     pub fn add_torrent(

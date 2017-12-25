@@ -1,6 +1,6 @@
 use torrent::peer::Message;
 use std::collections::VecDeque;
-use std::io::{self, Write, ErrorKind};
+use std::io::{self, ErrorKind, Write};
 use std::sync::Arc;
 use util::io_err;
 
@@ -16,8 +16,15 @@ pub struct Writer {
 
 enum WriteState {
     Idle,
-    WritingMsg { data: [u8; 17], len: u8, idx: u8 },
-    WritingOther { data: Vec<u8>, idx: u16 },
+    WritingMsg {
+        data: [u8; 17],
+        len: u8,
+        idx: u8,
+    },
+    WritingOther {
+        data: Vec<u8>,
+        idx: u16,
+    },
     WritingPiece {
         prefix: [u8; 17],
         data: Arc<Box<[u8; 16_384]>>,
@@ -60,20 +67,16 @@ impl Writer {
             // Should never go wrong
             msg.encode(&mut buf).unwrap();
             match msg {
-                Message::SharedPiece { data, .. } => {
-                    WriteState::WritingPiece {
-                        prefix: buf,
-                        data: data,
-                        idx: 0,
-                    }
-                }
-                _ => {
-                    WriteState::WritingMsg {
-                        data: buf,
-                        len: len as u8,
-                        idx: 0,
-                    }
-                }
+                Message::SharedPiece { data, .. } => WriteState::WritingPiece {
+                    prefix: buf,
+                    data: data,
+                    idx: 0,
+                },
+                _ => WriteState::WritingMsg {
+                    data: buf,
+                    len: len as u8,
+                    idx: 0,
+                },
             }
         } else {
             // TODO: Acquire from buffer

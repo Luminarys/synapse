@@ -19,7 +19,6 @@ impl fmt::Display for LogLevel {
     }
 }
 
-
 pub static mut LEVEL: LogLevel = LogLevel::Info;
 
 pub fn log_init(level: LogLevel) {

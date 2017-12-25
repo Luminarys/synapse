@@ -93,7 +93,9 @@ impl<T: cio::CIO> Job<T> for TorrentTxUpdate {
 
 impl TorrentStatusUpdate {
     pub fn new() -> TorrentStatusUpdate {
-        TorrentStatusUpdate { transferred: UHashMap::default() }
+        TorrentStatusUpdate {
+            transferred: UHashMap::default(),
+        }
     }
 }
 
@@ -106,10 +108,8 @@ impl<T: cio::CIO> Job<T> for TorrentStatusUpdate {
         for (id, torrent) in torrents.iter_mut() {
             let (ul, dl) = (torrent.uploaded(), torrent.downloaded());
             if !self.transferred.contains_key(id) {
-                self.transferred.insert(*id, (
-                    torrent.uploaded(),
-                    torrent.downloaded(),
-                ));
+                self.transferred
+                    .insert(*id, (torrent.uploaded(), torrent.downloaded()));
             }
             let tx = self.transferred.get_mut(id).unwrap();
             tx.0 = ul;

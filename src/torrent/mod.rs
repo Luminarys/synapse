@@ -259,11 +259,8 @@ impl<T: cio::CIO> Torrent<T> {
         };
         let data = bincode::serialize(&d, bincode::Infinite).expect("Serialization failed!");
         debug!("Sending serialization request!");
-        self.cio.msg_disk(disk::Request::serialize(
-            self.id,
-            data,
-            self.info.hash,
-        ));
+        self.cio
+            .msg_disk(disk::Request::serialize(self.id, data, self.info.hash));
         self.dirty = false;
     }
 
@@ -314,9 +311,11 @@ impl<T: cio::CIO> Torrent<T> {
             Err(ref e) => {
                 error!(
                     "Failed to query tracker {}: {}",
-                    self.info.announce.as_ref().map(|u| u.as_str()).unwrap_or(
-                        "",
-                    ),
+                    self.info
+                        .announce
+                        .as_ref()
+                        .map(|u| u.as_str(),)
+                        .unwrap_or("",),
                     e
                 );
                 // Wait 5 minutes before trying again
@@ -422,9 +421,8 @@ impl<T: cio::CIO> Torrent<T> {
                     info!("Torrent succesfully downloaded!");
                     if !self.complete() {
                         for i in 0..self.pieces.len() {
-                            let complete = Info::piece_disk_locs(&self.info, i as u32).all(|loc| {
-                                self.priorities[loc.file] != 0
-                            });
+                            let complete = Info::piece_disk_locs(&self.info, i as u32)
+                                .all(|loc| self.priorities[loc.file] != 0);
                             if complete {
                                 self.pieces.set_bit(i);
                             }
@@ -441,10 +439,8 @@ impl<T: cio::CIO> Torrent<T> {
                         // picker to use the new bitfield
                         if invalid.len() != self.pieces.len() as usize {
                             for i in 0..self.pieces.len() {
-                                let complete =
-                                    Info::piece_disk_locs(&self.info, i as u32).all(|loc| {
-                                        self.priorities[loc.file] != 0
-                                    });
+                                let complete = Info::piece_disk_locs(&self.info, i as u32)
+                                    .all(|loc| self.priorities[loc.file] != 0);
                                 if complete {
                                     self.pieces.set_bit(i);
                                 }
@@ -483,9 +479,8 @@ impl<T: cio::CIO> Torrent<T> {
         let mut idx = 0;
         for piece in self.pieces.iter() {
             while idx != piece {
-                if Info::piece_disk_locs(&self.info, piece as u32).all(|loc| {
-                    self.priorities[loc.file] != 0
-                })
+                if Info::piece_disk_locs(&self.info, piece as u32)
+                    .all(|loc| self.priorities[loc.file] != 0)
                 {
                     return;
                 }
@@ -725,10 +720,7 @@ impl<T: cio::CIO> Torrent<T> {
 
             // These messages are all handled at the peer level, not the torrent level,
             // so just ignore here
-            Message::KeepAlive |
-            Message::Choke |
-            Message::Cancel { .. } |
-            Message::Port(_) => {}
+            Message::KeepAlive | Message::Choke | Message::Cancel { .. } | Message::Port(_) => {}
 
             Message::SharedPiece { .. } => unreachable!(),
         }
@@ -741,9 +733,9 @@ impl<T: cio::CIO> Torrent<T> {
             let mut d = b.into_dict().ok_or(())?;
             let m = d.remove("m").and_then(|v| v.into_dict()).ok_or(())?;
             if m.contains_key("ut_metadata") {
-                let size = d.remove("metadata_size").and_then(|v| v.into_int()).ok_or(
-                    (),
-                )?;
+                let size = d.remove("metadata_size")
+                    .and_then(|v| v.into_int())
+                    .ok_or(())?;
                 if let Some(::std::usize::MAX) = self.info_idx {
                     if size % 16_384 == 0 {
                         self.info_idx = Some(size as usize / 16_384 - 1);
@@ -823,10 +815,11 @@ impl<T: cio::CIO> Torrent<T> {
                     if let Some(idx) = self.info_idx {
                         let data_idx = util::find_subseq(&payload[..], b"ee").unwrap() + 2;
                         if payload.len() - data_idx > self.info_bytes.len() - p * 16_384 {
-                            debug!("Metadata bounds invalid, goes to: {}, ibl: {}",
-                                            payload.len() - data_idx,
-                                            self.info_bytes.len() - p * 16_384,
-                                        );
+                            debug!(
+                                "Metadata bounds invalid, goes to: {}, ibl: {}",
+                                payload.len() - data_idx,
+                                self.info_bytes.len() - p * 16_384,
+                            );
                             return Err(());
                         }
                         let size = if p == idx {
@@ -852,9 +845,7 @@ impl<T: cio::CIO> Torrent<T> {
                                 ),
                             );
                             b.insert("info".to_owned(), bni);
-                            let ni = Info::from_bencode(bencode::BEncode::Dict(b)).map_err(
-                                |_| (),
-                            )?;
+                            let ni = Info::from_bencode(bencode::BEncode::Dict(b)).map_err(|_| ())?;
                             if ni.hash == self.info.hash {
                                 debug!("Magnet file acquired succesfully!");
                                 self.info_idx = None;
@@ -1006,9 +997,9 @@ impl<T: cio::CIO> Torrent<T> {
         let resources = self.rpc_rel_info();
         self.cio.msg_rpc(rpc::CtlMessage::Extant(resources));
         let update = self.rpc_info();
-        self.cio.msg_rpc(rpc::CtlMessage::Update(
-            vec![SResourceUpdate::Resource(Cow::Owned(update))],
-        ));
+        self.cio.msg_rpc(rpc::CtlMessage::Update(vec![
+            SResourceUpdate::Resource(Cow::Owned(update)),
+        ]));
         self.serialize();
 
         let seq = self.picker.is_sequential();
@@ -1134,9 +1125,11 @@ impl<T: cio::CIO> Torrent<T> {
         r.push(resource::Resource::Tracker(resource::Tracker {
             id: util::trk_rpc_id(
                 &self.info.hash,
-                self.info.announce.as_ref().map(|u| u.as_str()).unwrap_or(
-                    "",
-                ),
+                self.info
+                    .announce
+                    .as_ref()
+                    .map(|u| u.as_str())
+                    .unwrap_or(""),
             ),
             torrent_id: self.rpc_id(),
             url: self.info.announce.clone(),
@@ -1157,9 +1150,11 @@ impl<T: cio::CIO> Torrent<T> {
         }
         r.push(util::trk_rpc_id(
             &self.info.hash,
-            self.info.announce.as_ref().map(|u| u.as_str()).unwrap_or(
-                "",
-            ),
+            self.info
+                .announce
+                .as_ref()
+                .map(|u| u.as_str())
+                .unwrap_or(""),
         ));
         // TODO: Tracker removal too
         self.cio.msg_rpc(rpc::CtlMessage::Removed(r));
@@ -1203,12 +1198,8 @@ impl<T: cio::CIO> Torrent<T> {
     /// The disk send handle is also provided.
     fn write_piece(&mut self, index: u32, begin: u32, data: Box<[u8; 16_384]>) {
         let locs = Info::block_disk_locs(&self.info, index, begin);
-        self.cio.msg_disk(disk::Request::write(
-            self.id,
-            data,
-            locs,
-            self.path.clone(),
-        ));
+        self.cio
+            .msg_disk(disk::Request::write(self.id, data, locs, self.path.clone()));
     }
 
     /// Issues a read request of the given torrent
@@ -1216,21 +1207,17 @@ impl<T: cio::CIO> Torrent<T> {
         let locs = Info::block_disk_locs(&self.info, index, begin);
         let len = self.info.block_len(index, begin);
         let ctx = disk::Ctx::new(id, self.id, index, begin, len);
-        self.cio.msg_disk(disk::Request::read(
-            ctx,
-            data,
-            locs,
-            self.path.clone(),
-        ));
+        self.cio
+            .msg_disk(disk::Request::read(ctx, data, locs, self.path.clone()));
     }
 
     fn make_requests_pid(&mut self, pid: usize) {
         if self.status.stopped() {
             return;
         }
-        let peer = self.peers.get_mut(&pid).expect(
-            "Expected peer id not present",
-        );
+        let peer = self.peers
+            .get_mut(&pid)
+            .expect("Expected peer id not present");
         Torrent::make_requests(peer, &mut self.picker, &self.info);
     }
 
@@ -1306,9 +1293,11 @@ impl<T: cio::CIO> Torrent<T> {
     pub fn update_rpc_tracker(&mut self) {
         let id = util::trk_rpc_id(
             &self.info.hash,
-            self.info.announce.as_ref().map(|u| u.as_str()).unwrap_or(
-                "",
-            ),
+            self.info
+                .announce
+                .as_ref()
+                .map(|u| u.as_str())
+                .unwrap_or(""),
         );
         let error = match self.tracker {
             TrackerStatus::Failure(ref r) => Some(r.clone()),

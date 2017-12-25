@@ -89,11 +89,9 @@ impl Manager {
                     } else if let Ok(resp) = proto::Response::decode(&self.buf[..v]) {
                         match self.table.handle_resp(resp, addr) {
                             Ok(r) => resps.push(r),
-                            Err(q) => {
-                                for (req, a) in q {
-                                    self.send_msg(&req.encode(), a);
-                                }
-                            }
+                            Err(q) => for (req, a) in q {
+                                self.send_msg(&req.encode(), a);
+                            },
                         }
                     } else {
                         debug!("Received invalid message from {:?}!", addr);

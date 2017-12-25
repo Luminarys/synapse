@@ -24,7 +24,11 @@ pub enum Message {
     Uninterested,
     Have(u32),
     Bitfield(Bitfield),
-    Request { index: u32, begin: u32, length: u32 },
+    Request {
+        index: u32,
+        begin: u32,
+        length: u32,
+    },
     Piece {
         index: u32,
         begin: u32,
@@ -37,9 +41,16 @@ pub enum Message {
         length: u32,
         data: Arc<Box<[u8; 16_384]>>,
     },
-    Cancel { index: u32, begin: u32, length: u32 },
+    Cancel {
+        index: u32,
+        begin: u32,
+        length: u32,
+    },
     Port(u16),
-    Extension { id: u8, payload: Vec<u8> },
+    Extension {
+        id: u8,
+        payload: Vec<u8>,
+    },
 }
 
 impl fmt::Debug for Message {
@@ -59,15 +70,11 @@ impl fmt::Debug for Message {
                 index,
                 begin,
                 length,
-            } => {
-                write!(
-                    f,
-                    "Message::Request {{ idx: {}, begin: {}, len: {} }}",
-                    index,
-                    begin,
-                    length
-                )
-            }
+            } => write!(
+                f,
+                "Message::Request {{ idx: {}, begin: {}, len: {} }}",
+                index, begin, length
+            ),
             Message::Piece { index, begin, .. } => {
                 write!(f, "Message::Piece {{ idx: {}, begin: {} }}", index, begin)
             }
@@ -78,15 +85,11 @@ impl fmt::Debug for Message {
                 index,
                 begin,
                 length,
-            } => {
-                write!(
-                    f,
-                    "Message::Cancel {{ idx: {}, begin: {}, len: {} }}",
-                    index,
-                    begin,
-                    length
-                )
-            }
+            } => write!(
+                f,
+                "Message::Cancel {{ idx: {}, begin: {}, len: {} }}",
+                index, begin, length
+            ),
             Message::Port(port) => write!(f, "Message::Port({:?})", port),
             Message::Extension { id, .. } => write!(f, "Message::Extension {{ id: {} }}", id),
         }
@@ -162,56 +165,66 @@ impl Clone for Message {
 impl PartialEq for Message {
     fn eq(&self, other: &Message) -> bool {
         match (self, other) {
-            (&Message::Handshake { rsv, hash, id },
-             &Message::Handshake {
-                 rsv: rsv_,
-                 hash: hash_,
-                 id: id_,
-             }) => rsv == rsv_ && hash == hash_ && id == id_,
-            (&Message::KeepAlive, &Message::KeepAlive) |
-            (&Message::Choke, &Message::Choke) |
-            (&Message::Unchoke, &Message::Unchoke) |
-            (&Message::Interested, &Message::Interested) |
-            (&Message::Uninterested, &Message::Uninterested) => true,
+            (
+                &Message::Handshake { rsv, hash, id },
+                &Message::Handshake {
+                    rsv: rsv_,
+                    hash: hash_,
+                    id: id_,
+                },
+            ) => rsv == rsv_ && hash == hash_ && id == id_,
+            (&Message::KeepAlive, &Message::KeepAlive)
+            | (&Message::Choke, &Message::Choke)
+            | (&Message::Unchoke, &Message::Unchoke)
+            | (&Message::Interested, &Message::Interested)
+            | (&Message::Uninterested, &Message::Uninterested) => true,
             (&Message::Have(p), &Message::Have(p_)) => p == p_,
             (&Message::Port(p), &Message::Port(p_)) => p == p_,
-            (&Message::Request {
-                 index,
-                 begin,
-                 length,
-             },
-             &Message::Request {
-                 index: i,
-                 begin: b,
-                 length: l,
-             }) |
-            (&Message::Piece {
-                 index,
-                 begin,
-                 length,
-                 ..
-             },
-             &Message::Piece {
-                 index: i,
-                 begin: b,
-                 length: l,
-                 ..
-             }) |
-            (&Message::Cancel {
-                 index,
-                 begin,
-                 length,
-             },
-             &Message::Cancel {
-                 index: i,
-                 begin: b,
-                 length: l,
-             }) => index == i && begin == b && length == l,
-            (&Message::Extension { id, ref payload },
-             &Message::Extension {
-                 id: i,
-                 payload: ref p,
-             }) => id == i && payload == p,
+            (
+                &Message::Request {
+                    index,
+                    begin,
+                    length,
+                },
+                &Message::Request {
+                    index: i,
+                    begin: b,
+                    length: l,
+                },
+            )
+            | (
+                &Message::Piece {
+                    index,
+                    begin,
+                    length,
+                    ..
+                },
+                &Message::Piece {
+                    index: i,
+                    begin: b,
+                    length: l,
+                    ..
+                },
+            )
+            | (
+                &Message::Cancel {
+                    index,
+                    begin,
+                    length,
+                },
+                &Message::Cancel {
+                    index: i,
+                    begin: b,
+                    length: l,
+                },
+            ) => index == i && begin == b && length == l,
+            (
+                &Message::Extension { id, ref payload },
+                &Message::Extension {
+                    id: i,
+                    payload: ref p,
+                },
+            ) => id == i && payload == p,
             _ => false,
         }
     }
@@ -219,7 +232,7 @@ impl PartialEq for Message {
 
 impl Message {
     pub fn handshake(torrent: &TorrentInfo) -> Message {
-        use {PEER_ID, DHT_EXT, EXT_PROTO};
+        use {DHT_EXT, EXT_PROTO, PEER_ID};
         let mut rsv = [0u8; 8];
         rsv[DHT_EXT.0] |= DHT_EXT.1;
         rsv[EXT_PROTO.0] |= EXT_PROTO.1;
@@ -256,9 +269,7 @@ impl Message {
 
     pub fn is_special(&self) -> bool {
         match *self {
-            Message::Handshake { .. } |
-            Message::Bitfield(_) |
-            Message::Extension { .. } => true,
+            Message::Handshake { .. } | Message::Bitfield(_) | Message::Extension { .. } => true,
             _ => false,
         }
     }
@@ -271,8 +282,7 @@ impl Message {
             Message::Port(_) => 7,
             Message::Have(_) => 9,
             Message::Bitfield(ref pf) => 5 + pf.bytes(),
-            Message::Request { .. } |
-            Message::Cancel { .. } => 17,
+            Message::Request { .. } | Message::Cancel { .. } => 17,
             Message::Piece { ref data, .. } => 13 + data.len(),
             Message::SharedPiece { ref data, .. } => 13 + data.len(),
             Message::Extension { ref payload, .. } => 6 + payload.len(),
@@ -346,8 +356,8 @@ impl Message {
                 begin,
                 length,
                 ..
-            } |
-            Message::SharedPiece {
+            }
+            | Message::SharedPiece {
                 index,
                 begin,
                 length,

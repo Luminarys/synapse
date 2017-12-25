@@ -43,72 +43,51 @@ pub struct DhtConfig {
 
 #[derive(Serialize, Deserialize)]
 pub struct ConfigFile {
-    #[serde(default = "default_port")]
-    pub port: u16,
-    #[serde(default)]
-    pub rpc: RpcConfig,
-    #[serde(default)]
-    pub tracker: TrkConfig,
-    #[serde(default)]
-    pub dht: DhtConfigFile,
-    #[serde(default)]
-    pub disk: DiskConfig,
-    #[serde(default)]
-    pub net: NetConfig,
-    #[serde(default)]
-    pub peer: PeerConfig,
+    #[serde(default = "default_port")] pub port: u16,
+    #[serde(default)] pub rpc: RpcConfig,
+    #[serde(default)] pub tracker: TrkConfig,
+    #[serde(default)] pub dht: DhtConfigFile,
+    #[serde(default)] pub disk: DiskConfig,
+    #[serde(default)] pub net: NetConfig,
+    #[serde(default)] pub peer: PeerConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RpcConfig {
-    #[serde(default = "default_rpc_port")]
-    pub port: u16,
-    #[serde(default = "default_local")]
-    pub local: bool,
-    #[serde(default = "default_auth")]
-    pub auth: bool,
-    #[serde(default = "default_password")]
-    pub password: String,
+    #[serde(default = "default_rpc_port")] pub port: u16,
+    #[serde(default = "default_local")] pub local: bool,
+    #[serde(default = "default_auth")] pub auth: bool,
+    #[serde(default = "default_password")] pub password: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TrkConfig {
-    #[serde(default = "default_trk_port")]
-    pub port: u16,
+    #[serde(default = "default_trk_port")] pub port: u16,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DhtConfigFile {
-    #[serde(default = "default_dht_port")]
-    pub port: u16,
-    #[serde(default = "default_bootstrap_node")]
-    pub bootstrap_node: Option<String>,
+    #[serde(default = "default_dht_port")] pub port: u16,
+    #[serde(default = "default_bootstrap_node")] pub bootstrap_node: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DiskConfig {
-    #[serde(default = "default_session_dir")]
-    pub session: String,
-    #[serde(default = "default_directory_dir")]
-    pub directory: String,
-    #[serde(default = "default_validate")]
-    pub validate: bool,
+    #[serde(default = "default_session_dir")] pub session: String,
+    #[serde(default = "default_directory_dir")] pub directory: String,
+    #[serde(default = "default_validate")] pub validate: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NetConfig {
-    #[serde(default = "default_max_files")]
-    pub max_open_files: usize,
-    #[serde(default = "default_max_sockets")]
-    pub max_open_sockets: usize,
-    #[serde(default = "default_max_announces")]
-    pub max_open_announces: usize,
+    #[serde(default = "default_max_files")] pub max_open_files: usize,
+    #[serde(default = "default_max_sockets")] pub max_open_sockets: usize,
+    #[serde(default = "default_max_announces")] pub max_open_announces: usize,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PeerConfig {
-    #[serde(default = "default_prune_timeout")]
-    pub prune_timeout: u64,
+    #[serde(default = "default_prune_timeout")] pub prune_timeout: u64,
 }
 
 impl ConfigFile {
@@ -241,7 +220,9 @@ impl Default for RpcConfig {
 
 impl Default for TrkConfig {
     fn default() -> TrkConfig {
-        TrkConfig { port: default_trk_port() }
+        TrkConfig {
+            port: default_trk_port(),
+        }
     }
 }
 
@@ -285,6 +266,8 @@ impl Default for NetConfig {
 
 impl Default for PeerConfig {
     fn default() -> PeerConfig {
-        PeerConfig { prune_timeout: default_prune_timeout() }
+        PeerConfig {
+            prune_timeout: default_prune_timeout(),
+        }
     }
 }
