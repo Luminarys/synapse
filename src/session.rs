@@ -61,9 +61,10 @@ pub mod torrent {
     pub mod ver_5f166d {
         use super::ver_249b1b as next;
 
-        use torrent::{Bitfield, Info};
+        use torrent::{info, Info as TInfo, Bitfield};
 
         use chrono::{DateTime, Utc};
+        use url::Url;
 
         #[derive(Serialize, Deserialize)]
         pub struct Session {
@@ -93,6 +94,19 @@ pub mod torrent {
             DiskError,
         }
 
+        #[derive(Serialize, Deserialize)]
+        pub struct Info {
+            pub name: String,
+            pub announce: Option<String>,
+            pub piece_len: u32,
+            pub total_len: u64,
+            pub hashes: Vec<Vec<u8>>,
+            pub hash: [u8; 20],
+            pub files: Vec<info::File>,
+            pub private: bool,
+            pub be_name: Option<Vec<u8>>,
+        }
+
         impl Session {
             pub fn migrate(self) -> next::Session {
                 let state = if self.pieces.complete() {
@@ -104,8 +118,24 @@ pub mod torrent {
                     Status::Paused => true,
                     _ => false,
                 };
+                let piece_idx = TInfo::generate_piece_idx(
+                    self.info.hashes.len(),
+                    self.info.piece_len as u64,
+                    &self.info.files,
+                );
                 next::Session {
-                    info: self.info,
+                    info: TInfo {
+                        name: self.info.name,
+                        announce: self.info.announce.and_then(|url| Url::parse(&url).ok()),
+                        piece_len: self.info.piece_len,
+                        total_len: self.info.total_len,
+                        hashes: self.info.hashes,
+                        hash: self.info.hash,
+                        files: self.info.files,
+                        private: self.info.private,
+                        be_name: self.info.be_name,
+                        piece_idx,
+                    },
                     pieces: self.pieces,
                     uploaded: self.uploaded,
                     downloaded: self.downloaded,
