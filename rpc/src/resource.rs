@@ -188,6 +188,42 @@ pub struct Server {
     pub user_data: json::Value,
 }
 
+impl Server {
+    pub fn update(&mut self, update: &SResourceUpdate) {
+        match update {
+            &SResourceUpdate::Throttle {
+                throttle_up,
+                throttle_down,
+                ..
+            } => {
+                self.throttle_up = throttle_up;
+                self.throttle_down = throttle_down;
+            }
+            &SResourceUpdate::ServerTransfer {
+                rate_up,
+                rate_down,
+                transferred_up,
+                transferred_down,
+                ses_transferred_up,
+                ses_transferred_down,
+                ..
+            } => {
+                self.rate_up = rate_up;
+                self.rate_down = rate_down;
+                self.transferred_up = transferred_up;
+                self.transferred_down = transferred_down;
+                self.ses_transferred_up = ses_transferred_up;
+                self.ses_transferred_down = ses_transferred_down;
+            }
+            &SResourceUpdate::Rate { rate_up, rate_down, .. } => {
+                self.rate_up = rate_up;
+                self.rate_down = rate_down;
+            }
+            _ => {}
+        }
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct Torrent {
@@ -217,6 +253,55 @@ pub struct Torrent {
     pub user_data: json::Value,
 }
 
+impl Torrent {
+    pub fn update(&mut self, update: &SResourceUpdate) {
+        self.modified = Utc::now();
+        match update {
+            &SResourceUpdate::Throttle {
+                throttle_up,
+                throttle_down,
+                ..
+            } => {
+                self.throttle_up = throttle_up;
+                self.throttle_down = throttle_down;
+            }
+            &SResourceUpdate::TorrentStatus { ref error, status, .. } => {
+                self.error = error.clone();
+                self.status = status;
+            }
+            &SResourceUpdate::TorrentTransfer {
+                rate_up,
+                rate_down,
+                transferred_up,
+                transferred_down,
+                progress,
+                ..
+            } => {
+                self.rate_up = rate_up;
+                self.rate_down = rate_down;
+                self.transferred_up = transferred_up;
+                self.transferred_down = transferred_down;
+                self.progress = progress;
+            }
+            &SResourceUpdate::TorrentPeers {
+                peers,
+                availability,
+                ..
+            } => {
+                self.peers = peers;
+                self.availability = availability;
+            }
+            &SResourceUpdate::TorrentPicker { sequential, .. } => {
+                self.sequential = sequential;
+            }
+            &SResourceUpdate::TorrentPriority { priority, .. } => {
+                self.priority = priority;
+            }
+            _ => {}
+        }
+    }
+}
+
 #[derive(Copy, Clone, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "lowercase")]
 #[serde(deny_unknown_fields)]
@@ -242,6 +327,20 @@ pub struct Piece {
     pub user_data: json::Value,
 }
 
+impl Piece {
+    pub fn update(&mut self, update: &SResourceUpdate) {
+        match update {
+            &SResourceUpdate::PieceAvailable { available, .. } => {
+                self.available = available;
+            }
+            &SResourceUpdate::PieceDownloaded { downloaded, .. } => {
+                self.downloaded = downloaded;
+            }
+            _ => {}
+        }
+    }
+}
+
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct File {
@@ -253,6 +352,20 @@ pub struct File {
     pub priority: u8,
     pub size: u64,
     pub user_data: json::Value,
+}
+
+impl File {
+    pub fn update(&mut self, update: &SResourceUpdate) {
+        match update {
+            &SResourceUpdate::FilePriority { priority, .. } => {
+                self.priority = priority;
+            }
+            &SResourceUpdate::FileProgress { progress, .. } => {
+                self.progress = progress;
+            }
+            _ => {}
+        }
+    }
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
@@ -268,6 +381,18 @@ pub struct Peer {
     pub user_data: json::Value,
 }
 
+impl Peer {
+    pub fn update(&mut self, update: &SResourceUpdate) {
+        match update {
+            &SResourceUpdate::Rate { rate_up, rate_down, .. } => {
+                self.rate_up = rate_up;
+                self.rate_down = rate_down;
+            }
+            _ => {}
+        }
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct Tracker {
@@ -278,6 +403,22 @@ pub struct Tracker {
     pub last_report: DateTime<Utc>,
     pub error: Option<String>,
     pub user_data: json::Value,
+}
+
+impl Tracker {
+    pub fn update(&mut self, update: &SResourceUpdate) {
+        match update {
+            &SResourceUpdate::TrackerStatus {
+                ref last_report,
+                ref error,
+                ..
+            } => {
+                self.last_report = last_report.clone();
+                self.error = error.clone();
+            }
+            _ => {}
+        }
+    }
 }
 
 impl<'a> SResourceUpdate<'a> {
@@ -389,124 +530,26 @@ impl Resource {
         }
     }
 
-    pub fn update(&mut self, update: SResourceUpdate) {
+    pub fn update(&mut self, update: &SResourceUpdate) {
         match self {
+            &mut Resource::Server(ref mut s) => {
+                s.update(update);
+            }
             &mut Resource::Torrent(ref mut t) => {
-                t.modified = Utc::now();
+                t.update(update);
             }
-            _ => {}
-        }
-
-        match (self, update) {
-            (&mut Resource::Server(ref mut s),
-             SResourceUpdate::Throttle {
-                 throttle_up,
-                 throttle_down,
-                 ..
-             }) => {
-                s.throttle_up = throttle_up;
-                s.throttle_down = throttle_down;
+            &mut Resource::Piece(ref mut p) => {
+                p.update(update);
             }
-            (&mut Resource::Server(ref mut s),
-             SResourceUpdate::ServerTransfer {
-                 rate_up,
-                 rate_down,
-                 transferred_up,
-                 transferred_down,
-                 ses_transferred_up,
-                 ses_transferred_down,
-                 ..
-             }) => {
-                s.rate_up = rate_up;
-                s.rate_down = rate_down;
-                s.transferred_up = transferred_up;
-                s.transferred_down = transferred_down;
-                s.ses_transferred_up = ses_transferred_up;
-                s.ses_transferred_down = ses_transferred_down;
+            &mut Resource::File(ref mut f) => {
+                f.update(update);
             }
-            (&mut Resource::Server(ref mut s),
-             SResourceUpdate::Rate { rate_up, rate_down, .. }) => {
-                s.rate_up = rate_up;
-                s.rate_down = rate_down;
+            &mut Resource::Peer(ref mut p) => {
+                p.update(update);
             }
-            (&mut Resource::Torrent(ref mut t),
-             SResourceUpdate::Throttle {
-                 throttle_up,
-                 throttle_down,
-                 ..
-             }) => {
-                t.throttle_up = throttle_up;
-                t.throttle_down = throttle_down;
+            &mut Resource::Tracker(ref mut t) => {
+                t.update(update);
             }
-            (&mut Resource::Torrent(ref mut t),
-             SResourceUpdate::TorrentStatus {
-                 ref mut error,
-                 status,
-                 ..
-             }) => {
-                mem::swap(&mut t.error, error);
-                t.status = status;
-            }
-            (&mut Resource::Torrent(ref mut t),
-             SResourceUpdate::TorrentTransfer {
-                 rate_up,
-                 rate_down,
-                 transferred_up,
-                 transferred_down,
-                 progress,
-                 ..
-             }) => {
-                t.rate_up = rate_up;
-                t.rate_down = rate_down;
-                t.transferred_up = transferred_up;
-                t.transferred_down = transferred_down;
-                t.progress = progress;
-            }
-            (&mut Resource::Torrent(ref mut t),
-             SResourceUpdate::TorrentPeers {
-                 peers,
-                 availability,
-                 ..
-             }) => {
-                t.peers = peers;
-                t.availability = availability;
-            }
-            (&mut Resource::Torrent(ref mut t),
-             SResourceUpdate::TorrentPicker { sequential, .. }) => {
-                t.sequential = sequential;
-            }
-            (&mut Resource::Torrent(ref mut t),
-             SResourceUpdate::TorrentPriority { priority, .. }) => {
-                t.priority = priority;
-            }
-            (&mut Resource::Peer(ref mut p), SResourceUpdate::Rate { rate_up, rate_down, .. }) => {
-                p.rate_up = rate_up;
-                p.rate_down = rate_down;
-            }
-            (&mut Resource::Piece(ref mut p),
-             SResourceUpdate::PieceAvailable { available, .. }) => {
-                p.available = available;
-            }
-            (&mut Resource::Piece(ref mut p),
-             SResourceUpdate::PieceDownloaded { downloaded, .. }) => {
-                p.downloaded = downloaded;
-            }
-            (&mut Resource::Tracker(ref mut t),
-             SResourceUpdate::TrackerStatus {
-                 ref mut last_report,
-                 ref mut error,
-                 ..
-             }) => {
-                mem::swap(&mut t.last_report, last_report);
-                mem::swap(&mut t.error, error);
-            }
-            (&mut Resource::File(ref mut f), SResourceUpdate::FilePriority { priority, .. }) => {
-                f.priority = priority;
-            }
-            (&mut Resource::File(ref mut f), SResourceUpdate::FileProgress { progress, .. }) => {
-                f.progress = progress;
-            }
-            _ => {}
         }
     }
 }
