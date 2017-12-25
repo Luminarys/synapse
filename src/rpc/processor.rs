@@ -538,7 +538,7 @@ impl Processor {
                     self.resources
                         .get_mut(update.id())
                         .expect("Bad resource updated by a CtlMessage")
-                        .update(update);
+                        .update(&update);
                 }
                 for (c, resources) in clients {
                     msgs.push((c, SMessage::UpdateResources { resources }));

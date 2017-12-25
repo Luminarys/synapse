@@ -382,7 +382,7 @@ pub fn watch(mut c: Client, id: &str, output: &str) -> Result<()> {
         }
         loop {
             if let SMessage::UpdateResources { resources } = c.recv()? {
-                for r in resources {
+                for r in &resources {
                     res.update(r);
                 }
                 break;
