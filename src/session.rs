@@ -9,6 +9,9 @@ pub mod torrent {
         } else if let Ok(m) = bincode::deserialize::<ver_5f166d::Session>(data) {
             info!("Migrating torrent session from v5f166d");
             Some(m.migrate())
+        } else if let Ok(m) = bincode::deserialize::<ver_8e1121::Session>(data) {
+            info!("Migrating torrent session from v8e1121");
+            Some(m.migrate())
         } else {
             None
         }
@@ -74,7 +77,6 @@ pub mod torrent {
             pub downloaded: u64,
             pub status: Status,
             pub path: Option<String>,
-            pub wanted: Bitfield,
             pub priority: u8,
             pub priorities: Vec<u8>,
             pub created: DateTime<Utc>,
@@ -97,7 +99,7 @@ pub mod torrent {
         #[derive(Serialize, Deserialize)]
         pub struct Info {
             pub name: String,
-            pub announce: Option<String>,
+            pub announce: String,
             pub piece_len: u32,
             pub total_len: u64,
             pub hashes: Vec<Vec<u8>>,
@@ -108,7 +110,7 @@ pub mod torrent {
         }
 
         impl Session {
-            pub fn migrate(self) -> next::Session {
+            pub fn migrate(self) -> super::current::Session {
                 let state = if self.pieces.complete() {
                     next::StatusState::Complete
                 } else {
@@ -126,7 +128,7 @@ pub mod torrent {
                 next::Session {
                     info: TInfo {
                         name: self.info.name,
-                        announce: self.info.announce.and_then(|url| Url::parse(&url).ok()),
+                        announce: Url::parse(&self.info.announce).ok(),
                         piece_len: self.info.piece_len,
                         total_len: self.info.total_len,
                         hashes: self.info.hashes,
@@ -145,6 +147,49 @@ pub mod torrent {
                         validating: false,
                         error: None,
                     },
+                    path: self.path,
+                    priority: self.priority,
+                    priorities: self.priorities,
+                    created: self.created,
+                    throttle_ul: self.throttle_ul,
+                    throttle_dl: self.throttle_dl,
+                }.migrate()
+            }
+        }
+    }
+
+    pub mod ver_8e1121 {
+        use super::ver_5f166d as next;
+        use self::next::{Status, Info};
+
+        use torrent::Bitfield;
+
+        use chrono::{DateTime, Utc};
+
+        #[derive(Serialize, Deserialize)]
+        pub struct Session {
+            pub info: Info,
+            pub pieces: Bitfield,
+            pub uploaded: u64,
+            pub downloaded: u64,
+            pub status: Status,
+            pub path: Option<String>,
+            pub wanted: Bitfield,
+            pub priority: u8,
+            pub priorities: Vec<u8>,
+            pub created: DateTime<Utc>,
+            pub throttle_ul: Option<i64>,
+            pub throttle_dl: Option<i64>,
+        }
+
+        impl Session {
+            pub fn migrate(self) -> super::current::Session {
+                next::Session {
+                    info: self.info,
+                    pieces: self.pieces,
+                    uploaded: self.uploaded,
+                    downloaded: self.downloaded,
+                    status: self.status,
                     path: self.path,
                     priority: self.priority,
                     priorities: self.priorities,
