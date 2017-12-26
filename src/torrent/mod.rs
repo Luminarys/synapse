@@ -501,8 +501,12 @@ impl<T: cio::CIO> Torrent<T> {
     }
     /// Signal that we've downloaded and verified the torrent
     fn set_finished(&mut self) {
-        let req = tracker::Request::completed(self);
-        self.cio.msg_trk(req);
+        // Only send complete to the tracker if we've downloaded
+        // everything - may not happen from 0 priority pieces
+        if self.pieces.complete() {
+            let req = tracker::Request::completed(self);
+            self.cio.msg_trk(req);
+        }
         // Order here is important, if we're in an idle status,
         // rpc updates don't occur.
         self.update_rpc_transfer();
