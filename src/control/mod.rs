@@ -1,4 +1,4 @@
-use std::{fs, io, time};
+use std::{fs, io, process, time};
 use std::io::Read;
 use std::sync::atomic;
 use std::path::PathBuf;
@@ -153,8 +153,12 @@ impl<T: cio::CIO> Control<T> {
 
         debug!("Deserializing torrents!");
         for entry in fs::read_dir(sd)? {
-            if let Err(e) = self.deserialize_torrent(entry) {
-                error!("Failed to deserialize torrent file: {:?}!", e);
+            if self.deserialize_torrent(entry).is_err() {
+                error!(
+                    "Please ensure that session data is not corrupted and not past version {}",
+                    env!("CARGO_PKG_VERSION")
+                );
+                process::exit(1);
             }
         }
         Ok(())
@@ -181,6 +185,7 @@ impl<T: cio::CIO> Control<T> {
             self.tid_cnt += 1;
             self.torrents.insert(tid, t);
         } else {
+            error!("Failed to deserialize torrent {:?}", dir.file_name());
             return io_err("Torrent data invalid!");
         }
         Ok(())
