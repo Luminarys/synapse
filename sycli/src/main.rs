@@ -185,6 +185,12 @@ fn main() {
                         .default_value("text"),
                 )
                 .arg(
+                    Arg::with_name("completion")
+                        .help("Polls until completion of torrent")
+                        .short("c")
+                        .long("completion"),
+                )
+                .arg(
                     Arg::with_name("id")
                         .help("ID of the resource.")
                         .index(1)
@@ -329,7 +335,8 @@ fn main() {
             let args = matches.subcommand_matches("watch").unwrap();
             let id = args.value_of("id").unwrap();
             let output = args.value_of("output").unwrap();
-            let res = cmd::watch(client, id, output);
+            let completion = args.is_present("completion");
+            let res = cmd::watch(client, id, output, completion);
             if let Err(e) = res {
                 eprintln!("Failed to watch resource: {:?}", e);
                 process::exit(1);

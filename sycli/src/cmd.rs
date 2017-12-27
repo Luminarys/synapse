@@ -333,7 +333,7 @@ fn resume_torrent(c: &mut Client, torrent: &str) -> Result<()> {
     Ok(())
 }
 
-pub fn watch(mut c: Client, id: &str, output: &str) -> Result<()> {
+pub fn watch(mut c: Client, id: &str, output: &str, completion: bool) -> Result<()> {
     let res = get_resources(&mut c, vec![id.to_owned()])?;
     if res.is_empty() {
         bail!("Resource not found");
@@ -363,6 +363,11 @@ pub fn watch(mut c: Client, id: &str, output: &str) -> Result<()> {
         bail!("Could not find specified resource!");
     }
     let mut res = results.remove(0).into_owned();
+    if let Resource::Torrent(ref t) = res {
+        if t.progress - 1.0 <= ::std::f32::EPSILON && completion {
+            return Ok(());
+        }
+    }
     loop {
         match output {
             "text" => {
@@ -380,6 +385,11 @@ pub fn watch(mut c: Client, id: &str, output: &str) -> Result<()> {
             if let SMessage::UpdateResources { resources } = c.recv()? {
                 for r in &resources {
                     res.update(r);
+                    if let &SResourceUpdate::TorrentTransfer { progress, .. } = r {
+                        if completion && progress == 1.0 {
+                            return Ok(());
+                        }
+                    }
                 }
                 break;
             }
