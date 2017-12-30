@@ -137,6 +137,12 @@ pub enum SResourceUpdate<'a> {
         #[serde(rename = "type")] kind: ResourceKind,
         downloaded: bool,
     },
+
+    PeerAvailability {
+        id: String,
+        #[serde(rename = "type")] kind: ResourceKind,
+        availability: f32,
+    },
 }
 
 /// Collection of mutable fields that clients
@@ -379,6 +385,9 @@ impl Peer {
                 self.rate_up = rate_up;
                 self.rate_down = rate_down;
             }
+            &SResourceUpdate::PeerAvailability { availability, .. } => {
+                self.availability = availability;
+            }
             _ => {}
         }
     }
@@ -428,6 +437,7 @@ impl<'a> SResourceUpdate<'a> {
             | &SResourceUpdate::FilePriority { ref id, .. }
             | &SResourceUpdate::FileProgress { ref id, .. }
             | &SResourceUpdate::TrackerStatus { ref id, .. }
+            | &SResourceUpdate::PeerAvailability { ref id, .. }
             | &SResourceUpdate::PieceAvailable { ref id, .. }
             | &SResourceUpdate::PieceDownloaded { ref id, .. } => id,
         }

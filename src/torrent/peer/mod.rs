@@ -37,6 +37,7 @@ pub struct Peer<T: cio::CIO> {
     id: usize,
     cio: T,
     pieces: Bitfield,
+    piece_count: usize,
     remote_status: Status,
     local_status: Status,
     /// Current number of queued requests
@@ -157,6 +158,7 @@ impl Peer<cio::test::TCIO> {
         queued: u16,
         pieces: Bitfield,
     ) -> Peer<cio::test::TCIO> {
+        let piece_count = pieces.iter().count();
         Peer {
             id,
             remote_status: Status::new(),
@@ -169,6 +171,7 @@ impl Peer<cio::test::TCIO> {
             queued,
             max_queue: queued,
             pieces,
+            piece_count,
             tid: 0,
             t_hash: [0u8; 20],
             rsv: None,
@@ -218,6 +221,7 @@ impl<T: cio::CIO> Peer<T> {
             queued: 0,
             max_queue: INIT_MAX_QUEUE,
             pieces: Bitfield::new(t.info.hashes.len() as u64),
+            piece_count: 0,
             tid: t.id,
             t_hash: t.info.hash,
             rsv,
@@ -345,6 +349,8 @@ impl<T: cio::CIO> Peer<T> {
                     return Err(ErrorKind::ProtocolError("Invalid piece provided in HAVE!").into());
                 }
                 self.pieces.set_bit(u64::from(idx));
+                self.piece_count += 1;
+                self.send_rpc_update();
             }
             Message::Bitfield(ref mut pieces) => {
                 // Set the correct length, then swap the pieces
@@ -353,6 +359,8 @@ impl<T: cio::CIO> Peer<T> {
                     pieces.cap(self.pieces.len());
                 }
                 mem::swap(pieces, &mut self.pieces);
+                self.piece_count = self.pieces.iter().count();
+                self.send_rpc_update();
             }
             Message::KeepAlive => {
                 self.send_message(Message::KeepAlive);
@@ -450,9 +458,22 @@ impl<T: cio::CIO> Peer<T> {
                     ip: self.addr.to_string(),
                     rate_up: 0,
                     rate_down: 0,
-                    availability: 0.,
+                    availability: self.piece_count as f32 / self.pieces.len() as f32,
                     ..Default::default()
                 }),
+            ]));
+        }
+    }
+
+    fn send_rpc_update(&mut self) {
+        if self.cid.is_some() {
+            let id = util::peer_rpc_id(&self.t_hash, self.id as u64);
+            self.cio.msg_rpc(rpc::CtlMessage::Update(vec![
+                resource::SResourceUpdate::PeerAvailability {
+                    id,
+                    kind: resource::ResourceKind::Peer,
+                    availability: self.piece_count as f32 / self.pieces.len() as f32,
+                },
             ]));
         }
     }
