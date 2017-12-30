@@ -22,6 +22,11 @@ Our peer ID is `SY`.
 - Sequential downloading
 - [etc](https://github.com/Luminarys/synapse/issues/1)
 
+## RPC Clients
+
+- [receptor](https://github.com/SirCmpwn/receptor): web client
+- [axon](https://github.com/ParadoxSpiral/axon): curses client
+
 ## Releases
 
 Synapse is under development and releases are not currently available.
