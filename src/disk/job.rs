@@ -43,7 +43,7 @@ pub enum Request {
     Delete {
         tid: usize,
         hash: [u8; 20],
-        files: Vec<PathBuf>,
+        dir: PathBuf,
         path: Option<String>,
         artifacts: bool,
     },
@@ -153,14 +153,14 @@ impl Request {
     pub fn delete(
         tid: usize,
         hash: [u8; 20],
-        files: Vec<PathBuf>,
+        dir: PathBuf,
         path: Option<String>,
         artifacts: bool,
     ) -> Request {
         Request::Delete {
             tid,
             hash,
-            files,
+            dir,
             path,
             artifacts,
         }
@@ -286,8 +286,8 @@ impl Request {
             }
             Request::Delete {
                 hash,
-                files,
                 path,
+                dir,
                 artifacts,
                 tid: _,
             } => {
@@ -295,14 +295,13 @@ impl Request {
                 spb.push(hash_to_id(&hash));
                 fs::remove_file(spb)?;
 
-                for file in files {
+                if artifacts {
                     let mut pb = path::PathBuf::from(path.as_ref().unwrap_or(dd));
-                    pb.push(&file);
-                    fc.remove_file(&pb);
-                    if artifacts {
-                        if let Err(e) = fs::remove_file(&pb) {
-                            error!("Failed to delete file: {:?}, {}", pb, e);
-                        }
+                    pb.push(dir);
+                    if pb.is_dir() {
+                        fs::remove_dir_all(pb)?;
+                    } else {
+                        fs::remove_file(pb)?;
                     }
                 }
             }

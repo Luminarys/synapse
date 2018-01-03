@@ -4,7 +4,7 @@ pub mod bitfield;
 mod picker;
 mod choker;
 
-use std::fmt;
+use std::{fmt, path};
 use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -270,14 +270,13 @@ impl<T: cio::CIO> Torrent<T> {
 
     pub fn delete(&mut self, artifacts: bool) {
         debug!("Sending file deletion request!");
-        let mut files = Vec::new();
-        for file in &self.info.files {
-            files.push(file.path.clone());
-        }
+        let comp = self.info.files[0].path.components().next().unwrap();
+        let dirp: &path::Path = comp.as_ref().as_ref();
+        let dir: path::PathBuf = dirp.to_owned();
         self.cio.msg_disk(disk::Request::delete(
             self.id,
             self.info.hash,
-            files,
+            dir,
             self.path.clone(),
             artifacts,
         ));
