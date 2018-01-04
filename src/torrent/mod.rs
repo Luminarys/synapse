@@ -1174,8 +1174,16 @@ impl<T: cio::CIO> Torrent<T> {
     }
 
     fn availability(&self) -> f32 {
-        // TODO: ??
-        0.
+        let mut peers_have = FHashSet::default();
+        for (_, peer) in &self.peers {
+            for piece in peer.pieces().iter() {
+                peers_have.insert(piece);
+            }
+            if peers_have.len() as u64 == self.pieces.len() {
+                return 1.0;
+            }
+        }
+        peers_have.len() as f32 / self.pieces.len() as f32
     }
 
     /// Resets the last upload/download statistics, adjusting the internal
