@@ -31,7 +31,6 @@ extern crate sha1;
 extern crate shellexpand;
 extern crate toml;
 extern crate url;
-extern crate url_serde;
 extern crate vecio;
 
 // TODO: Get rid of this

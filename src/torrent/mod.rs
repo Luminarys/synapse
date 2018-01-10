@@ -12,6 +12,7 @@ use std::borrow::Cow;
 
 use bincode;
 use chrono::{DateTime, Utc};
+use url::Url;
 
 pub use self::bitfield::Bitfield;
 pub use self::info::{Info, LocIter};
@@ -26,7 +27,7 @@ use rpc::resource::{self, Resource, SResourceUpdate};
 use throttle::Throttle;
 use tracker::{self, TrackerResponse};
 use util::{FHashSet, MHashMap, UHashMap};
-use session::torrent::current::{Session, Status, StatusState};
+use session::torrent::current::Session;
 use {session, stat};
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -63,6 +64,23 @@ pub struct Torrent<T: cio::CIO> {
     info_bytes: Vec<u8>,
     info_idx: Option<usize>,
     created: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug)]
+pub struct Status {
+    pub paused: bool,
+    pub validating: bool,
+    pub error: Option<String>,
+    pub state: StatusState,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum StatusState {
+    Magnet,
+    // Torrent has not acquired all pieces
+    Incomplete,
+    // Torrent has acquired all pieces, regardless of validity
+    Complete,
 }
 
 impl Status {
@@ -197,7 +215,26 @@ impl<T: cio::CIO> Torrent<T> {
         let peers = UHashMap::default();
         let leechers = FHashSet::default();
 
-        let info = Arc::new(d.info);
+        let info = Arc::new(Info {
+            name: d.info.name,
+            announce: d.info.announce.and_then(|u| Url::parse(&u).ok()),
+            piece_len: d.info.piece_len,
+            total_len: d.info.total_len,
+            hashes: d.info.hashes,
+            hash: d.info.hash,
+            files: d.info
+                .files
+                .into_iter()
+                .map(|f| info::File {
+                    path: f.path,
+                    length: f.length,
+                })
+                .collect(),
+            private: d.info.private,
+            be_name: d.info.be_name,
+            piece_idx: d.info.piece_idx,
+        });
+
         let info_idx = if info.complete() {
             None
         } else {
@@ -230,7 +267,16 @@ impl<T: cio::CIO> Torrent<T> {
             tracker_update: None,
             choker: choker::Choker::new(),
             dirty: false,
-            status: d.status,
+            status: Status {
+                paused: d.status.paused,
+                validating: d.status.validating,
+                error: d.status.error,
+                state: match d.status.state {
+                    session::torrent::current::StatusState::Magnet => StatusState::Magnet,
+                    session::torrent::current::StatusState::Incomplete => StatusState::Incomplete,
+                    session::torrent::current::StatusState::Complete => StatusState::Complete,
+                },
+            },
             path: d.path,
             info_bytes,
             info_idx,
@@ -245,11 +291,39 @@ impl<T: cio::CIO> Torrent<T> {
 
     pub fn serialize(&mut self) {
         let d = Session {
-            info: self.info.as_ref().clone(),
+            info: session::torrent::current::Info {
+                name: self.info.name.clone(),
+                announce: self.info.announce.as_ref().map(|a| a.as_str().to_owned()),
+                piece_len: self.info.piece_len,
+                total_len: self.info.total_len,
+                hashes: self.info.hashes.clone(),
+                hash: self.info.hash,
+                files: self.info
+                    .files
+                    .iter()
+                    .cloned()
+                    .map(|f| session::torrent::current::File {
+                        path: f.path,
+                        length: f.length,
+                    })
+                    .collect(),
+                private: self.info.private,
+                be_name: self.info.be_name.clone(),
+                piece_idx: self.info.piece_idx.clone(),
+            },
             pieces: self.pieces.clone(),
             uploaded: self.uploaded,
             downloaded: self.downloaded,
-            status: self.status.clone(),
+            status: session::torrent::current::Status {
+                paused: self.status.paused,
+                validating: self.status.validating,
+                error: self.status.error.clone(),
+                state: match self.status.state {
+                    StatusState::Magnet => session::torrent::current::StatusState::Magnet,
+                    StatusState::Incomplete => session::torrent::current::StatusState::Incomplete,
+                    StatusState::Complete => session::torrent::current::StatusState::Complete,
+                },
+            },
             path: self.path.clone(),
             priorities: self.priorities.clone(),
             priority: self.priority,

@@ -5,16 +5,15 @@ use std::sync::Arc;
 
 use base32;
 use url::Url;
-use url_serde;
 
 use disk;
 use bencode::BEncode;
 use util::{hash_to_id, id_to_hash, sha1_hash};
 
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone)]
 pub struct Info {
     pub name: String,
-    #[serde(with = "url_serde")] pub announce: Option<Url>,
+    pub announce: Option<Url>,
     pub piece_len: u32,
     pub total_len: u64,
     pub hashes: Vec<Vec<u8>>,
@@ -47,7 +46,7 @@ impl fmt::Debug for Info {
     }
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Clone, Debug)]
 pub struct File {
     pub path: PathBuf,
     pub length: u64,

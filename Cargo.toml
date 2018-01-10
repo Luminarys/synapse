@@ -36,7 +36,6 @@ shellexpand = "1"
 synapse-rpc = { path = "rpc" }
 toml = "0.4"
 url = "1"
-url_serde = "0.2"
 vecio = "0.1"
 
 [dependencies.amy]

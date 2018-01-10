@@ -24,9 +24,11 @@ pub mod torrent {
     }
 
     pub mod ver_249b1b {
-        use torrent::{Bitfield, Info};
+        use torrent::Bitfield;
 
         use chrono::{DateTime, Utc};
+
+        use std::path::PathBuf;
 
         #[derive(Serialize, Deserialize)]
         pub struct Session {
@@ -41,6 +43,26 @@ pub mod torrent {
             pub created: DateTime<Utc>,
             pub throttle_ul: Option<i64>,
             pub throttle_dl: Option<i64>,
+        }
+
+        #[derive(Clone, Serialize, Deserialize)]
+        pub struct Info {
+            pub name: String,
+            pub announce: Option<String>,
+            pub piece_len: u32,
+            pub total_len: u64,
+            pub hashes: Vec<Vec<u8>>,
+            pub hash: [u8; 20],
+            pub files: Vec<File>,
+            pub private: bool,
+            pub be_name: Option<Vec<u8>>,
+            pub piece_idx: Vec<(usize, u64)>,
+        }
+
+        #[derive(Serialize, Deserialize, Clone, Debug)]
+        pub struct File {
+            pub path: PathBuf,
+            pub length: u64,
         }
 
         #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -64,10 +86,9 @@ pub mod torrent {
     pub mod ver_5f166d {
         use super::ver_249b1b as next;
 
-        use torrent::{info, Bitfield, Info as TInfo};
+        use torrent::Bitfield;
 
         use chrono::{DateTime, Utc};
-        use url::Url;
 
         #[derive(Serialize, Deserialize)]
         pub struct Session {
@@ -104,7 +125,7 @@ pub mod torrent {
             pub total_len: u64,
             pub hashes: Vec<Vec<u8>>,
             pub hash: [u8; 20],
-            pub files: Vec<info::File>,
+            pub files: Vec<next::File>,
             pub private: bool,
             pub be_name: Option<Vec<u8>>,
         }
@@ -120,15 +141,19 @@ pub mod torrent {
                     Status::Paused => true,
                     _ => false,
                 };
-                let piece_idx = TInfo::generate_piece_idx(
+                let piece_idx = generate_piece_idx(
                     self.info.hashes.len(),
                     self.info.piece_len as u64,
                     &self.info.files,
                 );
                 next::Session {
-                    info: TInfo {
+                    info: next::Info {
                         name: self.info.name,
-                        announce: Url::parse(&self.info.announce).ok(),
+                        announce: if self.info.announce == "" {
+                            None
+                        } else {
+                            Some(self.info.announce)
+                        },
                         piece_len: self.info.piece_len,
                         total_len: self.info.total_len,
                         hashes: self.info.hashes,
@@ -155,6 +180,21 @@ pub mod torrent {
                     throttle_dl: self.throttle_dl,
                 }.migrate()
             }
+        }
+
+        fn generate_piece_idx(pieces: usize, pl: u64, files: &[next::File]) -> Vec<(usize, u64)> {
+            let mut piece_idx = Vec::with_capacity(pieces);
+            let mut file = 0;
+            let mut offset = 0u64;
+            for _ in 0..pieces {
+                piece_idx.push((file, offset));
+                offset += pl;
+                while file < files.len() && offset >= files[file].length {
+                    offset -= files[file].length;
+                    file += 1;
+                }
+            }
+            piece_idx
         }
     }
 
