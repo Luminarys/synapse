@@ -295,7 +295,7 @@ impl Request {
                 spb.push(hash_to_id(&hash));
                 fs::remove_file(spb)?;
 
-                for file in files {
+                for file in &files {
                     let mut pb = path::PathBuf::from(path.as_ref().unwrap_or(dd));
                     pb.push(&file);
                     fc.remove_file(&pb);
@@ -304,6 +304,13 @@ impl Request {
                             error!("Failed to delete file: {:?}, {}", pb, e);
                         }
                     }
+                }
+
+                if let Some(p) = files.get(0) {
+                    let comp = p.components().next().unwrap();
+                    let dirp: &Path = comp.as_ref().as_ref();
+                    // May fail if user has placed files in directory, which is fine.
+                    fs::remove_dir(dirp).ok();
                 }
             }
             Request::Validate {
