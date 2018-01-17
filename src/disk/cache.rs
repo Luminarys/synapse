@@ -12,9 +12,12 @@ use util::{native, MHashMap};
 /// Holds a file and mmap cache. Because 32 bit systems
 /// can't mmap large files, we load them as needed.
 pub struct FileCache {
-    #[cfg(target_pointer_width = "32")] files: MHashMap<path::PathBuf, fs::File>,
-    #[cfg(target_pointer_width = "32")] fallback: MmapMut,
-    #[cfg(target_pointer_width = "64")] files: MHashMap<path::PathBuf, (fs::File, MmapMut)>,
+    #[cfg(target_pointer_width = "32")]
+    files: MHashMap<path::PathBuf, fs::File>,
+    #[cfg(target_pointer_width = "32")]
+    fallback: MmapMut,
+    #[cfg(target_pointer_width = "64")]
+    files: MHashMap<path::PathBuf, (fs::File, MmapMut)>,
 }
 
 impl FileCache {
@@ -81,8 +84,12 @@ impl FileCache {
 
         #[cfg(target_pointer_width = "64")]
         {
-            Ok(f(&mut self.files.get_mut(path).unwrap().1
-                [offset as usize..offset as usize + len]))
+            Ok(
+                f(
+                    &mut self.files.get_mut(path).unwrap().1
+                        [offset as usize..offset as usize + len],
+                ),
+            )
         }
     }
 

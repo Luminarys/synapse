@@ -49,8 +49,10 @@ struct ServerData {
     id: String,
     ul: u64,
     dl: u64,
-    #[serde(skip)] session_ul: u64,
-    #[serde(skip)] session_dl: u64,
+    #[serde(skip)]
+    session_ul: u64,
+    #[serde(skip)]
+    session_dl: u64,
     throttle_ul: Option<i64>,
     throttle_dl: Option<i64>,
 }

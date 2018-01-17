@@ -45,25 +45,29 @@ pub enum SResourceUpdate<'a> {
     Resource(Cow<'a, Resource>),
     Throttle {
         id: String,
-        #[serde(rename = "type")] kind: ResourceKind,
+        #[serde(rename = "type")]
+        kind: ResourceKind,
         throttle_up: Option<i64>,
         throttle_down: Option<i64>,
     },
     Rate {
         id: String,
-        #[serde(rename = "type")] kind: ResourceKind,
+        #[serde(rename = "type")]
+        kind: ResourceKind,
         rate_up: u64,
         rate_down: u64,
     },
     UserData {
         id: String,
-        #[serde(rename = "type")] kind: ResourceKind,
+        #[serde(rename = "type")]
+        kind: ResourceKind,
         user_data: json::Value,
     },
 
     ServerTransfer {
         id: String,
-        #[serde(rename = "type")] kind: ResourceKind,
+        #[serde(rename = "type")]
+        kind: ResourceKind,
         rate_up: u64,
         rate_down: u64,
         transferred_up: u64,
@@ -74,13 +78,15 @@ pub enum SResourceUpdate<'a> {
 
     TorrentStatus {
         id: String,
-        #[serde(rename = "type")] kind: ResourceKind,
+        #[serde(rename = "type")]
+        kind: ResourceKind,
         error: Option<String>,
         status: Status,
     },
     TorrentTransfer {
         id: String,
-        #[serde(rename = "type")] kind: ResourceKind,
+        #[serde(rename = "type")]
+        kind: ResourceKind,
         rate_up: u64,
         rate_down: u64,
         transferred_up: u64,
@@ -89,58 +95,68 @@ pub enum SResourceUpdate<'a> {
     },
     TorrentPeers {
         id: String,
-        #[serde(rename = "type")] kind: ResourceKind,
+        #[serde(rename = "type")]
+        kind: ResourceKind,
         peers: u16,
         availability: f32,
     },
     TorrentPicker {
         id: String,
-        #[serde(rename = "type")] kind: ResourceKind,
+        #[serde(rename = "type")]
+        kind: ResourceKind,
         sequential: bool,
     },
     TorrentPriority {
         id: String,
-        #[serde(rename = "type")] kind: ResourceKind,
+        #[serde(rename = "type")]
+        kind: ResourceKind,
         priority: u8,
     },
     TorrentPath {
         id: String,
-        #[serde(rename = "type")] kind: ResourceKind,
+        #[serde(rename = "type")]
+        kind: ResourceKind,
         path: String,
     },
 
     TrackerStatus {
         id: String,
-        #[serde(rename = "type")] kind: ResourceKind,
+        #[serde(rename = "type")]
+        kind: ResourceKind,
         last_report: DateTime<Utc>,
         error: Option<String>,
     },
 
     FilePriority {
         id: String,
-        #[serde(rename = "type")] kind: ResourceKind,
+        #[serde(rename = "type")]
+        kind: ResourceKind,
         priority: u8,
     },
     FileProgress {
         id: String,
-        #[serde(rename = "type")] kind: ResourceKind,
+        #[serde(rename = "type")]
+        kind: ResourceKind,
         progress: f32,
     },
 
     PieceAvailable {
         id: String,
-        #[serde(rename = "type")] kind: ResourceKind,
+        #[serde(rename = "type")]
+        kind: ResourceKind,
         available: bool,
     },
     PieceDownloaded {
         id: String,
-        #[serde(rename = "type")] kind: ResourceKind,
+        #[serde(rename = "type")]
+        kind: ResourceKind,
         downloaded: bool,
     },
 
     PeerAvailability {
         id: String,
-        #[serde(rename = "type")] kind: ResourceKind,
+        #[serde(rename = "type")]
+        kind: ResourceKind,
         availability: f32,
     },
 }
@@ -398,7 +414,8 @@ impl Peer {
 pub struct Tracker {
     pub id: String,
     pub torrent_id: String,
-    #[serde(with = "url_serde")] pub url: Option<Url>,
+    #[serde(with = "url_serde")]
+    pub url: Option<Url>,
     pub last_report: DateTime<Utc>,
     pub error: Option<String>,
     pub user_data: json::Value,

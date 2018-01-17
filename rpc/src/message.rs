@@ -37,12 +37,15 @@ pub enum CMessage {
     RemoveResource {
         serial: u64,
         id: String,
-        #[serde(default)] artifacts: Option<bool>,
+        #[serde(default)]
+        artifacts: Option<bool>,
     },
     FilterSubscribe {
         serial: u64,
-        #[serde(default)] kind: ResourceKind,
-        #[serde(default)] criteria: Vec<Criterion>,
+        #[serde(default)]
+        kind: ResourceKind,
+        #[serde(default)]
+        criteria: Vec<Criterion>,
     },
     FilterUnsubscribe {
         serial: u64,
@@ -54,13 +57,15 @@ pub enum CMessage {
         serial: u64,
         size: u64,
         path: Option<String>,
-        #[serde(default = "default_start")] start: bool,
+        #[serde(default = "default_start")]
+        start: bool,
     },
     UploadMagnet {
         serial: u64,
         uri: String,
         path: Option<String>,
-        #[serde(default = "default_start")] start: bool,
+        #[serde(default = "default_start")]
+        start: bool,
     },
     UploadFiles {
         serial: u64,
