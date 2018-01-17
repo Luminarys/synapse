@@ -22,6 +22,7 @@ pub struct Info {
     pub private: bool,
     pub be_name: Option<Vec<u8>>,
     pub piece_idx: Vec<(usize, u64)>,
+    pub url_list: Vec<Vec<Url>>,
 }
 
 impl fmt::Debug for Info {
@@ -125,6 +126,7 @@ impl Info {
             private: false,
             be_name: None,
             piece_idx: vec![],
+            url_list: vec![],
         })
     }
 
@@ -260,6 +262,20 @@ impl Info {
                 let total_len = files.iter().map(|f| f.length).sum();
                 let piece_idx = Info::generate_piece_idx(hashes.len(), pl, &files);
 
+                let url_list: Vec<Vec<Url>> = d.remove("announce-list")
+                    .and_then(BEncode::into_list)
+                    .unwrap_or_else(Vec::new)
+                    .into_iter()
+                    .map(|l| {
+                        l.into_list()
+                            .unwrap_or_else(Vec::new)
+                            .into_iter()
+                            .filter_map(BEncode::into_string)
+                            .filter_map(|s| Url::parse(&s).ok())
+                            .collect()
+                    })
+                    .collect();
+
                 Ok(Info {
                     name,
                     announce: a,
@@ -271,6 +287,7 @@ impl Info {
                     private,
                     be_name,
                     piece_idx,
+                    url_list,
                 })
             })
     }

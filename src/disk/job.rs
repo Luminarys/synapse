@@ -308,7 +308,7 @@ impl Request {
 
                 if let Some(p) = files.get(0) {
                     let comp = p.components().next().unwrap();
-                    let dirp: &Path = comp.as_ref().as_ref();
+                    let dirp: &Path = comp.as_os_str().as_ref();
                     // May fail if user has placed files in directory, which is fine.
                     fs::remove_dir(dirp).ok();
                 }

@@ -233,6 +233,7 @@ impl<T: cio::CIO> Torrent<T> {
             private: d.info.private,
             be_name: d.info.be_name,
             piece_idx: d.info.piece_idx,
+            url_list: vec![],
         });
 
         let info_idx = if info.complete() {
