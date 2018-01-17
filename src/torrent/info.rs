@@ -326,6 +326,7 @@ impl Info {
             private: false,
             be_name: None,
             piece_idx: vec![],
+            url_list: vec![],
         }
     }
 
@@ -342,6 +343,7 @@ impl Info {
             private: false,
             be_name: None,
             piece_idx: vec![],
+            url_list: vec![],
         }
     }
 
