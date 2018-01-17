@@ -3,8 +3,10 @@ pub mod native;
 use std::io;
 use std::fmt::Write as FWrite;
 use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
+use std::ops::Deref;
 use std::hash::BuildHasherDefault;
 use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
 
 use rand::{self, Rng};
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
@@ -61,6 +63,43 @@ pub fn awrite<W: io::Write>(b: &[u8], w: &mut W) -> IOR {
         Ok(a) => IOR::Incomplete(a),
         Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => IOR::Blocked,
         Err(e) => IOR::Err(e),
+    }
+}
+
+pub struct AView<T: 'static> {
+    /// This is actually the Arc
+    ptr: *const u8,
+    val: &'static T,
+}
+
+impl<T> AView<T> {
+    pub fn new<'a, U: 'static, F: FnOnce(&'a U) -> &'a T>(arc: &'a Arc<U>, f: F) -> AView<T> {
+        let val_ptr = f(&*arc) as *const T;
+        let val = unsafe { val_ptr.as_ref().unwrap() };
+        let ptr = Arc::into_raw(arc.clone()) as *const u8;
+        AView { val, ptr }
+    }
+}
+
+impl<T> AsRef<T> for AView<T> {
+    fn as_ref(&self) -> &T {
+        self.val
+    }
+}
+
+impl<T> Deref for AView<T> {
+    type Target = T;
+
+    fn deref(&self) -> &T {
+        self.val
+    }
+}
+
+impl<T> Drop for AView<T> {
+    fn drop(&mut self) {
+        unsafe {
+            drop(Arc::from_raw(self.ptr));
+        }
     }
 }
 

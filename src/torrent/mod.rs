@@ -26,11 +26,11 @@ use control::cio;
 use rpc::resource::{self, Resource, SResourceUpdate};
 use throttle::Throttle;
 use tracker::{self, TrackerResponse};
-use util::{FHashSet, MHashMap, UHashMap};
+use util::{AView, FHashSet, MHashMap, UHashMap};
 use session::torrent::current::Session;
 use {session, stat};
 
-#[derive(Clone, Debug, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum TrackerStatus {
     Updating,
     Ok {
@@ -52,8 +52,7 @@ pub struct Torrent<T: cio::CIO> {
     priority: u8,
     priorities: Vec<u8>,
     throttle: Throttle,
-    tracker: TrackerStatus,
-    tracker_update: Option<Instant>,
+    tracker: Tracker,
     peers: UHashMap<Peer<T>>,
     leechers: FHashSet<usize>,
     picker: Picker,
@@ -81,6 +80,12 @@ pub enum StatusState {
     Incomplete,
     // Torrent has acquired all pieces, regardless of validity
     Complete,
+}
+
+struct Tracker {
+    url: AView<Url>,
+    status: TrackerStatus,
+    update: Option<Instant>,
 }
 
 impl Status {
@@ -166,6 +171,13 @@ impl<T: cio::CIO> Torrent<T> {
         };
         let info = Arc::new(info);
         let picker = Picker::new(&info, &pieces, &priorities);
+
+        let tracker = Tracker {
+            status: TrackerStatus::Updating,
+            update: None,
+            url: AView::new(&info, |i| i.announce.as_ref().unwrap()),
+        };
+
         let mut t = Torrent {
             id,
             info,
@@ -181,8 +193,7 @@ impl<T: cio::CIO> Torrent<T> {
             cio,
             leechers,
             throttle,
-            tracker: TrackerStatus::Updating,
-            tracker_update: None,
+            tracker,
             choker: choker::Choker::new(),
             dirty: true,
             status: status.clone(),
@@ -250,6 +261,12 @@ impl<T: cio::CIO> Torrent<T> {
         throttle.set_ul_rate(d.throttle_ul);
         throttle.set_dl_rate(d.throttle_dl);
 
+        let tracker = Tracker {
+            status: TrackerStatus::Updating,
+            update: None,
+            url: AView::new(&info, |i| i.announce.as_ref().unwrap()),
+        };
+
         let mut t = Torrent {
             id,
             info,
@@ -264,8 +281,7 @@ impl<T: cio::CIO> Torrent<T> {
             cio,
             leechers,
             throttle,
-            tracker: TrackerStatus::Updating,
-            tracker_update: None,
+            tracker,
             choker: choker::Choker::new(),
             dirty: false,
             status: Status {
@@ -371,17 +387,17 @@ impl<T: cio::CIO> Torrent<T> {
                     return;
                 }
                 time += Duration::from_secs(u64::from(r.interval));
-                self.tracker = TrackerStatus::Ok {
+                self.tracker.status = TrackerStatus::Ok {
                     seeders: r.seeders,
                     leechers: r.leechers,
                     interval: r.interval,
                 };
-                self.tracker_update = Some(time);
+                self.tracker.update = Some(time);
             }
             Err(tracker::Error(tracker::ErrorKind::TrackerError(ref s), _)) => {
                 time += Duration::from_secs(300);
-                self.tracker_update = Some(time);
-                self.tracker = TrackerStatus::Failure(s.clone());
+                self.tracker.update = Some(time);
+                self.tracker.status = TrackerStatus::Failure(s.clone());
             }
             Err(ref e) => {
                 error!(
@@ -395,16 +411,16 @@ impl<T: cio::CIO> Torrent<T> {
                 );
                 // Wait 5 minutes before trying again
                 time += Duration::from_secs(300);
-                self.tracker_update = Some(time);
+                self.tracker.update = Some(time);
                 let reason = format!("Couldn't contact tracker: {}", e);
-                self.tracker = TrackerStatus::Failure(reason);
+                self.tracker.status = TrackerStatus::Failure(reason);
             }
         }
         self.update_rpc_tracker();
     }
 
     pub fn try_update_tracker(&mut self) {
-        if let Some(end) = self.tracker_update {
+        if let Some(end) = self.tracker.update {
             debug!("Updating tracker at interval!");
             let cur = Instant::now();
             if cur >= end {
@@ -1384,7 +1400,7 @@ impl<T: cio::CIO> Torrent<T> {
                 .map(|u| u.as_str())
                 .unwrap_or(""),
         );
-        let error = match self.tracker {
+        let error = match self.tracker.status {
             TrackerStatus::Failure(ref r) => Some(r.clone()),
             _ => None,
         };

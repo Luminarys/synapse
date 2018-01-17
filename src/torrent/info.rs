@@ -194,15 +194,7 @@ impl Info {
                     .ok_or_else(|| "Info must have announce URL")?
                     .into_string()
                     .ok_or_else(|| "Info must have announce URL")
-                    .and_then(|a| {
-                        if a.is_empty() {
-                            Ok(None)
-                        } else {
-                            Url::parse(&a)
-                                .map(|u| Some(u))
-                                .map_err(|_| "Info has invalid announce URL")
-                        }
-                    })?;
+                    .and_then(|a| Url::parse(&a).map_err(|_| "Info has invalid announce URL"))?;
                 let pl = i.remove("piece length")
                     .and_then(|i| i.into_int())
                     .ok_or("Info must specify piece length")? as u64;
@@ -278,7 +270,7 @@ impl Info {
 
                 Ok(Info {
                     name,
-                    announce: a,
+                    announce: Some(a),
                     piece_len: pl as u32,
                     hashes,
                     hash,
