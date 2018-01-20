@@ -1207,7 +1207,7 @@ impl<T: cio::CIO> Torrent<T> {
             transferred_up: self.uploaded,
             transferred_down: self.downloaded,
             peers: 0,
-            trackers: self.trackers.len(),
+            trackers: self.trackers.len() as u8,
             pieces,
             piece_size,
             files,
