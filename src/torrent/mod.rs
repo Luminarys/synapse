@@ -5,7 +5,7 @@ mod picker;
 mod choker;
 
 use std::fmt;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, VecDeque};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use std::borrow::Cow;
@@ -52,7 +52,7 @@ pub struct Torrent<T: cio::CIO> {
     priority: u8,
     priorities: Vec<u8>,
     throttle: Throttle,
-    tracker: Tracker,
+    trackers: VecDeque<Tracker>,
     peers: UHashMap<Peer<T>>,
     leechers: FHashSet<usize>,
     picker: Picker,
@@ -82,10 +82,11 @@ pub enum StatusState {
     Complete,
 }
 
-struct Tracker {
-    url: AView<Url>,
-    status: TrackerStatus,
-    update: Option<Instant>,
+pub struct Tracker {
+    pub url: AView<Url>,
+    pub status: TrackerStatus,
+    pub last_announce: DateTime<Utc>,
+    pub update: Option<Instant>,
 }
 
 impl Status {
@@ -172,11 +173,16 @@ impl<T: cio::CIO> Torrent<T> {
         let info = Arc::new(info);
         let picker = Picker::new(&info, &pieces, &priorities);
 
-        let tracker = Tracker {
-            status: TrackerStatus::Updating,
-            update: None,
-            url: AView::new(&info, |i| i.announce.as_ref().unwrap()),
-        };
+        let mut trackers = VecDeque::with_capacity(1);
+        if info.announce.is_some() {
+            let tracker = Tracker {
+                status: TrackerStatus::Updating,
+                update: None,
+                last_announce: Utc::now(),
+                url: AView::new(&info, |i| i.announce.as_ref().unwrap()),
+            };
+            trackers.push_back(tracker);
+        }
 
         let mut t = Torrent {
             id,
@@ -193,7 +199,7 @@ impl<T: cio::CIO> Torrent<T> {
             cio,
             leechers,
             throttle,
-            tracker,
+            trackers,
             choker: choker::Choker::new(),
             dirty: true,
             status: status.clone(),
@@ -261,11 +267,16 @@ impl<T: cio::CIO> Torrent<T> {
         throttle.set_ul_rate(d.throttle_ul);
         throttle.set_dl_rate(d.throttle_dl);
 
-        let tracker = Tracker {
-            status: TrackerStatus::Updating,
-            update: None,
-            url: AView::new(&info, |i| i.announce.as_ref().unwrap()),
-        };
+        let mut trackers = VecDeque::with_capacity(1);
+        if info.announce.is_some() {
+            let tracker = Tracker {
+                status: TrackerStatus::Updating,
+                update: None,
+                last_announce: Utc::now(),
+                url: AView::new(&info, |i| i.announce.as_ref().unwrap()),
+            };
+            trackers.push_back(tracker);
+        }
 
         let mut t = Torrent {
             id,
@@ -281,7 +292,7 @@ impl<T: cio::CIO> Torrent<T> {
             cio,
             leechers,
             throttle,
-            tracker,
+            trackers,
             choker: choker::Choker::new(),
             dirty: false,
             status: Status {
@@ -378,60 +389,77 @@ impl<T: cio::CIO> Torrent<T> {
         &self.pieces
     }
 
-    pub fn set_tracker_response(&mut self, resp: &tracker::Result<TrackerResponse>) {
+    pub fn set_tracker_response(&mut self, url: &Url, resp: &tracker::Result<TrackerResponse>) {
         debug!("Processing tracker response");
         let mut time = Instant::now();
         match *resp {
             Ok(ref r) => {
-                if r.dht {
-                    return;
-                }
-                time += Duration::from_secs(u64::from(r.interval));
-                self.tracker.status = TrackerStatus::Ok {
-                    seeders: r.seeders,
-                    leechers: r.leechers,
-                    interval: r.interval,
-                };
-                self.tracker.update = Some(time);
+                self.trackers
+                    .iter_mut()
+                    .find(|t| &*t.url == url)
+                    .map(|tracker| {
+                        time += Duration::from_secs(u64::from(r.interval));
+                        tracker.status = TrackerStatus::Ok {
+                            seeders: r.seeders,
+                            leechers: r.leechers,
+                            interval: r.interval,
+                        };
+                        tracker.update = Some(time);
+                        tracker.last_announce = Utc::now();
+                    });
             }
             Err(tracker::Error(tracker::ErrorKind::TrackerError(ref s), _)) => {
-                time += Duration::from_secs(300);
-                self.tracker.update = Some(time);
-                self.tracker.status = TrackerStatus::Failure(s.clone());
+                self.trackers
+                    .iter_mut()
+                    .find(|t| &*t.url == url)
+                    .map(|tracker| {
+                        time += Duration::from_secs(300);
+                        tracker.update = Some(time);
+                        tracker.status = TrackerStatus::Failure(s.clone());
+                        tracker.last_announce = Utc::now();
+                    });
             }
             Err(ref e) => {
-                error!(
-                    "Failed to query tracker {}: {}",
-                    self.info
-                        .announce
-                        .as_ref()
-                        .map(|u| u.as_str(),)
-                        .unwrap_or("",),
-                    e
-                );
-                // Wait 5 minutes before trying again
-                time += Duration::from_secs(300);
-                self.tracker.update = Some(time);
-                let reason = format!("Couldn't contact tracker: {}", e);
-                self.tracker.status = TrackerStatus::Failure(reason);
+                self.trackers
+                    .iter_mut()
+                    .find(|t| &*t.url == url)
+                    .map(|tracker| {
+                        error!("Failed to query tracker {}: {}", url, e);
+                        // Wait 5 minutes before trying again
+                        time += Duration::from_secs(300);
+                        tracker.update = Some(time);
+                        let reason = format!("Couldn't contact tracker: {}", e);
+                        tracker.status = TrackerStatus::Failure(reason);
+                        tracker.last_announce = Utc::now();
+                    });
+            }
+        }
+
+        if resp.is_err() && self.trackers.iter().find(|t| &*t.url == url).is_some() {
+            if let Some(front) = self.trackers.pop_front() {
+                self.trackers.push_back(front);
+                self.update_tracker();
             }
         }
         self.update_rpc_tracker();
     }
 
     pub fn try_update_tracker(&mut self) {
-        if let Some(end) = self.tracker.update {
+        if let Some(end) = self.trackers.front().and_then(|t| t.update) {
             debug!("Updating tracker at interval!");
             let cur = Instant::now();
             if cur >= end {
                 self.update_tracker();
             }
+        } else {
+            self.update_tracker();
         }
     }
 
     fn update_tracker(&mut self) {
-        let req = tracker::Request::interval(self);
-        self.cio.msg_trk(req);
+        if let Some(req) = tracker::Request::interval(self) {
+            self.cio.msg_trk(req);
+        }
     }
 
     pub fn remove_peer(&mut self, rpc_id: &str) {
@@ -443,11 +471,18 @@ impl<T: cio::CIO> Torrent<T> {
             .map(|(id, _)| cio.remove_peer(*id));
     }
 
-    // TODO: Implement once mutlitracker support is in
-    pub fn remove_tracker(&mut self, rpc_id: &str) {}
+    pub fn remove_tracker(&mut self, rpc_id: &str) {
+        let ih = &self.info.hash;
+        self.trackers
+            .retain(|trk| util::trk_rpc_id(ih, trk.url.as_str()) != rpc_id)
+    }
 
     pub fn update_tracker_req(&mut self, rpc_id: &str) {
-        self.update_tracker();
+        self.trackers
+            .iter()
+            .find(|trk| util::trk_rpc_id(&self.info.hash, trk.url.as_str()) == rpc_id)
+            .and_then(|trk| tracker::Request::custom(self, trk.url.clone()))
+            .map(|req| self.cio.msg_trk(req));
     }
 
     pub fn get_throttle(&self, id: usize) -> Throttle {
@@ -472,6 +507,10 @@ impl<T: cio::CIO> Torrent<T> {
 
     pub fn info(&self) -> &Info {
         &self.info
+    }
+
+    pub fn trackers(&self) -> &VecDeque<Tracker> {
+        &self.trackers
     }
 
     pub fn handle_disk_resp(&mut self, resp: disk::Response) {
@@ -594,8 +633,9 @@ impl<T: cio::CIO> Torrent<T> {
     fn set_finished(&mut self) {
         // It's ok to say we've completed even if we haven't downloaded everything since
         // the `left` field should indicate how much there still is to download.
-        let req = tracker::Request::completed(self);
-        self.cio.msg_trk(req);
+        if let Some(req) = tracker::Request::completed(self) {
+            self.cio.msg_trk(req);
+        }
         // Order here is important, if we're in an idle status,
         // rpc updates don't occur.
         self.update_rpc_transfer();
@@ -1046,8 +1086,9 @@ impl<T: cio::CIO> Torrent<T> {
         if self.status.stopped() {
             return;
         }
-        let req = tracker::Request::started(self);
-        self.cio.msg_trk(req);
+        if let Some(req) = tracker::Request::started(self) {
+            self.cio.msg_trk(req);
+        }
         // TODO: Consider repeatedly sending out these during annoucne intervals
         if !self.info.private {
             let mut req = tracker::Request::DHTAnnounce(self.info.hash);
@@ -1166,8 +1207,7 @@ impl<T: cio::CIO> Torrent<T> {
             transferred_up: self.uploaded,
             transferred_down: self.downloaded,
             peers: 0,
-            // TODO: Alter when mutlitracker support hits
-            trackers: 1,
+            trackers: self.trackers.len(),
             pieces,
             piece_size,
             files,
@@ -1214,23 +1254,19 @@ impl<T: cio::CIO> Torrent<T> {
     }
 
     fn rpc_trk_info(&self) -> Vec<resource::Resource> {
-        let mut r = Vec::new();
-        r.push(resource::Resource::Tracker(resource::Tracker {
-            id: util::trk_rpc_id(
-                &self.info.hash,
-                self.info
-                    .announce
-                    .as_ref()
-                    .map(|u| u.as_str())
-                    .unwrap_or(""),
-            ),
-            torrent_id: self.rpc_id(),
-            url: self.info.announce.clone(),
-            last_report: Utc::now(),
-            error: None,
-            ..Default::default()
-        }));
-        r
+        self.trackers
+            .iter()
+            .map(|trk| {
+                resource::Resource::Tracker(resource::Tracker {
+                    id: util::trk_rpc_id(&self.info.hash, trk.url.as_str()),
+                    torrent_id: self.rpc_id(),
+                    url: Some(trk.url.as_ref().clone()),
+                    last_report: trk.last_announce.clone(),
+                    error: None,
+                    ..Default::default()
+                })
+            })
+            .collect()
     }
 
     pub fn send_rpc_removal(&mut self) {
@@ -1392,26 +1428,23 @@ impl<T: cio::CIO> Torrent<T> {
     }
 
     pub fn update_rpc_tracker(&mut self) {
-        let id = util::trk_rpc_id(
-            &self.info.hash,
-            self.info
-                .announce
-                .as_ref()
-                .map(|u| u.as_str())
-                .unwrap_or(""),
-        );
-        let error = match self.tracker.status {
-            TrackerStatus::Failure(ref r) => Some(r.clone()),
-            _ => None,
-        };
-        self.cio.msg_rpc(rpc::CtlMessage::Update(vec![
-            SResourceUpdate::TrackerStatus {
-                id,
-                kind: resource::ResourceKind::Tracker,
-                last_report: Utc::now(),
-                error,
-            },
-        ]));
+        let updates = self.trackers
+            .iter()
+            .map(|tracker| {
+                let id = util::trk_rpc_id(&self.info.hash, tracker.url.as_str());
+                let error = match tracker.status {
+                    TrackerStatus::Failure(ref r) => Some(r.clone()),
+                    _ => None,
+                };
+                SResourceUpdate::TrackerStatus {
+                    id,
+                    kind: resource::ResourceKind::Tracker,
+                    last_report: Utc::now(),
+                    error,
+                }
+            })
+            .collect();
+        self.cio.msg_rpc(rpc::CtlMessage::Update(updates));
     }
 
     pub fn update_rpc_transfer(&mut self) {
@@ -1484,8 +1517,9 @@ impl<T: cio::CIO> Torrent<T> {
         debug!("Pausing torrent!");
         if !self.status.paused {
             debug!("Sending stopped request to trk");
-            let req = tracker::Request::stopped(self);
-            self.cio.msg_trk(req);
+            if let Some(req) = tracker::Request::stopped(self) {
+                self.cio.msg_trk(req);
+            }
             self.status.paused = true;
             self.announce_status();
         }
@@ -1499,8 +1533,9 @@ impl<T: cio::CIO> Torrent<T> {
             }
             if self.status.paused {
                 debug!("Sending started request to trk");
-                let req = tracker::Request::started(self);
-                self.cio.msg_trk(req);
+                if let Some(req) = tracker::Request::started(self) {
+                    self.cio.msg_trk(req);
+                }
                 self.status.paused = false;
             }
             self.request_all();
@@ -1582,8 +1617,9 @@ impl<T: cio::CIO> Drop for Torrent<T> {
             self.leechers.remove(&id);
         }
         if !self.status.paused {
-            let msg = tracker::Request::stopped(self);
-            self.cio.msg_trk(msg);
+            if let Some(msg) = tracker::Request::stopped(self) {
+                self.cio.msg_trk(msg);
+            }
         }
         self.send_rpc_removal();
     }

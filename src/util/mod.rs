@@ -1,12 +1,11 @@
 pub mod native;
+mod aview;
+mod io;
 
-use std::io;
 use std::fmt::Write as FWrite;
 use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
-use std::ops::Deref;
 use std::hash::BuildHasherDefault;
 use std::collections::{HashMap, HashSet};
-use std::sync::Arc;
 
 use rand::{self, Rng};
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
@@ -23,85 +22,8 @@ pub type MHashMap<K, V> = HashMap<K, V, MBuildHasher>;
 pub type MHashSet<T> = HashSet<T, MBuildHasher>;
 pub type SHashMap<T> = MHashMap<String, T>;
 
-pub fn io_err<T>(reason: &'static str) -> io::Result<T> {
-    Err(io::Error::new(io::ErrorKind::Other, reason))
-}
-
-pub fn io_err_val(reason: &'static str) -> io::Error {
-    io::Error::new(io::ErrorKind::Other, reason)
-}
-
-/// IO Result type for working with
-/// async IO
-pub enum IOR {
-    Complete,
-    Incomplete(usize),
-    Blocked,
-    EOF,
-    Err(io::Error),
-}
-
-/// Do an async read, returning the appropriate IOR.
-pub fn aread<R: io::Read>(b: &mut [u8], r: &mut R) -> IOR {
-    if b.is_empty() {
-        return IOR::Complete;
-    }
-    match r.read(b) {
-        Ok(0) => IOR::EOF,
-        Ok(a) if a == b.len() => IOR::Complete,
-        Ok(a) => IOR::Incomplete(a),
-        Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => IOR::Blocked,
-        Err(e) => IOR::Err(e),
-    }
-}
-
-/// Do an async write, returning the appropriate IOR.
-pub fn awrite<W: io::Write>(b: &[u8], w: &mut W) -> IOR {
-    match w.write(b) {
-        Ok(0) => IOR::EOF,
-        Ok(a) if a == b.len() => IOR::Complete,
-        Ok(a) => IOR::Incomplete(a),
-        Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => IOR::Blocked,
-        Err(e) => IOR::Err(e),
-    }
-}
-
-pub struct AView<T: 'static> {
-    /// This is actually the Arc
-    ptr: *const u8,
-    val: &'static T,
-}
-
-impl<T> AView<T> {
-    pub fn new<'a, U: 'static, F: FnOnce(&'a U) -> &'a T>(arc: &'a Arc<U>, f: F) -> AView<T> {
-        let val_ptr = f(&*arc) as *const T;
-        let val = unsafe { val_ptr.as_ref().unwrap() };
-        let ptr = Arc::into_raw(arc.clone()) as *const u8;
-        AView { val, ptr }
-    }
-}
-
-impl<T> AsRef<T> for AView<T> {
-    fn as_ref(&self) -> &T {
-        self.val
-    }
-}
-
-impl<T> Deref for AView<T> {
-    type Target = T;
-
-    fn deref(&self) -> &T {
-        self.val
-    }
-}
-
-impl<T> Drop for AView<T> {
-    fn drop(&mut self) {
-        unsafe {
-            drop(Arc::from_raw(self.ptr));
-        }
-    }
-}
+pub use self::aview::AView;
+pub use self::io::{aread, awrite, io_err, io_err_val, IOR};
 
 pub fn random_sample<A, T>(iter: A) -> Option<T>
 where

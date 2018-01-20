@@ -251,27 +251,31 @@ impl<T: cio::CIO> Control<T> {
 
     fn handle_trk_ev(&mut self, tr: tracker::Response) {
         debug!("Handling tracker response");
-        let id = tr.0;
-        let resp = tr.1;
-        {
-            if let Some(torrent) = self.torrents.get_mut(&id) {
-                torrent.set_tracker_response(&resp);
-            } else {
-                return;
-            }
-        }
-        trace!("Adding peers!");
-        if let Ok(r) = resp {
-            for ip in &r.peers {
-                trace!("Adding peer({:?})!", ip);
-                if let Ok(peer) = peer::PeerConn::new_outgoing(ip) {
-                    trace!("Added peer({:?})!", ip);
-                    self.add_peer(id, peer);
+        let (id, peers) = match tr {
+            tracker::Response::Tracker { tid, url, resp } => {
+                if let Some(torrent) = self.torrents.get_mut(&tid) {
+                    torrent.set_tracker_response(url.as_ref(), &resp);
+                    if let Ok(r) = resp {
+                        (tid, r.peers)
+                    } else {
+                        return;
+                    }
+                } else {
+                    return;
                 }
             }
-            if let Some(torrent) = self.torrents.get_mut(&id) {
-                torrent.update_rpc_peers();
+            tracker::Response::DHT { tid, peers } => (tid, peers),
+        };
+        trace!("Adding peers!");
+        for ip in &peers {
+            trace!("Adding peer({:?})!", ip);
+            if let Ok(peer) = peer::PeerConn::new_outgoing(ip) {
+                trace!("Added peer({:?})!", ip);
+                self.add_peer(id, peer);
             }
+        }
+        if let Some(torrent) = self.torrents.get_mut(&id) {
+            torrent.update_rpc_peers();
         }
     }
 

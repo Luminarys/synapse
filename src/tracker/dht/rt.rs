@@ -344,9 +344,10 @@ impl RoutingTable {
                 }
 
                 if !values.is_empty() {
-                    let mut r = tracker::TrackerResponse::dht();
-                    mem::swap(&mut r.peers, values);
-                    return Ok((torrent, Ok(r)));
+                    return Ok(tracker::Response::DHT {
+                        tid: torrent,
+                        peers: mem::replace(values, vec![]),
+                    });
                 }
 
                 if depth < MAX_SEARCH_DEPTH {

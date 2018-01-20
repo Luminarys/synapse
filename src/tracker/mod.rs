@@ -16,6 +16,7 @@ pub use self::errors::{Error, ErrorKind, Result, ResultExt};
 use torrent::Torrent;
 use bencode::BEncode;
 use control::cio;
+use util::AView;
 use handle;
 use disk;
 use CONFIG;
@@ -45,7 +46,7 @@ pub enum Request {
 #[derive(Debug)]
 pub struct Announce {
     id: usize,
-    url: String,
+    url: AView<Url>,
     hash: [u8; 20],
     port: u16,
     uploaded: u64,
@@ -68,12 +69,22 @@ pub enum Event {
     Completed,
 }
 
-pub type Response = (usize, Result<TrackerResponse>);
+#[derive(Debug)]
+pub enum Response {
+    Tracker {
+        tid: usize,
+        url: AView<Url>,
+        resp: Result<TrackerResponse>,
+    },
+    DHT {
+        tid: usize,
+        peers: Vec<SocketAddr>,
+    },
+}
 
 #[derive(Debug)]
 pub struct TrackerResponse {
     pub peers: Vec<SocketAddr>,
-    pub dht: bool,
     pub interval: u32,
     pub leechers: u32,
     pub seeders: u32,
@@ -187,20 +198,20 @@ impl Tracker {
             self.queue.push_back(req);
         } else {
             let id = req.id;
-            let response = if let Ok(url) = Url::parse(&req.url) {
-                match url.scheme() {
-                    "http" | "https" => self.http.new_announce(req, &url, &mut self.dns),
-                    "udp" => self.udp.new_announce(req, &url, &mut self.dns),
-                    s => Err(ErrorKind::InvalidRequest(format!(
-                        "Unknown tracker url scheme: {}",
-                        s
-                    )).into()),
-                }
-            } else {
-                Err(ErrorKind::InvalidRequest(format!("Invalid url: {}", req.url)).into())
+            let url = req.url.clone();
+            let response = match url.scheme() {
+                "http" | "https" => self.http.new_announce(req, &mut self.dns),
+                "udp" => self.udp.new_announce(req, &mut self.dns),
+                s => Err(
+                    ErrorKind::InvalidRequest(format!("Unknown tracker url scheme: {}", s)).into(),
+                ),
             };
             if let Err(e) = response {
-                self.send_response((id, Err(e)));
+                self.send_response(Response::Tracker {
+                    tid: id,
+                    url,
+                    resp: Err(e),
+                });
             }
         }
     }
@@ -282,16 +293,18 @@ impl Tracker {
 }
 
 impl Request {
-    pub fn new_announce<T: cio::CIO>(torrent: &Torrent<T>, event: Option<Event>) -> Request {
-        Request::Announce(Announce {
+    pub fn new_announce<T: cio::CIO>(
+        torrent: &Torrent<T>,
+        event: Option<Event>,
+    ) -> Option<Request> {
+        let url = if let Some(trk) = torrent.trackers().front() {
+            trk.url.clone()
+        } else {
+            return None;
+        };
+        Some(Request::Announce(Announce {
             id: torrent.id(),
-            url: torrent
-                .info()
-                .announce
-                .as_ref()
-                .map(|u| u.as_str())
-                .unwrap_or("")
-                .to_owned(),
+            url,
             hash: torrent.info().hash,
             port: CONFIG.port,
             uploaded: torrent.uploaded(),
@@ -307,23 +320,33 @@ impl Request {
             // let existing peers connect otherwise
             num_want: if torrent.complete() { None } else { Some(50) },
             event,
-        })
+        }))
     }
 
-    pub fn started<T: cio::CIO>(torrent: &Torrent<T>) -> Request {
+    pub fn started<T: cio::CIO>(torrent: &Torrent<T>) -> Option<Request> {
         Request::new_announce(torrent, Some(Event::Started))
     }
 
-    pub fn stopped<T: cio::CIO>(torrent: &Torrent<T>) -> Request {
+    pub fn stopped<T: cio::CIO>(torrent: &Torrent<T>) -> Option<Request> {
         Request::new_announce(torrent, Some(Event::Stopped))
     }
 
-    pub fn completed<T: cio::CIO>(torrent: &Torrent<T>) -> Request {
+    pub fn completed<T: cio::CIO>(torrent: &Torrent<T>) -> Option<Request> {
         Request::new_announce(torrent, Some(Event::Completed))
     }
 
-    pub fn interval<T: cio::CIO>(torrent: &Torrent<T>) -> Request {
+    pub fn interval<T: cio::CIO>(torrent: &Torrent<T>) -> Option<Request> {
         Request::new_announce(torrent, None)
+    }
+
+    pub fn custom<T: cio::CIO>(torrent: &Torrent<T>, url: AView<Url>) -> Option<Request> {
+        Request::new_announce(torrent, None).map(|mut r| {
+            match r {
+                Request::Announce(ref mut a) => a.url = url,
+                _ => {}
+            }
+            r
+        })
     }
 }
 
@@ -334,17 +357,6 @@ impl TrackerResponse {
             interval: 900,
             leechers: 0,
             seeders: 0,
-            dht: false,
-        }
-    }
-
-    pub fn dht() -> TrackerResponse {
-        TrackerResponse {
-            peers: vec![],
-            interval: 0,
-            leechers: 0,
-            seeders: 0,
-            dht: true,
         }
     }
 

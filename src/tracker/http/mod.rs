@@ -14,7 +14,7 @@ use self::writer::Writer;
 use self::reader::{ReadRes, Reader};
 use socket::TSocket;
 use tracker::{self, dns, Announce, Error, ErrorKind, Response, Result, ResultExt, TrackerResponse};
-use util::UHashMap;
+use util::{AView, UHashMap};
 
 const TIMEOUT_MS: u64 = 5_000;
 
@@ -31,6 +31,7 @@ enum Event {
 
 struct Tracker {
     torrent: usize,
+    url: AView<Url>,
     last_updated: Instant,
     redirect: bool,
     state: TrackerState,
@@ -208,7 +209,11 @@ impl Handler {
             trk.last_updated = Instant::now();
             match trk.state.handle(Event::DNSResolved(resp)) {
                 Ok(_) => None,
-                Err(e) => Some((trk.torrent, Err(e))),
+                Err(e) => Some(Response::Tracker {
+                    tid: trk.torrent,
+                    url: trk.url.clone(),
+                    resp: Err(e),
+                }),
             }
         } else {
             None
@@ -224,7 +229,11 @@ impl Handler {
             trk.last_updated = Instant::now();
             match trk.state.handle(Event::Writable) {
                 Ok(_) => None,
-                Err(e) => Some((trk.torrent, Err(e))),
+                Err(e) => Some(Response::Tracker {
+                    tid: trk.torrent,
+                    url: trk.url.clone(),
+                    resp: Err(e),
+                }),
             }
         } else {
             None
@@ -242,14 +251,22 @@ impl Handler {
             match trk.state.handle(Event::Readable) {
                 Ok(HTTPRes::Complete(r)) => {
                     debug!("Announce response received for {:?} succesfully", id);
-                    Some((trk.torrent, Ok(r)))
+                    Some(Response::Tracker {
+                        tid: trk.torrent,
+                        url: trk.url.clone(),
+                        resp: Ok(r),
+                    })
                 }
                 Ok(HTTPRes::Redirect(l)) => {
                     loc = Some(l);
                     None
                 }
                 Ok(HTTPRes::None) => None,
-                Err(e) => Some((trk.torrent, Err(e))),
+                Err(e) => Some(Response::Tracker {
+                    tid: trk.torrent,
+                    url: trk.url.clone(),
+                    resp: Err(e),
+                }),
             }
         } else {
             None
@@ -263,17 +280,22 @@ impl Handler {
             let trk = self.connections.remove(&id).unwrap();
             // Disallow 2 levels of redirection
             if trk.redirect {
-                resp = Some((
-                    trk.torrent,
-                    Err(ErrorKind::InvalidResponse("Too many redirects").into()),
-                ));
+                resp = Some(Response::Tracker {
+                    tid: trk.torrent,
+                    url: trk.url.clone(),
+                    resp: Err(ErrorKind::InvalidResponse("Too many redirects").into()),
+                });
             }
             if let Err(e) = self.try_redirect(&l, trk.torrent, dns) {
                 debug!(
                     "Announce response received for {:?}, redirecting!",
                     trk.torrent
                 );
-                resp = Some((trk.torrent, Err(e)));
+                resp = Some(Response::Tracker {
+                    tid: trk.torrent,
+                    url: trk.url.clone(),
+                    resp: Err(e),
+                });
             }
         }
         resp
@@ -312,6 +334,7 @@ impl Handler {
                 last_updated: Instant::now(),
                 redirect: true,
                 torrent,
+                url: AView::value(url.clone()),
                 state: TrackerState::new(sock, http_req, port),
             },
         );
@@ -325,8 +348,12 @@ impl Handler {
         let mut resps = Vec::new();
         self.connections.retain(|id, trk| {
             if trk.last_updated.elapsed() > Duration::from_millis(TIMEOUT_MS) {
-                resps.push((trk.torrent, Err(ErrorKind::Timeout.into())));
                 debug!("Announce {:?} timed out", id);
+                resps.push(Response::Tracker {
+                    tid: trk.torrent,
+                    url: trk.url.clone(),
+                    resp: Err(ErrorKind::Timeout.into()),
+                });
                 false
             } else {
                 true
@@ -335,19 +362,14 @@ impl Handler {
         resps
     }
 
-    pub fn new_announce(
-        &mut self,
-        req: Announce,
-        url: &Url,
-        dns: &mut dns::Resolver,
-    ) -> Result<()> {
-        debug!("Received a new announce req for {:?}", url);
+    pub fn new_announce(&mut self, req: Announce, dns: &mut dns::Resolver) -> Result<()> {
+        debug!("Received a new announce req for {:?}", req.url);
         let mut http_req = Vec::with_capacity(50);
         // Encode GET req
         http_req.extend_from_slice(b"GET ");
 
         // Encode the URL
-        http_req.extend_from_slice(url.path().as_bytes());
+        http_req.extend_from_slice(req.url.path().as_bytes());
         http_req.extend_from_slice(b"?");
         append_query_pair(&mut http_req, "info_hash", &encode_param(&req.hash));
         append_query_pair(&mut http_req, "peer_id", &encode_param(&PEER_ID[..]));
@@ -378,19 +400,21 @@ impl Handler {
         http_req.extend_from_slice(b"Connection: close\r\n");
         // Encode host header
         http_req.extend_from_slice(b"Host: ");
-        let host = url.host_str().ok_or_else(|| {
+        let host = req.url.host_str().ok_or_else(|| {
             Error::from(ErrorKind::InvalidRequest(
                 "Tracker announce url has no host!".to_owned(),
             ))
         })?;
-        let port = url.port()
-            .unwrap_or_else(|| if url.scheme() == "https" { 443 } else { 80 });
+        let port =
+            req.url
+                .port()
+                .unwrap_or_else(|| if req.url.scheme() == "https" { 443 } else { 80 });
         http_req.extend_from_slice(host.as_bytes());
         http_req.extend_from_slice(b"\r\n");
         // Encode empty line to terminate request
         http_req.extend_from_slice(b"\r\n");
 
-        let ohost = if url.scheme() == "https" {
+        let ohost = if req.url.scheme() == "https" {
             Some(host.to_owned())
         } else {
             None
@@ -401,6 +425,7 @@ impl Handler {
         self.connections.insert(
             id,
             Tracker {
+                url: req.url.clone(),
                 last_updated: Instant::now(),
                 torrent: req.id,
                 state: TrackerState::new(sock, http_req, port),

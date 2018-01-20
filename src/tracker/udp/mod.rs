@@ -4,7 +4,6 @@ use std::time;
 
 use amy;
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
-use url::Url;
 use rand::random;
 
 use {CONFIG, PEER_ID};
@@ -72,13 +71,9 @@ impl Handler {
         self.connections.contains_key(&id)
     }
 
-    pub fn new_announce(
-        &mut self,
-        req: Announce,
-        url: &Url,
-        dns: &mut dns::Resolver,
-    ) -> Result<()> {
+    pub fn new_announce(&mut self, req: Announce, dns: &mut dns::Resolver) -> Result<()> {
         // TODO: Attempt to parse into an IP address first, then perform dns res
+        let url = req.url.clone();
         debug!("Received a new announce req for {:?}", url);
         let host = url.host_str().ok_or_else(|| {
             Error::from(ErrorKind::InvalidRequest(
@@ -133,7 +128,11 @@ impl Handler {
                             self.transactions.insert(tid, id);
                             None
                         }
-                        Err(e) => Some((conn.torrent, Err(e))),
+                        Err(e) => Some(Response::Tracker {
+                            tid: conn.torrent,
+                            url: conn.announce.url.clone(),
+                            resp: Err(e),
+                        }),
                     }
                 }
                 _ => None,
@@ -185,7 +184,11 @@ impl Handler {
         {
             self.connections.retain(|id, conn| {
                 if conn.last_updated.elapsed() > time::Duration::from_millis(TIMEOUT_MS) {
-                    resps.push((conn.torrent, Err(ErrorKind::Timeout.into())));
+                    resps.push(Response::Tracker {
+                        tid: conn.torrent,
+                        url: conn.announce.url.clone(),
+                        resp: Err(ErrorKind::Timeout.into()),
+                    });
                     debug!("Announce {:?} timed out", id);
                     false
                 } else {
@@ -311,7 +314,11 @@ impl Handler {
                 resp.peers.push(bytes_to_addr(p));
             }
         }
-        Some((conn.torrent, Ok(resp)))
+        Some(Response::Tracker {
+            tid: conn.torrent,
+            url: conn.announce.url,
+            resp: Ok(resp),
+        })
     }
 
     fn process_error(&mut self, len: usize) -> Option<Response> {
@@ -330,12 +337,19 @@ impl Handler {
         };
 
         if connect_resp.read_to_string(&mut s).is_err() {
-            Some((
-                conn.torrent,
-                Err(ErrorKind::InvalidResponse("Tracker error response was invalid UTF8").into()),
-            ))
+            let resp =
+                Err(ErrorKind::InvalidResponse("Tracker error response was invalid UTF8").into());
+            Some(Response::Tracker {
+                tid: conn.torrent,
+                url: conn.announce.url,
+                resp,
+            })
         } else {
-            Some((conn.torrent, Err(ErrorKind::TrackerError(s).into())))
+            Some(Response::Tracker {
+                tid: conn.torrent,
+                url: conn.announce.url,
+                resp: Err(ErrorKind::TrackerError(s).into()),
+            })
         }
     }
 
@@ -367,8 +381,12 @@ impl Handler {
 
         match res {
             Err(e) => {
-                self.connections.remove(&id);
-                Some((tid, Err(e)))
+                let url = self.connections.remove(&id).unwrap().announce.url;
+                Some(Response::Tracker {
+                    tid,
+                    url,
+                    resp: Err(e),
+                })
             }
             Ok(_) => None,
         }
