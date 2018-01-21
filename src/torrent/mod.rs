@@ -174,7 +174,19 @@ impl<T: cio::CIO> Torrent<T> {
         let picker = Picker::new(&info, &pieces, &priorities);
 
         let mut trackers = VecDeque::with_capacity(1);
-        if info.announce.is_some() {
+        if !info.url_list.is_empty() {
+            for (i, list) in info.url_list.iter().enumerate() {
+                for (j, trk) in list.iter().enumerate() {
+                    let tracker = Tracker {
+                        status: TrackerStatus::Updating,
+                        update: None,
+                        last_announce: Utc::now(),
+                        url: AView::new(&info, |inf| &inf.url_list[i][j]),
+                    };
+                    trackers.push_back(tracker);
+                }
+            }
+        } else if info.announce.is_some() {
             let tracker = Tracker {
                 status: TrackerStatus::Updating,
                 update: None,
