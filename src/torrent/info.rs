@@ -4,6 +4,7 @@ use std::{cmp, fmt, mem};
 use std::sync::Arc;
 
 use base32;
+use rand::{self, Rng};
 use url::Url;
 
 use disk;
@@ -259,12 +260,14 @@ impl Info {
                     .unwrap_or_else(Vec::new)
                     .into_iter()
                     .map(|l| {
-                        l.into_list()
+                        let mut l: Vec<Url> = l.into_list()
                             .unwrap_or_else(Vec::new)
                             .into_iter()
                             .filter_map(BEncode::into_string)
                             .filter_map(|s| Url::parse(&s).ok())
-                            .collect()
+                            .collect();
+                        rand::thread_rng().shuffle(&mut l[..]);
+                        l
                     })
                     .collect();
 

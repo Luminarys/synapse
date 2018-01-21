@@ -176,7 +176,7 @@ impl<T: cio::CIO> Torrent<T> {
         let mut trackers = VecDeque::with_capacity(1);
         if !info.url_list.is_empty() {
             for (i, list) in info.url_list.iter().enumerate() {
-                for (j, trk) in list.iter().enumerate() {
+                for (j, _) in list.iter().enumerate() {
                     let tracker = Tracker {
                         status: TrackerStatus::Updating,
                         update: None,
