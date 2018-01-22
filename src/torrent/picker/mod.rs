@@ -103,7 +103,7 @@ impl Picker {
 
     pub fn tick(&mut self) {
         let mut expired = 0;
-        self.downloading.values_mut().for_each(|chunks| {
+        for chunks in self.downloading.values_mut() {
             for chunk in chunks.iter_mut() {
                 if !chunk.completed {
                     chunk.requested.retain(|req| {
@@ -115,7 +115,7 @@ impl Picker {
                     })
                 }
             }
-        });
+        }
         if expired != 0 {
             debug!("Expired {} chunks!", expired);
         }
