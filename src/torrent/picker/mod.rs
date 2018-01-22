@@ -62,6 +62,7 @@ struct Request {
 
 const MAX_DUP_REQS: usize = 5;
 const MAX_DL_Q: usize = 50;
+const REQ_TIMEOUT: u64 = 15;
 
 impl Picker {
     /// Creates a new picker, which will select over
@@ -97,6 +98,26 @@ impl Picker {
         match self.picker {
             PickerKind::Sequential(_) => true,
             _ => false,
+        }
+    }
+
+    pub fn tick(&mut self) {
+        let mut expired = 0;
+        self.downloading.values_mut().for_each(|chunks| {
+            for chunk in chunks.iter_mut() {
+                if !chunk.completed {
+                    chunk.requested.retain(|req| {
+                        let unexp = req.requested_at.elapsed().as_secs() < REQ_TIMEOUT;
+                        if !unexp {
+                            expired += 1;
+                        }
+                        unexp
+                    })
+                }
+            }
+        });
+        if expired != 0 {
+            debug!("Expired {} chunks!", expired);
         }
     }
 
@@ -380,6 +401,7 @@ impl Picker {
         p
     }
 }
+
 impl Block {
     pub fn new(index: u32, offset: u32) -> Block {
         Block { index, offset }

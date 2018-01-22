@@ -1331,6 +1331,7 @@ impl<T: cio::CIO> Torrent<T> {
     pub fn tick(&mut self) -> bool {
         self.stat.tick();
         let mut active = self.stat.active();
+        self.picker.tick();
 
         for (_, peer) in self.peers.iter_mut() {
             active |= peer.tick();
