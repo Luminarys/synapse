@@ -105,7 +105,7 @@ impl Tracker {
         let udp = udp::Handler::new(&reg)?;
         let dht = dht::Manager::new(&reg, db)?;
         let http = http::Handler::new(&reg)?;
-        let dns = dns::Resolver::new(reg, dtx);
+        let dns = dns::Resolver::new(dtx);
         let th = dh.run("trk", move |h| {
             Tracker {
                 poll,
@@ -268,12 +268,6 @@ impl Tracker {
         } else if self.dht.id() == event.id {
             for resp in self.dht.readable() {
                 self.send_response(resp);
-            }
-        } else if self.dns.contains(event.id) {
-            if event.event.readable() {
-                self.dns.readable(event.id);
-            } else {
-                self.dns.writable(event.id);
             }
         } else {
             unreachable!();

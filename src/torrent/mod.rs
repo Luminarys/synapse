@@ -450,7 +450,7 @@ impl<T: cio::CIO> Torrent<T> {
         if resp.is_err() && self.trackers.iter().find(|t| &*t.url == url).is_some() {
             if let Some(front) = self.trackers.pop_front() {
                 self.trackers.push_back(front);
-                self.update_tracker();
+                self.try_update_tracker();
             }
         }
         self.update_rpc_tracker();
