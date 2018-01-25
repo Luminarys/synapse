@@ -279,8 +279,18 @@ impl<T: cio::CIO> Torrent<T> {
         throttle.set_ul_rate(d.throttle_ul);
         throttle.set_dl_rate(d.throttle_dl);
 
-        let mut trackers = VecDeque::with_capacity(1);
-        if info.announce.is_some() {
+        let mut trackers: VecDeque<_> = d.trackers
+            .into_iter()
+            .filter_map(|url| Url::parse(&url).ok())
+            .map(|url| Tracker {
+                status: TrackerStatus::Updating,
+                update: None,
+                last_announce: Utc::now(),
+                url: AView::value(url),
+            })
+            .collect();
+
+        if trackers.is_empty() && info.announce.is_some() {
             let tracker = Tracker {
                 status: TrackerStatus::Updating,
                 update: None,
@@ -370,6 +380,10 @@ impl<T: cio::CIO> Torrent<T> {
             created: self.created,
             throttle_ul: self.throttle.ul_rate(),
             throttle_dl: self.throttle.dl_rate(),
+            trackers: self.trackers
+                .iter()
+                .map(|trk| trk.url.as_str().to_owned())
+                .collect(),
         };
         let data = bincode::serialize(&d, bincode::Infinite).expect("Serialization failed!");
         debug!("Sending serialization request!");

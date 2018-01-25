@@ -1,11 +1,14 @@
 pub mod torrent {
-    pub use self::ver_249b1b as current;
+    pub use self::ver_6e27af as current;
     pub use self::current::Session;
     use bincode;
 
     pub fn load(data: &[u8]) -> Option<Session> {
-        if let Ok(m) = bincode::deserialize::<ver_249b1b::Session>(data) {
+        if let Ok(m) = bincode::deserialize::<ver_6e27af::Session>(data) {
             Some(m)
+        } else if let Ok(m) = bincode::deserialize::<ver_249b1b::Session>(data) {
+            info!("Migrating torrent session from v249b1b");
+            Some(m.migrate())
         } else if let Ok(m) = bincode::deserialize::<ver_5f166d::Session>(data) {
             info!("Migrating torrent session from v5f166d");
             Some(m.migrate())
@@ -23,7 +26,7 @@ pub mod torrent {
         }
     }
 
-    pub mod ver_249b1b {
+    pub mod ver_6e27af {
         use torrent::Bitfield;
 
         use chrono::{DateTime, Utc};
@@ -43,6 +46,7 @@ pub mod torrent {
             pub created: DateTime<Utc>,
             pub throttle_ul: Option<i64>,
             pub throttle_dl: Option<i64>,
+            pub trackers: Vec<String>,
         }
 
         #[derive(Clone, Serialize, Deserialize)]
@@ -80,6 +84,53 @@ pub mod torrent {
             Incomplete,
             // Torrent has acquired all pieces, regardless of validity
             Complete,
+        }
+    }
+
+    pub mod ver_249b1b {
+        pub use super::ver_6e27af as next;
+        pub use self::next::{File, Info, Status, StatusState};
+
+        use torrent::Bitfield;
+
+        use chrono::{DateTime, Utc};
+
+        #[derive(Serialize, Deserialize)]
+        pub struct Session {
+            pub info: Info,
+            pub pieces: Bitfield,
+            pub uploaded: u64,
+            pub downloaded: u64,
+            pub status: Status,
+            pub path: Option<String>,
+            pub priority: u8,
+            pub priorities: Vec<u8>,
+            pub created: DateTime<Utc>,
+            pub throttle_ul: Option<i64>,
+            pub throttle_dl: Option<i64>,
+        }
+
+        impl Session {
+            pub fn migrate(self) -> super::current::Session {
+                let mut trackers = Vec::new();
+                if let Some(ref url) = self.info.announce {
+                    trackers.push(url.to_owned());
+                }
+                next::Session {
+                    info: self.info,
+                    pieces: self.pieces,
+                    uploaded: self.uploaded,
+                    downloaded: self.downloaded,
+                    status: self.status,
+                    path: self.path,
+                    priority: self.priority,
+                    priorities: self.priorities,
+                    created: self.created,
+                    throttle_ul: self.throttle_ul,
+                    throttle_dl: self.throttle_dl,
+                    trackers,
+                }.migrate()
+            }
         }
     }
 
