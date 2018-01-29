@@ -123,19 +123,22 @@ fn init() -> io::Result<Vec<thread::JoinHandle<()>>> {
     };
     let (tx, rx) = mpsc::channel();
     let cdb = disk_broadcast.try_clone()?;
-    let chj = thread::spawn(move || {
-        let throttler = throttle::Throttler::new(None, None, THROT_TOKS, &creg);
-        let acio = acio::ACIO::new(cpoll, creg, chans);
-        match control::Control::new(acio, throttler, cdb) {
-            Ok(mut c) => {
-                tx.send(Ok(())).unwrap();
-                c.run();
+    let chj = thread::Builder::new()
+        .name("control".to_string())
+        .spawn(move || {
+            let throttler = throttle::Throttler::new(None, None, THROT_TOKS, &creg);
+            let acio = acio::ACIO::new(cpoll, creg, chans);
+            match control::Control::new(acio, throttler, cdb) {
+                Ok(mut c) => {
+                    tx.send(Ok(())).unwrap();
+                    c.run();
+                }
+                Err(e) => {
+                    tx.send(Err(e)).unwrap();
+                }
             }
-            Err(e) => {
-                tx.send(Err(e)).unwrap();
-            }
-        }
-    });
+        })
+        .unwrap();
     rx.recv().unwrap()?;
 
     ctrlc::set_handler(|| {

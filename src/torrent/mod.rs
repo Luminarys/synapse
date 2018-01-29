@@ -633,26 +633,37 @@ impl<T: cio::CIO> Torrent<T> {
 
     fn check_complete(&mut self) {
         let mut idx = 0;
-        for piece in self.pieces.iter() {
+        let mut complete = true;
+        'outer: for piece in self.pieces.iter() {
             while idx != piece {
                 if Info::piece_disk_locs(&self.info, piece as u32)
                     .all(|loc| self.priorities[loc.file] != 0)
                 {
-                    return;
+                    complete = false;
+                    break 'outer;
                 }
                 idx += 1
             }
             idx += 1
         }
 
-        self.status.state = StatusState::Complete;
-        self.serialize();
-        if CONFIG.disk.validate {
-            debug!("Beginning validation");
-            self.validate();
-        } else {
-            debug!("Torrent complete");
-            self.set_finished();
+        if complete && idx != 0 {
+            self.status.state = StatusState::Complete;
+            let seq = self.picker.is_sequential();
+            self.change_picker(seq);
+            self.serialize();
+            if CONFIG.disk.validate {
+                debug!("Beginning validation");
+                self.validate();
+            } else {
+                debug!("Torrent complete");
+                self.set_finished();
+            }
+        } else if self.status.state == StatusState::Complete {
+            self.status.state = StatusState::Incomplete;
+            self.announce_status();
+            self.announce_start();
+            self.request_all();
         }
     }
     /// Signal that we've downloaded and verified the torrent
@@ -699,7 +710,7 @@ impl<T: cio::CIO> Torrent<T> {
                 }
             }
             Err(e) => {
-                debug!(
+                trace!(
                     "Removing peer {}, {}",
                     util::peer_rpc_id(&self.info.hash, pid as u64),
                     e
@@ -780,7 +791,7 @@ impl<T: cio::CIO> Torrent<T> {
 
                 // Even though we have the data, if we are stopped we shouldn't use the disk
                 // regardless.
-                if self.status.stopped() {
+                if self.status.stopped() || self.status.completed() {
                     return Ok(());
                 }
 
@@ -1077,6 +1088,7 @@ impl<T: cio::CIO> Torrent<T> {
             }
         }
 
+        info!("RPC Pri update");
         self.picker.set_priorities(&self.priorities, &self.info);
 
         self.check_complete();
@@ -1398,6 +1410,8 @@ impl<T: cio::CIO> Torrent<T> {
                     break;
                 }
             }
+        } else {
+            peer.interested();
         }
     }
 
@@ -1599,6 +1613,7 @@ impl<T: cio::CIO> Torrent<T> {
         for peer in self.peers.values() {
             self.picker.add_peer(peer);
         }
+        self.picker.set_priorities(&self.priorities, &self.info);
         let id = self.rpc_id();
         let sequential = self.picker.is_sequential();
         self.cio.msg_rpc(rpc::CtlMessage::Update(vec![

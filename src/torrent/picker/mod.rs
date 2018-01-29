@@ -307,7 +307,6 @@ impl Picker {
         } else {
             PickerKind::Rarest(rarest::Picker::new(&self.unpicked))
         };
-        self.apply_priorities();
         for i in self.downloading.keys() {
             if let PickerKind::Rarest(ref mut p) = self.picker {
                 p.inc_pri(*i);
@@ -330,13 +329,13 @@ impl Picker {
             self.picker = PickerKind::Sequential(sequential::Picker::new_pri(pieces));
         } else {
             for (piece, pri) in self.priorities.iter().enumerate() {
-                for _ in 0..*pri {
-                    if let PickerKind::Rarest(ref mut p) = self.picker {
+                if let PickerKind::Rarest(ref mut p) = self.picker {
+                    for _ in 0..*pri {
                         p.piece_unavailable(piece as u32);
                     }
                 }
 
-                if *pri == 0 {
+                if *pri == 0 && !self.unpicked.has_bit(piece as u64) {
                     match self.picker {
                         PickerKind::Rarest(ref mut p) => p.completed(piece as u32),
                         _ => unreachable!(),
@@ -349,13 +348,13 @@ impl Picker {
     pub fn unapply_priorities(&mut self) {
         if !self.is_sequential() {
             for (piece, pri) in self.priorities.iter().enumerate() {
-                for _ in 0..*pri {
-                    if let PickerKind::Rarest(ref mut p) = self.picker {
+                if let PickerKind::Rarest(ref mut p) = self.picker {
+                    for _ in 0..*pri {
                         p.piece_available(piece as u32);
                     }
                 }
 
-                if *pri == 0 {
+                if *pri == 0 && !self.unpicked.has_bit(piece as u64) {
                     match self.picker {
                         PickerKind::Rarest(ref mut p) => p.incomplete(piece as u32),
                         _ => unreachable!(),
