@@ -14,7 +14,7 @@ use super::proto::message::{SMessage, Version};
 use super::{ErrorKind, Result, ResultExt};
 use super::EMPTY_HTTP_RESP;
 use util::{aread, sha1_hash, IOR};
-use CONFIG;
+use {CONFIG, DL_TOKEN};
 
 pub struct Client {
     pub conn: TcpStream,
@@ -291,7 +291,7 @@ fn validate_dl(req: &httparse::Request) -> Option<String> {
                 let pw = url.query_pairs()
                     .find(|&(ref k, _)| k == "password")
                     .map(|(_, v)| format!("{}", v))
-                    .map(|p| p == CONFIG.rpc.password)
+                    .map(|p| p == *DL_TOKEN)
                     .unwrap_or(false);
                 if !pw {
                     return None;

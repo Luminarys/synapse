@@ -99,6 +99,10 @@ lazy_static! {
         }
         pid
     };
+
+    pub static ref DL_TOKEN: String = {
+        util::random_string(20)
+    };
 }
 
 fn init() -> io::Result<Vec<thread::JoinHandle<()>>> {

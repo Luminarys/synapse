@@ -7,7 +7,7 @@ use chrono::Utc;
 use bincode;
 use amy;
 
-use {disk, listener, rpc, stat, tracker, CONFIG, SHUTDOWN};
+use {disk, listener, rpc, stat, tracker, CONFIG, DL_TOKEN, SHUTDOWN};
 use util::{hash_to_id, id_to_hash, io_err, io_err_val, random_string, MHashMap, UHashMap};
 use torrent::{self, peer, Torrent};
 use throttle::Throttler;
@@ -534,6 +534,7 @@ impl<T: cio::CIO> Control<T> {
             ses_transferred_up: self.data.session_ul,
             ses_transferred_down: self.data.session_dl,
             started: Utc::now(),
+            download_token: DL_TOKEN.clone(),
             ..Default::default()
         });
         self.cio.msg_rpc(rpc::CtlMessage::Extant(vec![res]));

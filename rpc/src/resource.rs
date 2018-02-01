@@ -183,6 +183,7 @@ pub struct CResourceUpdate {
 #[serde(deny_unknown_fields)]
 pub struct Server {
     pub id: String,
+    pub download_token: String,
     pub rate_up: u64,
     pub rate_down: u64,
     pub throttle_up: Option<i64>,
@@ -977,6 +978,7 @@ impl Default for Server {
             transferred_down: 0,
             ses_transferred_up: 0,
             ses_transferred_down: 0,
+            download_token: "".to_owned(),
             started: Utc::now(),
             user_data: json::Value::Null,
         }
