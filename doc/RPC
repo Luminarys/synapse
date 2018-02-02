@@ -1,15 +1,25 @@
-                                  Synapse RPC v0.1
+                                Synapse RPC v0.1
 
-Protocol assumptions: message based, full duplex, persistent connections, SSL
-optional (i.e. websockets). Websocket text frames with JSON encoding are used
-currently by the server. This is subject to change.
+This document is subject to change.
 
-                                 AUTHENTICATION
+                                 HTTP INTERFACE
 
-By default synapse will bind its RPC port to localhost; in this mode, authentication
-is not required. However, if synapse is configured to bind to 0.0.0.0, it will require
-authentication to be used to connect. Authentication is performed using the url
-query parameter password on upgrade.
+Synapse listens for HTTP connections on the RPC port and services transfer,
+download, and upgrade requests.
+
+Transfer requests are used in conjunction with the TRANSFER_OFFER RPC command;
+see its specification for details.
+
+Download requests are used to transfer files from the server to the client. Use
+an HTTP GET request on /dl/:id?token=:download_token, where :id is the resource
+(typically a file) you wish to download and :download_token is the token
+specified in the server resource.
+
+Upgrade requests initialize websocket connections per the WHATWG websockets
+specification and become RPC sessions. The URL for these requests is /. If
+synapse is configured with an RPC password, include it in the query string with
+?password=:password. The connection is upgraded to a full-duplex websocket
+stream with JSON messages encoded in text frames.
 
                                     DATETIME
 
@@ -31,6 +41,7 @@ to the JSON Merge standard (RFC 7396).
 server
 
     {
+        "download_token": string,
         "id": ID,
         "type": "server",
         "rate_up": number,
@@ -530,12 +541,3 @@ Note that error handling is not guaranteed to occur if any form of error is dete
 the transport (i.e. WebSocket) or encoding (i.e. JSON) level. Should errors occur
 for either the client or server here, the connection may be immediately and uncleanly
 closed.
-
-                                 HTTP DETAILS
-Synapse's RPC port services three types of HTTP requests: Upgrade, Transfer, and Download.
-Upgrade is used for a websocket upgrade and only requires that a query parameter 'password'
-be present if authentication is configured. Transfer is used for transfering files to synapse.
-It only requires that HTTP bearer authorization be present in the request.
-Download is a special request used to download files from synapse.
-It requires that the HTTP path be of the form '/dl/:id?password=hackme',
-password only being required if authentication is enabled for synapse.
