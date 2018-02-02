@@ -497,6 +497,32 @@ impl<T: cio::CIO> Torrent<T> {
             .map(|(id, _)| cio.remove_peer(*id));
     }
 
+    pub fn add_tracker(&mut self, url: Url) -> String {
+        let id = util::trk_rpc_id(&self.info.hash, url.as_str());
+        self.trackers.push_front(Tracker {
+            status: TrackerStatus::Updating,
+            update: None,
+            last_announce: Utc::now(),
+            url: AView::value(url),
+        });
+        {
+            let trk = &self.trackers[0];
+            let res = vec![
+                resource::Resource::Tracker(resource::Tracker {
+                    id: id.clone(),
+                    torrent_id: self.rpc_id(),
+                    url: Some(trk.url.as_ref().clone()),
+                    last_report: trk.last_announce.clone(),
+                    error: None,
+                    ..Default::default()
+                }),
+            ];
+            self.cio.msg_rpc(rpc::CtlMessage::Extant(res));
+        }
+        self.announce_start();
+        id
+    }
+
     pub fn remove_tracker(&mut self, rpc_id: &str) {
         let ih = &self.info.hash;
         self.trackers
@@ -1624,19 +1650,6 @@ impl<T: cio::CIO> Torrent<T> {
             },
         ]));
     }
-
-    /*
-    fn should_pick(&self) -> Bitfield {
-        let mut b = Bitfield::new(self.pieces.len());
-        // Only DL pieces which we don't yet have, and are in wanted.
-        for i in 0..self.pieces.len() {
-            if self.pieces.has_bit(i) || !self.wanted.has_bit(i) {
-                b.set_bit(i);
-            }
-        }
-        b
-    }
-    */
 }
 
 impl<T: cio::CIO> fmt::Debug for Torrent<T> {

@@ -460,6 +460,26 @@ Resumes a torrent.
         "id": ID
     }
 
+ADD_PEER          client->server
+
+Adds a peer to a torrent.
+
+    {
+        "type": "ADD_PEER",
+        "id": ID,
+        "ip": string
+    }
+
+ADD_TRACKER          client->server
+
+Adds a tracker to a torrent.
+
+    {
+        "type": "ADD_TRACKER",
+        "id": ID,
+        "uri": string
+    }
+
 UPDATE_TRACKER          client->server
 
 Updates a tracker.

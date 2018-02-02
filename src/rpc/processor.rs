@@ -9,6 +9,7 @@ use amy;
 use bincode;
 use chrono::{DateTime, Duration, Utc};
 use serde_json as json;
+use url::Url;
 
 use super::proto::message::{CMessage, Error, SMessage};
 use super::proto::criterion::{self, Criterion};
@@ -376,6 +377,54 @@ impl Processor {
                 Some(_) => resp.push(SMessage::InvalidResource(Error {
                     serial: Some(serial),
                     reason: "Only torrents can be resumed".to_owned(),
+                })),
+                None => resp.push(SMessage::UnknownResource(Error {
+                    serial: Some(serial),
+                    reason: format!("Unknown resource {}", id),
+                })),
+            },
+            CMessage::AddPeer { serial, id, ip } => match self.resources.get(&id) {
+                Some(&Resource::Torrent(_)) => match ip.parse() {
+                    Ok(peer) => {
+                        rmsg = Some(Message::AddPeer {
+                            id,
+                            client,
+                            serial,
+                            peer,
+                        })
+                    }
+                    Err(_) => resp.push(SMessage::InvalidRequest(Error {
+                        serial: Some(serial),
+                        reason: format!("Invalid peer IP address: {}", ip),
+                    })),
+                },
+                Some(_) => resp.push(SMessage::InvalidResource(Error {
+                    serial: Some(serial),
+                    reason: "ADD_PEER not used with torrent".to_owned(),
+                })),
+                None => resp.push(SMessage::UnknownResource(Error {
+                    serial: Some(serial),
+                    reason: format!("Unknown resource {}", id),
+                })),
+            },
+            CMessage::AddTracker { serial, id, uri } => match self.resources.get(&id) {
+                Some(&Resource::Torrent(_)) => match Url::parse(&uri) {
+                    Ok(tracker) => {
+                        rmsg = Some(Message::AddTracker {
+                            id,
+                            client,
+                            serial,
+                            tracker,
+                        })
+                    }
+                    Err(_) => resp.push(SMessage::InvalidRequest(Error {
+                        serial: Some(serial),
+                        reason: format!("Invalid tracker URI: {}", uri),
+                    })),
+                },
+                Some(_) => resp.push(SMessage::InvalidResource(Error {
+                    serial: Some(serial),
+                    reason: "ADD_TRACKER not used with torrent".to_owned(),
                 })),
                 None => resp.push(SMessage::UnknownResource(Error {
                     serial: Some(serial),

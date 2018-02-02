@@ -8,7 +8,7 @@ use bincode;
 use amy;
 
 use {disk, listener, rpc, stat, tracker, CONFIG, DL_TOKEN, SHUTDOWN};
-use util::{hash_to_id, id_to_hash, io_err, io_err_val, random_string, MHashMap, UHashMap};
+use util::{self, hash_to_id, id_to_hash, io_err, io_err_val, random_string, MHashMap, UHashMap};
 use torrent::{self, peer, Torrent};
 use throttle::Throttler;
 
@@ -382,6 +382,38 @@ impl<T: cio::CIO> Control<T> {
                     t.rpc_update_file(id, priority);
                 }
             }
+            rpc::Message::AddPeer {
+                id,
+                client,
+                serial,
+                peer,
+            } => {
+                let res = id_to_hash(&id)
+                    .and_then(|d| self.hash_idx.get(d.as_ref()))
+                    .cloned();
+                let pres = peer::PeerConn::new_outgoing(&peer);
+                if let (Some(tid), Ok(pc)) = (res, pres) {
+                    self.add_peer_rpc(tid, pc).map(|id| {
+                        self.cio
+                            .msg_rpc(rpc::CtlMessage::Uploaded { id, client, serial })
+                    });
+                }
+            }
+            rpc::Message::AddTracker {
+                id,
+                client,
+                serial,
+                tracker,
+            } => {
+                let hash_idx = &self.hash_idx;
+                let torrents = &mut self.torrents;
+                let cio = &mut self.cio;
+                id_to_hash(&id)
+                    .and_then(|d| hash_idx.get(d.as_ref()))
+                    .and_then(|i| torrents.get_mut(i))
+                    .map(|t| t.add_tracker(tracker))
+                    .map(|id| cio.msg_rpc(rpc::CtlMessage::Uploaded { id, client, serial }));
+            }
             rpc::Message::UpdateServer {
                 id,
                 throttle_up,
@@ -483,6 +515,17 @@ impl<T: cio::CIO> Control<T> {
             }
         }
         false
+    }
+
+    fn add_peer_rpc(&mut self, id: usize, peer: peer::PeerConn) -> Option<String> {
+        trace!("Adding peer to torrent {:?}!", id);
+        if let Some(torrent) = self.torrents.get_mut(&id) {
+            if let Some(pid) = torrent.add_peer(peer) {
+                self.peers.insert(pid, id);
+                return Some(util::peer_rpc_id(&torrent.info().hash, pid as u64));
+            }
+        }
+        None
     }
 
     fn add_peer(&mut self, id: usize, peer: peer::PeerConn) {

@@ -81,8 +81,18 @@ pub enum CMessage {
         id: String,
     },
     UpdateTracker {
-        id: String,
         serial: u64,
+        id: String,
+    },
+    AddTracker {
+        serial: u64,
+        id: String,
+        uri: String,
+    },
+    AddPeer {
+        serial: u64,
+        id: String,
+        ip: String,
     },
     ValidateResources {
         serial: u64,

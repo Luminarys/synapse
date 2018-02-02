@@ -8,10 +8,11 @@ mod transfer;
 
 use std::{io, result, str, thread};
 use std::io::Write;
-use std::net::{Ipv4Addr, SocketAddrV4, TcpListener, TcpStream};
+use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4, TcpListener, TcpStream};
 
 use amy;
 use serde_json;
+use url::Url;
 
 pub use self::proto::resource;
 pub use self::errors::{Error, ErrorKind, Result, ResultExt};
@@ -94,11 +95,23 @@ pub enum Message {
     Pause(String),
     Resume(String),
     Validate(Vec<String>),
+    AddPeer {
+        id: String,
+        client: usize,
+        serial: u64,
+        peer: SocketAddr,
+    },
     RemovePeer {
         id: String,
         torrent_id: String,
         client: usize,
         serial: u64,
+    },
+    AddTracker {
+        id: String,
+        client: usize,
+        serial: u64,
+        tracker: Url,
     },
     UpdateTracker {
         id: String,
