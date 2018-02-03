@@ -43,7 +43,7 @@ fn main() {
                 .long("password")
                 .takes_value(true),
         )
-        .subcommand(
+        .subcommands(vec![
             SubCommand::with_name("add")
                 .about("Adds torrents to synapse.")
                 .arg(
@@ -68,8 +68,6 @@ fn main() {
                         .required(true)
                         .index(1),
                 ),
-        )
-        .subcommand(
             SubCommand::with_name("del")
                 .about("Deletes torrents from synapse.")
                 .arg(
@@ -88,8 +86,6 @@ fn main() {
                         .required(true)
                         .index(1),
                 ),
-        )
-        .subcommand(
             SubCommand::with_name("dl")
                 .about("Downloads a torrent.")
                 .arg(
@@ -100,8 +96,6 @@ fn main() {
                         .index(1)
                         .required(true),
                 ),
-        )
-        .subcommand(
             SubCommand::with_name("get")
                 .about("Gets the specified resource.")
                 .arg(
@@ -118,8 +112,6 @@ fn main() {
                         .index(1)
                         .required(true),
                 ),
-        )
-        .subcommand(
             SubCommand::with_name("list")
                 .about("Lists resources of a given type in synapse.")
                 .arg(
@@ -145,8 +137,6 @@ fn main() {
                         .possible_values(&["json", "text"])
                         .default_value("text"),
                 ),
-        )
-        .subcommand(
             SubCommand::with_name("pause")
                 .about("Pauses the given torrents.")
                 .arg(
@@ -158,8 +148,6 @@ fn main() {
                         .long("torrents")
                         .index(1),
                 ),
-        )
-        .subcommand(
             SubCommand::with_name("resume")
                 .about("Resumes the given torrents.")
                 .arg(
@@ -171,9 +159,7 @@ fn main() {
                         .long("torrents")
                         .index(1),
                 ),
-        )
-        .subcommand(SubCommand::with_name("status").about("Server status"))
-        .subcommand(
+            SubCommand::with_name("status").about("Server status"),
             SubCommand::with_name("watch")
                 .about("Watches the specified resource, printing out updates.")
                 .arg(
@@ -196,7 +182,62 @@ fn main() {
                         .index(1)
                         .required(true),
                 ),
-        )
+            SubCommand::with_name("torrent")
+                .arg(
+                    Arg::with_name("torrent id")
+                        .help("Name of torrent to download.")
+                        .index(1),
+                )
+                .subcommands(vec![
+                    SubCommand::with_name("tracker")
+                        .subcommands(vec![
+                            SubCommand::with_name("add").arg(
+                                Arg::with_name("uris")
+                                    .help("URIs of trackers to add")
+                                    .multiple(true)
+                                    .index(1)
+                                    .required(true),
+                            ),
+                            SubCommand::with_name("remove").arg(
+                                Arg::with_name("tracker id")
+                                    .help("ids of trackers to add")
+                                    .multiple(true)
+                                    .index(1)
+                                    .required(true),
+                            ),
+                        ])
+                        .setting(AppSettings::SubcommandRequired),
+                    SubCommand::with_name("peer")
+                        .subcommands(vec![
+                            SubCommand::with_name("add").arg(
+                                Arg::with_name("peer ip")
+                                    .help("IPs of peers to add")
+                                    .multiple(true)
+                                    .index(1)
+                                    .required(true),
+                            ),
+                            SubCommand::with_name("remove").arg(
+                                Arg::with_name("peer id")
+                                    .help("ids of peers to remove")
+                                    .multiple(true)
+                                    .index(1)
+                                    .required(true),
+                            ),
+                        ])
+                        .setting(AppSettings::SubcommandRequired),
+                    SubCommand::with_name("priority").arg(
+                        Arg::with_name("priority level")
+                            .help("priority to set torrent to, 0-5")
+                            .index(1)
+                            .required(true),
+                    ),
+                    SubCommand::with_name("trackers"),
+                    SubCommand::with_name("peers"),
+                    SubCommand::with_name("files"),
+                ])
+                .setting(AppSettings::SubcommandRequired),
+        ])
+        .setting(AppSettings::SubcommandRequired)
         .get_matches();
 
     let mut url = match Url::parse(matches.value_of("server").unwrap()) {
@@ -329,6 +370,89 @@ fn main() {
             if let Err(e) = cmd::status(client) {
                 eprintln!("Failed to get server status: {:?}", e);
                 process::exit(1);
+            }
+        }
+        "torrent" => {
+            let subcmd = matches.subcommand_matches("torrent").unwrap();
+            let id = subcmd.value_of("torrent id").unwrap_or("none");
+            match subcmd.subcommand_name().unwrap() {
+                "tracker" => {
+                    let sscmd = subcmd.subcommand_matches("tracker").unwrap();
+                    match sscmd.subcommand_name().unwrap() {
+                        "add" => {
+                            if let Err(e) = cmd::add_trackers(
+                                client,
+                                id,
+                                sscmd
+                                    .subcommand_matches("add")
+                                    .unwrap()
+                                    .values_of("uris")
+                                    .unwrap()
+                                    .collect(),
+                            ) {
+                                eprintln!("Failed to add trackers: {:?}", e);
+                                process::exit(1);
+                            }
+                        }
+                        "remove" => {
+                            if let Err(e) = cmd::remove_trackers(
+                                client,
+                                sscmd
+                                    .subcommand_matches("remove")
+                                    .unwrap()
+                                    .values_of("tracker id")
+                                    .unwrap()
+                                    .collect(),
+                            ) {
+                                eprintln!("Failed to remove trackers: {:?}", e);
+                                process::exit(1);
+                            }
+                        }
+                        _ => unreachable!(),
+                    }
+                }
+                "peer" => {
+                    let sscmd = subcmd.subcommand_matches("peer").unwrap();
+                    match sscmd.subcommand_name().unwrap() {
+                        "add" => {
+                            if let Err(e) = cmd::add_peers(
+                                client,
+                                id,
+                                sscmd
+                                    .subcommand_matches("add")
+                                    .unwrap()
+                                    .values_of("peer ip")
+                                    .unwrap()
+                                    .collect(),
+                            ) {
+                                eprintln!("Failed to add peers: {:?}", e);
+                                process::exit(1);
+                            }
+                        }
+                        "remove" => {
+                            if let Err(e) = cmd::remove_peers(
+                                client,
+                                sscmd
+                                    .subcommand_matches("remove")
+                                    .unwrap()
+                                    .values_of("peer id")
+                                    .unwrap()
+                                    .collect(),
+                            ) {
+                                eprintln!("Failed to remove peers: {:?}", e);
+                                process::exit(1);
+                            }
+                        }
+                        _ => unreachable!(),
+                    }
+                }
+                "priority" => {
+                    let pri = subcmd.value_of("priority level").unwrap();
+                }
+                "files" => {}
+                "peers" => {}
+                "trackers" => {}
+                _ => unreachable!(),
             }
         }
         "watch" => {

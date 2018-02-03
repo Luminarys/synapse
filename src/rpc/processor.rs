@@ -267,7 +267,7 @@ impl Processor {
                 Some(&Resource::Tracker(ref t)) => {
                     rmsg = Some(Message::RemoveTracker {
                         id,
-                        torrent_id: t.id.to_owned(),
+                        torrent_id: t.torrent_id.to_owned(),
                         client,
                         serial,
                     });
@@ -275,7 +275,7 @@ impl Processor {
                 Some(&Resource::Peer(ref p)) => {
                     rmsg = Some(Message::RemovePeer {
                         id,
-                        torrent_id: p.id.to_owned(),
+                        torrent_id: p.torrent_id.to_owned(),
                         client,
                         serial,
                     });

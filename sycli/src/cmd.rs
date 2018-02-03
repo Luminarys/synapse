@@ -397,6 +397,89 @@ pub fn watch(mut c: Client, id: &str, output: &str, completion: bool) -> Result<
     }
 }
 
+pub fn add_trackers(mut c: Client, id: &str, trackers: Vec<&str>) -> Result<()> {
+    let torrent = search_torrent_name(&mut c, id)?;
+    if torrent.len() != 1 {
+        bail!("Could not find appropriate torrent!");
+    }
+    for tracker in trackers {
+        if let Err(e) = add_tracker(&mut c, torrent[0].id(), tracker) {
+            eprintln!("Failed to add tracker {}: {}", tracker, e);
+        }
+    }
+    Ok(())
+}
+
+fn add_tracker(c: &mut Client, id: &str, tracker: &str) -> Result<()> {
+    let msg = CMessage::AddTracker {
+        serial: c.next_serial(),
+        id: id.to_owned(),
+        uri: tracker.to_owned(),
+    };
+    if let SMessage::ResourcesExtant { .. } = c.rr(msg)? {
+        Ok(())
+    } else {
+        bail!("Failed to receieve tracker extancy from synapse!");
+    }
+}
+
+pub fn remove_trackers(mut c: Client, trackers: Vec<&str>) -> Result<()> {
+    for tracker in trackers {
+        if let Err(e) = remove_res(&mut c, tracker) {
+            eprintln!("Failed to remove tracker {}: {}", tracker, e);
+        }
+    }
+    Ok(())
+}
+
+fn remove_res(c: &mut Client, res: &str) -> Result<()> {
+    let msg = CMessage::RemoveResource {
+        serial: c.next_serial(),
+        id: res.to_owned(),
+        artifacts: None,
+    };
+    if let SMessage::ResourcesRemoved { .. } = c.rr(msg)? {
+        Ok(())
+    } else {
+        bail!("Failed to receieve removal confirmation from synapse!");
+    }
+}
+
+pub fn add_peers(mut c: Client, id: &str, peers: Vec<&str>) -> Result<()> {
+    let torrent = search_torrent_name(&mut c, id)?;
+    if torrent.len() != 1 {
+        bail!("Could not find appropriate torrent!");
+    }
+    for peer in peers {
+        if let Err(e) = add_peer(&mut c, torrent[0].id(), peer) {
+            eprintln!("Failed to add peer {}: {}", peer, e);
+        }
+    }
+    Ok(())
+}
+
+fn add_peer(c: &mut Client, id: &str, peer: &str) -> Result<()> {
+    let msg = CMessage::AddPeer {
+        serial: c.next_serial(),
+        id: id.to_owned(),
+        ip: peer.to_owned(),
+    };
+    if let SMessage::ResourcesExtant { .. } = c.rr(msg)? {
+        Ok(())
+    } else {
+        bail!("Failed to receieve peer extancy from synapse!");
+    }
+}
+
+pub fn remove_peers(mut c: Client, peers: Vec<&str>) -> Result<()> {
+    for peer in peers {
+        if let Err(e) = remove_res(&mut c, peer) {
+            eprintln!("Failed to remove tracker {}: {}", peer, e);
+        }
+    }
+    Ok(())
+}
+
 pub fn status(mut c: Client) -> Result<()> {
     match search(&mut c, ResourceKind::Server, vec![])?.pop() {
         Some(Resource::Server(s)) => {

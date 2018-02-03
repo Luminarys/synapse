@@ -525,8 +525,19 @@ impl<T: cio::CIO> Torrent<T> {
 
     pub fn remove_tracker(&mut self, rpc_id: &str) {
         let ih = &self.info.hash;
-        self.trackers
-            .retain(|trk| util::trk_rpc_id(ih, trk.url.as_str()) != rpc_id)
+        let mut res = None;
+        for (idx, tracker) in self.trackers.iter().enumerate() {
+            if util::trk_rpc_id(ih, tracker.url.as_str()) == rpc_id {
+                res = Some(idx);
+                self.cio
+                    .msg_rpc(rpc::CtlMessage::Removed(vec![rpc_id.to_owned()]));
+                break;
+            }
+        }
+
+        if let Some(idx) = res {
+            self.trackers.remove(idx);
+        }
     }
 
     pub fn update_tracker_req(&mut self, rpc_id: &str) {
@@ -1506,7 +1517,7 @@ impl<T: cio::CIO> Torrent<T> {
                 SResourceUpdate::TrackerStatus {
                     id,
                     kind: resource::ResourceKind::Tracker,
-                    last_report: Utc::now(),
+                    last_report: tracker.last_announce,
                     error,
                 }
             })
