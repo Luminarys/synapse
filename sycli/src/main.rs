@@ -183,6 +183,7 @@ fn main() {
                         .required(true),
                 ),
             SubCommand::with_name("torrent")
+                .help("Manipulate torrent related resources")
                 .arg(
                     Arg::with_name("torrent id")
                         .help("Name of torrent to download.")
@@ -190,47 +191,59 @@ fn main() {
                 )
                 .subcommands(vec![
                     SubCommand::with_name("tracker")
+                        .help("Manipulate trackers for a torrent")
                         .subcommands(vec![
-                            SubCommand::with_name("add").arg(
-                                Arg::with_name("uris")
-                                    .help("URIs of trackers to add")
-                                    .multiple(true)
-                                    .index(1)
-                                    .required(true),
-                            ),
-                            SubCommand::with_name("remove").arg(
-                                Arg::with_name("tracker id")
-                                    .help("ids of trackers to add")
-                                    .multiple(true)
-                                    .index(1)
-                                    .required(true),
-                            ),
+                            SubCommand::with_name("add")
+                                .help("Add trackers to a torrent")
+                                .arg(
+                                    Arg::with_name("uris")
+                                        .help("URIs of trackers to add")
+                                        .multiple(true)
+                                        .index(1)
+                                        .required(true),
+                                ),
+                            SubCommand::with_name("remove")
+                                .help("Remove trackers from a torrent")
+                                .arg(
+                                    Arg::with_name("tracker id")
+                                        .help("ids of trackers to remove")
+                                        .multiple(true)
+                                        .index(1)
+                                        .required(true),
+                                ),
                         ])
                         .setting(AppSettings::SubcommandRequired),
                     SubCommand::with_name("peer")
+                        .help("Manipulate peers for a torrent")
                         .subcommands(vec![
-                            SubCommand::with_name("add").arg(
-                                Arg::with_name("peer ip")
-                                    .help("IPs of peers to add")
-                                    .multiple(true)
-                                    .index(1)
-                                    .required(true),
-                            ),
-                            SubCommand::with_name("remove").arg(
-                                Arg::with_name("peer id")
-                                    .help("ids of peers to remove")
-                                    .multiple(true)
-                                    .index(1)
-                                    .required(true),
-                            ),
+                            SubCommand::with_name("add")
+                                .help("Add peers to a torrent")
+                                .arg(
+                                    Arg::with_name("peer ip")
+                                        .help("IPs of peers to add")
+                                        .multiple(true)
+                                        .index(1)
+                                        .required(true),
+                                ),
+                            SubCommand::with_name("remove")
+                                .help("Remove peers from a torrent")
+                                .arg(
+                                    Arg::with_name("peer id")
+                                        .help("ids of peers to remove")
+                                        .multiple(true)
+                                        .index(1)
+                                        .required(true),
+                                ),
                         ])
                         .setting(AppSettings::SubcommandRequired),
-                    SubCommand::with_name("priority").arg(
-                        Arg::with_name("priority level")
-                            .help("priority to set torrent to, 0-5")
-                            .index(1)
-                            .required(true),
-                    ),
+                    SubCommand::with_name("priority")
+                        .help("Change priority of a torrent")
+                        .arg(
+                            Arg::with_name("priority level")
+                                .help("priority to set torrent to, 0-5")
+                                .index(1)
+                                .required(true),
+                        ),
                     SubCommand::with_name("trackers"),
                     SubCommand::with_name("peers"),
                     SubCommand::with_name("files"),
