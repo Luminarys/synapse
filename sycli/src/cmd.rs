@@ -10,7 +10,7 @@ use url::Url;
 
 use rpc::message::{CMessage, SMessage};
 use rpc::criterion::{Criterion, Operation, Value};
-use rpc::resource::{Resource, ResourceKind, SResourceUpdate};
+use rpc::resource::{CResourceUpdate, Resource, ResourceKind, SResourceUpdate};
 
 use client::Client;
 use error::{ErrorKind, Result, ResultExt};
@@ -216,21 +216,21 @@ pub fn list(mut c: Client, kind: &str, crit: Vec<Criterion>, output: &str) -> Re
                 ResourceKind::Torrent => {
                     let t = res.as_torrent();
                     table.add_row(row![
-                        t.name.as_ref().map(|s| s.as_str()).unwrap_or("[Unknown Magnet]"),
-                        format!("{:.2}%", t.progress * 100.),
-                        fmt_bytes(t.transferred_down as f64),
-                        fmt_bytes(t.transferred_up as f64),
-                        fmt_bytes(t.rate_down as f64) + "/s",
-                        fmt_bytes(t.rate_up as f64) + "/s",
-                        t.peers
+                                  t.name.as_ref().map(|s| s.as_str()).unwrap_or("[Unknown Magnet]"),
+                                  format!("{:.2}%", t.progress * 100.),
+                                  fmt_bytes(t.transferred_down as f64),
+                                  fmt_bytes(t.transferred_up as f64),
+                                  fmt_bytes(t.rate_down as f64) + "/s",
+                                  fmt_bytes(t.rate_up as f64) + "/s",
+                                  t.peers
                     ]);
                 }
                 ResourceKind::Tracker => {
                     let t = res.as_tracker();
                     table.add_row(row![
-                        t.url.as_ref().map(|s| s.as_str()).unwrap_or(""),
-                        t.torrent_id,
-                        t.error.as_ref().map(|s| s.as_str()).unwrap_or("")
+                                  t.url.as_ref().map(|s| s.as_str()).unwrap_or(""),
+                                  t.torrent_id,
+                                  t.error.as_ref().map(|s| s.as_str()).unwrap_or("")
                     ]);
                 }
                 ResourceKind::Peer => {
@@ -246,11 +246,11 @@ pub fn list(mut c: Client, kind: &str, crit: Vec<Criterion>, output: &str) -> Re
                 ResourceKind::File => {
                     let f = res.as_file();
                     table.add_row(row![
-                        f.path,
-                        f.torrent_id,
-                        format!("{:.2}%", f.progress as f64 * 100.),
-                        f.priority,
-                        format!("{:.2}%", f.availability as f64 * 100.)
+                                  f.path,
+                                  f.torrent_id,
+                                  format!("{:.2}%", f.progress as f64 * 100.),
+                                  f.priority,
+                                  format!("{:.2}%", f.availability as f64 * 100.)
                     ]);
                 }
                 ResourceKind::Server => {
@@ -475,6 +475,69 @@ pub fn remove_peers(mut c: Client, peers: Vec<&str>) -> Result<()> {
     for peer in peers {
         if let Err(e) = remove_res(&mut c, peer) {
             eprintln!("Failed to remove tracker {}: {}", peer, e);
+        }
+    }
+    Ok(())
+}
+
+pub fn set_torrent_pri(mut c: Client, id: &str, pri: &str) -> Result<()> {
+    let p: u8 = pri.parse().chain_err(|| ErrorKind::Parse)?;
+    let torrent = search_torrent_name(&mut c, id)?;
+    if torrent.len() != 1 {
+        bail!("Could not find appropriate torrent!");
+    }
+    let update = CMessage::UpdateResource {
+        serial: c.next_serial(),
+        resource: CResourceUpdate {
+            id: torrent[0].id().to_owned(),
+            priority: Some(p),
+            ..Default::default()
+        },
+    };
+    c.send(update)?;
+    Ok(())
+}
+
+pub fn get_files(mut c: Client, id: &str, output: &str) -> Result<()> {
+    print_torrent_res(&mut c, id, ResourceKind::File, output)
+}
+
+pub fn get_peers(mut c: Client, id: &str, output: &str) -> Result<()> {
+    print_torrent_res(&mut c, id, ResourceKind::Peer, output)
+}
+
+pub fn get_trackers(mut c: Client, id: &str, output: &str) -> Result<()> {
+    print_torrent_res(&mut c, id, ResourceKind::Tracker, output)
+}
+
+fn print_torrent_res(c: &mut Client, id: &str, kind: ResourceKind, output: &str) -> Result<()> {
+    let torrent = search_torrent_name(c, id)?;
+    if torrent.len() != 1 {
+        bail!("Could not find appropriate torrent!");
+    }
+    let files = search(
+        c,
+        kind,
+        vec![
+            Criterion {
+                field: "torrent_id".to_owned(),
+                op: Operation::Eq,
+                value: Value::S(torrent[0].id().to_owned()),
+            },
+        ],
+    )?;
+    for file in files {
+        match output {
+            "text" => {
+                println!("{}", file);
+            }
+            "json" => {
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&file).chain_err(|| ErrorKind::Serialization)?
+                );
+            }
+            _ => unreachable!(),
         }
     }
     Ok(())

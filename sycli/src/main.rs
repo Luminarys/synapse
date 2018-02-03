@@ -183,7 +183,7 @@ fn main() {
                         .required(true),
                 ),
             SubCommand::with_name("torrent")
-                .help("Manipulate torrent related resources")
+                .about("Manipulate torrent related resources")
                 .arg(
                     Arg::with_name("torrent id")
                         .help("Name of torrent to download.")
@@ -191,10 +191,10 @@ fn main() {
                 )
                 .subcommands(vec![
                     SubCommand::with_name("tracker")
-                        .help("Manipulate trackers for a torrent")
+                        .about("Manipulate trackers for a torrent")
                         .subcommands(vec![
                             SubCommand::with_name("add")
-                                .help("Add trackers to a torrent")
+                                .about("Add trackers to a torrent")
                                 .arg(
                                     Arg::with_name("uris")
                                         .help("URIs of trackers to add")
@@ -203,7 +203,7 @@ fn main() {
                                         .required(true),
                                 ),
                             SubCommand::with_name("remove")
-                                .help("Remove trackers from a torrent")
+                                .about("Remove trackers from a torrent")
                                 .arg(
                                     Arg::with_name("tracker id")
                                         .help("ids of trackers to remove")
@@ -214,10 +214,10 @@ fn main() {
                         ])
                         .setting(AppSettings::SubcommandRequired),
                     SubCommand::with_name("peer")
-                        .help("Manipulate peers for a torrent")
+                        .about("Manipulate peers for a torrent")
                         .subcommands(vec![
                             SubCommand::with_name("add")
-                                .help("Add peers to a torrent")
+                                .about("Add peers to a torrent")
                                 .arg(
                                     Arg::with_name("peer ip")
                                         .help("IPs of peers to add")
@@ -226,7 +226,7 @@ fn main() {
                                         .required(true),
                                 ),
                             SubCommand::with_name("remove")
-                                .help("Remove peers from a torrent")
+                                .about("Remove peers from a torrent")
                                 .arg(
                                     Arg::with_name("peer id")
                                         .help("ids of peers to remove")
@@ -237,20 +237,27 @@ fn main() {
                         ])
                         .setting(AppSettings::SubcommandRequired),
                     SubCommand::with_name("priority")
-                        .help("Change priority of a torrent")
+                        .about("Change priority of a torrent")
                         .arg(
                             Arg::with_name("priority level")
                                 .help("priority to set torrent to, 0-5")
                                 .index(1)
                                 .required(true),
                         ),
-                    SubCommand::with_name("trackers"),
-                    SubCommand::with_name("peers"),
-                    SubCommand::with_name("files"),
+                    SubCommand::with_name("trackers").about("Prints a torrent's trackers"),
+                    SubCommand::with_name("peers").about("Prints a torrent's peers"),
+                    SubCommand::with_name("files").about("Prints a torrent's files"),
                 ])
+                .arg(
+                    Arg::with_name("output")
+                        .help("Output the results in the specified format.")
+                        .short("o")
+                        .long("output")
+                        .possible_values(&["json", "text"])
+                        .default_value("text"),
+                )
                 .setting(AppSettings::SubcommandRequired),
         ])
-        .setting(AppSettings::SubcommandRequired)
         .get_matches();
 
     let mut url = match Url::parse(matches.value_of("server").unwrap()) {
@@ -388,6 +395,7 @@ fn main() {
         "torrent" => {
             let subcmd = matches.subcommand_matches("torrent").unwrap();
             let id = subcmd.value_of("torrent id").unwrap_or("none");
+            let output = subcmd.value_of("output").unwrap();
             match subcmd.subcommand_name().unwrap() {
                 "tracker" => {
                     let sscmd = subcmd.subcommand_matches("tracker").unwrap();
@@ -460,11 +468,34 @@ fn main() {
                     }
                 }
                 "priority" => {
-                    let pri = subcmd.value_of("priority level").unwrap();
+                    let pri = subcmd
+                        .subcommand_matches("priority")
+                        .unwrap()
+                        .value_of("priority level")
+                        .unwrap();
+                    if let Err(e) = cmd::set_torrent_pri(client, id, pri) {
+                        eprintln!("Failed to set torrent priority: {:?}", e);
+                        process::exit(1);
+                    }
                 }
-                "files" => {}
-                "peers" => {}
-                "trackers" => {}
+                "files" => {
+                    if let Err(e) = cmd::get_files(client, id, output) {
+                        eprintln!("Failed to get torrent files: {:?}", e);
+                        process::exit(1);
+                    }
+                }
+                "peers" => {
+                    if let Err(e) = cmd::get_peers(client, id, output) {
+                        eprintln!("Failed to get torrent peers: {:?}", e);
+                        process::exit(1);
+                    }
+                }
+                "trackers" => {
+                    if let Err(e) = cmd::get_trackers(client, id, output) {
+                        eprintln!("Failed to get torrent trackers: {:?}", e);
+                        process::exit(1);
+                    }
+                }
                 _ => unreachable!(),
             }
         }

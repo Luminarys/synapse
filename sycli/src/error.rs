@@ -20,5 +20,9 @@ error_chain! {
             description("HTTP transfer failed")
                 display("HTTP transfer failed")
         }
+        Parse {
+            description("Failed to parse input")
+            display("Failed to parse input")
+        }
     }
 }
