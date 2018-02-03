@@ -685,16 +685,18 @@ impl<T: cio::CIO> Torrent<T> {
         }
 
         if complete && idx != 0 {
-            self.status.state = StatusState::Complete;
-            let seq = self.picker.is_sequential();
-            self.change_picker(seq);
-            self.serialize();
-            if CONFIG.disk.validate {
-                debug!("Beginning validation");
-                self.validate();
-            } else {
-                debug!("Torrent complete");
-                self.set_finished();
+            if self.status.state != StatusState::Complete {
+                self.status.state = StatusState::Complete;
+                let seq = self.picker.is_sequential();
+                self.change_picker(seq);
+                self.serialize();
+                if CONFIG.disk.validate {
+                    debug!("Beginning validation");
+                    self.validate();
+                } else {
+                    debug!("Torrent complete");
+                    self.set_finished();
+                }
             }
         } else if self.status.state == StatusState::Complete {
             self.status.state = StatusState::Incomplete;
