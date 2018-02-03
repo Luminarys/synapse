@@ -498,6 +498,20 @@ pub fn set_torrent_pri(mut c: Client, id: &str, pri: &str) -> Result<()> {
     Ok(())
 }
 
+pub fn set_file_pri(mut c: Client, id: &str, pri: &str) -> Result<()> {
+    let p: u8 = pri.parse().chain_err(|| ErrorKind::Parse)?;
+    let update = CMessage::UpdateResource {
+        serial: c.next_serial(),
+        resource: CResourceUpdate {
+            id: id.to_owned(),
+            priority: Some(p),
+            ..Default::default()
+        },
+    };
+    c.send(update)?;
+    Ok(())
+}
+
 pub fn get_files(mut c: Client, id: &str, output: &str) -> Result<()> {
     print_torrent_res(&mut c, id, ResourceKind::File, output)
 }

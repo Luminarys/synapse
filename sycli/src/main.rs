@@ -96,6 +96,25 @@ fn main() {
                         .index(1)
                         .required(true),
                 ),
+            SubCommand::with_name("file")
+                .about("Manipulate a file.")
+                .arg(
+                    Arg::with_name("file id")
+                        .help("ID of file to use.")
+                        .index(1)
+                        .required(true),
+                )
+                .subcommands(vec![
+                    SubCommand::with_name("priority")
+                        .about("Adjust a file's priority.")
+                        .arg(
+                            Arg::with_name("file pri")
+                                .help("priority to set file to (0-5)")
+                                .index(1)
+                                .required(true),
+                        ),
+                ])
+                .setting(AppSettings::SubcommandRequired),
             SubCommand::with_name("get")
                 .about("Gets the specified resource.")
                 .arg(
@@ -342,6 +361,22 @@ fn main() {
             if let Err(e) = res {
                 eprintln!("Failed to download torrent: {:?}", e);
                 process::exit(1);
+            }
+        }
+        "file" => {
+            let subcmd = matches.subcommand_matches("file").unwrap();
+            let id = subcmd.value_of("file id").unwrap();
+            match subcmd.subcommand_name().unwrap() {
+                "priority" => {
+                    let pscmd = subcmd.subcommand_matches("priority").unwrap();
+                    let pri = pscmd.value_of("file pri").unwrap();
+                    let res = cmd::set_file_pri(client, id, pri);
+                    if let Err(e) = res {
+                        eprintln!("Failed to download torrent: {:?}", e);
+                        process::exit(1);
+                    }
+                }
+                _ => unreachable!(),
             }
         }
         "get" => {
