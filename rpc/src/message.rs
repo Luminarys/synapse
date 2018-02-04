@@ -116,6 +116,7 @@ pub enum SMessage<'a> {
         ids: Vec<String>,
     },
     UpdateResources {
+        serial: Option<u64>,
         resources: Vec<SResourceUpdate<'a>>,
     },
 

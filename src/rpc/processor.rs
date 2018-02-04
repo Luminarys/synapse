@@ -174,7 +174,10 @@ impl Processor {
                         }));
                     }
                 }
-                resp.push(SMessage::UpdateResources { resources });
+                resp.push(SMessage::UpdateResources {
+                    serial: Some(serial),
+                    resources,
+                });
             }
             CMessage::Subscribe { serial, ids } => {
                 let mut resources = Vec::new();
@@ -189,7 +192,10 @@ impl Processor {
                         }));
                     }
                 }
-                resp.push(SMessage::UpdateResources { resources });
+                resp.push(SMessage::UpdateResources {
+                    serial: None,
+                    resources,
+                });
             }
             CMessage::Unsubscribe { ids, .. } => for id in ids {
                 self.subs.get_mut(&id).map(|s| s.remove(&client));
@@ -207,6 +213,7 @@ impl Processor {
                         self.user_data
                             .insert(res.id().to_owned(), res.user_data().clone());
                         resp.push(SMessage::UpdateResources {
+                            serial: Some(serial),
                             resources: vec![
                                 SResourceUpdate::UserData {
                                     id: resource.id.clone(),
@@ -563,7 +570,13 @@ impl Processor {
                         .update(&update);
                 }
                 for (c, resources) in clients {
-                    msgs.push((c, SMessage::UpdateResources { resources }));
+                    msgs.push((
+                        c,
+                        SMessage::UpdateResources {
+                            serial: None,
+                            resources,
+                        },
+                    ));
                 }
             }
             CtlMessage::Removed(r) => {

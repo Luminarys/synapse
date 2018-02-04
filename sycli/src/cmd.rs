@@ -53,7 +53,8 @@ fn add_file(c: &mut Client, url: &str, file: &str, dir: Option<&str>, start: boo
         .send()
         .chain_err(|| ErrorKind::HTTP)?;
 
-    if let SMessage::ResourcesExtant { .. } = c.recv()? {
+    if let SMessage::ResourcesExtant { ids, .. } = c.recv()? {
+        get_(c, ids[0].as_ref(), "text")?;
     } else {
         bail!("Failed to receieve upload acknowledgement from synapse!");
     };
@@ -157,7 +158,11 @@ pub fn dl(mut c: Client, url: &str, name: &str) -> Result<()> {
 }
 
 pub fn get(mut c: Client, id: &str, output: &str) -> Result<()> {
-    let res = get_resources(&mut c, vec![id.to_owned()])?;
+    get_(&mut c, id, output)
+}
+
+pub fn get_(c: &mut Client, id: &str, output: &str) -> Result<()> {
+    let res = get_resources(c, vec![id.to_owned()])?;
     if res.is_empty() {
         bail!("Resource not found");
     }
@@ -344,7 +349,7 @@ pub fn watch(mut c: Client, id: &str, output: &str, completion: bool) -> Result<
         ids: vec![id.to_owned()],
     };
 
-    let resources = if let SMessage::UpdateResources { resources } = c.rr(msg)? {
+    let resources = if let SMessage::UpdateResources { resources, .. } = c.rr(msg)? {
         resources
     } else {
         bail!("Failed to received torrent resource list!");
@@ -382,7 +387,7 @@ pub fn watch(mut c: Client, id: &str, output: &str, completion: bool) -> Result<
             _ => unreachable!(),
         }
         loop {
-            if let SMessage::UpdateResources { resources } = c.recv()? {
+            if let SMessage::UpdateResources { resources, .. } = c.recv()? {
                 for r in &resources {
                     res.update(r);
                     if let &SResourceUpdate::TorrentTransfer { progress, .. } = r {
@@ -640,7 +645,7 @@ fn get_resources(c: &mut Client, ids: Vec<String>) -> Result<Vec<Resource>> {
         ids,
     };
 
-    let resources = if let SMessage::UpdateResources { resources } = c.rr(msg)? {
+    let resources = if let SMessage::UpdateResources { resources, .. } = c.rr(msg)? {
         resources
     } else {
         bail!("Failed to received torrent resource list!");

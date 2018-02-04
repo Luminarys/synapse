@@ -265,6 +265,7 @@ resources. Following this partial updates will be sent.
 
     {
         "type": "UPDATE_RESOURCES",
+        "serial": number,                The serial is only included for responses to GET_RESOURCES and UPDATE_RESOURCE messages
         "resources": [
             { ...resource type...  },
             .
