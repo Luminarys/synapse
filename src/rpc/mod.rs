@@ -421,7 +421,7 @@ impl RPC {
                             ]
                         };
                         debug!("Initiating DL");
-                        conn.set_nonblocking(false).is_ok();
+                        conn.set_nonblocking(true).is_ok();
                         self.disk
                             .send(disk::Request::download(conn, path, r, ranged, size))
                             .ok();

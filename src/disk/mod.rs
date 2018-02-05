@@ -164,6 +164,9 @@ impl Disk {
                 Ok(JobRes::Paused(s)) => {
                     self.active.push_back(s);
                 }
+                Ok(JobRes::Blocked((id, s))) => {
+                    self.blocked.insert(id, s);
+                }
                 Err(e) => {
                     error!("Disk job failed: {}", e);
                 }
