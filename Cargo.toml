@@ -21,6 +21,7 @@ ctrlc = "3"
 fnv = "1"
 fs_extra = "1"
 httparse = "1"
+http-range = "0.1"
 lazy_static = "1"
 libc = "0.2"
 memmap = "0.6"
@@ -74,3 +75,4 @@ panic = 'unwind'
 [features]
 default = []
 autobahn = []
+allocator = []

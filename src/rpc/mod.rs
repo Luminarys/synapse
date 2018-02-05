@@ -12,6 +12,7 @@ use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4, TcpListener, TcpStream};
 
 use amy;
 use serde_json;
+use http_range::HttpRange;
 use url::Url;
 
 pub use self::proto::resource;
@@ -49,6 +50,15 @@ lazy_static! {
                 "Access-Control-Request-Headers",
                 "Authorization"
             ),
+            format!("\r\n"),
+        ];
+        lines.join("\r\n").into_bytes()
+    };
+
+    pub static ref BAD_HTTP_RANGE: Vec<u8> = {
+        let lines = vec![
+            format!("HTTP/1.1 {} {}", 416, "Requested Range Not Satisfiable"),
+            format!("Connection: {}", "Close"),
             format!("\r\n"),
         ];
         lines.join("\r\n").into_bytes()
@@ -382,14 +392,39 @@ impl RPC {
                         }
                     }
                 }
-                Ok(IncomingStatus::DL(id)) => {
+                Ok(IncomingStatus::DL { id, range }) => {
                     debug!("Attempting DL of {}", id);
                     let mut conn: TcpStream = i.into();
                     self.reg.deregister(&conn).is_ok();
-                    if let Some(path) = self.processor.get_dl(&id) {
+                    if let Some((path, size)) = self.processor.get_dl(&id) {
+                        if size == 0 {
+                            conn.write(&EMPTY_HTTP_RESP).ok();
+                            return;
+                        }
+
+                        let mut ranged = false;
+                        let r = if let Some(r) = range {
+                            if let Ok(ranges) = HttpRange::parse(&r, size) {
+                                ranged = true;
+                                ranges
+                            } else {
+                                debug!("Ranges {} invalid, stopping DL", id);
+                                conn.write(&BAD_HTTP_RANGE).ok();
+                                return;
+                            }
+                        } else {
+                            vec![
+                                HttpRange {
+                                    start: 0,
+                                    length: size,
+                                },
+                            ]
+                        };
                         debug!("Initiating DL");
                         conn.set_nonblocking(false).is_ok();
-                        self.disk.send(disk::Request::download(conn, path)).ok();
+                        self.disk
+                            .send(disk::Request::download(conn, path, r, ranged, size))
+                            .ok();
                     } else {
                         debug!("ID {} invalid, stopping DL", id);
                         conn.write(&EMPTY_HTTP_RESP).ok();

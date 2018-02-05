@@ -122,10 +122,12 @@ impl Processor {
         self.tokens.retain(|_, tok| tok.expiration > Utc::now())
     }
 
-    pub fn get_dl(&self, id: &str) -> Option<String> {
+    pub fn get_dl(&self, id: &str) -> Option<(String, u64)> {
         match self.resources.get(id) {
             Some(&Resource::File(ref f)) => match self.resources.get(&f.torrent_id) {
-                Some(&Resource::Torrent(ref t)) => Some(t.path.clone() + "/" + &f.path),
+                Some(&Resource::Torrent(ref t)) => {
+                    Some((t.path.clone() + "/" + &f.path, t.size.unwrap_or(0)))
+                }
                 _ => None,
             },
             _ => None,

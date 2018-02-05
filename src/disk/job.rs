@@ -1,5 +1,5 @@
 use std::sync::Arc;
-use std::{fmt, fs, mem, path, time};
+use std::{cmp, fmt, fs, path, time};
 use std::io::{self, Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use std::net::TcpStream;
@@ -7,11 +7,14 @@ use std::net::TcpStream;
 use fs_extra;
 use sha1;
 use amy;
+use http_range::HttpRange;
 
 use super::{FileCache, EXDEV, JOB_TIME_SLICE};
 use torrent::{Info, LocIter};
 use util::{awrite, hash_to_id, io_err, IOR};
 use CONFIG;
+
+static MP_BOUNDARY: &'static str = "qxyllcqgNchqyob";
 
 pub struct Location {
     pub file: usize,
@@ -67,8 +70,15 @@ pub enum Request {
     Download {
         client: TcpStream,
         path: String,
-        offset: Option<u64>,
+        range_idx: usize,
         id: usize,
+        ranges: Vec<HttpRange>,
+        ranged: bool,
+        writing: bool,
+        buf_idx: usize,
+        buf_max: usize,
+        buf: Box<[u8; 16_384]>,
+        file_len: u64,
     },
     Shutdown,
 }
@@ -166,12 +176,78 @@ impl Request {
         }
     }
 
-    pub fn download(client: TcpStream, path: String) -> Request {
+    pub fn download(
+        client: TcpStream,
+        path: String,
+        mut ranges: Vec<HttpRange>,
+        mut ranged: bool,
+        len: u64,
+    ) -> Request {
+        let lines = if ranged {
+            if ranges.len() == 1 {
+                ranged = false;
+                vec![
+                    format!("HTTP/1.1 206 Partial Content"),
+                    format!("Content-Length: {}", ranges[0].length),
+                    format!("Accept-Ranges: {}", "bytes"),
+                    format!("Content-Type: {};", "application/octet-stream"),
+                    format!("Connection: {}", "Close"),
+                    format!("\r\n"),
+                ]
+            } else {
+                vec![
+                    format!("HTTP/1.1 206 Partial Content"),
+                    format!("Accept-Ranges: {}", "bytes"),
+                    format!(
+                        "Content-Type: {}; boundary={}",
+                        "multipart/byteranges", MP_BOUNDARY
+                    ),
+                    format!("Connection: {}", "Close"),
+                    format!("\r\n"),
+                ]
+            }
+        } else {
+            vec![
+                format!("HTTP/1.1 200 OK"),
+                format!("Content-Length: {}", len),
+                format!("Accept-Ranges: {}", "bytes"),
+                format!("Content-Type: {}", "application/octet-stream"),
+                format!(
+                    "Content-Disposition: attachment; filename=\"{}\"",
+                    path::Path::new(&path)
+                        .file_name()
+                        .unwrap()
+                        .to_string_lossy()
+                ),
+                format!("Connection: {}", "Close"),
+                format!("\r\n"),
+            ]
+        };
+        let data = lines.join("\r\n");
+        let mut buf = Box::new([0u8; 16_384]);
+        (&mut buf[..data.len()]).copy_from_slice(data.as_bytes());
+        // Hack to make sure first mutlipart range gets written
+        if ranged {
+            ranges.insert(
+                0,
+                HttpRange {
+                    start: 0,
+                    length: 0,
+                },
+            );
+        }
         Request::Download {
             client,
             path,
-            offset: None,
+            ranges,
+            ranged,
+            range_idx: 0,
             id: 0,
+            writing: ranged,
+            buf,
+            buf_idx: 0,
+            buf_max: data.len(),
+            file_len: len,
         }
     }
 
@@ -376,48 +452,43 @@ impl Request {
             Request::Download {
                 mut client,
                 path,
-                offset,
                 id,
+                ranged,
+                file_len,
+                mut ranges,
+                mut range_idx,
+                mut writing,
+                mut buf_idx,
+                mut buf_max,
+                mut buf,
             } => {
-                if let Some(o) = offset {
-                    let mut no = o;
-                    let start = time::Instant::now();
-                    let mut buf: [u8; 16_384] = unsafe { mem::uninitialized() };
-                    'read: while start.elapsed() < time::Duration::from_millis(JOB_TIME_SLICE) {
-                        let r = fc.get_file(path::Path::new(&path), None, |f| {
-                            f.seek(SeekFrom::Start(no))?;
-                            loop {
-                                match f.read(&mut buf) {
-                                    Ok(r) => return Ok(r),
-                                    Err(ref e) if e.kind() == io::ErrorKind::Interrupted => {
-                                        continue
-                                    }
-                                    Err(e) => return Err(e),
-                                }
-                            }
-                        })?;
-                        if r == 0 {
-                            return Ok(JobRes::Done);
-                        }
-                        'write: loop {
+                let start = time::Instant::now();
+                while start.elapsed() < time::Duration::from_millis(JOB_TIME_SLICE) {
+                    if writing {
+                        loop {
                             // Need the mod here because after the first 16 KiBs complete
                             // no will be too big
-                            let b = &mut buf[(no - o) as usize % 16_384..r];
-
-                            match awrite(b, &mut client) {
+                            match awrite(&mut buf[buf_idx..buf_max], &mut client) {
                                 IOR::Complete => {
-                                    no += b.len() as u64;
-                                    continue 'read;
+                                    writing = false;
+                                    break;
                                 }
-                                IOR::Incomplete(w) => no += w as u64,
+                                IOR::Incomplete(w) => buf_idx += w,
                                 IOR::Blocked => {
                                     return Ok(JobRes::Blocked((
                                         id,
                                         Request::Download {
                                             client,
                                             path,
-                                            offset: Some(no),
+                                            range_idx,
                                             id,
+                                            ranges,
+                                            ranged,
+                                            writing,
+                                            buf_idx,
+                                            buf_max,
+                                            buf,
+                                            file_len,
                                         },
                                     )))
                                 }
@@ -425,41 +496,69 @@ impl Request {
                                 IOR::Err(e) => return Err(e),
                             }
                         }
+                    } else if range_idx == ranges.len() {
+                        // Done writing the final bit
+                        return Ok(JobRes::Done);
+                    } else if ranges[range_idx].length == 0 {
+                        range_idx += 1;
+                        // Write the closer if needed
+                        if range_idx == ranges.len() {
+                            if ranged {
+                                let closer = format!("\r\n--{}--", MP_BOUNDARY);
+                                (&mut buf[..closer.len()]).copy_from_slice(closer.as_bytes());
+                                buf_idx = 0;
+                                buf_max = closer.len();
+                                writing = true;
+                            }
+                        } else {
+                            let lines = vec![
+                                format!("\r\n--{}", MP_BOUNDARY),
+                                format!("Content-Type: {}", "application/octet-stream"),
+                                // Subtract because it's inclusive
+                                format!(
+                                    "Content-Range: bytes {}-{}/{}",
+                                    ranges[range_idx].start,
+                                    ranges[range_idx].start + ranges[range_idx].length - 1,
+                                    file_len
+                                ),
+                                format!("\r\n"),
+                            ];
+                            let data = lines.join("\r\n");
+                            (&mut buf[..data.len()]).copy_from_slice(data.as_bytes());
+                            buf_idx = 0;
+                            buf_max = data.len();
+                            writing = true;
+                        }
+                    } else {
+                        let offset = ranges[range_idx].start;
+                        let len = ranges[range_idx].length;
+                        let mut amnt = cmp::min(len, 16_384);
+
+                        fc.get_file(path::Path::new(&path), None, |f| {
+                            f.seek(SeekFrom::Start(offset))?;
+                            f.read_exact(&mut buf[0..amnt as usize])?;
+                            Ok(())
+                        })?;
+                        ranges[range_idx].length -= amnt;
+                        ranges[range_idx].start += amnt;
+                        buf_max = amnt as usize;
+                        buf_idx = 0;
+                        writing = true;
                     }
-                    return Ok(JobRes::Paused(Request::Download {
-                        client,
-                        path,
-                        offset: Some(no),
-                        id,
-                    }));
-                } else {
-                    fc.get_file(path::Path::new(&path), None, |f| {
-                        let len = f.metadata()?.len();
-                        let lines = vec![
-                            format!("HTTP/1.1 200 OK"),
-                            format!("Content-Length: {}", len),
-                            format!("Content-Type: {}", "application/octet-stream"),
-                            format!(
-                                "Content-Disposition: attachment; filename=\"{}\"",
-                                path::Path::new(&path)
-                                    .file_name()
-                                    .unwrap()
-                                    .to_string_lossy()
-                            ),
-                            format!("Connection: {}", "Close"),
-                            format!("\r\n"),
-                        ];
-                        let data = lines.join("\r\n");
-                        client.write_all(data.as_bytes())?;
-                        Ok(())
-                    })?;
-                    return Ok(JobRes::Paused(Request::Download {
-                        client,
-                        path,
-                        offset: Some(0),
-                        id,
-                    }));
                 }
+                return Ok(JobRes::Paused(Request::Download {
+                    client,
+                    path,
+                    range_idx,
+                    id,
+                    file_len,
+                    ranges,
+                    ranged,
+                    writing,
+                    buf_idx,
+                    buf_max,
+                    buf,
+                }));
             }
             Request::Shutdown => unreachable!(),
         }

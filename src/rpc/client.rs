@@ -36,7 +36,7 @@ pub enum IncomingStatus {
     Incomplete,
     Upgrade,
     Transfer { data: Vec<u8>, token: String },
-    DL(String),
+    DL { id: String, range: Option<String> },
 }
 
 enum FragBuf {
@@ -228,8 +228,8 @@ impl Incoming {
                         data: self.buf[idx..self.pos].to_owned(),
                         token,
                     }))
-                } else if let Some(id) = validate_dl(&req) {
-                    Ok(Some(IncomingStatus::DL(id)))
+                } else if let Some((id, range)) = validate_dl(&req) {
+                    Ok(Some(IncomingStatus::DL { id, range }))
                 } else {
                     // Ignore error, we're DCing anyways
                     self.conn.write(&EMPTY_HTTP_RESP).ok();
@@ -283,7 +283,7 @@ impl FragBuf {
     }
 }
 
-fn validate_dl(req: &httparse::Request) -> Option<String> {
+fn validate_dl(req: &httparse::Request) -> Option<(String, Option<String>)> {
     req.path
         .and_then(|path| Url::parse(&format!("http://localhost{}", path)).ok())
         .and_then(|url| {
@@ -302,6 +302,14 @@ fn validate_dl(req: &httparse::Request) -> Option<String> {
             } else {
                 None
             }
+        })
+        .map(|id| {
+            let range = req.headers
+                .iter()
+                .find(|header| header.name.to_lowercase() == "range")
+                .and_then(|header| str::from_utf8(header.value).ok())
+                .map(str::to_owned);
+            (id, range)
         })
 }
 

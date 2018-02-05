@@ -4,7 +4,7 @@ use std::collections::{HashMap, VecDeque};
 use chrono::{DateTime, Utc};
 use num::bigint::BigUint;
 use rand::{self, Rng};
-use super::{proto, BUCKET_MAX, ID, MIN_BOOTSTRAP_BKTS, TX_TIMEOUT_SECS};
+use super::{proto, BUCKET_MAX, ID, MAX_BUCKETS, MIN_BOOTSTRAP_BKTS, TX_TIMEOUT_SECS};
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use {bincode, tracker};
 
@@ -525,7 +525,7 @@ impl RoutingTable {
     fn add_node(&mut self, node: Node) -> Result<(), ()> {
         let idx = self.bucket_idx(&node.id);
         if self.buckets[idx].full() {
-            if self.buckets[idx].could_hold(&self.id) {
+            if self.buckets[idx].could_hold(&self.id) && self.buckets.len() < MAX_BUCKETS {
                 self.split_bucket(idx);
                 self.add_node(node)
             } else {

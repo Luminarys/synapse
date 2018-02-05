@@ -1,6 +1,14 @@
 #![allow(unknown_lints)]
 #![allow(unused_doc_comment)]
 #![cfg_attr(feature = "clippy", feature(plugin))]
+#![cfg_attr(feature = "allocator", feature(alloc_system, global_allocator, allocator_api))]
+#[cfg(feature = "allocator")]
+extern crate alloc_system;
+#[cfg(feature = "allocator")]
+use alloc_system::System;
+#[cfg(feature = "allocator")]
+#[global_allocator]
+static A: System = System;
 
 extern crate amy;
 extern crate base32;
@@ -14,6 +22,7 @@ extern crate ctrlc;
 extern crate error_chain;
 extern crate fnv;
 extern crate fs_extra;
+extern crate http_range;
 extern crate httparse;
 #[macro_use]
 extern crate lazy_static;
