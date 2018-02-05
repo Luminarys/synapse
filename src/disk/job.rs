@@ -243,7 +243,7 @@ impl Request {
             ranged,
             range_idx: 0,
             id: 0,
-            writing: ranged,
+            writing: true,
             buf,
             buf_idx: 0,
             buf_max: data.len(),
