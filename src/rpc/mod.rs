@@ -35,10 +35,11 @@ const CLEANUP_INT_MS: usize = 2000;
 lazy_static! {
     pub static ref EMPTY_HTTP_RESP: Vec<u8> = {
         let lines = vec![
-            format!("HTTP/1.1 {} {}", 204, "NO CONTENT"),
+            format!("HTTP/1.1 {} {}", 200, "OK"),
             format!("Connection: {}", "Close"),
             format!("Access-Control-Allow-Origin: {}", "*"),
             format!("Access-Control-Allow-Methods: {}", "OPTIONS, POST, GET"),
+            format!("Accept-Ranges: {}", "bytes"),
             format!(
                 "Access-Control-Allow-Headers: {}, {}, {}, {}, {}, {}, {}, {}",
                 "Access-Control-Allow-Headers",

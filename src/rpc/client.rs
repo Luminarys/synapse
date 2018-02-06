@@ -220,6 +220,10 @@ impl Incoming {
         match req.parse(&self.buf[..self.pos]) {
             Ok(httparse::Status::Partial) => Ok(None),
             Ok(httparse::Status::Complete(idx)) => {
+                if req.method == Some("HEAD") {
+                    self.conn.write(&EMPTY_HTTP_RESP).ok();
+                    return Err(io::ErrorKind::InvalidData.into());
+                }
                 if let Ok(k) = validate_upgrade(&req) {
                     self.key = Some(k);
                     Ok(Some(IncomingStatus::Upgrade))

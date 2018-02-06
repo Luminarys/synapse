@@ -189,6 +189,12 @@ impl Request {
                 vec![
                     format!("HTTP/1.1 206 Partial Content"),
                     format!("Content-Length: {}", ranges[0].length),
+                    format!(
+                        "Content-Range: bytes {}-{}/{}",
+                        ranges[0].start,
+                        ranges[0].start + ranges[0].length - 1,
+                        len
+                    ),
                     format!("Accept-Ranges: {}", "bytes"),
                     format!("Content-Type: {};", "application/octet-stream"),
                     format!("Connection: {}", "Close"),
@@ -209,8 +215,8 @@ impl Request {
         } else {
             vec![
                 format!("HTTP/1.1 200 OK"),
-                format!("Content-Length: {}", len),
                 format!("Accept-Ranges: {}", "bytes"),
+                format!("Content-Length: {}", len),
                 format!("Content-Type: {}", "application/octet-stream"),
                 format!(
                     "Content-Disposition: attachment; filename=\"{}\"",
