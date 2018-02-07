@@ -788,7 +788,7 @@ impl<T: cio::CIO> Torrent<T> {
                 self.handle_ext(id, payload, peer)?;
             }
             Message::Bitfield(_) => {
-                if self.pieces.usable(peer.pieces()) {
+                if self.pieces.usable(peer.pieces()) && self.status.validating.is_none() {
                     peer.interested();
                 }
                 if self.info.complete() {
@@ -802,7 +802,7 @@ impl<T: cio::CIO> Torrent<T> {
                 }
             }
             Message::Have(idx) => {
-                if self.info.complete() {
+                if self.info.complete() && self.status.validating.is_none() {
                     self.picker.piece_available(idx);
                 }
                 if peer.pieces().complete() {
@@ -817,7 +817,9 @@ impl<T: cio::CIO> Torrent<T> {
                 }
             }
             Message::Unchoke => {
-                if !self.status.stopped() && self.info.complete() {
+                if !self.status.stopped() && self.info.complete()
+                    && self.status.validating.is_none()
+                {
                     Torrent::make_requests(peer, &mut self.picker, &self.info);
                 }
             }
