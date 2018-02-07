@@ -92,6 +92,10 @@ pub enum Response {
         tid: usize,
         invalid: Vec<u32>,
     },
+    ValidationUpdate {
+        tid: usize,
+        percent: f32,
+    },
     Moved {
         tid: usize,
         path: String,
@@ -112,6 +116,7 @@ pub struct Ctx {
 
 pub enum JobRes {
     Resp(Response),
+    Update(Request, Response),
     Done,
     Paused(Request),
     Blocked((usize, Request)),
@@ -446,13 +451,20 @@ impl Request {
                 if idx == info.pieces() {
                     return Ok(JobRes::Resp(Response::validation_complete(tid, invalid)));
                 } else {
-                    return Ok(JobRes::Paused(Request::Validate {
-                        tid,
-                        info,
-                        path,
-                        idx,
-                        invalid,
-                    }));
+                    let pieces = info.pieces();
+                    return Ok(JobRes::Update(
+                        Request::Validate {
+                            tid,
+                            info,
+                            path,
+                            idx,
+                            invalid,
+                        },
+                        Response::ValidationUpdate {
+                            tid,
+                            percent: idx as f32 / pieces as f32,
+                        },
+                    ));
                 }
             }
             Request::Download {
@@ -660,6 +672,7 @@ impl Response {
             Response::Read { ref context, .. } => context.tid,
             Response::ValidationComplete { tid, .. }
             | Response::Moved { tid, .. }
+            | Response::ValidationUpdate { tid, .. }
             | Response::Error { tid, .. } => tid,
         }
     }

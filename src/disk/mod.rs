@@ -82,6 +82,14 @@ impl Disk {
                 Ok(JobRes::Resp(r)) => {
                     self.ch.send(r).ok();
                 }
+                Ok(JobRes::Update(s, r)) => {
+                    self.ch.send(r).ok();
+                    if rotate % 3 == 0 {
+                        self.active.push_back(s);
+                    } else {
+                        self.active.push_front(s);
+                    }
+                }
                 Ok(JobRes::Paused(s)) => {
                     if rotate % 3 == 0 {
                         self.active.push_back(s);
@@ -138,6 +146,10 @@ impl Disk {
                     match r.execute(&mut self.files) {
                         Ok(JobRes::Resp(r)) => {
                             self.ch.send(r).ok();
+                        }
+                        Ok(JobRes::Update(s, r)) => {
+                            self.ch.send(r).ok();
+                            self.active.push_back(s);
                         }
                         Ok(JobRes::Paused(s)) => {
                             self.active.push_back(s);

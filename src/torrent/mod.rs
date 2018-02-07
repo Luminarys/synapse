@@ -68,7 +68,7 @@ pub struct Torrent<T: cio::CIO> {
 #[derive(Clone, Debug)]
 pub struct Status {
     pub paused: bool,
-    pub validating: bool,
+    pub validating: Option<f32>,
     pub error: Option<String>,
     pub state: StatusState,
 }
@@ -112,7 +112,7 @@ impl Status {
         if self.paused {
             return rpc::resource::Status::Paused;
         }
-        if self.validating {
+        if self.validating.is_some() {
             return rpc::resource::Status::Hashing;
         }
         if self.error.is_some() {
@@ -154,7 +154,7 @@ impl<T: cio::CIO> Torrent<T> {
         let leechers = FHashSet::default();
         let mut status = Status {
             paused: !start,
-            validating: false,
+            validating: None,
             error: None,
             state: StatusState::Incomplete,
         };
@@ -319,7 +319,7 @@ impl<T: cio::CIO> Torrent<T> {
             dirty: false,
             status: Status {
                 paused: d.status.paused,
-                validating: d.status.validating,
+                validating: None,
                 error: d.status.error,
                 state: match d.status.state {
                     session::torrent::current::StatusState::Magnet => StatusState::Magnet,
@@ -333,7 +333,7 @@ impl<T: cio::CIO> Torrent<T> {
             created: d.created,
         };
         t.status.error = None;
-        t.status.validating = false;
+        t.status.validating = None;
         t.start();
         t.announce_start();
         Some(t)
@@ -366,7 +366,7 @@ impl<T: cio::CIO> Torrent<T> {
             downloaded: self.downloaded,
             status: session::torrent::current::Status {
                 paused: self.status.paused,
-                validating: self.status.validating,
+                validating: self.status.validating.is_some(),
                 error: self.status.error.clone(),
                 state: match self.status.state {
                     StatusState::Magnet => session::torrent::current::StatusState::Magnet,
@@ -601,9 +601,13 @@ impl<T: cio::CIO> Torrent<T> {
                     },
                 ]));
             }
+            disk::Response::ValidationUpdate { percent, .. } => {
+                self.status.validating = Some(percent);
+                self.update_rpc_transfer();
+            }
             disk::Response::ValidationComplete { mut invalid, .. } => {
                 debug!("Validation completed!");
-                self.status.validating = false;
+                self.status.validating = None;
                 // Ignore invalid pieces which are
                 // part of an invalid file(none of the disk locations
                 // refer to files which aren't being downloaded(pri. 1)
@@ -1375,7 +1379,11 @@ impl<T: cio::CIO> Torrent<T> {
     }
 
     fn progress(&self) -> f32 {
-        self.pieces.iter().count() as f32 / self.info.pieces() as f32
+        if let Some(amnt) = self.status.validating {
+            amnt
+        } else {
+            self.pieces.iter().count() as f32 / self.info.pieces() as f32
+        }
     }
 
     fn availability(&self) -> f32 {
@@ -1629,7 +1637,7 @@ impl<T: cio::CIO> Torrent<T> {
             self.info.clone(),
             self.path.clone(),
         ));
-        self.status.validating = true;
+        self.status.validating = Some(0.0);
         self.announce_status();
     }
 
