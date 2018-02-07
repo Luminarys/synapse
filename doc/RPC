@@ -17,8 +17,8 @@ specified in the server resource.
 
 Upgrade requests initialize websocket connections per the WHATWG websockets
 specification and become RPC sessions. The URL for these requests is /. If
-synapse is configured with an RPC password, include it in the query string with
-?password=:password. The connection is upgraded to a full-duplex websocket
+synapse is configured with an RPC password, include it via Basic Auth with
+any chosen username. The connection is upgraded to a full-duplex websocket
 stream with JSON messages encoded in text frames.
 
                                     DATETIME
