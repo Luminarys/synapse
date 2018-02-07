@@ -323,7 +323,7 @@ fn validate_tx(req: &httparse::Request) -> Option<String> {
     for header in req.headers.iter() {
         if header.name.to_lowercase() == "authorization" {
             return str::from_utf8(header.value).ok().and_then(|v| {
-                if v.starts_with("Bearer ") {
+                if v.to_lowercase().starts_with("bearer ") {
                     let (_, tok) = v.split_at(7);
                     Some(tok.to_owned())
                 } else {
@@ -345,13 +345,13 @@ fn validate_upgrade(req: &httparse::Request) -> result::Result<String, ()> {
     let mut version = None;
 
     for header in req.headers.iter() {
-        if header.name == "Upgrade" {
+        if header.name.to_lowercase() == "upgrade" {
             upgrade = str::from_utf8(header.value).ok();
         }
-        if header.name == "Sec-WebSocket-Key" {
+        if header.name.to_lowercase() == "sec-websocket-key" {
             key = str::from_utf8(header.value).ok();
         }
-        if header.name == "Sec-WebSocket-Version" {
+        if header.name.to_lowercase() == "sec-websocket-version" {
             version = str::from_utf8(header.value).ok();
         }
     }
@@ -373,6 +373,25 @@ fn validate_upgrade(req: &httparse::Request) -> result::Result<String, ()> {
                     .map(|(_, v)| format!("{}", v))
                     .map(|p| p == CONFIG.rpc.password)
             })
+            .or(req.headers
+                .iter()
+                .find(|header| header.name.to_lowercase() == "authorization")
+                .and_then(|header| str::from_utf8(header.value).ok())
+                .and_then(|value| {
+                    if value.to_lowercase().starts_with("basic ") {
+                        let (_, auth) = value.split_at(6);
+                        Some(auth)
+                    } else {
+                        None
+                    }
+                })
+                .and_then(|auth| base64::decode(auth).ok())
+                .and_then(|auth| String::from_utf8(auth).ok())
+                .and_then(|auth| {
+                    auth.split_terminator(":")
+                        .last()
+                        .map(|password| password == CONFIG.rpc.password)
+                }))
             .unwrap_or(false);
         if !auth {
             return Err(());
