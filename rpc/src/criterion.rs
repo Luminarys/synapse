@@ -14,16 +14,26 @@ pub struct Criterion {
 #[derive(Copy, Clone, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub enum Operation {
-    #[serde(rename = "==")] Eq,
-    #[serde(rename = "!=")] Neq,
-    #[serde(rename = ">")] GT,
-    #[serde(rename = ">=")] GTE,
-    #[serde(rename = "<")] LT,
-    #[serde(rename = "<=")] LTE,
-    #[serde(rename = "like")] Like,
-    #[serde(rename = "ilike")] ILike,
-    #[serde(rename = "in")] In,
-    #[serde(rename = "!in")] NotIn,
+    #[serde(rename = "==")]
+    Eq,
+    #[serde(rename = "!=")]
+    Neq,
+    #[serde(rename = ">")]
+    GT,
+    #[serde(rename = ">=")]
+    GTE,
+    #[serde(rename = "<")]
+    LT,
+    #[serde(rename = "<=")]
+    LTE,
+    #[serde(rename = "like")]
+    Like,
+    #[serde(rename = "ilike")]
+    ILike,
+    #[serde(rename = "in")]
+    In,
+    #[serde(rename = "!in")]
+    NotIn,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]

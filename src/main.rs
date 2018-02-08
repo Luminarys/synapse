@@ -30,6 +30,7 @@ extern crate libc;
 extern crate memmap;
 extern crate metrohash;
 extern crate net2;
+extern crate nix;
 extern crate openssl;
 extern crate rand;
 extern crate serde;

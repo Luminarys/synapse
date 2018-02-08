@@ -76,6 +76,13 @@ pub enum SResourceUpdate<'a> {
         ses_transferred_down: u64,
     },
 
+    ServerSpace {
+        id: String,
+        #[serde(rename = "type")]
+        kind: ResourceKind,
+        free_space: u64,
+    },
+
     TorrentStatus {
         id: String,
         #[serde(rename = "type")]
@@ -192,6 +199,7 @@ pub struct Server {
     pub transferred_down: u64,
     pub ses_transferred_up: u64,
     pub ses_transferred_down: u64,
+    pub free_space: u64,
     pub started: DateTime<Utc>,
     pub user_data: json::Value,
 }
@@ -446,6 +454,7 @@ impl<'a> SResourceUpdate<'a> {
             | &SResourceUpdate::Rate { ref id, .. }
             | &SResourceUpdate::UserData { ref id, .. }
             | &SResourceUpdate::ServerTransfer { ref id, .. }
+            | &SResourceUpdate::ServerSpace { ref id, .. }
             | &SResourceUpdate::TorrentStatus { ref id, .. }
             | &SResourceUpdate::TorrentTransfer { ref id, .. }
             | &SResourceUpdate::TorrentPeers { ref id, .. }
@@ -795,6 +804,7 @@ impl Queryable for Server {
             "transferred_down" => Some(Field::N(self.transferred_down as i64)),
             "ses_transferred_up" => Some(Field::N(self.ses_transferred_up as i64)),
             "ses_transferred_down" => Some(Field::N(self.ses_transferred_down as i64)),
+            "free_space" => Some(Field::N(self.free_space as i64)),
 
             "started" => Some(Field::D(self.started)),
 
@@ -978,6 +988,7 @@ impl Default for Server {
             transferred_down: 0,
             ses_transferred_up: 0,
             ses_transferred_down: 0,
+            free_space: 0,
             download_token: "".to_owned(),
             started: Utc::now(),
             user_data: json::Value::Null,
