@@ -75,12 +75,17 @@ pub enum SResourceUpdate<'a> {
         ses_transferred_up: u64,
         ses_transferred_down: u64,
     },
-
     ServerSpace {
         id: String,
         #[serde(rename = "type")]
         kind: ResourceKind,
         free_space: u64,
+    },
+    ServerToken {
+        id: String,
+        #[serde(rename = "type")]
+        kind: ResourceKind,
+        download_token: String,
     },
 
     TorrentStatus {
@@ -230,6 +235,11 @@ impl Server {
                 self.transferred_down = transferred_down;
                 self.ses_transferred_up = ses_transferred_up;
                 self.ses_transferred_down = ses_transferred_down;
+            }
+            &SResourceUpdate::ServerToken {
+                ref download_token, ..
+            } => {
+                self.download_token = download_token.clone();
             }
             &SResourceUpdate::ServerSpace { free_space, .. } => {
                 self.free_space = free_space;
@@ -457,6 +467,7 @@ impl<'a> SResourceUpdate<'a> {
             | &SResourceUpdate::Rate { ref id, .. }
             | &SResourceUpdate::UserData { ref id, .. }
             | &SResourceUpdate::ServerTransfer { ref id, .. }
+            | &SResourceUpdate::ServerToken { ref id, .. }
             | &SResourceUpdate::ServerSpace { ref id, .. }
             | &SResourceUpdate::TorrentStatus { ref id, .. }
             | &SResourceUpdate::TorrentTransfer { ref id, .. }
