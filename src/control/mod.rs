@@ -53,6 +53,8 @@ struct ServerData {
     session_ul: u64,
     #[serde(skip)]
     session_dl: u64,
+    #[serde(skip)]
+    free_space: u64,
     throttle_ul: Option<i64>,
     throttle_dl: Option<i64>,
 }
@@ -236,6 +238,7 @@ impl<T: cio::CIO> Control<T> {
                 } else if t == self.throttler.fid() {
                     self.flush_blocked_peers();
                 } else if t == self.job_timer {
+                    self.cio.msg_disk(disk::Request::FreeSpace);
                     self.update_jobs();
                     self.update_rpc_tx();
                 } else {
@@ -286,7 +289,12 @@ impl<T: cio::CIO> Control<T> {
 
     fn handle_disk_ev(&mut self, resp: disk::Response) {
         trace!("Got disk response {:?}!", resp);
-        if let Some(torrent) = self.torrents.get_mut(&resp.tid()) {
+        if let disk::Response::FreeSpace(space) = resp {
+            if space / 1_000_000 != self.data.free_space / 1_000_000 {
+                self.data.free_space = space;
+                self.update_rpc_space();
+            }
+        } else if let Some(torrent) = self.torrents.get_mut(&resp.tid()) {
             torrent.handle_disk_resp(resp);
         }
     }
@@ -546,6 +554,16 @@ impl<T: cio::CIO> Control<T> {
         }
     }
 
+    fn update_rpc_space(&mut self) {
+        self.cio.msg_rpc(rpc::CtlMessage::Update(vec![
+            rpc::resource::SResourceUpdate::ServerSpace {
+                id: self.data.id.clone(),
+                kind: rpc::resource::ResourceKind::Server,
+                free_space: self.data.free_space,
+            },
+        ]));
+    }
+
     fn update_rpc_tx(&mut self) {
         self.stat.tick();
         if self.stat.active() {
@@ -576,6 +594,7 @@ impl<T: cio::CIO> Control<T> {
             transferred_down: self.data.dl,
             ses_transferred_up: self.data.session_ul,
             ses_transferred_down: self.data.session_dl,
+            free_space: self.data.free_space,
             started: Utc::now(),
             download_token: DL_TOKEN.clone(),
             ..Default::default()
@@ -603,6 +622,7 @@ impl ServerData {
             dl: 0,
             session_ul: 0,
             session_dl: 0,
+            free_space: 0,
             throttle_ul: Some(-1),
             throttle_dl: Some(-1),
         }

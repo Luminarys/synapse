@@ -8,6 +8,7 @@ use fs_extra;
 use sha1;
 use amy;
 use http_range::HttpRange;
+use nix::sys::statvfs;
 
 use super::{FileCache, EXDEV, JOB_TIME_SLICE};
 use torrent::{Info, LocIter};
@@ -80,6 +81,7 @@ pub enum Request {
         buf: Box<[u8; 16_384]>,
         file_len: u64,
     },
+    FreeSpace,
     Shutdown,
 }
 
@@ -100,6 +102,7 @@ pub enum Response {
         tid: usize,
         path: String,
     },
+    FreeSpace(u64),
     Error {
         tid: usize,
         err: io::Error,
@@ -270,6 +273,14 @@ impl Request {
         let sd = &CONFIG.disk.session;
         let dd = &CONFIG.disk.directory;
         match self {
+            Request::FreeSpace => {
+                if let Ok(stat) = statvfs::statvfs(dd.as_str()) {
+                    let space = stat.block_size() as u64 * stat.blocks_free() as u64;
+                    return Ok(JobRes::Resp(Response::FreeSpace(space)));
+                } else {
+                    return io_err("couldn't stat fs");
+                }
+            }
             Request::WriteFile { path, data } => {
                 let mut p = path.clone();
                 p.set_extension("temp");
@@ -599,13 +610,16 @@ impl Request {
 
     pub fn tid(&self) -> Option<usize> {
         match *self {
+            Request::Read { ref context, .. } => Some(context.tid),
             Request::Serialize { tid, .. }
             | Request::Validate { tid, .. }
             | Request::Delete { tid, .. }
             | Request::Move { tid, .. }
             | Request::Write { tid, .. } => Some(tid),
-            Request::Read { ref context, .. } => Some(context.tid),
-            Request::WriteFile { .. } | Request::Download { .. } | Request::Shutdown => None,
+            Request::WriteFile { .. }
+            | Request::Download { .. }
+            | Request::Shutdown
+            | Request::FreeSpace => None,
         }
     }
 }
@@ -674,6 +688,7 @@ impl Response {
             | Response::Moved { tid, .. }
             | Response::ValidationUpdate { tid, .. }
             | Response::Error { tid, .. } => tid,
+            Response::FreeSpace(_) => unreachable!(),
         }
     }
 }

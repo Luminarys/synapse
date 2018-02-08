@@ -53,6 +53,7 @@ server
         "transferred_down": number,
         "ses_transferred_up": number,
         "ses_transferred_down": number,
+        "free_space": number,
         "started": datetime,
     }
 
