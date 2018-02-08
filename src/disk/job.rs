@@ -275,7 +275,7 @@ impl Request {
         match self {
             Request::FreeSpace => {
                 if let Ok(stat) = statvfs::statvfs(dd.as_str()) {
-                    let space = stat.block_size() as u64 * stat.blocks_free() as u64;
+                    let space = stat.fragment_size() as u64 * stat.blocks_available() as u64;
                     return Ok(JobRes::Resp(Response::FreeSpace(space)));
                 } else {
                     return io_err("couldn't stat fs");
