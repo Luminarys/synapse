@@ -314,7 +314,7 @@ impl Request {
                     &pb,
                     Some(loc.file_len),
                     loc.offset,
-                    (loc.end - loc.start),
+                    loc.end - loc.start,
                     false,
                     |b| {
                         b.copy_from_slice(&data[loc.start..loc.end]);
@@ -334,7 +334,7 @@ impl Request {
                 for loc in locations {
                     let mut pb = path::PathBuf::from(path.as_ref().unwrap_or(dd));
                     pb.push(loc.path());
-                    fc.get_file_range(&pb, None, loc.offset, (loc.end - loc.start), true, |b| {
+                    fc.get_file_range(&pb, None, loc.offset, loc.end - loc.start, true, |b| {
                         (&mut data[loc.start..loc.end]).copy_from_slice(b);
                     })?;
                 }

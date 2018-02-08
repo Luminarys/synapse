@@ -295,7 +295,7 @@ fn validate_dl(req: &httparse::Request) -> Option<(String, Option<String>)> {
                 let pw = url.query_pairs()
                     .find(|&(ref k, _)| k == "password")
                     .map(|(_, v)| format!("{}", v))
-                    .map(|p| p == *DL_TOKEN)
+                    .map(|p| p == *DL_TOKEN.lock().unwrap())
                     .unwrap_or(false);
                 if !pw {
                     return None;

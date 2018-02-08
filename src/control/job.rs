@@ -1,44 +1,9 @@
-use std::time;
-
 use torrent::Torrent;
 use control::cio;
 use util::UHashMap;
 
 pub trait Job<T: cio::CIO> {
     fn update(&mut self, torrents: &mut UHashMap<Torrent<T>>);
-}
-
-pub struct JobManager<T: cio::CIO> {
-    jobs: Vec<JobData<T>>,
-}
-
-struct JobData<T: cio::CIO> {
-    job: Box<Job<T>>,
-    last_updated: time::Instant,
-    interval: time::Duration,
-}
-
-impl<T: cio::CIO> JobManager<T> {
-    pub fn new() -> JobManager<T> {
-        JobManager { jobs: Vec::new() }
-    }
-
-    pub fn add_job<J: Job<T> + 'static>(&mut self, job: J, interval: time::Duration) {
-        self.jobs.push(JobData {
-            job: Box::new(job),
-            interval,
-            last_updated: time::Instant::now(),
-        })
-    }
-
-    pub fn update(&mut self, torrents: &mut UHashMap<Torrent<T>>) {
-        for j in &mut self.jobs {
-            if j.last_updated.elapsed() > j.interval {
-                j.job.update(torrents);
-                j.last_updated = time::Instant::now();
-            }
-        }
-    }
 }
 
 pub struct TrackerUpdate;

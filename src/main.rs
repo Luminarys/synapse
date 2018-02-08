@@ -65,7 +65,7 @@ mod stat;
 mod session;
 
 use std::{process, thread};
-use std::sync::{atomic, mpsc};
+use std::sync::{atomic, mpsc, Arc, Mutex};
 use std::io;
 
 // We need to do this for the log macros
@@ -110,8 +110,8 @@ lazy_static! {
         pid
     };
 
-    pub static ref DL_TOKEN: String = {
-        util::random_string(20)
+    pub static ref DL_TOKEN: Arc<Mutex<String>> = {
+        Arc::new(Mutex::new(util::random_string(20)))
     };
 }
 

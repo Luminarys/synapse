@@ -1,4 +1,4 @@
-use std::{fs, io, process, time};
+use std::{fs, io, mem, process, time};
 use std::io::Read;
 use std::sync::atomic;
 use std::path::PathBuf;
@@ -26,6 +26,10 @@ const SES_JOB_SECS: u64 = 60;
 const STS_JOB_SECS: u64 = 10;
 /// Interval to update RPC of transfer stats
 const TX_JOB_MS: u64 = 500;
+/// Interval to rotate token
+const TOKEN_JOB_SECS: u64 = 60 * 60 * 4;
+/// Interval to check space on disk
+const SPACE_JOB_SECS: u64 = 10;
 
 /// Interval to requery all jobs and execute if needed
 const JOB_INT_MS: usize = 500;
@@ -36,7 +40,7 @@ pub struct Control<T: cio::CIO> {
     tid_cnt: usize,
     job_timer: usize,
     stat: stat::EMA,
-    jobs: job::JobManager<T>,
+    jobs: JobManager<T>,
     torrents: UHashMap<Torrent<T>>,
     peers: UHashMap<usize>,
     hash_idx: MHashMap<[u8; 20], usize>,
@@ -59,6 +63,21 @@ struct ServerData {
     throttle_dl: Option<i64>,
 }
 
+pub trait CJob<T: cio::CIO> {
+    fn update(&mut self, control: &mut Control<T>);
+}
+
+struct JobManager<T: cio::CIO> {
+    jobs: Vec<JobData<Box<job::Job<T>>>>,
+    cjobs: Vec<JobData<Box<CJob<T>>>>,
+}
+
+struct JobData<T> {
+    job: T,
+    last_updated: time::Instant,
+    interval: time::Duration,
+}
+
 impl<T: cio::CIO> Control<T> {
     pub fn new(
         mut cio: T,
@@ -68,7 +87,8 @@ impl<T: cio::CIO> Control<T> {
         let torrents = UHashMap::default();
         let peers = UHashMap::default();
         let hash_idx = MHashMap::default();
-        let mut jobs = job::JobManager::new();
+        let mut jobs = JobManager::new();
+
         jobs.add_job(job::TrackerUpdate, time::Duration::from_secs(TRK_JOB_SECS));
         jobs.add_job(
             job::UnchokeUpdate,
@@ -83,6 +103,9 @@ impl<T: cio::CIO> Control<T> {
             job::TorrentTxUpdate::new(),
             time::Duration::from_millis(TX_JOB_MS),
         );
+
+        jobs.add_cjob(TokenUpdate, time::Duration::from_secs(TOKEN_JOB_SECS));
+        jobs.add_cjob(SpaceUpdate, time::Duration::from_secs(SPACE_JOB_SECS));
         let job_timer = cio.set_timer(JOB_INT_MS)
             .map_err(|_| io_err_val("timer failure!"))?;
         Ok(Control {
@@ -238,7 +261,6 @@ impl<T: cio::CIO> Control<T> {
                 } else if t == self.throttler.fid() {
                     self.flush_blocked_peers();
                 } else if t == self.job_timer {
-                    self.cio.msg_disk(disk::Request::FreeSpace);
                     self.update_jobs();
                     self.update_rpc_tx();
                 } else {
@@ -284,7 +306,9 @@ impl<T: cio::CIO> Control<T> {
 
     fn update_jobs(&mut self) {
         trace!("Handling job timer");
-        self.jobs.update(&mut self.torrents);
+        let mut jobs = mem::replace(&mut self.jobs, JobManager::new());
+        jobs.update(self);
+        self.jobs = jobs;
     }
 
     fn handle_disk_ev(&mut self, resp: disk::Response) {
@@ -596,7 +620,7 @@ impl<T: cio::CIO> Control<T> {
             ses_transferred_down: self.data.session_dl,
             free_space: self.data.free_space,
             started: Utc::now(),
-            download_token: DL_TOKEN.clone(),
+            download_token: DL_TOKEN.lock().unwrap().clone(),
             ..Default::default()
         });
         self.cio.msg_rpc(rpc::CtlMessage::Extant(vec![res]));
@@ -626,5 +650,70 @@ impl ServerData {
             throttle_ul: Some(-1),
             throttle_dl: Some(-1),
         }
+    }
+}
+
+impl<T: cio::CIO> JobManager<T> {
+    pub fn new() -> JobManager<T> {
+        JobManager {
+            jobs: Vec::with_capacity(0),
+            cjobs: Vec::with_capacity(0),
+        }
+    }
+
+    pub fn add_job<J: job::Job<T> + 'static>(&mut self, job: J, interval: time::Duration) {
+        self.jobs.push(JobData {
+            job: Box::new(job),
+            interval,
+            last_updated: time::Instant::now(),
+        })
+    }
+
+    pub fn add_cjob<J: CJob<T> + 'static>(&mut self, job: J, interval: time::Duration) {
+        self.cjobs.push(JobData {
+            job: Box::new(job),
+            interval,
+            last_updated: time::Instant::now(),
+        })
+    }
+
+    pub fn update(&mut self, control: &mut Control<T>) {
+        for j in &mut self.jobs {
+            if j.last_updated.elapsed() > j.interval {
+                j.job.update(&mut control.torrents);
+                j.last_updated = time::Instant::now();
+            }
+        }
+        for j in &mut self.cjobs {
+            if j.last_updated.elapsed() > j.interval {
+                j.job.update(control);
+                j.last_updated = time::Instant::now();
+            }
+        }
+    }
+}
+
+pub struct TokenUpdate;
+
+impl<T: cio::CIO> CJob<T> for TokenUpdate {
+    fn update(&mut self, control: &mut Control<T>) {
+        let token = util::random_string(20);
+        let download_token = token.clone();
+        *DL_TOKEN.lock().unwrap() = token;
+        control.cio.msg_rpc(rpc::CtlMessage::Update(vec![
+            rpc::resource::SResourceUpdate::ServerToken {
+                id: control.data.id.clone(),
+                kind: rpc::resource::ResourceKind::Server,
+                download_token,
+            },
+        ]));
+    }
+}
+
+pub struct SpaceUpdate;
+
+impl<T: cio::CIO> CJob<T> for SpaceUpdate {
+    fn update(&mut self, control: &mut Control<T>) {
+        control.cio.msg_disk(disk::Request::FreeSpace);
     }
 }
