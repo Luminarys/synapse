@@ -56,6 +56,16 @@ lazy_static! {
         lines.join("\r\n").into_bytes()
     };
 
+    pub static ref UNAUTH_HTTP_RESP: Vec<u8> = {
+        let lines = vec![
+            format!("HTTP/1.1 {} {}", 401, "Unauthorized"),
+            format!("Connection: {}", "Close"),
+            format!("WWW-Authenticate: Basic real=m\"{}\"", "Synapse Connection"),
+            format!("\r\n"),
+        ];
+        lines.join("\r\n").into_bytes()
+    };
+
     pub static ref BAD_HTTP_RANGE: Vec<u8> = {
         let lines = vec![
             format!("HTTP/1.1 {} {}", 416, "Requested Range Not Satisfiable"),

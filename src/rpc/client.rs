@@ -12,7 +12,7 @@ use super::writer::Writer;
 use super::proto::ws::{Frame, Message, Opcode};
 use super::proto::message::{SMessage, Version};
 use super::{ErrorKind, Result, ResultExt};
-use super::EMPTY_HTTP_RESP;
+use super::{EMPTY_HTTP_RESP, UNAUTH_HTTP_RESP};
 use util::{aread, sha1_hash, IOR};
 use {CONFIG, DL_TOKEN};
 
@@ -224,10 +224,18 @@ impl Incoming {
                     self.conn.write(&EMPTY_HTTP_RESP).ok();
                     return Err(io::ErrorKind::InvalidData.into());
                 }
-                if let Ok(k) = validate_upgrade(&req) {
-                    self.key = Some(k);
-                    Ok(Some(IncomingStatus::Upgrade))
-                } else if let Some(token) = validate_tx(&req) {
+                match validate_upgrade(&req) {
+                    Ok(k) => {
+                        self.key = Some(k);
+                        return Ok(Some(IncomingStatus::Upgrade));
+                    }
+                    Err(true) => {
+                        self.conn.write(&UNAUTH_HTTP_RESP).ok();
+                        return Err(io::ErrorKind::InvalidData.into());
+                    }
+                    Err(false) => {}
+                }
+                if let Some(token) = validate_tx(&req) {
                     Ok(Some(IncomingStatus::Transfer {
                         data: self.buf[idx..self.pos].to_owned(),
                         token,
@@ -335,9 +343,9 @@ fn validate_tx(req: &httparse::Request) -> Option<String> {
     None
 }
 
-fn validate_upgrade(req: &httparse::Request) -> result::Result<String, ()> {
+fn validate_upgrade(req: &httparse::Request) -> result::Result<String, bool> {
     if !req.method.map(|m| m == "GET").unwrap_or(false) {
-        return Err(());
+        return Err(false);
     }
 
     let mut upgrade = None;
@@ -357,11 +365,11 @@ fn validate_upgrade(req: &httparse::Request) -> result::Result<String, ()> {
     }
 
     if upgrade.map(|s| s.to_lowercase()) != Some("websocket".to_owned()) {
-        return Err(());
+        return Err(false);
     }
 
     if version != Some("13") {
-        return Err(());
+        return Err(false);
     }
 
     if CONFIG.rpc.auth {
@@ -394,13 +402,13 @@ fn validate_upgrade(req: &httparse::Request) -> result::Result<String, ()> {
                 }))
             .unwrap_or(false);
         if !auth {
-            return Err(());
+            return Err(true);
         }
     }
 
     if let Some(k) = key {
         Ok(k.to_owned())
     } else {
-        Err(())
+        Err(false)
     }
 }
