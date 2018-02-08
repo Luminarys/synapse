@@ -231,6 +231,9 @@ impl Server {
                 self.ses_transferred_up = ses_transferred_up;
                 self.ses_transferred_down = ses_transferred_down;
             }
+            &SResourceUpdate::ServerSpace { free_space, .. } => {
+                self.free_space = free_space;
+            }
             &SResourceUpdate::Rate {
                 rate_up, rate_down, ..
             } => {
