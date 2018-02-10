@@ -391,7 +391,9 @@ impl Request {
             } => {
                 let mut spb = path::PathBuf::from(sd);
                 spb.push(hash_to_id(&hash));
-                fs::remove_file(spb)?;
+                fs::remove_file(&spb).ok();
+                spb.set_extension("torrent");
+                fs::remove_file(&spb).ok();
 
                 for file in &files {
                     let mut pb = path::PathBuf::from(path.as_ref().unwrap_or(dd));

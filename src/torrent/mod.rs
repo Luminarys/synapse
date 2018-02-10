@@ -9,6 +9,7 @@ use std::collections::{BTreeMap, VecDeque};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use std::borrow::Cow;
+use std::path::PathBuf;
 
 use bincode;
 use chrono::{DateTime, Utc};
@@ -1172,6 +1173,7 @@ impl<T: cio::CIO> Torrent<T> {
         }
         if let Some(req) = tracker::Request::started(self) {
             self.cio.msg_trk(req);
+            self.dump_torrent_file();
         }
         // TODO: Consider repeatedly sending out these during annoucne intervals
         if !self.info.private {
@@ -1203,6 +1205,14 @@ impl<T: cio::CIO> Torrent<T> {
         ]));
     }
 
+    fn dump_torrent_file(&mut self) {
+        let data = self.info.to_torrent_bencode().encode_to_buf();
+        let mut path = PathBuf::from(&CONFIG.disk.session);
+        path.push(&util::hash_to_id(&self.info.hash));
+        path.set_extension("torrent");
+        self.cio.msg_disk(disk::Request::WriteFile { data, path });
+    }
+
     fn magnet_complete(&mut self) {
         self.status.state = StatusState::Incomplete;
         self.announce_status();
@@ -1224,6 +1234,7 @@ impl<T: cio::CIO> Torrent<T> {
         self.picker = Picker::new(&self.info, &self.pieces, &self.priorities);
         self.change_picker(seq);
         self.validate();
+        self.dump_torrent_file();
     }
 
     fn set_path(&mut self, path: String) {
