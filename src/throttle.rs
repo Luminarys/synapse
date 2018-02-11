@@ -59,7 +59,15 @@ impl Throttler {
     pub fn get_throttle(&self, id: usize) -> Throttle {
         Throttle {
             ul_data: self.ul_data.clone(),
+            ul_tier: Rc::new(UnsafeCell::new(ThrottleData::new(
+                None,
+                self.ul_data().max_tokens,
+            ))),
             dl_data: self.dl_data.clone(),
+            dl_tier: Rc::new(UnsafeCell::new(ThrottleData::new(
+                None,
+                self.dl_data().max_tokens,
+            ))),
             id,
         }
     }
@@ -108,6 +116,7 @@ impl Throttler {
 struct ThrottleData {
     rate: Option<i64>,
     tokens: usize,
+    epoch: usize,
     max_tokens: usize,
     last_used: u64,
     throttled: HashSet<usize>,
@@ -119,6 +128,8 @@ struct ThrottleData {
 #[derive(Clone)]
 pub struct Throttle {
     pub id: usize,
+    ul_tier: Rc<UnsafeCell<ThrottleData>>,
+    dl_tier: Rc<UnsafeCell<ThrottleData>>,
     ul_data: Rc<UnsafeCell<ThrottleData>>,
     dl_data: Rc<UnsafeCell<ThrottleData>>,
 }
@@ -129,58 +140,101 @@ impl Throttle {
     pub fn new_sibling(&self, id: usize) -> Throttle {
         Throttle {
             ul_data: self.ul_data.clone(),
+            ul_tier: self.ul_tier.clone(),
             dl_data: self.dl_data.clone(),
+            dl_tier: self.dl_tier.clone(),
             id,
         }
     }
 
     pub fn get_bytes_dl(&mut self, amnt: usize) -> Result<(), ()> {
-        let res = self.dl_data().get_tokens(amnt);
-        if res.is_err() {
-            self.dl_data().throttled.insert(self.id);
+        while self.dl_tier().epoch != self.dl_data().epoch {
+            self.dl_tier().add_tokens();
         }
-        res
+        if self.dl_rate() == Some(-1) {
+            self.dl_tier().last_used += amnt as u64;
+            self.dl_data().last_used += amnt as u64;
+            return Ok(());
+        }
+        let pres = self.dl_data().get_tokens(amnt);
+        if pres.is_err() {
+            self.dl_data().throttled.insert(self.id);
+            return Err(());
+        }
+
+        let res = self.dl_tier().get_tokens(amnt);
+        if res.is_err() {
+            self.dl_data().restore_tokens(amnt);
+            self.dl_data().throttled.insert(self.id);
+            return Err(());
+        }
+        Ok(())
     }
 
     pub fn get_bytes_ul(&mut self, amnt: usize) -> Result<(), ()> {
-        let res = self.ul_data().get_tokens(amnt);
-        if res.is_err() {
-            self.ul_data().throttled.insert(self.id);
+        while self.ul_tier().epoch != self.ul_data().epoch {
+            self.ul_tier().add_tokens();
         }
-        res
+        if self.ul_rate() == Some(-1) {
+            self.ul_tier().last_used += amnt as u64;
+            self.ul_data().last_used += amnt as u64;
+            return Ok(());
+        }
+        let pres = self.ul_data().get_tokens(amnt);
+        if pres.is_err() {
+            self.ul_data().throttled.insert(self.id);
+            return Err(());
+        }
+
+        let res = self.ul_tier().get_tokens(amnt);
+        if res.is_err() {
+            self.ul_data().restore_tokens(amnt);
+            self.ul_data().throttled.insert(self.id);
+            return Err(());
+        }
+        Ok(())
     }
 
     pub fn ul_rate(&self) -> Option<i64> {
-        self.ul_data().rate
+        self.ul_tier().rate
     }
 
     pub fn dl_rate(&self) -> Option<i64> {
-        self.dl_data().rate
+        self.dl_tier().rate
     }
 
-    // TODO: Make this an HTB
     pub fn set_ul_rate(&mut self, rate: Option<i64>) {
-        self.ul_data().rate = rate;
+        self.ul_tier().rate = rate;
     }
 
     pub fn set_dl_rate(&mut self, rate: Option<i64>) {
-        self.dl_data().rate = rate;
+        self.dl_tier().rate = rate;
     }
 
     pub fn restore_bytes_dl(&mut self, amnt: usize) {
         self.dl_data().restore_tokens(amnt);
+        self.dl_tier().restore_tokens(amnt);
     }
 
     pub fn restore_bytes_ul(&mut self, amnt: usize) {
         self.ul_data().restore_tokens(amnt);
+        self.ul_tier().restore_tokens(amnt);
     }
 
     fn ul_data(&self) -> &'static mut ThrottleData {
         unsafe { self.ul_data.get().as_mut().unwrap() }
     }
 
+    fn ul_tier(&self) -> &'static mut ThrottleData {
+        unsafe { self.ul_tier.get().as_mut().unwrap() }
+    }
+
     fn dl_data(&self) -> &'static mut ThrottleData {
         unsafe { self.dl_data.get().as_mut().unwrap() }
+    }
+
+    fn dl_tier(&self) -> &'static mut ThrottleData {
+        unsafe { self.dl_tier.get().as_mut().unwrap() }
     }
 }
 
@@ -198,8 +252,9 @@ impl ThrottleData {
             tokens: 0,
             rate,
             max_tokens,
-            throttled: HashSet::new(),
+            throttled: HashSet::with_capacity(0),
             last_used: 0,
+            epoch: 0,
         }
     }
 
@@ -212,6 +267,7 @@ impl ThrottleData {
     /// This method must be called every URATE milliseconds and returns
     /// (self.last_used) * 1000/URATE - the bits/s, clearing self.last_used
     fn add_tokens(&mut self) -> u64 {
+        self.epoch = self.epoch.wrapping_add(1);
         let drained = self.last_used as u64;
         self.last_used = 0;
         self.tokens += if let Some(r) = self.rate {
