@@ -173,6 +173,8 @@ impl<T: cio::CIO> Control<T> {
             fs::File::open(pb).map(|mut f| bincode::deserialize_from(&mut f, bincode::Infinite))
         {
             self.data = data;
+            self.throttler.set_ul_rate(self.data.throttle_ul);
+            self.throttler.set_dl_rate(self.data.throttle_dl);
         } else {
             error!("No server data found, regenerating!");
             self.data = ServerData::new();
