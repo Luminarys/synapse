@@ -27,6 +27,8 @@ error_chain! {
 #[derive(Debug, Clone)]
 pub struct Config {
     pub port: u16,
+    pub max_ul: u32,
+    pub max_dl: u32,
     pub trk: TrkConfig,
     pub dht: DhtConfig,
     pub rpc: RpcConfig,
@@ -45,6 +47,10 @@ pub struct DhtConfig {
 pub struct ConfigFile {
     #[serde(default = "default_port")]
     pub port: u16,
+    #[serde(default = "default_max_ul")]
+    pub max_ul: u32,
+    #[serde(default = "default_max_dl")]
+    pub max_dl: u32,
     #[serde(default)]
     pub rpc: RpcConfig,
     #[serde(default)]
@@ -156,6 +162,8 @@ impl Config {
         file.disk.directory = shellexpand::tilde(&file.disk.directory).into();
         Config {
             port: file.port,
+            max_ul: file.max_ul,
+            max_dl: file.max_dl,
             trk: file.tracker,
             rpc: file.rpc,
             disk: file.disk,
@@ -168,6 +176,12 @@ impl Config {
 
 fn default_port() -> u16 {
     16_384
+}
+fn default_max_ul() -> u32 {
+    500
+}
+fn default_max_dl() -> u32 {
+    10
 }
 fn default_trk_port() -> u16 {
     16_362
@@ -218,6 +232,8 @@ impl Default for Config {
     fn default() -> Self {
         Config {
             port: default_port(),
+            max_ul: default_max_ul(),
+            max_dl: default_max_dl(),
             trk: Default::default(),
             rpc: Default::default(),
             disk: Default::default(),

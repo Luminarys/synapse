@@ -1,6 +1,10 @@
 # TCP port used for peer connections
 port = 16493
 
+# Maximum number of uploading/downloading torrents
+max_ul = 500
+max_dl = 10
+
 [rpc]
 # TCP port used for RPC
 port = 8412
