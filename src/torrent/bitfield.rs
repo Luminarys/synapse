@@ -107,6 +107,11 @@ impl Bitfield {
         false
     }
 
+    pub fn b64(&self) -> String {
+        use base64;
+        base64::encode(&self.data)
+    }
+
     pub fn iter(&self) -> BitfieldIter {
         BitfieldIter::new(self)
     }

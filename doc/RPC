@@ -83,6 +83,7 @@ torrent
         "trackers": number,         # of trackers
         "pieces": number,           # of pieces or null if magnet and unknown
         "piece_size": number,       # size of each piece or null if magnet and unknown
+        "piece_field": string,      b64 encoded bitfield indicating piece presence
         "files": number,            # of files or null if magnet and unknown
     }
 

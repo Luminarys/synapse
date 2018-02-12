@@ -130,6 +130,12 @@ pub enum SResourceUpdate<'a> {
         kind: ResourceKind,
         path: String,
     },
+    TorrentPieces {
+        id: String,
+        #[serde(rename = "type")]
+        kind: ResourceKind,
+        piece_field: String,
+    },
 
     TrackerStatus {
         id: String,
@@ -210,9 +216,9 @@ pub struct Server {
 }
 
 impl Server {
-    pub fn update(&mut self, update: &SResourceUpdate) {
+    pub fn update(&mut self, update: SResourceUpdate) {
         match update {
-            &SResourceUpdate::Throttle {
+            SResourceUpdate::Throttle {
                 throttle_up,
                 throttle_down,
                 ..
@@ -220,7 +226,7 @@ impl Server {
                 self.throttle_up = throttle_up;
                 self.throttle_down = throttle_down;
             }
-            &SResourceUpdate::ServerTransfer {
+            SResourceUpdate::ServerTransfer {
                 rate_up,
                 rate_down,
                 transferred_up,
@@ -236,15 +242,13 @@ impl Server {
                 self.ses_transferred_up = ses_transferred_up;
                 self.ses_transferred_down = ses_transferred_down;
             }
-            &SResourceUpdate::ServerToken {
-                ref download_token, ..
-            } => {
-                self.download_token = download_token.clone();
+            SResourceUpdate::ServerToken { download_token, .. } => {
+                self.download_token = download_token;
             }
-            &SResourceUpdate::ServerSpace { free_space, .. } => {
+            SResourceUpdate::ServerSpace { free_space, .. } => {
                 self.free_space = free_space;
             }
-            &SResourceUpdate::Rate {
+            SResourceUpdate::Rate {
                 rate_up, rate_down, ..
             } => {
                 self.rate_up = rate_up;
@@ -280,15 +284,16 @@ pub struct Torrent {
     pub size: Option<u64>,
     pub pieces: Option<u64>,
     pub piece_size: Option<u32>,
+    pub piece_field: String,
     pub files: Option<u32>,
     pub user_data: json::Value,
 }
 
 impl Torrent {
-    pub fn update(&mut self, update: &SResourceUpdate) {
+    pub fn update(&mut self, update: SResourceUpdate) {
         self.modified = Utc::now();
         match update {
-            &SResourceUpdate::Throttle {
+            SResourceUpdate::Throttle {
                 throttle_up,
                 throttle_down,
                 ..
@@ -296,13 +301,11 @@ impl Torrent {
                 self.throttle_up = throttle_up;
                 self.throttle_down = throttle_down;
             }
-            &SResourceUpdate::TorrentStatus {
-                ref error, status, ..
-            } => {
-                self.error = error.clone();
+            SResourceUpdate::TorrentStatus { error, status, .. } => {
+                self.error = error;
                 self.status = status;
             }
-            &SResourceUpdate::TorrentTransfer {
+            SResourceUpdate::TorrentTransfer {
                 rate_up,
                 rate_down,
                 transferred_up,
@@ -316,7 +319,7 @@ impl Torrent {
                 self.transferred_down = transferred_down;
                 self.progress = progress;
             }
-            &SResourceUpdate::TorrentPeers {
+            SResourceUpdate::TorrentPeers {
                 peers,
                 availability,
                 ..
@@ -324,11 +327,14 @@ impl Torrent {
                 self.peers = peers;
                 self.availability = availability;
             }
-            &SResourceUpdate::TorrentPicker { sequential, .. } => {
+            SResourceUpdate::TorrentPicker { sequential, .. } => {
                 self.sequential = sequential;
             }
-            &SResourceUpdate::TorrentPriority { priority, .. } => {
+            SResourceUpdate::TorrentPriority { priority, .. } => {
                 self.priority = priority;
+            }
+            SResourceUpdate::TorrentPieces { piece_field, .. } => {
+                self.piece_field = piece_field;
             }
             _ => {}
         }
@@ -361,12 +367,12 @@ pub struct Piece {
 }
 
 impl Piece {
-    pub fn update(&mut self, update: &SResourceUpdate) {
+    pub fn update(&mut self, update: SResourceUpdate) {
         match update {
-            &SResourceUpdate::PieceAvailable { available, .. } => {
+            SResourceUpdate::PieceAvailable { available, .. } => {
                 self.available = available;
             }
-            &SResourceUpdate::PieceDownloaded { downloaded, .. } => {
+            SResourceUpdate::PieceDownloaded { downloaded, .. } => {
                 self.downloaded = downloaded;
             }
             _ => {}
@@ -388,12 +394,12 @@ pub struct File {
 }
 
 impl File {
-    pub fn update(&mut self, update: &SResourceUpdate) {
+    pub fn update(&mut self, update: SResourceUpdate) {
         match update {
-            &SResourceUpdate::FilePriority { priority, .. } => {
+            SResourceUpdate::FilePriority { priority, .. } => {
                 self.priority = priority;
             }
-            &SResourceUpdate::FileProgress { progress, .. } => {
+            SResourceUpdate::FileProgress { progress, .. } => {
                 self.progress = progress;
             }
             _ => {}
@@ -415,15 +421,15 @@ pub struct Peer {
 }
 
 impl Peer {
-    pub fn update(&mut self, update: &SResourceUpdate) {
+    pub fn update(&mut self, update: SResourceUpdate) {
         match update {
-            &SResourceUpdate::Rate {
+            SResourceUpdate::Rate {
                 rate_up, rate_down, ..
             } => {
                 self.rate_up = rate_up;
                 self.rate_down = rate_down;
             }
-            &SResourceUpdate::PeerAvailability { availability, .. } => {
+            SResourceUpdate::PeerAvailability { availability, .. } => {
                 self.availability = availability;
             }
             _ => {}
@@ -444,15 +450,13 @@ pub struct Tracker {
 }
 
 impl Tracker {
-    pub fn update(&mut self, update: &SResourceUpdate) {
+    pub fn update(&mut self, update: SResourceUpdate) {
         match update {
-            &SResourceUpdate::TrackerStatus {
-                ref last_report,
-                ref error,
-                ..
+            SResourceUpdate::TrackerStatus {
+                last_report, error, ..
             } => {
-                self.last_report = last_report.clone();
-                self.error = error.clone();
+                self.last_report = last_report;
+                self.error = error;
             }
             _ => {}
         }
@@ -475,6 +479,7 @@ impl<'a> SResourceUpdate<'a> {
             | &SResourceUpdate::TorrentPicker { ref id, .. }
             | &SResourceUpdate::TorrentPriority { ref id, .. }
             | &SResourceUpdate::TorrentPath { ref id, .. }
+            | &SResourceUpdate::TorrentPieces { ref id, .. }
             | &SResourceUpdate::FilePriority { ref id, .. }
             | &SResourceUpdate::FileProgress { ref id, .. }
             | &SResourceUpdate::TrackerStatus { ref id, .. }
@@ -571,7 +576,7 @@ impl Resource {
         }
     }
 
-    pub fn update(&mut self, update: &SResourceUpdate) {
+    pub fn update(&mut self, update: SResourceUpdate) {
         match self {
             &mut Resource::Server(ref mut s) => {
                 s.update(update);
@@ -1035,6 +1040,7 @@ impl Default for Torrent {
             size: None,
             pieces: None,
             piece_size: None,
+            piece_field: "".to_owned(),
             files: None,
             user_data: json::Value::Null,
         }

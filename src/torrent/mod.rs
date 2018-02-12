@@ -672,6 +672,7 @@ impl<T: cio::CIO> Torrent<T> {
                 }
                 // update the RPC stats once done
                 self.update_rpc_transfer();
+                self.rpc_update_pieces();
             }
             disk::Response::Error { err, .. } => {
                 error!("Disk error: {:?}", err);
@@ -876,6 +877,8 @@ impl<T: cio::CIO> Torrent<T> {
 
                 if piece_done {
                     self.pieces.set_bit(u64::from(index));
+                    // TODO: When on the fly validation comes in we'll want to send after that.
+                    self.rpc_update_pieces();
 
                     // Begin validation, and save state if the torrent is done
                     self.check_complete();
@@ -916,7 +919,7 @@ impl<T: cio::CIO> Torrent<T> {
                     }
                 }
 
-                if !self.complete() && !self.status.stopped() {
+                if !self.complete() && !self.status.stopped() && self.status.validating.is_none() {
                     Torrent::make_requests(peer, &mut self.picker, &self.info);
                 }
             }
@@ -1159,6 +1162,18 @@ impl<T: cio::CIO> Torrent<T> {
         ]));
     }
 
+    fn rpc_update_pieces(&mut self) {
+        let id = self.rpc_id();
+        let piece_field = self.pieces.b64();
+        self.cio.msg_rpc(rpc::CtlMessage::Update(vec![
+            resource::SResourceUpdate::TorrentPieces {
+                id,
+                kind: resource::ResourceKind::Torrent,
+                piece_field,
+            },
+        ]));
+    }
+
     fn start(&mut self) {
         debug!("Starting torrent");
         // Update RPC of the torrent, tracker, files, and peers
@@ -1313,6 +1328,7 @@ impl<T: cio::CIO> Torrent<T> {
             trackers: self.trackers.len() as u8,
             pieces,
             piece_size,
+            piece_field: self.pieces.b64(),
             files,
             ..Default::default()
         })
@@ -1457,13 +1473,12 @@ impl<T: cio::CIO> Torrent<T> {
     }
 
     fn make_requests_pid(&mut self, pid: usize) {
-        if self.status.stopped() {
-            return;
+        if !self.complete() && !self.status.stopped() && self.status.validating.is_none() {
+            let peer = self.peers
+                .get_mut(&pid)
+                .expect("Expected peer id not present");
+            Torrent::make_requests(peer, &mut self.picker, &self.info);
         }
-        let peer = self.peers
-            .get_mut(&pid)
-            .expect("Expected peer id not present");
-        Torrent::make_requests(peer, &mut self.picker, &self.info);
     }
 
     fn make_requests(peer: &mut Peer<T>, picker: &mut Picker, info: &Info) {
