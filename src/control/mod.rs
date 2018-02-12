@@ -581,6 +581,7 @@ impl<T: cio::CIO> Control<T> {
         trace!("Adding peer to torrent {:?}!", id);
         if let Some(torrent) = self.torrents.get_mut(&id) {
             if !self.queue.active_dl.contains(&id) && !torrent.status().completed() {
+                self.queue.add(id, torrent.priority());
                 return;
             }
             if let Some(pid) = torrent.add_peer(peer) {
@@ -593,6 +594,7 @@ impl<T: cio::CIO> Control<T> {
         trace!("Adding peer to torrent {:?}!", id);
         if let Some(torrent) = self.torrents.get_mut(&id) {
             if !self.queue.active_dl.contains(&id) && !torrent.status().completed() {
+                self.queue.add(id, torrent.priority());
                 return;
             }
             if let Some(pid) = torrent.add_inc_peer(peer, cid, rsv) {
@@ -803,6 +805,9 @@ impl<T: cio::CIO> CJob<T> for EnqueueUpdate {
             Some(t) => !t.status().completed(),
             None => false,
         });
+        for q in &mut queue.inactive_dl {
+            q.retain(|tid| torrents.contains_key(tid));
+        }
         queue.enqueue(|tid| torrents.get_mut(&tid).unwrap().update_tracker());
     }
 }
