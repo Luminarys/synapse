@@ -27,7 +27,6 @@ error_chain! {
 #[derive(Debug, Clone)]
 pub struct Config {
     pub port: u16,
-    pub max_ul: u32,
     pub max_dl: u32,
     pub trk: TrkConfig,
     pub dht: DhtConfig,
@@ -47,8 +46,6 @@ pub struct DhtConfig {
 pub struct ConfigFile {
     #[serde(default = "default_port")]
     pub port: u16,
-    #[serde(default = "default_max_ul")]
-    pub max_ul: u32,
     #[serde(default = "default_max_dl")]
     pub max_dl: u32,
     #[serde(default)]
@@ -126,13 +123,19 @@ impl ConfigFile {
         ];
         for file in &files {
             let mut s = String::new();
-            let res = shellexpand::full(&file)
+            let res: Result<ConfigFile> = shellexpand::full(&file)
                 .chain_err(|| ErrorKind::Env)
                 .and_then(|p| fs::File::open(&*p).chain_err(|| ErrorKind::IO))
                 .and_then(|mut f| f.read_to_string(&mut s).chain_err(|| ErrorKind::IO))
                 .and_then(|_| toml::from_str(&s).chain_err(|| ErrorKind::Format));
             match res {
-                Ok(cfg) => return Ok(cfg),
+                Ok(cfg) => {
+                    if cfg.max_dl == 0 {
+                        error!("Config max_dl must not be 0");
+                        ::std::process::abort();
+                    }
+                    return Ok(cfg);
+                }
                 Err(e @ Error(ErrorKind::Format, _)) => {
                     use std::error::Error;
                     error!(
@@ -162,7 +165,6 @@ impl Config {
         file.disk.directory = shellexpand::tilde(&file.disk.directory).into();
         Config {
             port: file.port,
-            max_ul: file.max_ul,
             max_dl: file.max_dl,
             trk: file.tracker,
             rpc: file.rpc,
@@ -176,9 +178,6 @@ impl Config {
 
 fn default_port() -> u16 {
     16_384
-}
-fn default_max_ul() -> u32 {
-    500
 }
 fn default_max_dl() -> u32 {
     10
@@ -232,7 +231,6 @@ impl Default for Config {
     fn default() -> Self {
         Config {
             port: default_port(),
-            max_ul: default_max_ul(),
             max_dl: default_max_dl(),
             trk: Default::default(),
             rpc: Default::default(),

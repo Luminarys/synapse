@@ -4,11 +4,11 @@ use std::sync::atomic;
 use std::path::PathBuf;
 
 use chrono::Utc;
-use bincode;
-use amy;
+use {amy, bincode};
 
 use {disk, listener, rpc, stat, tracker, CONFIG, DL_TOKEN, SHUTDOWN};
-use util::{self, hash_to_id, id_to_hash, io_err, io_err_val, random_string, MHashMap, UHashMap};
+use util::{self, hash_to_id, id_to_hash, io_err, io_err_val, random_string, FHashSet, MHashMap,
+           UHashMap};
 use torrent::{self, peer, Torrent};
 use throttle::Throttler;
 
@@ -30,6 +30,8 @@ const TX_JOB_MS: u64 = 500;
 const TOKEN_JOB_SECS: u64 = 60 * 60 * 4;
 /// Interval to check space on disk
 const SPACE_JOB_SECS: u64 = 10;
+/// Interval to enqueue new torrents
+const ENQUEUE_JOB_SECS: u64 = 5;
 
 /// Interval to requery all jobs and execute if needed
 const JOB_INT_MS: usize = 500;
@@ -42,6 +44,7 @@ pub struct Control<T: cio::CIO> {
     stat: stat::EMA,
     jobs: JobManager<T>,
     torrents: UHashMap<Torrent<T>>,
+    queue: Queue,
     peers: UHashMap<usize>,
     hash_idx: MHashMap<[u8; 20], usize>,
     data: ServerData,
@@ -61,6 +64,11 @@ struct ServerData {
     free_space: u64,
     throttle_ul: Option<i64>,
     throttle_dl: Option<i64>,
+}
+
+struct Queue {
+    active_dl: FHashSet<usize>,
+    inactive_dl: [FHashSet<usize>; 6],
 }
 
 pub trait CJob<T: cio::CIO> {
@@ -106,6 +114,7 @@ impl<T: cio::CIO> Control<T> {
 
         jobs.add_cjob(TokenUpdate, time::Duration::from_secs(TOKEN_JOB_SECS));
         jobs.add_cjob(SpaceUpdate, time::Duration::from_secs(SPACE_JOB_SECS));
+        jobs.add_cjob(EnqueueUpdate, time::Duration::from_secs(ENQUEUE_JOB_SECS));
         let job_timer = cio.set_timer(JOB_INT_MS)
             .map_err(|_| io_err_val("timer failure!"))?;
         Ok(Control {
@@ -120,6 +129,7 @@ impl<T: cio::CIO> Control<T> {
             stat: stat::EMA::new(),
             data: Default::default(),
             db,
+            queue: Queue::new(),
         })
     }
 
@@ -212,6 +222,7 @@ impl<T: cio::CIO> Control<T> {
             trace!("Succesfully parsed torrent file {:?}", dir.path());
             self.hash_idx.insert(t.info().hash, tid);
             self.tid_cnt += 1;
+            self.queue.add(tid, t.priority());
             self.torrents.insert(tid, t);
         } else {
             error!("Failed to deserialize torrent {:?}", dir.file_name());
@@ -368,7 +379,7 @@ impl<T: cio::CIO> Control<T> {
     ) {
         debug!("Adding {:?}, start: {}!", info, start);
         if self.hash_idx.contains_key(&info.hash) {
-            error!("Torrent already exists!");
+            info!("Tried to add torrent that already exists!");
             return;
         }
         let id = hash_to_id(&info.hash);
@@ -377,6 +388,7 @@ impl<T: cio::CIO> Control<T> {
         let t = Torrent::new(tid, path, info, throttle, self.cio.new_handle(), start);
         self.hash_idx.insert(t.info().hash, tid);
         self.tid_cnt += 1;
+        self.queue.add(tid, t.priority());
         self.torrents.insert(tid, t);
         self.cio
             .msg_rpc(rpc::CtlMessage::Uploaded { id, client, serial })
@@ -392,7 +404,10 @@ impl<T: cio::CIO> Control<T> {
                     .and_then(|d| hash_idx.get(d.as_ref()))
                     .and_then(|i| torrents.get_mut(i));
                 if let Some(t) = res {
+                    let old_pri = t.priority();
                     t.rpc_update(u);
+                    let new_pri = t.priority();
+                    self.queue.modify_pri(t.id(), new_pri, old_pri);
                 }
             }
             rpc::Message::Torrent {
@@ -565,6 +580,9 @@ impl<T: cio::CIO> Control<T> {
     fn add_peer(&mut self, id: usize, peer: peer::PeerConn) {
         trace!("Adding peer to torrent {:?}!", id);
         if let Some(torrent) = self.torrents.get_mut(&id) {
+            if !self.queue.active_dl.contains(&id) && !torrent.status().completed() {
+                return;
+            }
             if let Some(pid) = torrent.add_peer(peer) {
                 self.peers.insert(pid, id);
             }
@@ -574,6 +592,9 @@ impl<T: cio::CIO> Control<T> {
     fn add_inc_peer(&mut self, id: usize, peer: peer::PeerConn, cid: [u8; 20], rsv: [u8; 8]) {
         trace!("Adding peer to torrent {:?}!", id);
         if let Some(torrent) = self.torrents.get_mut(&id) {
+            if !self.queue.active_dl.contains(&id) && !torrent.status().completed() {
+                return;
+            }
             if let Some(pid) = torrent.add_inc_peer(peer, cid, rsv) {
                 self.peers.insert(pid, id);
             }
@@ -655,6 +676,57 @@ impl ServerData {
     }
 }
 
+impl Queue {
+    fn new() -> Queue {
+        let inactive_dl = [
+            FHashSet::default(),
+            FHashSet::default(),
+            FHashSet::default(),
+            FHashSet::default(),
+            FHashSet::default(),
+            FHashSet::default(),
+        ];
+        Queue {
+            active_dl: FHashSet::default(),
+            inactive_dl,
+        }
+    }
+
+    fn dl_full(&self) -> bool {
+        self.active_dl.len() == CONFIG.max_dl as usize
+    }
+
+    fn modify_pri(&mut self, id: usize, pri: u8, old_pri: u8) {
+        let pri = pri as usize;
+        let old_pri = old_pri as usize;
+        self.inactive_dl[old_pri].remove(&id);
+        self.inactive_dl[pri].insert(id);
+    }
+
+    fn add(&mut self, id: usize, pri: u8) {
+        let pri = pri as usize;
+        if self.dl_full() {
+            self.inactive_dl[pri].insert(id);
+        } else {
+            self.active_dl.insert(id);
+        }
+    }
+
+    fn enqueue<F: FnMut(usize)>(&mut self, mut f: F) {
+        while !self.dl_full() && self.inactive_dl.iter().any(|q| !q.is_empty()) {
+            for i in (0..self.inactive_dl.len()).rev() {
+                if !self.inactive_dl[i].is_empty() {
+                    let next = { *self.inactive_dl[i].iter().next().unwrap() };
+                    self.inactive_dl[i].remove(&next);
+                    self.active_dl.insert(next);
+                    f(next);
+                    break;
+                }
+            }
+        }
+    }
+}
+
 impl<T: cio::CIO> JobManager<T> {
     pub fn new() -> JobManager<T> {
         JobManager {
@@ -717,5 +789,20 @@ pub struct SpaceUpdate;
 impl<T: cio::CIO> CJob<T> for SpaceUpdate {
     fn update(&mut self, control: &mut Control<T>) {
         control.cio.msg_disk(disk::Request::FreeSpace);
+    }
+}
+
+pub struct EnqueueUpdate;
+
+impl<T: cio::CIO> CJob<T> for EnqueueUpdate {
+    fn update(&mut self, control: &mut Control<T>) {
+        let queue = &mut control.queue;
+        let torrents = &mut control.torrents;
+
+        queue.active_dl.retain(|tid| match torrents.get(tid) {
+            Some(t) => !t.status().completed(),
+            None => false,
+        });
+        queue.enqueue(|tid| torrents.get_mut(&tid).unwrap().update_tracker());
     }
 }

@@ -416,6 +416,14 @@ impl<T: cio::CIO> Torrent<T> {
         &self.pieces
     }
 
+    pub fn status(&self) -> &Status {
+        &self.status
+    }
+
+    pub fn priority(&self) -> u8 {
+        self.priority
+    }
+
     pub fn set_tracker_response(&mut self, url: &Url, resp: &tracker::Result<TrackerResponse>) {
         debug!("Processing tracker response");
         let mut time = Instant::now();
@@ -483,7 +491,7 @@ impl<T: cio::CIO> Torrent<T> {
         }
     }
 
-    fn update_tracker(&mut self) {
+    pub fn update_tracker(&mut self) {
         if let Some(req) = tracker::Request::interval(self) {
             self.cio.msg_trk(req);
         }
