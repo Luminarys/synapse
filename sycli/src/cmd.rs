@@ -388,13 +388,13 @@ pub fn watch(mut c: Client, id: &str, output: &str, completion: bool) -> Result<
         }
         loop {
             if let SMessage::UpdateResources { resources, .. } = c.recv()? {
-                for r in &resources {
-                    res.update(r);
-                    if let &SResourceUpdate::TorrentTransfer { progress, .. } = r {
+                for r in resources {
+                    if let &SResourceUpdate::TorrentTransfer { progress, .. } = &r {
                         if completion && progress == 1.0 {
                             return Ok(());
                         }
                     }
+                    res.update(r);
                 }
                 break;
             }
