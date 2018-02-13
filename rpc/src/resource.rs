@@ -264,6 +264,9 @@ impl Server {
 pub struct Torrent {
     pub id: String,
     pub name: Option<String>,
+    pub creator: Option<String>,
+    pub comment: Option<String>,
+    pub private: bool,
     pub path: String,
     pub created: DateTime<Utc>,
     pub modified: DateTime<Utc>,
@@ -841,6 +844,13 @@ impl Queryable for Torrent {
             "name" => Some(Field::O(Box::new(
                 self.name.as_ref().map(|v| Field::S(v.as_str())),
             ))),
+            "private" => Some(Field::B(self.private)),
+            "creator" => Some(Field::O(Box::new(
+                self.creator.as_ref().map(|v| Field::S(v.as_str())),
+            ))),
+            "comment" => Some(Field::O(Box::new(
+                self.comment.as_ref().map(|v| Field::S(v.as_str())),
+            ))),
             "path" => Some(Field::S(&self.path)),
             "status" => Some(Field::S(self.status.as_str())),
             "error" => Some(Field::O(Box::new(
@@ -1020,6 +1030,9 @@ impl Default for Torrent {
         Torrent {
             id: "".to_owned(),
             name: None,
+            comment: None,
+            creator: None,
+            private: false,
             path: "".to_owned(),
             created: Utc::now(),
             modified: Utc::now(),

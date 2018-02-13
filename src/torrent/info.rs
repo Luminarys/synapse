@@ -15,6 +15,8 @@ use util::{hash_to_id, id_to_hash, sha1_hash};
 pub struct Info {
     pub name: String,
     pub announce: Option<Url>,
+    pub creator: Option<String>,
+    pub comment: Option<String>,
     pub piece_len: u32,
     pub total_len: u64,
     pub hashes: Vec<Vec<u8>>,
@@ -118,6 +120,8 @@ impl Info {
             .unwrap_or_else(|| "".to_owned());
         Ok(Info {
             name,
+            comment: None,
+            creator: None,
             announce,
             piece_len: 0,
             total_len: 0,
@@ -209,6 +213,8 @@ impl Info {
                     .into_string()
                     .ok_or_else(|| "Info must have announce URL")
                     .and_then(|a| Url::parse(&a).map_err(|_| "Info has invalid announce URL"))?;
+                let comment = d.remove("comment").and_then(|b| b.into_string());
+                let creator = d.remove("created by").and_then(|b| b.into_string());
                 let pl = i.remove("piece length")
                     .and_then(|i| i.into_int())
                     .ok_or("Info must specify piece length")? as u64;
@@ -286,6 +292,8 @@ impl Info {
 
                 Ok(Info {
                     name,
+                    comment,
+                    creator,
                     announce: Some(a),
                     piece_len: pl as u32,
                     hashes,
@@ -319,6 +327,8 @@ impl Info {
     pub fn with_pieces(pieces: usize) -> Info {
         Info {
             name: String::from(""),
+            comment: None,
+            creator: None,
             announce: None,
             piece_len: 16_384,
             total_len: 16_384 * pieces as u64,
@@ -343,6 +353,8 @@ impl Info {
         Info {
             name: String::from(""),
             announce: None,
+            comment: None,
+            creator: None,
             piece_len: 16_384 * scale,
             total_len: 16_384 * pieces as u64 * scale as u64,
             hashes: vec![vec![0u8]; pieces as usize],

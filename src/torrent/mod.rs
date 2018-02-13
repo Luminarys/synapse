@@ -248,6 +248,8 @@ impl<T: cio::CIO> Torrent<T> {
         let info = Arc::new(Info {
             name: d.info.name,
             announce: d.info.announce.and_then(|u| Url::parse(&u).ok()),
+            comment: d.info.comment,
+            creator: d.info.creator,
             piece_len: d.info.piece_len,
             total_len: d.info.total_len,
             hashes: d.info.hashes,
@@ -345,6 +347,8 @@ impl<T: cio::CIO> Torrent<T> {
             info: session::torrent::current::Info {
                 name: self.info.name.clone(),
                 announce: self.info.announce.as_ref().map(|a| a.as_str().to_owned()),
+                comment: self.info.comment.clone(),
+                creator: self.info.creator.clone(),
                 piece_len: self.info.piece_len,
                 total_len: self.info.total_len,
                 hashes: self.info.hashes.clone(),
@@ -1329,6 +1333,9 @@ impl<T: cio::CIO> Torrent<T> {
             pieces,
             piece_size,
             piece_field: self.pieces.b64(),
+            private: self.info.private,
+            creator: self.info.creator.clone(),
+            comment: self.info.comment.clone(),
             files,
             ..Default::default()
         })
