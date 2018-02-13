@@ -3,7 +3,6 @@
 
 #include <fcntl.h>
 #include <stdint.h>
-#include <linux/falloc.h>
 
 int native_fallocate(int fd, uint64_t len) {
     return fallocate(fd, 0, 0, (off_t)len);
