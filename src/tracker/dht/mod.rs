@@ -17,7 +17,7 @@ mod proto;
 type ID = BigUint;
 
 const BUCKET_MAX: usize = 8;
-const MAX_BUCKETS: usize = 32;
+const MAX_BUCKETS: usize = 64;
 const VERSION: &'static str = "SY";
 const SESSION_FILE: &'static str = "dht_data";
 const MIN_BOOTSTRAP_BKTS: usize = 2;
@@ -44,7 +44,6 @@ impl Manager {
             f.read_to_end(&mut data)?;
         }
         let table = if let Some(t) = rt::RoutingTable::deserialize(&data[..]) {
-            info!("DHT table loaded from disk!");
             t
         } else {
             info!("DHT table could not be read from disk, creating new table!");

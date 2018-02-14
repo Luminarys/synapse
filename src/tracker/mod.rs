@@ -277,7 +277,7 @@ impl Tracker {
     fn send_response(&mut self, r: Response) {
         if !self.shutting_down {
             debug!("Sending trk response to control!");
-            self.ch.send(r).unwrap();
+            self.ch.send(r).ok();
         }
         // TODO: The active announce queue could grow with DHT usage,
         // since DHT stuff doesn't go into the announce queue, but still triggers send_response.

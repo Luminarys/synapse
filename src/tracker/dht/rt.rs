@@ -1,6 +1,6 @@
 use std::net::SocketAddr;
 use std::{cmp, mem};
-use std::collections::{HashMap, VecDeque};
+use std::collections::HashMap;
 use chrono::{DateTime, Utc};
 use num::bigint::BigUint;
 use rand::{self, Rng};
@@ -51,7 +51,6 @@ pub struct Bucket {
     start: ID,
     end: ID,
     last_updated: DateTime<Utc>,
-    queue: VecDeque<proto::Node>,
     nodes: Vec<Node>,
 }
 
@@ -99,7 +98,14 @@ impl RoutingTable {
     }
 
     pub fn deserialize(data: &[u8]) -> Option<RoutingTable> {
-        bincode::deserialize(data).ok()
+        bincode::deserialize(data).ok().map(|rt: RoutingTable| {
+            info!(
+                "Loaded {} dht buckets, {} nodes",
+                rt.buckets.len(),
+                rt.buckets.iter().map(|buk| buk.nodes.len()).sum::<usize>()
+            );
+            rt
+        })
     }
 
     pub fn add_addr(&mut self, addr: SocketAddr) -> (proto::Request, SocketAddr) {
@@ -387,7 +393,7 @@ impl RoutingTable {
 
     pub fn tick(&mut self) -> Vec<(proto::Request, SocketAddr)> {
         let mut reqs = Vec::new();
-        let dur = self.last_tick.signed_duration_since(Utc::now());
+        let dur = Utc::now().signed_duration_since(self.last_tick);
         if dur.num_seconds() < 10 {
             return reqs;
         }
@@ -399,10 +405,10 @@ impl RoutingTable {
         }
 
         self.transactions.retain(|_, tx| {
-            tx.created.signed_duration_since(Utc::now()).num_seconds() < TX_TIMEOUT_SECS
+            Utc::now().signed_duration_since(tx.created).num_seconds() < TX_TIMEOUT_SECS
         });
 
-        let dur = self.last_token_refresh.signed_duration_since(Utc::now());
+        let dur = Utc::now().signed_duration_since(self.last_token_refresh);
         let tok_refresh = dur.num_minutes() > 5;
 
         for bucket in &mut self.buckets {
@@ -410,7 +416,7 @@ impl RoutingTable {
                 if tok_refresh {
                     node.new_token();
                 }
-                let dur = node.last_updated.signed_duration_since(Utc::now());
+                let dur = Utc::now().signed_duration_since(node.last_updated);
                 if dur.num_minutes() > 15 {
                     if node.good() {
                         node.state = NodeState::Questionable(1);
@@ -529,7 +535,6 @@ impl RoutingTable {
                 self.split_bucket(idx);
                 self.add_node(node)
             } else {
-                // Discard, or TODO: add to queue
                 Err(())
             }
         } else {
@@ -583,7 +588,6 @@ impl Bucket {
             start,
             end,
             last_updated: Utc::now(),
-            queue: VecDeque::new(),
             nodes: Vec::with_capacity(BUCKET_MAX),
         }
     }
@@ -595,6 +599,7 @@ impl Bucket {
             for n in &mut self.nodes {
                 if !n.good() {
                     mem::swap(n, &mut node);
+                    break;
                 }
             }
         }
@@ -605,7 +610,7 @@ impl Bucket {
     }
 
     fn full(&self) -> bool {
-        self.nodes.len() == BUCKET_MAX && self.nodes.iter().all(|n| n.good())
+        self.nodes.len() >= BUCKET_MAX && self.nodes.iter().all(|n| n.good())
     }
 
     fn midpoint(&self) -> ID {
