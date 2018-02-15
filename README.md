@@ -2,15 +2,15 @@
 [![Build Status](https://travis-ci.org/Luminarys/synapse.svg?branch=master)](https://travis-ci.org/Luminarys/synapse)
 
 Synapse is a flexible and lightweight BitTorrent daemon.
+
 It currently supports all systems which implement epoll or kqueue, with a focus on 64-bit linux servers.
 
 ## Why?
-Even though there are quite a few other bittorrent clients, synapse tries to provide a completely functional client out of the box with minimal extra software needed.
-Features like an HTTP server for downloading files exist as they're commonly needed on a server and non trivial to setup manually.
-Anyone who has needed to setup rtorrent/rutorrent will appreciate the fact that synapse once started can immediatly be used via receptor in a browser.
-
-Synapse also offers a flexible and extensible event based RPC protocol, using websockets.
-Those interested in scripting synapse should find it easy to do so, with filterable event notifications and custom user data easily storable.
+* A completely functional client out of the box
+* Commonly needed server features like HTTP downloads supported
+* Can be used via web client without any painful extra setup
+* Flexible and extensible event based RPC, using websockets
+* Easy to script, with filterable event notifications and custom user data part of RPC
 
 ## Compiling
 
