@@ -1,0 +1,25 @@
+This document provides a high level overview of the internal structure of synapse.
+Synapse uses a fixed number of threads, each dedicated to certain operations, which are spawned by main.
+All threads try to share as little state as possible and pass messages via channels.
+
+The threads are:
+* Disk - manages all non-synchronous file IO which must occur
+* Listener - handshakes incoming peer connections
+* RPC - manages RPC clients and RPC state
+* Tracker - manages DHT and tracker announces
+* Control - handles all peer connections
+
+Control:
+All IO is abstracted behind an interface called CIO(Control IO), which effectively acts as an event stream for peer/service messages.
+For convenience, CIO is shared between quite a few structures, so unsafe is used, but the interface is explicitly designed to prevent references from being taken out.
+There's quite a bit of cruft in here in particular and weird hacks that had to be done, some cleanup could definitely be used.
+
+Disk:
+Implements manually resumable jobs which effectively act as coroutines that yield after a fixed time slice.
+It also uses a lazy cache based on mmap'd files which are fallocate'd on creation.
+In the future, madvise should probably be used along with potentially directly transferring from peer buffers into the mmap'd buffers; see the mmap issue.
+
+RPC:
+Partially abstracted into its own crate which handles all de/serialization as well as many common ops.
+The RPC thread maintains a complete copy of state to prevent any contention with the control thread at the risk of small amounts of latency and some memory duplication.
+It also manages incoming HTTP/Websocket connections. Some HTTP conformance may be needed, but for the most part it "works".
