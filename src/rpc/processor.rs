@@ -125,9 +125,7 @@ impl Processor {
     pub fn get_dl(&self, id: &str) -> Option<(String, u64)> {
         match self.resources.get(id) {
             Some(&Resource::File(ref f)) => match self.resources.get(&f.torrent_id) {
-                Some(&Resource::Torrent(ref t)) => {
-                    Some((t.path.clone() + "/" + &f.path, t.size.unwrap_or(0)))
-                }
+                Some(&Resource::Torrent(ref t)) => Some((t.path.clone() + "/" + &f.path, f.size)),
                 _ => None,
             },
             _ => None,

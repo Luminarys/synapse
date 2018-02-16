@@ -57,7 +57,7 @@ impl Socket {
 
     pub fn from_stream(conn: TcpStream) -> io::Result<Socket> {
         conn.set_nonblocking(true)?;
-        let addr = conn.peer_addr().unwrap();
+        let addr = conn.peer_addr()?;
         Ok(Socket {
             conn,
             throttle: None,
