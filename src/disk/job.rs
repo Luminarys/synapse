@@ -565,11 +565,16 @@ impl Request {
                         let len = ranges[range_idx].length;
                         let mut amnt = cmp::min(len, 16_384);
 
-                        fc.get_file(path::Path::new(&path), None, |f| {
-                            f.seek(SeekFrom::Start(offset))?;
-                            f.read_exact(&mut buf[0..amnt as usize])?;
-                            Ok(())
-                        })?;
+                        fc.get_file_range(
+                            path::Path::new(&path),
+                            None,
+                            offset,
+                            amnt as usize,
+                            true,
+                            |bytes| {
+                                (&mut buf[0..amnt as usize]).copy_from_slice(bytes);
+                            },
+                        )?;
                         ranges[range_idx].length -= amnt;
                         ranges[range_idx].start += amnt;
                         buf_max = amnt as usize;

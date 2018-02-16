@@ -29,25 +29,6 @@ impl FileCache {
         }
     }
 
-    pub fn get_file<R, F: FnMut(&mut fs::File) -> io::Result<R>>(
-        &mut self,
-        path: &path::Path,
-        size: Option<u64>,
-        mut f: F,
-    ) -> io::Result<R> {
-        self.ensure_exists(path, size)?;
-
-        #[cfg(target_pointer_width = "32")]
-        {
-            f(self.files.get_mut(path).unwrap())
-        }
-
-        #[cfg(target_pointer_width = "64")]
-        {
-            f(&mut self.files.get_mut(path).unwrap().0)
-        }
-    }
-
     pub fn get_file_range<R, F: FnMut(&mut [u8]) -> R>(
         &mut self,
         path: &path::Path,

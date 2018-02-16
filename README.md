@@ -6,7 +6,7 @@ Synapse is a flexible and lightweight BitTorrent daemon.
 It currently supports all systems which implement epoll or kqueue, with a focus on 64-bit linux servers.
 
 ## Why?
-* A completely functional client out of the box
+* Completely functional client out of the box
 * Commonly needed server features like HTTP downloads supported
 * Can be used via web client without any painful extra setup
 * Flexible and extensible event based RPC, using websockets
