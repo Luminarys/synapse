@@ -3,6 +3,7 @@ use std::os::unix::io::{AsRawFd, RawFd};
 use std::io::{self, ErrorKind};
 use std::mem;
 
+use nix::libc;
 use net2::{TcpBuilder, TcpStreamExt};
 use openssl::ssl::{HandshakeError, MidHandshakeSslStream, SslConnectorBuilder, SslMethod,
                    SslStream};
@@ -10,8 +11,6 @@ use amy;
 
 use throttle::Throttle;
 use util;
-
-const EINPROGRESS: i32 = 115;
 
 /// Wrapper type over Mio sockets, allowing for use of UDP/TCP, encryption,
 /// rate limiting, etc.
@@ -30,7 +29,10 @@ impl Socket {
         let conn = sock.to_tcp_stream()?;
         conn.set_nonblocking(true)?;
         if let Err(e) = conn.connect(addr) {
-            if Some(EINPROGRESS) != e.raw_os_error() {
+            // OSX gives the AddrNotAvailable error sometimes
+            if Some(libc::EINPROGRESS) != e.raw_os_error()
+                && e.kind() != ErrorKind::AddrNotAvailable
+            {
                 return Err(e);
             }
         }
@@ -181,7 +183,7 @@ impl TSocket {
         self.conn = match c {
             TConn::Plain(c) => {
                 if let Err(e) = c.connect(addr) {
-                    if Some(EINPROGRESS) != e.raw_os_error() {
+                    if Some(libc::EINPROGRESS) != e.raw_os_error() {
                         return Err(e);
                     }
                 }
@@ -189,7 +191,7 @@ impl TSocket {
             }
             TConn::SSLP { host, conn } => {
                 if let Err(e) = conn.connect(addr) {
-                    if Some(EINPROGRESS) != e.raw_os_error() {
+                    if Some(libc::EINPROGRESS) != e.raw_os_error() {
                         return Err(e);
                     }
                 }

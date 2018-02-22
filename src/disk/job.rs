@@ -9,8 +9,9 @@ use sha1;
 use amy;
 use http_range::HttpRange;
 use nix::sys::statvfs;
+use nix::libc;
 
-use super::{FileCache, EXDEV, JOB_TIME_SLICE};
+use super::{FileCache, JOB_TIME_SLICE};
 use torrent::{Info, LocIter};
 use util::{awrite, hash_to_id, io_err, IOR};
 use CONFIG;
@@ -354,7 +355,7 @@ impl Request {
                 match fs::rename(&fp, &tp) {
                     Ok(_) => {}
                     // Cross filesystem move, try to copy then delete
-                    Err(ref e) if e.raw_os_error() == Some(EXDEV) => {
+                    Err(ref e) if e.raw_os_error() == Some(libc::EXDEV) => {
                         match fs_extra::dir::copy(&fp, &tp, &fs_extra::dir::CopyOptions::new()) {
                             Ok(_) => {
                                 fs::remove_dir_all(&fp)?;

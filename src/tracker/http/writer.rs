@@ -20,7 +20,8 @@ impl Writer {
                 Ok(None)
             }
             Err(e) => {
-                if e.kind() == io::ErrorKind::WouldBlock {
+                if e.kind() == io::ErrorKind::WouldBlock || e.kind() == io::ErrorKind::NotConnected
+                {
                     Ok(None)
                 } else {
                     Err(ErrorKind::IO.into())

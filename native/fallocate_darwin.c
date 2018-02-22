@@ -9,6 +9,14 @@ int native_fallocate(int fd, uint64_t len) {
     fstore.fst_posmode = F_PEOFPOSMODE;
     fstore.fst_offset = 0;
     fstore.fst_length = len;
-    fstore.fst_bytesalloc = 0;
-    return fcntl(fd, F_PREALLOCATE, &fstore);
+    int res = fcntl(fd, F_PREALLOCATE, &fstore);
+    if (res == -1) {
+        // Due to fragmentation continuous allocation may not be possible
+        fstore.fst_flags = F_ALLOCATEALL;
+        res = fcntl(fd, F_PREALLOCATE, &fstore);
+        if (res == -1) {
+            return -1;
+        }
+    }
+    return ftruncate(fd, len);
 }

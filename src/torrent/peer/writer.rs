@@ -103,7 +103,7 @@ impl Writer {
                 }
                 Ok(false) => {}
                 Err(e) => {
-                    if e.kind() == ErrorKind::WouldBlock {
+                    if e.kind() == ErrorKind::WouldBlock || e.kind() == ErrorKind::NotConnected {
                         break;
                     } else {
                         return Err(e);
