@@ -301,7 +301,7 @@ fn validate_dl(req: &httparse::Request) -> Option<(String, Option<String>)> {
         .and_then(|url| {
             if CONFIG.rpc.auth {
                 let pw = url.query_pairs()
-                    .find(|&(ref k, _)| k == "password")
+                    .find(|&(ref k, _)| k == "token")
                     .map(|(_, v)| format!("{}", v))
                     .map(|p| p == *DL_TOKEN.lock().unwrap())
                     .unwrap_or(false);
