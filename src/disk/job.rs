@@ -2,7 +2,6 @@ use std::sync::Arc;
 use std::{cmp, fmt, fs, path, time};
 use std::io::{self, Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
-use std::net::TcpStream;
 
 use fs_extra;
 use sha1;
@@ -13,6 +12,7 @@ use nix::libc;
 
 use super::{FileCache, JOB_TIME_SLICE};
 use torrent::{Info, LocIter};
+use socket::TSocket;
 use util::{awrite, hash_to_id, io_err, IOR};
 use CONFIG;
 
@@ -70,7 +70,7 @@ pub enum Request {
         path: PathBuf,
     },
     Download {
-        client: TcpStream,
+        client: TSocket,
         path: String,
         range_idx: usize,
         id: usize,
@@ -186,7 +186,7 @@ impl Request {
     }
 
     pub fn download(
-        client: TcpStream,
+        client: TSocket,
         path: String,
         mut ranges: Vec<HttpRange>,
         mut ranged: bool,

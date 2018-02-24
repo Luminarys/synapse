@@ -6,11 +6,9 @@ Synapse is a flexible and lightweight BitTorrent daemon.
 It currently supports all systems which implement epoll or kqueue, with a focus on 64-bit linux servers.
 
 ## Why?
-* Completely functional client out of the box
-* Commonly needed server features like HTTP downloads supported
-* Can be used via web client without any painful extra setup
-* Flexible and extensible event based RPC, using websockets
-* Easy to script, with filterable event notifications and custom user data part of RPC
+* Functional client out of the box with HTTP downloads and TLS
+* Can be used via web client with minimal setup
+* Event based RPC using websockets with filterable notifications and custom user data
 
 ## Compiling
 
@@ -18,12 +16,10 @@ Install dependencies:
 
 - rustc >= 1.19
 - cargo >= 0.18
-- openssl
+- OpenSSL
 - c-ares 1.13 | build tools *
 
 _\*Only required for synapse_
-
-_\**Only required for sycli_
 
 Synapse and sycli can be installed with:
 ```

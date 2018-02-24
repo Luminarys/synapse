@@ -2,8 +2,7 @@ mod reader;
 mod writer;
 
 use std::time::{Duration, Instant};
-use std::mem;
-use std::io::{self, Read, Write};
+use std::{io, mem};
 use std::net::SocketAddr;
 
 use url::percent_encoding::percent_encode_byte;
@@ -43,10 +42,6 @@ enum TrackerState {
         sock: TSocket,
         req: Vec<u8>,
         port: u16,
-    },
-    Handshaking {
-        sock: TSocket,
-        req: Vec<u8>,
     },
     Writing {
         sock: TSocket,
@@ -95,61 +90,18 @@ impl TrackerState {
             ) => {
                 let addr = SocketAddr::new(r.res?, port);
                 sock.connect(addr).chain_err(|| ErrorKind::IO)?;
-                if sock.ssl() {
-                    Ok(TrackerState::Handshaking { sock, req }
-                        .next(Event::Writable)?
-                        .next(Event::Readable)?)
-                } else {
-                    Ok(TrackerState::Writing {
-                        sock,
-                        writer: Writer::new(req),
-                    }.next(Event::Writable)?)
-                }
-            }
-            (TrackerState::Handshaking { mut sock, req }, Event::Readable) => {
-                match sock.read(&mut [0u8; 0]) {
-                    Ok(0) => Ok(TrackerState::Handshaking { sock, req }),
-                    Ok(_) => {
-                        debug!("SSL upgrade succeeded!");
-                        Ok(TrackerState::Writing {
-                            sock,
-                            writer: Writer::new(req),
-                        }.next(Event::Writable)?)
-                    }
-                    Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
-                        Ok(TrackerState::Handshaking { sock, req })
-                    }
-                    e => {
-                        debug!("Handshake failure: {:?}", e);
-                        bail!("SSL Handshake failed!");
-                    }
-                }
-            }
-            (TrackerState::Handshaking { mut sock, req }, Event::Writable) => {
-                match sock.write(&[0u8; 0]) {
-                    Ok(0) => Ok(TrackerState::Handshaking { sock, req }),
-                    Ok(_) => {
-                        debug!("SSL upgrade succeeded!");
-                        Ok(TrackerState::Writing {
-                            sock,
-                            writer: Writer::new(req),
-                        })
-                    }
-                    Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
-                        Ok(TrackerState::Handshaking { sock, req })
-                    }
-                    e => {
-                        debug!("Handshake failure: {:?}", e);
-                        bail!("SSL Handshake failed!");
-                    }
-                }
+                Ok(TrackerState::Writing {
+                    sock,
+                    writer: Writer::new(req),
+                }.next(Event::Writable)?
+                    .next(Event::Readable)?)
             }
             (
                 TrackerState::Writing {
                     mut sock,
                     mut writer,
                 },
-                Event::Writable,
+                _,
             ) => match writer.writable(&mut sock)? {
                 Some(()) => {
                     debug!("Tracker write completed, beginning read");
@@ -163,7 +115,7 @@ impl TrackerState {
                     mut sock,
                     mut reader,
                 },
-                Event::Readable,
+                _,
             ) => match reader.readable(&mut sock)? {
                 ReadRes::Done(data) => {
                     let content = bencode::decode_buf(&data)
@@ -174,9 +126,7 @@ impl TrackerState {
                 ReadRes::Redirect(l) => Ok(TrackerState::Redirect(l)),
                 ReadRes::None => Ok(TrackerState::Reading { sock, reader }),
             },
-            (s @ TrackerState::Writing { .. }, _)
-            | (s @ TrackerState::Reading { .. }, _)
-            | (s @ TrackerState::ResolvingDNS { .. }, _) => Ok(s),
+            (s @ TrackerState::ResolvingDNS { .. }, _) => Ok(s),
             _ => bail!("Unknown state transition encountered!"),
         }
     }
@@ -327,7 +277,10 @@ impl Handler {
         };
 
         // Setup actual connection and start DNS query
-        let (id, sock) = TSocket::new_v4(&self.reg, ohost).chain_err(|| ErrorKind::IO)?;
+        let sock = TSocket::new_v4(ohost).chain_err(|| ErrorKind::IO)?;
+        let id = self.reg
+            .register(&sock, amy::Event::Both)
+            .chain_err(|| ErrorKind::IO)?;
         self.connections.insert(
             id,
             Tracker {
@@ -421,7 +374,10 @@ impl Handler {
         };
 
         // Setup actual connection and start DNS query
-        let (id, sock) = TSocket::new_v4(&self.reg, ohost).chain_err(|| ErrorKind::IO)?;
+        let sock = TSocket::new_v4(ohost).chain_err(|| ErrorKind::IO)?;
+        let id = self.reg
+            .register(&sock, amy::Event::Both)
+            .chain_err(|| ErrorKind::IO)?;
         self.connections.insert(
             id,
             Tracker {

@@ -8,12 +8,13 @@ mod transfer;
 
 use std::{io, result, str, thread};
 use std::io::Write;
-use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4, TcpListener, TcpStream};
+use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4, TcpListener};
 
 use amy;
 use serde_json;
 use http_range::HttpRange;
 use url::Url;
+use openssl::ssl::{SslAcceptor, SslFiletype, SslMethod};
 
 pub use self::proto::resource;
 pub use self::errors::{Error, ErrorKind, Result, ResultExt};
@@ -26,6 +27,7 @@ use bencode;
 use handle;
 use torrent;
 use disk;
+use socket::TSocket;
 use util::UHashMap;
 use CONFIG;
 
@@ -159,6 +161,7 @@ pub struct RPC {
     reg: amy::Registrar,
     ch: handle::Handle<CtlMessage, Message>,
     listener: TcpListener,
+    acceptor: Option<SslAcceptor>,
     lid: usize,
     cleanup: usize,
     processor: Processor,
@@ -202,6 +205,7 @@ impl RPC {
                 incoming: UHashMap::default(),
                 processor: Processor::new(db),
                 transfers: Transfers::new(),
+                acceptor: build_acceptor(&CONFIG.rpc.ssl_cert, &CONFIG.rpc.ssl_key),
             }.run()
         })?;
         Ok((ch, th))
@@ -348,8 +352,15 @@ impl RPC {
             match self.listener.accept() {
                 Ok((conn, ip)) => {
                     debug!("Accepted new connection from {:?}!", ip);
-                    let id = self.reg.register(&conn, amy::Event::Both).unwrap();
-                    self.incoming.insert(id, Incoming::new(conn));
+                    let id = self.reg.register(&conn, amy::Event::Both);
+                    let conn = if let Some(ref acceptor) = self.acceptor {
+                        TSocket::from_ssl(conn, acceptor)
+                    } else {
+                        TSocket::from_plain(conn)
+                    };
+                    if let (Ok(id), Ok(conn)) = (id, conn) {
+                        self.incoming.insert(id, Incoming::new(conn));
+                    }
                 }
                 Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
                     break;
@@ -405,8 +416,7 @@ impl RPC {
                 }
                 Ok(IncomingStatus::DL { id, range }) => {
                     debug!("Attempting DL of {}", id);
-                    let mut conn: TcpStream = i.into();
-                    self.reg.deregister(&conn).is_ok();
+                    let mut conn: TSocket = i.into();
                     if let Some((path, size)) = self.processor.get_dl(&id) {
                         if size == 0 {
                             conn.write(&EMPTY_HTTP_RESP).ok();
@@ -432,7 +442,6 @@ impl RPC {
                             ]
                         };
                         debug!("Initiating DL");
-                        conn.set_nonblocking(true).is_ok();
                         self.disk
                             .send(disk::Request::download(conn, path, r, ranged, size))
                             .ok();
@@ -443,7 +452,6 @@ impl RPC {
                 }
                 Err(e) => {
                     debug!("Incoming ws upgrade failed: {}", e);
-                    self.reg.deregister::<TcpStream>(&i.into()).unwrap();
                 }
             }
         }
@@ -565,8 +573,36 @@ impl RPC {
         }
     }
 
-    fn remove_client(&mut self, id: usize, client: Client) {
+    fn remove_client(&mut self, id: usize, _client: Client) {
         self.processor.remove_client(id);
-        self.reg.deregister::<TcpStream>(&client.into()).unwrap();
     }
+}
+
+fn build_acceptor(cert_file: &str, key_file: &str) -> Option<SslAcceptor> {
+    if cert_file == "" || key_file == "" {
+        info!("RPC SSL parameters not specified, using insecure connections!");
+        return None;
+    }
+
+    let mut builder = match SslAcceptor::mozilla_intermediate(SslMethod::tls()) {
+        Ok(b) => b,
+        Err(e) => {
+            error!("Failed to create SSL acceptor: {}", e);
+            return None;
+        }
+    };
+    if let Err(e) = builder.set_certificate_chain_file(cert_file) {
+        error!("Failed to load SSl certificate chain: {}", e);
+        return None;
+    }
+    if let Err(e) = builder.set_private_key_file(key_file, SslFiletype::PEM) {
+        error!("Failed to load SSl key: {}", e);
+        return None;
+    }
+    if let Err(e) = builder.check_private_key() {
+        error!("Failed to valdiate SSl key: {}", e);
+        return None;
+    }
+    info!("SSL initialized!");
+    Some(builder.build())
 }

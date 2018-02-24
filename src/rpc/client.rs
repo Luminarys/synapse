@@ -1,4 +1,3 @@
-use std::net::TcpStream;
 use std::{mem, result, str, time};
 use std::io::{self, Write};
 
@@ -14,10 +13,11 @@ use super::proto::message::{SMessage, Version};
 use super::{ErrorKind, Result, ResultExt};
 use super::{EMPTY_HTTP_RESP, UNAUTH_HTTP_RESP};
 use util::{aread, sha1_hash, IOR};
+use socket::TSocket;
 use {CONFIG, DL_TOKEN};
 
 pub struct Client {
-    pub conn: TcpStream,
+    pub conn: TSocket,
     r: Reader,
     w: Writer,
     buf: FragBuf,
@@ -25,7 +25,7 @@ pub struct Client {
 }
 
 pub struct Incoming {
-    pub conn: TcpStream,
+    pub conn: TSocket,
     key: Option<String>,
     buf: [u8; 1024],
     pos: usize,
@@ -128,8 +128,8 @@ impl Client {
     }
 }
 
-impl Into<TcpStream> for Client {
-    fn into(self) -> TcpStream {
+impl Into<TSocket> for Client {
+    fn into(self) -> TSocket {
         self.conn
     }
 }
@@ -164,15 +164,14 @@ impl Into<Client> for Incoming {
     }
 }
 
-impl Into<TcpStream> for Incoming {
-    fn into(self) -> TcpStream {
+impl Into<TSocket> for Incoming {
+    fn into(self) -> TSocket {
         self.conn
     }
 }
 
 impl Incoming {
-    pub fn new(conn: TcpStream) -> Incoming {
-        conn.set_nonblocking(true).unwrap();
+    pub fn new(conn: TSocket) -> Incoming {
         Incoming {
             conn,
             buf: [0; 1024],

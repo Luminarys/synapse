@@ -5,9 +5,8 @@ use std::mem;
 
 use nix::libc;
 use net2::{TcpBuilder, TcpStreamExt};
-use openssl::ssl::{HandshakeError, MidHandshakeSslStream, SslConnectorBuilder, SslMethod,
+use openssl::ssl::{HandshakeError, MidHandshakeSslStream, SslAcceptor, SslConnector, SslMethod,
                    SslStream};
-use amy;
 
 use throttle::Throttle;
 use util;
@@ -136,7 +135,6 @@ impl io::Write for Socket {
 pub struct TSocket {
     conn: TConn,
     fd: i32,
-    reg: amy::Registrar,
 }
 
 enum TConn {
@@ -150,32 +148,42 @@ enum TConn {
 }
 
 impl TSocket {
-    pub fn new_v4(r: &amy::Registrar, host: Option<String>) -> io::Result<(usize, TSocket)> {
-        let reg = r.try_clone()?;
+    pub fn new_v4(host: Option<String>) -> io::Result<TSocket> {
         let conn = TcpBuilder::new_v4()?.to_tcp_stream()?;
         conn.set_nonblocking(true)?;
-        let id = reg.register(&conn, amy::Event::Both)?;
         let fd = conn.as_raw_fd();
         let sock = match host {
             Some(h) => TSocket {
-                reg,
                 conn: TConn::SSLP { host: h, conn },
                 fd,
             },
             None => TSocket {
-                reg,
                 conn: TConn::Plain(conn),
                 fd,
             },
         };
-        Ok((id, sock))
+        Ok(sock)
     }
 
-    pub fn ssl(&self) -> bool {
-        match self.conn {
-            TConn::Plain(_) => false,
-            _ => true,
-        }
+    pub fn from_plain(stream: TcpStream) -> io::Result<TSocket> {
+        stream.set_nonblocking(true)?;
+        let fd = stream.as_raw_fd();
+        Ok(TSocket {
+            conn: TConn::Plain(stream),
+            fd,
+        })
+    }
+
+    pub fn from_ssl(stream: TcpStream, acceptor: &SslAcceptor) -> io::Result<TSocket> {
+        stream.set_nonblocking(true)?;
+        let fd = stream.as_raw_fd();
+
+        let conn = match acceptor.accept(stream) {
+            Ok(c) => TConn::SSL(c),
+            Err(HandshakeError::WouldBlock(s)) => TConn::SSLC(s),
+            Err(_) => return util::io_err("SSL Connection failed!"),
+        };
+        Ok(TSocket { conn, fd })
     }
 
     pub fn connect(&mut self, addr: SocketAddr) -> io::Result<()> {
@@ -195,14 +203,14 @@ impl TSocket {
                         return Err(e);
                     }
                 }
-                let connector = if let Ok(b) = SslConnectorBuilder::new(SslMethod::tls()) {
+                let connector = if let Ok(b) = SslConnector::builder(SslMethod::tls()) {
                     b.build()
                 } else {
                     return util::io_err("SSL Connection failed!");
                 };
                 match connector.connect(&host, conn) {
                     Ok(s) => TConn::SSL(s),
-                    Err(HandshakeError::Interrupted(s)) => TConn::SSLC(s),
+                    Err(HandshakeError::WouldBlock(s)) => TConn::SSLC(s),
                     Err(_) => return util::io_err("SSL Connection failed!"),
                 }
             }
@@ -226,8 +234,8 @@ impl io::Read for TSocket {
                     res = Ok(::std::usize::MAX);
                     TConn::SSL(s)
                 }
-                Err(HandshakeError::Interrupted(s)) => {
-                    res = Ok(0);
+                Err(HandshakeError::WouldBlock(s)) => {
+                    res = Err(io::Error::from(io::ErrorKind::WouldBlock));
                     TConn::SSLC(s)
                 }
                 Err(_) => {
@@ -242,7 +250,12 @@ impl io::Read for TSocket {
             _ => return util::io_err("Socket in failed state!"),
         };
 
-        res
+        if let Ok(::std::usize::MAX) = res {
+            debug!("SSL upgrade succeeded!");
+            self.read(buf)
+        } else {
+            res
+        }
     }
 }
 
@@ -260,8 +273,8 @@ impl io::Write for TSocket {
                     res = Ok(::std::usize::MAX);
                     TConn::SSL(s)
                 }
-                Err(HandshakeError::Interrupted(s)) => {
-                    res = Ok(0);
+                Err(HandshakeError::WouldBlock(s)) => {
+                    res = Err(io::Error::from(io::ErrorKind::WouldBlock));
                     TConn::SSLC(s)
                 }
                 Err(_) => return util::io_err("SSL Connection failed!"),
@@ -273,7 +286,12 @@ impl io::Write for TSocket {
             _ => return util::io_err("Socket in failed state!"),
         };
 
-        res
+        if let Ok(::std::usize::MAX) = res {
+            debug!("SSL upgrade succeeded!");
+            self.write(buf)
+        } else {
+            res
+        }
     }
 
     fn flush(&mut self) -> io::Result<()> {
@@ -288,13 +306,5 @@ impl io::Write for TSocket {
 impl AsRawFd for TSocket {
     fn as_raw_fd(&self) -> RawFd {
         self.fd
-    }
-}
-
-impl Drop for TSocket {
-    fn drop(&mut self) {
-        if self.reg.deregister(&*self).is_err() {
-            // TODO: idk? does it matter?
-        }
     }
 }

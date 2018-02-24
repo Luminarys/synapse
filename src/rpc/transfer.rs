@@ -1,10 +1,10 @@
-use std::net::TcpStream;
 use std::io::Write;
 use std::time;
 
 use super::proto::message::Error;
 use super::EMPTY_HTTP_RESP;
 
+use socket::TSocket;
 use util::{aread, UHashMap, IOR};
 
 pub struct Transfers {
@@ -13,7 +13,7 @@ pub struct Transfers {
 
 pub enum TransferResult {
     Torrent {
-        conn: TcpStream,
+        conn: TSocket,
         start: bool,
         data: Vec<u8>,
         path: Option<String>,
@@ -21,7 +21,7 @@ pub enum TransferResult {
         serial: u64,
     },
     Error {
-        conn: TcpStream,
+        conn: TSocket,
         client: usize,
         err: Error,
     },
@@ -29,7 +29,7 @@ pub enum TransferResult {
 }
 
 struct TorrentTx {
-    conn: TcpStream,
+    conn: TSocket,
     client: usize,
     serial: u64,
     pos: usize,
@@ -53,7 +53,7 @@ impl Transfers {
         id: usize,
         client: usize,
         serial: u64,
-        conn: TcpStream,
+        conn: TSocket,
         mut data: Vec<u8>,
         path: Option<String>,
         size: u64,
@@ -114,7 +114,7 @@ impl Transfers {
         }
     }
 
-    pub fn cleanup(&mut self) -> Vec<(TcpStream, usize, Error)> {
+    pub fn cleanup(&mut self) -> Vec<(TSocket, usize, Error)> {
         let mut res = Vec::new();
         let ids: Vec<usize> = self.torrents
             .iter()

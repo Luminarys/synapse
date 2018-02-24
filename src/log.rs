@@ -74,6 +74,7 @@ macro_rules! error(
 #[macro_export]
 macro_rules! log(
     ($level:expr, $fmt:expr) => {
+        #[allow(unused_imports)]
         {
             use std::io::Write;
             use chrono::Local;
@@ -92,6 +93,7 @@ macro_rules! log(
     };
 
     ($level:expr, $fmt:expr, $($arg:tt)*) => {
+        #[allow(unused_imports)]
         {
             use std::io::Write;
             use chrono::Local;

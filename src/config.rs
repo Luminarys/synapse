@@ -72,6 +72,10 @@ pub struct RpcConfig {
     pub auth: bool,
     #[serde(default = "default_password")]
     pub password: String,
+    #[serde(default = "default_ssl")]
+    pub ssl_cert: String,
+    #[serde(default = "default_ssl")]
+    pub ssl_key: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -200,6 +204,9 @@ fn default_auth() -> bool {
 fn default_password() -> String {
     "hackme".to_owned()
 }
+fn default_ssl() -> String {
+    "".to_owned()
+}
 fn default_bootstrap_node() -> Option<String> {
     None
 }
@@ -249,6 +256,8 @@ impl Default for RpcConfig {
             local: default_local(),
             auth: default_auth(),
             password: default_password(),
+            ssl_cert: default_ssl(),
+            ssl_key: default_ssl(),
         }
     }
 }
