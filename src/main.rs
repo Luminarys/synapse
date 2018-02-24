@@ -26,7 +26,6 @@ extern crate http_range;
 extern crate httparse;
 #[macro_use]
 extern crate lazy_static;
-extern crate libc;
 extern crate memmap;
 extern crate metrohash;
 extern crate net2;

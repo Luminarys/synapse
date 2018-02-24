@@ -2,7 +2,7 @@ use std::fs::File;
 use std::os::unix::io::AsRawFd;
 use std::io;
 
-use libc::c_int;
+use nix::libc::c_int;
 
 #[link(name = "fallocate")]
 extern "C" {

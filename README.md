@@ -17,7 +17,7 @@ Install dependencies:
 - rustc >= 1.19
 - cargo >= 0.18
 - OpenSSL
-- c-ares 1.13 | build tools *
+- c-ares 1.13 | autotools + gmake(FreeBSD only) *
 
 _\*Only required for synapse_
 
