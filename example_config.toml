@@ -16,7 +16,7 @@ auth = false
 password = "hackme"
 # Optional SSL full certificate chain and key file (PEM only)
 ssl_cert = "./cert.pem"
-# If key is encrypted, you will need to enter your password start start
+# If key is encrypted, you will need to enter your password at start
 ssl_key = "./key.pem"
 
 [tracker]
