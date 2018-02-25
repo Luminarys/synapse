@@ -27,7 +27,6 @@ libc = "0.2"
 memmap = "0.6"
 metrohash = "1"
 net2 = "0.2"
-nix = "0.10"
 openssl = "0.10"
 rand = "0.3"
 serde = "1"
@@ -60,6 +59,11 @@ git = "https://github.com/rust-num/num"
 branch = "next"
 default-features = false
 features = ["bigint", "serde"]
+
+# TODO: Change when 0.11 is out
+[dependencies.nix]
+git = "https://github.com/nix-rust/nix"
+rev = "e2c19c6"
 
 [profile.bench]
 opt-level = 3
