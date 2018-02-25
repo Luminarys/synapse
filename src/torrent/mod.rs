@@ -881,9 +881,6 @@ impl<T: cio::CIO> Torrent<T> {
 
                 if piece_done {
                     self.pieces.set_bit(u64::from(index));
-                    // TODO: When on the fly validation comes in we'll want to send after that.
-                    self.rpc_update_pieces();
-
                     // Begin validation, and save state if the torrent is done
                     self.check_complete();
 
@@ -1166,7 +1163,7 @@ impl<T: cio::CIO> Torrent<T> {
         ]));
     }
 
-    fn rpc_update_pieces(&mut self) {
+    pub fn rpc_update_pieces(&mut self) {
         let id = self.rpc_id();
         let piece_field = self.pieces.b64();
         self.cio.msg_rpc(rpc::CtlMessage::Update(vec![
