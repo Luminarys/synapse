@@ -41,7 +41,7 @@ url = "1"
 vecio = "0.1"
 
 [dependencies.amy]
-version = "0.8.0"
+git = "https://github.com/Luminarys/amy"
 default-features = false
 features = ["no_timerfd"]
 
