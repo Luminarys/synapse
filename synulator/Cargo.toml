@@ -1,0 +1,13 @@
+[package]
+name = "synulator"
+version = "0.1.0"
+authors = ["Luminarys <postmaster@gensok.io>"]
+
+[dependencies]
+synapse-rpc = { path = "../rpc" }
+serde = "1"
+serde_json = "1"
+url = "1.5.1"
+error-chain = "0.10"
+rand = "0.4"
+ws = "0.7"
