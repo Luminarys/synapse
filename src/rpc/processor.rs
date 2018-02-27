@@ -12,7 +12,7 @@ use serde_json as json;
 use url::Url;
 
 use super::proto::message::{CMessage, Error, SMessage};
-use super::proto::criterion::{self, Criterion};
+use super::proto::criterion::{self, Criterion, Operation};
 use super::proto::resource::{merge_json, Resource, ResourceKind, SResourceUpdate};
 use super::{CtlMessage, Message};
 use CONFIG;
@@ -313,7 +313,7 @@ impl Processor {
                     let mut added = HashSet::new();
                     let crit_res = f.criteria
                         .iter()
-                        .find(|c| c.field == "torrent_id")
+                        .find(|c| c.field == "torrent_id" && c.op == Operation::Eq)
                         .and_then(|c| match &c.value {
                             &criterion::Value::S(ref s) => Some(s),
                             _ => None,
