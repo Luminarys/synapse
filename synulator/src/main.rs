@@ -1,9 +1,6 @@
-extern crate error_chain;
 extern crate rand;
-extern crate serde;
 extern crate serde_json as json;
 extern crate synapse_rpc as rpc;
-extern crate url;
 extern crate ws;
 
 use std::collections::HashMap;

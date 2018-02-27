@@ -523,7 +523,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 [[package]]
 name = "libc"
 version = "0.2.36"
-source = "git+https://github.com/rust-lang/libc#88c33d45800b2bc869dba4a449857c17a1a2be32"
+source = "git+https://github.com/rust-lang/libc#c4736915ea1e1e65583b290d86bb16ae7cb98518"
 
 [[package]]
 name = "libc"
@@ -1221,12 +1221,9 @@ dependencies = [
 name = "synulator"
 version = "0.1.0"
 dependencies = [
- "error-chain 0.10.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "rand 0.4.2 (registry+https://github.com/rust-lang/crates.io-index)",
- "serde 1.0.27 (registry+https://github.com/rust-lang/crates.io-index)",
  "serde_json 1.0.9 (registry+https://github.com/rust-lang/crates.io-index)",
  "synapse-rpc 0.1.9",
- "url 1.7.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "ws 0.7.3 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
