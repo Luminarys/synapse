@@ -413,7 +413,7 @@ impl Picker {
             pieces,
             &vec![3u8; info.files.len()],
         );
-        p.change_picker(true);
+        p.change_picker(true, pieces);
         p
     }
 }
