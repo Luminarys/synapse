@@ -109,6 +109,10 @@ impl Status {
         }
     }
 
+    pub fn should_dl(&self) -> bool {
+        self.leeching() && !self.stopped() && self.validating.is_none()
+    }
+
     pub fn as_rpc(&self, ul: u64, dl: u64) -> rpc::resource::Status {
         if self.paused {
             return rpc::resource::Status::Paused;
@@ -614,6 +618,26 @@ impl<T: cio::CIO> Torrent<T> {
                     },
                 ]));
             }
+            disk::Response::PieceValidated { piece, valid, .. } => {
+                // We use a transient, on the fly validation approach for simplicity.
+                if valid {
+                    // Tell all relevant peers we got the piece
+                    let m = Message::Have(piece);
+                    for pid in &self.leechers {
+                        if let Some(peer) = self.peers.get_mut(pid) {
+                            if !peer.pieces().has_bit(u64::from(piece)) {
+                                peer.send_message(m.clone());
+                            }
+                        } else {
+                            // This situation can occur when a torrent itself is a leecher
+                            // and the piece download causes a "self notification", while it
+                            // has been removed. Ignore for now.
+                        }
+                    }
+                } else {
+                    info!("Invalid piece downloaded!");
+                }
+            }
             disk::Response::ValidationUpdate { percent, .. } => {
                 self.status.validating = Some(percent);
                 self.update_rpc_transfer();
@@ -688,22 +712,19 @@ impl<T: cio::CIO> Torrent<T> {
     }
 
     fn check_complete(&mut self) {
-        let mut idx = 0;
         let mut complete = true;
-        'outer: for piece in self.pieces.iter() {
-            while idx != piece {
-                if Info::piece_disk_locs(&self.info, piece as u32)
-                    .all(|loc| self.priorities[loc.file] != 0)
-                {
-                    complete = false;
-                    break 'outer;
-                }
-                idx += 1
+        for piece in 0..self.pieces.len() {
+            let no_dl = Info::piece_disk_locs(&self.info, piece as u32)
+                .all(|loc| self.priorities[loc.file] == 0);
+            if self.pieces.has_bit(piece as u64) || no_dl {
+                continue;
+            } else {
+                complete = false;
+                break;
             }
-            idx += 1
         }
 
-        if complete && idx != 0 {
+        if complete {
             if self.status.state != StatusState::Complete {
                 self.status.state = StatusState::Complete;
                 let seq = self.picker.is_sequential();
@@ -739,12 +760,25 @@ impl<T: cio::CIO> Torrent<T> {
 
         // Remove all seeding peers.
         let leechers = &self.leechers;
-        let seeders = self.peers
-            .iter()
-            .filter(|&(id, _)| !leechers.contains(id))
-            .map(|(id, _)| *id);
-        for seeder in seeders {
-            self.cio.remove_peer(seeder);
+        {
+            let seeders = self.peers
+                .iter()
+                .filter(|&(id, _)| !leechers.contains(id))
+                .map(|(id, _)| *id);
+            for seeder in seeders {
+                self.cio.remove_peer(seeder);
+            }
+        }
+
+        // Due to how we do validation updates, we should tell peers we now have every single piece
+        for pid in leechers {
+            if let Some(peer) = self.peers.get_mut(pid) {
+                for i in 0..self.pieces.len() {
+                    if !peer.pieces().has_bit(u64::from(i)) {
+                        peer.send_message(Message::Have(i as u32));
+                    }
+                }
+            }
         }
     }
 
@@ -832,9 +866,7 @@ impl<T: cio::CIO> Torrent<T> {
                 }
             }
             Message::Unchoke => {
-                if !self.status.stopped() && self.info.complete()
-                    && self.status.validating.is_none()
-                {
+                if self.status.should_dl() && self.info.complete() {
                     Torrent::make_requests(peer, &mut self.picker, &self.info);
                 }
             }
@@ -883,18 +915,15 @@ impl<T: cio::CIO> Torrent<T> {
                     self.pieces.set_bit(u64::from(index));
                     // Begin validation, and save state if the torrent is done
                     self.check_complete();
-
-                    // Tell all relevant peers we got the piece
-                    let m = Message::Have(index);
-                    for pid in &self.leechers {
-                        if let Some(peer) = self.peers.get_mut(pid) {
-                            if !peer.pieces().has_bit(u64::from(index)) {
-                                peer.send_message(m.clone());
-                            }
-                        } else {
-                            // This situation can occur when a torrent itself is a leecher
-                            // and the piece download causes a "self notification", while it
-                            // has been removed. Ignore for now.
+                    // Do on the fly validation of the piece
+                    if !self.complete() {
+                        if !self.leechers.is_empty() {
+                            self.cio.msg_disk(disk::Request::validate_piece(
+                                self.id,
+                                self.info.clone(),
+                                self.path.clone(),
+                                index,
+                            ));
                         }
                     }
 
@@ -920,7 +949,7 @@ impl<T: cio::CIO> Torrent<T> {
                     }
                 }
 
-                if !self.complete() && !self.status.stopped() && self.status.validating.is_none() {
+                if self.status.should_dl() {
                     Torrent::make_requests(peer, &mut self.picker, &self.info);
                 }
             }
@@ -1477,7 +1506,7 @@ impl<T: cio::CIO> Torrent<T> {
     }
 
     fn make_requests_pid(&mut self, pid: usize) {
-        if !self.complete() && !self.status.stopped() && self.status.validating.is_none() {
+        if self.status.should_dl() {
             let peer = self.peers
                 .get_mut(&pid)
                 .expect("Expected peer id not present");
@@ -1697,7 +1726,7 @@ impl<T: cio::CIO> Torrent<T> {
 
     pub fn change_picker(&mut self, sequential: bool) {
         debug!("Swapping pickers!");
-        self.picker.change_picker(sequential);
+        self.picker.change_picker(sequential, &self.pieces);
         for peer in self.peers.values() {
             self.picker.add_peer(peer);
         }

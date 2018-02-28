@@ -172,15 +172,15 @@ impl Tracker {
             match r {
                 Request::Announce(req) => self.handle_announce(req),
                 Request::GetPeers(gp) => {
-                    debug!("Handling dht peer find req!");
+                    trace!("Handling dht peer find req!");
                     self.dht.get_peers(gp.id, gp.hash);
                 }
                 Request::AddNode(addr) => {
-                    debug!("Handling dht node addition req!");
+                    trace!("Handling dht node addition req!");
                     self.dht.add_addr(addr);
                 }
                 Request::DHTAnnounce(hash) => {
-                    debug!("Handling dht announce req!");
+                    trace!("Handling dht announce req!");
                     self.dht.announce(hash);
                 }
                 Request::Shutdown => {
@@ -276,7 +276,7 @@ impl Tracker {
 
     fn send_response(&mut self, r: Response) {
         if !self.shutting_down {
-            debug!("Sending trk response to control!");
+            trace!("Sending trk response to control!");
             self.ch.send(r).ok();
         }
         // TODO: The active announce queue could grow with DHT usage,

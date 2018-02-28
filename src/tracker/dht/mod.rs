@@ -94,7 +94,7 @@ impl Manager {
                             },
                         }
                     } else {
-                        debug!("Received invalid message from {:?}!", addr);
+                        trace!("Received invalid message from {:?}!", addr);
                     }
                 }
                 Err(e) => {

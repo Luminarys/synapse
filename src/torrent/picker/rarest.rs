@@ -115,12 +115,7 @@ impl Picker {
         self.pieces
             .iter()
             .cloned()
-            .filter(|p| {
-                self.piece_idx[*p as usize].status == PieceStatus::Incomplete
-                    // TODO: Ensure PIECE_COMPLETE_DEC is always above max availability
-                    // ceiling, could exceed it with a large incomplete swarm
-                    && self.piece_idx[*p as usize].availability < PIECE_COMPLETE_DEC
-            })
+            .filter(|p| self.piece_idx[*p as usize].status == PieceStatus::Incomplete)
             .find(|p| peer.pieces().has_bit(u64::from(*p)))
             .map(|p| {
                 if (self.piece_idx[p as usize].availability % 2) == 0 {

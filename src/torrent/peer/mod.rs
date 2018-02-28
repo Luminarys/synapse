@@ -230,7 +230,11 @@ impl<T: cio::CIO> Peer<T> {
         };
         p.send_message(Message::handshake(&t.info));
         if t.info.complete() {
-            p.send_message(Message::Bitfield(t.pieces.clone()));
+            if t.complete() {
+                p.send_message(Message::Bitfield(t.pieces.clone()));
+            } else {
+                p.send_message(Message::Bitfield(Bitfield::new(u64::from(t.info.pieces()))));
+            }
         }
         p.send_rpc_info();
         Ok(p)

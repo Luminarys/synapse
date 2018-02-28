@@ -65,6 +65,12 @@ pub enum Request {
         idx: u32,
         invalid: Vec<u32>,
     },
+    ValidatePiece {
+        tid: usize,
+        info: Arc<Info>,
+        path: Option<String>,
+        piece: u32,
+    },
     WriteFile {
         data: Vec<u8>,
         path: PathBuf,
@@ -94,6 +100,11 @@ pub enum Response {
     ValidationComplete {
         tid: usize,
         invalid: Vec<u32>,
+    },
+    PieceValidated {
+        tid: usize,
+        piece: u32,
+        valid: bool,
     },
     ValidationUpdate {
         tid: usize,
@@ -166,6 +177,20 @@ impl Request {
             path,
             idx: 0,
             invalid: Vec::new(),
+        }
+    }
+
+    pub fn validate_piece(
+        tid: usize,
+        info: Arc<Info>,
+        path: Option<String>,
+        piece: u32,
+    ) -> Request {
+        Request::ValidatePiece {
+            tid,
+            info,
+            path,
+            piece,
         }
     }
 
@@ -414,6 +439,52 @@ impl Request {
                     fs::remove_dir(dirp).ok();
                 }
             }
+            Request::ValidatePiece {
+                tid,
+                info,
+                path,
+                piece,
+            } => {
+                // TODO: what to do if piece is REALLY big
+                let mut buf = vec![0u8; info.piece_len as usize];
+                let mut pb = path::PathBuf::from(path.as_ref().unwrap_or(dd));
+                let mut cf = pb.clone();
+
+                let mut f = fs::OpenOptions::new().read(true).open(&pb);
+
+                let mut ctx = sha1::Sha1::new();
+                let locs = Info::piece_disk_locs(&info, piece);
+                let mut pos = 0;
+                for loc in locs {
+                    if loc.path() != cf {
+                        pb = path::PathBuf::from(path.as_ref().unwrap_or(dd));
+                        pb.push(loc.path());
+                        f = fs::OpenOptions::new().read(true).open(&pb);
+                        cf = loc.path().to_owned();
+                    }
+                    // Because this is pausable/resumable, we need to seek to the proper
+                    // file position.
+                    f.as_mut()
+                        .map(|file| file.seek(SeekFrom::Start(loc.offset)))
+                        .ok();
+                    if let Ok(Ok(amnt)) = f.as_mut().map(|file| file.read(&mut buf[pos..])) {
+                        ctx.update(&buf[pos..pos + amnt]);
+                        pos += amnt;
+                    } else {
+                        return Ok(JobRes::Resp(Response::PieceValidated {
+                            tid,
+                            piece,
+                            valid: false,
+                        }));
+                    }
+                }
+                let digest = ctx.digest();
+                return Ok(JobRes::Resp(Response::PieceValidated {
+                    tid,
+                    piece,
+                    valid: &digest.bytes() == &info.hashes[piece as usize][..],
+                }));
+            }
             Request::Validate {
                 tid,
                 info,
@@ -621,6 +692,7 @@ impl Request {
             Request::Read { ref context, .. } => Some(context.tid),
             Request::Serialize { tid, .. }
             | Request::Validate { tid, .. }
+            | Request::ValidatePiece { tid, .. }
             | Request::Delete { tid, .. }
             | Request::Move { tid, .. }
             | Request::Write { tid, .. } => Some(tid),
@@ -695,6 +767,7 @@ impl Response {
             Response::ValidationComplete { tid, .. }
             | Response::Moved { tid, .. }
             | Response::ValidationUpdate { tid, .. }
+            | Response::PieceValidated { tid, .. }
             | Response::Error { tid, .. } => tid,
             Response::FreeSpace(_) => unreachable!(),
         }

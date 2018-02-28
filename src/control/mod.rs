@@ -288,9 +288,9 @@ impl<T: cio::CIO> Control<T> {
     }
 
     fn handle_trk_ev(&mut self, tr: tracker::Response) {
-        debug!("Handling tracker response");
         let (id, peers) = match tr {
             tracker::Response::Tracker { tid, url, resp } => {
+                debug!("Handling tracker response");
                 if let Some(torrent) = self.torrents.get_mut(&tid) {
                     torrent.set_tracker_response(url.as_ref(), &resp);
                     if let Ok(r) = resp {
