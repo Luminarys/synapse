@@ -155,7 +155,7 @@ impl Picker {
     }
 
     /// Attempts to pick an expired block
-    fn pick_expired<T: cio::CIO>(&mut self, peer: &Peer<T>) -> Option<Block> {
+    fn pick_expired<T: cio::CIO>(&mut self, _: &Peer<T>) -> Option<Block> {
         // TODO: Use some form of heuristic here to say "we expect to have
         // downloaded some pieces by X, hit the picker with a tick which checks
         // that, flags shit as invalid, and then does a double request

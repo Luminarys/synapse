@@ -35,7 +35,7 @@ impl FileCache {
         size: Option<u64>,
         offset: u64,
         len: usize,
-        read: bool,
+        _read: bool,
         mut f: F,
     ) -> io::Result<R> {
         self.ensure_exists(path, size)?;
@@ -51,11 +51,11 @@ impl FileCache {
             } else {
                 file.seek(SeekFrom::Start(offset))?;
                 let data = &mut self.fallback[0..len];
-                if read {
+                if _read {
                     file.read_exact(data)?;
                 }
                 let res = Ok(f(data));
-                if !read {
+                if !_read {
                     file.write_all(&data)?;
                 }
                 res

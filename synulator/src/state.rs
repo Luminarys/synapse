@@ -1,8 +1,5 @@
 use std::collections::{HashMap, HashSet};
 use std::mem;
-use std::io::Read;
-use std::fs::OpenOptions;
-use std::path::Path;
 use std::borrow::Cow;
 
 use json;
@@ -29,7 +26,7 @@ pub struct State {
 }
 
 struct Filter {
-    kind: ResourceKind,
+    _kind: ResourceKind,
     criteria: Vec<Criterion>,
 }
 
@@ -174,9 +171,7 @@ impl State {
             } => {
                 let udo = mem::replace(&mut resource.user_data, None);
                 if let Some(user_data) = udo {
-                    let mut modified = false;
                     if let Some(res) = self.resources.get_mut(&resource.id) {
-                        modified = true;
                         merge_json(res.user_data(), &mut user_data.clone());
                         self.user_data
                             .insert(res.id().to_owned(), res.user_data().clone());
@@ -192,79 +187,16 @@ impl State {
                         });
                     }
                 }
-                match self.resources.get(&resource.id) {
-                    Some(&Resource::Torrent(_)) => {
-                        // rmsg = Some(Message::UpdateTorrent(resource));
-                    }
-                    Some(&Resource::File(ref f)) => {
-                        // TODO: Validate other fields(make sure they're not present)
-                        if let Some(p) = resource.priority {
-                            /*
-                            rmsg = Some(Message::UpdateFile {
-                                id: resource.id,
-                                torrent_id: f.torrent_id.to_owned(),
-                                priority: p,
-                            });
-                            */
-                        }
-                    }
-                    Some(&Resource::Server(_)) => {
-                        /*
-                        rmsg = Some(Message::UpdateServer {
-                            id: resource.id,
-                            throttle_up: resource.throttle_up,
-                            throttle_down: resource.throttle_down,
-                        });
-                        */
-                    }
-                    Some(_) => {}
-                    None => {
-                        resp.push(SMessage::UnknownResource(Error {
-                            serial: Some(serial),
-                            reason: format!("unknown resource id {}", resource.id),
-                        }));
-                    }
-                }
             }
             CMessage::RemoveResource {
                 serial,
                 id,
-                artifacts,
+                ..
             } => match self.resources.get(&id) {
-                Some(&Resource::Torrent(_)) => {
-                    /*
-                    rmsg = Some(Message::RemoveTorrent {
-                        id,
-                        client,
-                        serial,
-                        artifacts: artifacts.unwrap_or(false),
-                    });
-                    */
-                }
-                Some(&Resource::Tracker(ref t)) => {
-                    /*
-                    rmsg = Some(Message::RemoveTracker {
-                        id,
-                        torrent_id: t.torrent_id.to_owned(),
-                        client,
-                        serial,
-                    });
-                    */
-                }
-                Some(&Resource::Peer(ref p)) => {
-                    /*
-                    rmsg = Some(Message::RemovePeer {
-                        id,
-                        torrent_id: p.torrent_id.to_owned(),
-                        client,
-                        serial,
-                    });
-                    */
-                }
                 Some(_) => {
                     resp.push(SMessage::InvalidResource(Error {
                         serial: Some(serial),
-                        reason: format!("Only torrents, trackers, and peers may be removed"),
+                        reason: format!("Resources cannot be removed"),
                     }));
                 }
                 None => {
@@ -314,7 +246,7 @@ impl State {
                     added
                 };
 
-                let f = Filter { criteria, kind };
+                let f = Filter { criteria, _kind: kind };
                 let matching = get_matching(&f);
                 if let Some(prev) = self.filter_subs.insert((client, serial), f) {
                     let prev_matching = get_matching(&prev);
@@ -344,37 +276,37 @@ impl State {
                 self.filter_subs.remove(&(client, filter_serial));
             }
 
-            CMessage::PauseTorrent { serial, id } => {
+            CMessage::PauseTorrent { serial, .. } => {
                 resp.push(SMessage::UnknownResource(Error {
                     serial: Some(serial),
                     reason: format!("Pause not supported"),
                 }));
             }
-            CMessage::ResumeTorrent { serial, id } => {
+            CMessage::ResumeTorrent { serial, .. } => {
                 resp.push(SMessage::UnknownResource(Error {
                     serial: Some(serial),
                     reason: format!("Resume not supported"),
                 }));
             }
-            CMessage::AddPeer { serial, id, ip } => {
+            CMessage::AddPeer { serial, .. } => {
                 resp.push(SMessage::UnknownResource(Error {
                     serial: Some(serial),
                     reason: format!("Peer add not supported"),
                 }));
             }
-            CMessage::AddTracker { serial, id, uri } => {
+            CMessage::AddTracker { serial, .. } => {
                 resp.push(SMessage::UnknownResource(Error {
                     serial: Some(serial),
                     reason: format!("Tracker add not supported"),
                 }));
             }
-            CMessage::UpdateTracker { serial, id } => {
+            CMessage::UpdateTracker { serial, .. } => {
                 resp.push(SMessage::InvalidRequest(Error {
                     serial: Some(serial),
                     reason: format!("Tracker update not supported!"),
                 }));
             }
-            CMessage::ValidateResources { serial, mut ids } => {
+            CMessage::ValidateResources { serial, .. } => {
                 resp.push(SMessage::InvalidRequest(Error {
                     serial: Some(serial),
                     reason: format!("Validate not supported!"),
@@ -382,9 +314,7 @@ impl State {
             }
             CMessage::UploadTorrent {
                 serial,
-                size,
-                path,
-                start,
+                ..
             } => {
                 resp.push(SMessage::InvalidRequest(Error {
                     serial: Some(serial),
@@ -393,16 +323,14 @@ impl State {
             }
             CMessage::UploadMagnet {
                 serial,
-                uri,
-                path,
-                start,
+                ..
             } => {
                 resp.push(SMessage::InvalidRequest(Error {
                     serial: Some(serial),
                     reason: format!("Upload not supported!"),
                 }));
             }
-            CMessage::UploadFiles { serial, size, path } => {
+            CMessage::UploadFiles { serial, .. } => {
                 resp.push(SMessage::InvalidRequest(Error {
                     serial: Some(serial),
                     reason: format!("Upload not supported!"),
@@ -412,8 +340,8 @@ impl State {
         resp
     }
 
+    /*
     fn process_msg(&mut self) {
-        /*
             CtlMessage::Update(updates) => {
                 let mut clients = HashMap::new();
                 for update in updates {
@@ -468,7 +396,6 @@ impl State {
                     }
                 }
             }
-        */
     }
 
     /// Produces a map of the form Map<(Client ID, Serial), messages)>.
@@ -492,6 +419,7 @@ impl State {
         }
         matched
     }
+    */
 }
 
 impl Filter {

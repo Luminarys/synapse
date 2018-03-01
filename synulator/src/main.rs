@@ -3,10 +3,8 @@ extern crate serde_json as json;
 extern crate synapse_rpc as rpc;
 extern crate ws;
 
-use std::collections::HashMap;
 use std::time::Instant;
-use rpc::resource::{Resource, ResourceKind, SResourceUpdate};
-use rpc::message::{CMessage, Error, SMessage};
+use rpc::message::CMessage;
 
 mod state;
 
