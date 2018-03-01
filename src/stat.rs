@@ -78,6 +78,6 @@ mod tests {
         s.tick();
 
         println!("{:?}, {}", s, s.avg_ul());
-        assert!((s.avg_ul() as i64 - 10000).abs() < 2000);
+        assert!((s.avg_ul() as i64 - 10000).abs() < 5000);
     }
 }

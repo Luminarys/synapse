@@ -2,6 +2,7 @@
 
 #include <fcntl.h>
 #include <stdint.h>
+#include <unistd.h>
 
 int native_fallocate(int fd, uint64_t len) {
     fstore_t fstore;

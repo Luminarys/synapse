@@ -14,9 +14,9 @@ It currently supports all systems which implement epoll or kqueue, with a focus 
 
 Install dependencies:
 
-- rustc >= 1.19
+- rustc >= 1.20
 - cargo >= 0.18
-- OpenSSL
+- OpenSSL >= 1.0.2
 - c-ares 1.13 | autotools + gmake(FreeBSD only) *
 
 _\*Only required for synapse_

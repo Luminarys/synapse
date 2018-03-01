@@ -3,10 +3,10 @@ use std::{fs, io, path};
 use std::io::{Read, Seek, SeekFrom, Write};
 
 use memmap::MmapMut;
+#[cfg(target_pointer_width = "32")]
+use memmap::MmapOptions;
 
 use CONFIG;
-#[cfg(target_pointer_width = "32")]
-use super::MAX_CHAINED_OPS;
 use util::{native, MHashMap};
 
 /// Holds a file and mmap cache. Because 32 bit systems
@@ -25,7 +25,7 @@ impl FileCache {
         FileCache {
             files: MHashMap::default(),
             #[cfg(target_pointer_width = "32")]
-            fallback: MmapMut::map_anon(MAX_CHAINED_OPS * 16_384).expect("mmap failed!"),
+            fallback: MmapMut::map_anon(16_384).expect("mmap failed!"),
         }
     }
 
@@ -46,12 +46,11 @@ impl FileCache {
             // TODO: Consider more portable solution based on setting _FILE_OFFSET_BITS=64 or
             // mmap64 rather than this.
             if offset < ::std::usize::MAX as u64 {
-                let mut mmap =
-                    Mmap::open_with_offset(&file, Protection::ReadWrite, offset as usize, len)?;
-                Ok(f(unsafe { mmap.as_mut_slice() }))
+                let mut mmap = MmapOptions::new().offset(offset as usize).len(len).map_anon()?;
+                Ok(f(&mut *mmap))
             } else {
                 file.seek(SeekFrom::Start(offset))?;
-                let data = unsafe { &mut self.fallback.as_mut_slice()[0..len] };
+                let data = &mut self.fallback[0..len];
                 if read {
                     file.read_exact(data)?;
                 }

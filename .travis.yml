@@ -1,12 +1,21 @@
 language: rust
+env:
+  global:
+    - CFLAGS=-fPIC
 cache: cargo
-rust:
-  - stable
-  - beta
-  - nightly
+addons:
+  apt:
+    packages:
+      - libssl-dev
 matrix:
-  allow_failures:
-    - rust: nightly
-script:
-  - cargo check --verbose --all
-  - cargo test --verbose --all
+  fast_finish: true
+  include:
+    - os: linux
+      rust: 1.20.0
+      env:
+        - TARGET=x86_64-unknown-linux-gnu
+    - os: osx
+      rust: stable
+      env: TARGET=x86_64-apple-darwin
+install: ci/install.sh
+script: ci/script.sh
