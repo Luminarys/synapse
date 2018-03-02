@@ -5,7 +5,8 @@ authors = ["Luminarys <postmaster@gensok.io>"]
 build = "build.rs"
 
 [workspace]
-members = ["sycli", "synulator", "rpc"]
+members = ["sycli", "rpc"]
+exclude = ["synulator"]
 
 [build-dependencies]
 cc = "1.0"
