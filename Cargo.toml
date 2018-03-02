@@ -1,8 +1,11 @@
 [package]
-name = "synapse"
+name = "synapse-bt"
+description = "Synapse BitTorrent client"
 version = "0.1.0"
 authors = ["Luminarys <postmaster@gensok.io>"]
 build = "build.rs"
+license = "ISC"
+repository = "https://github.com/Luminarys/synapse"
 
 [workspace]
 members = ["sycli", "rpc"]
