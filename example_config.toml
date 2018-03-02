@@ -12,7 +12,9 @@ port = 8412
 # or 0.0.0.0
 local = true
 # Whether or not RPC should use auth
+# WARNING: If you do not use auth, synapse is still insecure, even running locally!
 auth = false
+# Password to use for auth.
 password = "hackme"
 # Optional SSL full certificate chain and key file (PEM only)
 ssl_cert = "./cert.pem"

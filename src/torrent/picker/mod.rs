@@ -60,8 +60,8 @@ struct Request {
     requested_at: time::Instant,
 }
 
-const MAX_DUP_REQS: usize = 5;
-const MAX_DL_Q: usize = 50;
+const MAX_DUP_REQS: usize = 3;
+const MAX_DL_Q: usize = 150;
 const REQ_TIMEOUT: u64 = 15;
 
 impl Picker {
