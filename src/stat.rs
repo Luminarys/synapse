@@ -77,7 +77,6 @@ mod tests {
         thread::sleep(time::Duration::from_millis(50));
         s.tick();
 
-        println!("{:?}, {}", s, s.avg_ul());
-        assert!((s.avg_ul() as i64 - 10000).abs() < 5000);
+        assert!((s.avg_ul() as i64 - 10000).abs() < 8000);
     }
 }
