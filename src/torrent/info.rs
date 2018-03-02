@@ -209,10 +209,8 @@ impl Info {
                 let hash = sha1_hash(&info_bytes);
 
                 let a = d.remove("announce")
-                    .ok_or_else(|| "Info must have announce URL")?
-                    .into_string()
-                    .ok_or_else(|| "Info must have announce URL")
-                    .and_then(|a| Url::parse(&a).map_err(|_| "Info has invalid announce URL"))?;
+                    .and_then(BEncode::into_string)
+                    .and_then(|a| Url::parse(&a).ok());
                 let comment = d.remove("comment").and_then(|b| b.into_string());
                 let creator = d.remove("created by").and_then(|b| b.into_string());
                 let pl = i.remove("piece length")
@@ -294,7 +292,7 @@ impl Info {
                     name,
                     comment,
                     creator,
-                    announce: Some(a),
+                    announce: a,
                     piece_len: pl as u32,
                     hashes,
                     hash,
