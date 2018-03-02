@@ -9,11 +9,6 @@ Synapse is a lightweight bittorrent daemon.
 Synapse is only useful when paired with RPC clients. We ship `sycli` with
 synapse; use `sycli -h` to learn how to use it.
 
-For your convenience, [web.synapse-bt.org](https://web.synapse-bt.org) is
-running the latest version of [receptor](https://github.com/SirCmpwn/receptor),
-a web-based RPC client (note: this requires you to set up synapse
-independently).
-
 Our peer ID is `SY`.
 
 ## Features
@@ -29,6 +24,10 @@ Our peer ID is `SY`.
 - [receptor](https://github.com/SirCmpwn/receptor): web client
 - [axon](https://github.com/ParadoxSpiral/axon): curses client
 - [broca](https://broca.synapse-bt.org): translates synapse RPC to transmission RPC
+
+For your convenience, [web.synapse-bt.org](https://web.synapse-bt.org) is
+running the latest version of receptor. Note: this requires you to set up
+synapse independently.
 
 ## Releases
 
