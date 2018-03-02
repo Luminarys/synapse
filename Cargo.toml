@@ -38,6 +38,7 @@ synapse-rpc = { path = "rpc" }
 toml = "0.4"
 url = "1"
 vecio = "0.1"
+getopts = "0.2"
 
 [dependencies.amy]
 git = "https://github.com/Luminarys/amy"

@@ -1,9 +1,11 @@
 use std::net::{SocketAddr, ToSocketAddrs};
-use std::fs;
+use std::{fs, process};
 use std::io::Read;
 
 use toml;
 use shellexpand;
+
+use args;
 
 error_chain! {
     errors {
@@ -120,10 +122,14 @@ pub struct PeerConfig {
 
 impl ConfigFile {
     pub fn try_load() -> Result<ConfigFile> {
+        let args = args::args();
         let files = [
+            args.config
+                .as_ref()
+                .map(String::as_str)
+                .unwrap_or("./config.toml"),
             "$XDG_CONFIG_HOME/synapse.toml",
             "~/.config/synapse.toml",
-            "./config.toml",
         ];
         for file in &files {
             let mut s = String::new();
@@ -136,7 +142,7 @@ impl ConfigFile {
                 Ok(cfg) => {
                     if cfg.max_dl == 0 {
                         error!("Config max_dl must not be 0");
-                        ::std::process::abort();
+                        process::exit(1);
                     }
                     return Ok(cfg);
                 }
@@ -146,9 +152,11 @@ impl ConfigFile {
                         "Failed to parse config, terminating: {}",
                         e.cause().unwrap()
                     );
-                    ::std::process::abort();
+                    process::exit(1);
                 }
-                _ => {}
+                Err(e) => {
+                    debug!("Failed to load config file {}: {}", file, e);
+                }
             }
         }
         bail!("Failed to find a suitable config!");
@@ -156,6 +164,16 @@ impl ConfigFile {
 }
 
 impl Config {
+    pub fn load() -> Config {
+        if let Ok(cfg) = ConfigFile::try_load() {
+            info!("Loaded config file");
+            Config::from_file(cfg)
+        } else {
+            info!("Using default config");
+            Default::default()
+        }
+    }
+
     pub fn from_file(mut file: ConfigFile) -> Config {
         let addr = file.dht
             .bootstrap_node

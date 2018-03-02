@@ -188,11 +188,7 @@ impl State {
                     }
                 }
             }
-            CMessage::RemoveResource {
-                serial,
-                id,
-                ..
-            } => match self.resources.get(&id) {
+            CMessage::RemoveResource { serial, id, .. } => match self.resources.get(&id) {
                 Some(_) => {
                     resp.push(SMessage::InvalidResource(Error {
                         serial: Some(serial),
@@ -246,7 +242,10 @@ impl State {
                     added
                 };
 
-                let f = Filter { criteria, _kind: kind };
+                let f = Filter {
+                    criteria,
+                    _kind: kind,
+                };
                 let matching = get_matching(&f);
                 if let Some(prev) = self.filter_subs.insert((client, serial), f) {
                     let prev_matching = get_matching(&prev);
@@ -312,19 +311,13 @@ impl State {
                     reason: format!("Validate not supported!"),
                 }));
             }
-            CMessage::UploadTorrent {
-                serial,
-                ..
-            } => {
+            CMessage::UploadTorrent { serial, .. } => {
                 resp.push(SMessage::InvalidRequest(Error {
                     serial: Some(serial),
                     reason: format!("Upload not supported!"),
                 }));
             }
-            CMessage::UploadMagnet {
-                serial,
-                ..
-            } => {
+            CMessage::UploadMagnet { serial, .. } => {
                 resp.push(SMessage::InvalidRequest(Error {
                     serial: Some(serial),
                     reason: format!("Upload not supported!"),

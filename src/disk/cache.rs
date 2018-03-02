@@ -46,7 +46,10 @@ impl FileCache {
             // TODO: Consider more portable solution based on setting _FILE_OFFSET_BITS=64 or
             // mmap64 rather than this.
             if offset < ::std::usize::MAX as u64 {
-                let mut mmap = MmapOptions::new().offset(offset as usize).len(len).map_anon()?;
+                let mut mmap = MmapOptions::new()
+                    .offset(offset as usize)
+                    .len(len)
+                    .map_anon()?;
                 Ok(f(&mut *mmap))
             } else {
                 file.seek(SeekFrom::Start(offset))?;
