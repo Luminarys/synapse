@@ -1,8 +1,7 @@
 # TCP port used for peer connections
 port = 16493
 
-# Maximum number of uploading/downloading torrents
-max_ul = 500
+# Maximum number of downloading torrents
 max_dl = 10
 
 [rpc]
@@ -18,7 +17,7 @@ auth = false
 password = "hackme"
 # Optional SSL full certificate chain and key file (PEM only)
 ssl_cert = "./cert.pem"
-# If key is encrypted, you will need to enter your password at start
+# If SSL key is encrypted, you will need to enter your password at start
 ssl_key = "./key.pem"
 
 [tracker]
