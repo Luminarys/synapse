@@ -1,5 +1,5 @@
 [package]
-name = "synapse-bt"
+name = "synapse"
 description = "Synapse BitTorrent client"
 version = "0.1.0"
 authors = ["Luminarys <postmaster@gensok.io>"]
