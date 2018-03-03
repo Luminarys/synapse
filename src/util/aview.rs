@@ -56,7 +56,7 @@ impl<T> Clone for AView<T> {
     }
 }
 
-unsafe impl<T: Send> Send for AView<T> {}
+unsafe impl<T: Send + Sync> Send for AView<T> {}
 unsafe impl<T: Send + Sync> Sync for AView<T> {}
 
 impl<T> Drop for AView<T> {
