@@ -298,8 +298,7 @@ resources that are made invalid.
 
 Because the default kind of criterion is "torrent", a client can receive the
 list of valid torrent IDs and subscribe to new/removed torrents by sending
-FILTER_SUBSCRIBE upfront. The "order" field will be used for the initial set of
-RESOURCES_EXTANT, but will be disregarded for future updates.
+FILTER_SUBSCRIBE upfront.
 
 FILTER_SUBSCRIBE also has special semantics when issued with a serial matching
 an existing FILTER_SUBSCRIBE. It will issue a RESOURCES_EXTANT and RESOURCES_REMOVED
@@ -410,7 +409,7 @@ message's serial. Successful behavior is dependent on the type of transfer
 occurring.
 
     {
-        "type": "OPEN_TRANSFER",
+        "type": "TRANSFER_OFFER",
         "serial": number,           message serial this is in response to
         "expires": datetime,
         "token": string,          bearer token that should be used to authorize the request
