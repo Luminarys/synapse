@@ -46,12 +46,17 @@ impl Simulation {
 
     fn init(&mut self) {
         for i in 0..self.cfg.pieces {
-            self.peers.borrow_mut()[0].data.pieces_mut().set_bit(i as u64);
+            self.peers.borrow_mut()[0]
+                .data
+                .pieces_mut()
+                .set_bit(i as u64);
         }
         assert!(self.peers.borrow_mut()[0].data.pieces().complete());
         for peer in self.peers.borrow_mut().iter() {
             for pid in peer.unchoked.iter() {
-                self.peers.borrow_mut()[*pid].unchoked_by.push(peer.data.id());
+                self.peers.borrow_mut()[*pid]
+                    .unchoked_by
+                    .push(peer.data.id());
             }
         }
         for peer in self.peers.borrow_mut().iter_mut() {
@@ -101,7 +106,9 @@ impl Simulation {
                     }
                     *received.requested_pieces.get_mut(&peer.data.id()).unwrap() -= 1;
                     for pid in received.connected.iter() {
-                        self.peers.borrow_mut()[*pid].picker.piece_available(req.piece);
+                        self.peers.borrow_mut()[*pid]
+                            .picker
+                            .piece_available(req.piece);
                     }
                 }
             }
@@ -124,7 +131,8 @@ impl Simulation {
                 }
             }
         }
-        let inc = self.peers.borrow_mut()
+        let inc = self.peers
+            .borrow_mut()
             .iter()
             .filter(|p| !p.data.pieces().complete())
             .map(|p| p.data.id())

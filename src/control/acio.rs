@@ -157,7 +157,8 @@ impl cio::CIO for ACIO {
                 self.remove_peer(id);
             }
         }
-        let id = self.data.borrow_mut()
+        let id = self.data
+            .borrow_mut()
             .reg
             .register(peer.sock(), amy::Event::Both)
             .chain_err(|| ErrorKind::IO)?;
@@ -235,11 +236,9 @@ impl cio::CIO for ACIO {
         let mut d = self.data.borrow_mut();
 
         if d.chans.trk_tx.send(msg).is_err() {
-            d
-                .events
-                .push(cio::Event::Tracker(Err(ErrorKind::Channel(
-                    "Couldn't send to trk chan",
-                ).into())));
+            d.events.push(cio::Event::Tracker(Err(ErrorKind::Channel(
+                "Couldn't send to trk chan",
+            ).into())));
         }
     }
 
@@ -247,11 +246,9 @@ impl cio::CIO for ACIO {
         let mut d = self.data.borrow_mut();
 
         if d.chans.disk_tx.send(msg).is_err() {
-            d
-                .events
-                .push(cio::Event::Disk(Err(ErrorKind::Channel(
-                    "Couldn't send to disk chan",
-                ).into())));
+            d.events.push(cio::Event::Disk(Err(ErrorKind::Channel(
+                "Couldn't send to disk chan",
+            ).into())));
         }
     }
 
@@ -259,16 +256,15 @@ impl cio::CIO for ACIO {
         let mut d = self.data.borrow_mut();
 
         if d.chans.lst_tx.send(msg).is_err() {
-            d
-                .events
-                .push(cio::Event::Listener(Err(ErrorKind::Channel(
-                    "Couldn't send to disk chan",
-                ).into())));
+            d.events.push(cio::Event::Listener(Err(ErrorKind::Channel(
+                "Couldn't send to disk chan",
+            ).into())));
         }
     }
 
     fn set_timer(&mut self, interval: usize) -> Result<cio::TID> {
-        self.data.borrow_mut()
+        self.data
+            .borrow_mut()
             .reg
             .set_interval(interval)
             .chain_err(|| ErrorKind::IO)
