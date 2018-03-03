@@ -161,8 +161,8 @@ a criterion with field "foo", op "<", and value "10" would be true for all
 resources with a field foo less than 10.
 
 When querying the user_data field, nested structures can be selected
-using json pointers (RFC 6901) syntax, prefixed with "user_data".
-For example in a resource which looks like:
+using JSON pointers (RFC 6901) syntax, prefixed with "user_data".
+For example, in a resource which looks like:
 
     {
         "id": "..."
@@ -189,7 +189,7 @@ Operation enum:
 
                                     MESSAGES
 
-A message sent from either the client->server or server->client will take this
+A message sent from either the client->server or server->client will use this
 format:
 
     {
@@ -371,20 +371,19 @@ The client wishes to delete a resource.
         "artifacts": bool,          optional, delete related artifacts(files for torrents).
     }
 
-The semantics of this message vary based on the resource type.
-For a torrent, the torrent is deleted from the client. For a peer, the
-peer will be removed. For a tracker, the tracker is removed from the torrent.
-For other resources, there is no effect(this is subject to change).
-On success, the client will be notified of the removal via a RESOURCES_REMOVED
-message with the serial of the original message, in addition to any
-updates from existing subscriptions.
+The semantics of this message vary based on the resource type. 
+If the resource is a torrent, the torrent is deleted from the client. If the resource is a peer, 
+the peer will be removed. If the resource is a tracker, the tracker is removed from the torrent. 
+For other resources, there is no effect (this is subject to change). 
+On success, the client will be notified of the removal via a RESOURCES_REMOVED message 
+with the serial of the original message, and any updates from existing subscriptions.
 
                                 SPECIAL MESSAGES
 
 RPC_VERSION          server->client
 
 The version of the RPC protocol being used by the synapse instance.
-Minor version differences indicate non breaking changes, while major
+Minor version differences indicate non-breaking changes, while major
 version differences have no compatability guarantees. This message will
 be sent to clients when they connect.
 
@@ -400,7 +399,7 @@ Indicates that the server will allow a file transfer over HTTP.
 The path to use will be assumed to be known by the client, rather than given
 by synapse. By default, synapse will listen for HTTP requests over its RPC port,
 and if a websocket upgrade is not initiated, a transfer request is assumed.
-The client should initiate an http request using bearer authorization.
+The client should initiate an HTTP request using bearer authorization.
 This transfer must be initiated wihin the time limit defined by the expires field.
 The client should send a POST request containing the binary encoded data.
 The client should not attempt to resend this request, even if an error response
