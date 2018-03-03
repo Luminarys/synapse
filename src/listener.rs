@@ -1,24 +1,25 @@
 use std::{fmt, thread};
 use std::io::{self, ErrorKind};
-use std::net::{Ipv4Addr, SocketAddrV4, TcpListener};
+use std::net::{Ipv4Addr, SocketAddrV4, TcpListener, TcpStream};
 
 use amy::{self, Poller, Registrar};
 
-use torrent::peer::PeerConn;
+use torrent::peer::reader::Reader;
 use {handle, CONFIG};
 use util::UHashMap;
 
 pub struct Listener {
     listener: TcpListener,
     lid: usize,
-    incoming: UHashMap<PeerConn>,
+    incoming: UHashMap<(TcpStream, Reader)>,
     poll: Poller,
     reg: Registrar,
     ch: handle::Handle<Request, Message>,
 }
 
 pub struct Message {
-    pub peer: PeerConn,
+    pub conn: TcpStream,
+    pub reader: Reader,
     pub id: [u8; 20],
     pub hash: [u8; 20],
     pub rsv: [u8; 8],
@@ -89,9 +90,8 @@ impl Listener {
             match self.listener.accept() {
                 Ok((conn, ip)) => {
                     debug!("Accepted new connection from {:?}!", ip);
-                    let peer = PeerConn::new_incoming(conn).unwrap();
-                    let pid = self.reg.register(peer.sock(), amy::Event::Read).unwrap();
-                    self.incoming.insert(pid, peer);
+                    let pid = self.reg.register(&conn, amy::Event::Read).unwrap();
+                    self.incoming.insert(pid, (conn, Reader::new()));
                 }
                 Err(ref e) if e.kind() == ErrorKind::WouldBlock => {
                     break;
@@ -105,15 +105,22 @@ impl Listener {
 
     fn handle_peer(&mut self, not: amy::Notification) {
         let pid = not.id;
-        match self.incoming.get_mut(&pid).unwrap().readable() {
+
+        let res = {
+            let &mut (ref mut conn, ref mut reader) = self.incoming.get_mut(&pid).unwrap();
+            reader.readable(conn)
+        };
+
+        match res {
             Ok(Some(hs)) => {
                 debug!("Completed handshake({:?}) with peer, transferring!", hs);
-                let peer = self.incoming.remove(&pid).unwrap();
-                self.reg.deregister(peer.sock()).unwrap();
+                let (conn, reader) = self.incoming.remove(&pid).unwrap();
+                self.reg.deregister(&conn).unwrap();
                 let hsd = hs.get_handshake_data();
                 if self.ch
                     .send(Message {
-                        peer,
+                        conn,
+                        reader,
                         hash: hsd.0,
                         id: hsd.1,
                         rsv: hsd.2,
