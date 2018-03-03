@@ -441,7 +441,7 @@ impl RoutingTable {
         bincode::serialize(self, bincode::Infinite).unwrap()
     }
 
-    fn is_bootstrapped(&self) -> bool {
+    pub fn is_bootstrapped(&self) -> bool {
         self.buckets.len() >= MIN_BOOTSTRAP_BKTS
     }
 
