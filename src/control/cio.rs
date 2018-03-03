@@ -56,7 +56,7 @@ pub trait CIO {
     /// Removes a peer - This will trigger an error being
     /// reported at the next poll time, clients should wait
     /// for this to occur before internally removing the peer.
-    fn remove_peer(&mut self, peer: PID);
+    fn remove_peer(&self, peer: PID);
 
     /// Flushes events on the given vec of peers
     fn flush_peers(&mut self, peers: Vec<PID>);
@@ -166,7 +166,7 @@ pub mod test {
             }
         }
 
-        fn remove_peer(&mut self, peer: PID) {
+        fn remove_peer(&self, peer: PID) {
             let mut d = self.data.lock().unwrap();
             d.peers.remove(&peer);
         }

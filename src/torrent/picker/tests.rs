@@ -1,6 +1,6 @@
 use super::{Block, Picker};
 use std::collections::HashMap;
-use std::cell::UnsafeCell;
+use std::cell::RefCell;
 use torrent::{Bitfield, Info, Peer as TGPeer};
 use rand::distributions::{IndependentSample, Range};
 use {control, rand};
@@ -10,7 +10,7 @@ type TPeer = TGPeer<control::cio::test::TCIO>;
 struct Simulation {
     cfg: TestCfg,
     ticks: usize,
-    peers: UnsafeCell<Vec<Peer>>,
+    peers: RefCell<Vec<Peer>>,
 }
 
 impl Simulation {
@@ -40,21 +40,21 @@ impl Simulation {
         Simulation {
             cfg,
             ticks: 0,
-            peers: UnsafeCell::new(peers),
+            peers: RefCell::new(peers),
         }
     }
 
     fn init(&mut self) {
         for i in 0..self.cfg.pieces {
-            self.peers()[0].data.pieces_mut().set_bit(i as u64);
+            self.peers.borrow_mut()[0].data.pieces_mut().set_bit(i as u64);
         }
-        assert!(self.peers()[0].data.pieces().complete());
-        for peer in self.peers().iter() {
+        assert!(self.peers.borrow_mut()[0].data.pieces().complete());
+        for peer in self.peers.borrow_mut().iter() {
             for pid in peer.unchoked.iter() {
-                self.peers()[*pid].unchoked_by.push(peer.data.id());
+                self.peers.borrow_mut()[*pid].unchoked_by.push(peer.data.id());
             }
         }
-        for peer in self.peers().iter_mut() {
+        for peer in self.peers.borrow_mut().iter_mut() {
             for pid in 0..self.cfg.peers {
                 peer.requested_pieces.insert(pid as usize, 0);
             }
@@ -69,7 +69,7 @@ impl Simulation {
             }
         }
         let mut total = 0.;
-        for peer in self.peers().iter().skip(1) {
+        for peer in self.peers.borrow_mut().iter().skip(1) {
             total += peer.compl.unwrap() as f64;
         }
         return (self.ticks, total / (self.cfg.peers as f64 - 1.));
@@ -77,7 +77,7 @@ impl Simulation {
 
     fn tick(&mut self) -> Result<(), ()> {
         let mut rng = rand::thread_rng();
-        for peer in self.peers().iter_mut() {
+        for peer in self.peers.borrow_mut().iter_mut() {
             for _ in 0..self.cfg.req_per_tick {
                 if !peer.requests.is_empty() {
                     let req = if true {
@@ -86,12 +86,12 @@ impl Simulation {
                         let b = Range::new(0, peer.requests.len());
                         peer.requests.remove(b.ind_sample(&mut rng))
                     };
-                    let ref mut received = self.peers()[req.peer];
+                    let ref mut received = self.peers.borrow_mut()[req.peer];
                     received.picker.completed(Block::new(req.piece, 0)).unwrap();
                     received.data.pieces_mut().set_bit(req.piece as u64);
                     if received.data.pieces().complete() {
                         received.compl = Some(self.ticks);
-                        for p in self.peers().iter_mut() {
+                        for p in self.peers.borrow_mut().iter_mut() {
                             if !p.data.pieces().complete()
                                 && !p.unchoked_by.contains(&peer.data.id())
                             {
@@ -101,13 +101,13 @@ impl Simulation {
                     }
                     *received.requested_pieces.get_mut(&peer.data.id()).unwrap() -= 1;
                     for pid in received.connected.iter() {
-                        self.peers()[*pid].picker.piece_available(req.piece);
+                        self.peers.borrow_mut()[*pid].picker.piece_available(req.piece);
                     }
                 }
             }
 
             for pid in peer.unchoked_by.iter() {
-                let ref mut ucp = self.peers()[*pid];
+                let ref mut ucp = self.peers.borrow_mut()[*pid];
                 let cnt = peer.requested_pieces.get_mut(&ucp.data.id()).unwrap();
                 if peer.data.pieces().usable(ucp.data.pieces()) {
                     while *cnt < self.cfg.req_queue_len {
@@ -124,7 +124,7 @@ impl Simulation {
                 }
             }
         }
-        let inc = self.peers()
+        let inc = self.peers.borrow_mut()
             .iter()
             .filter(|p| !p.data.pieces().complete())
             .map(|p| p.data.id())
@@ -134,10 +134,6 @@ impl Simulation {
         } else {
             Err(())
         }
-    }
-
-    fn peers<'f>(&self) -> &'f mut Vec<Peer> {
-        unsafe { self.peers.get().as_mut().unwrap() }
     }
 }
 
