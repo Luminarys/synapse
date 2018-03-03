@@ -505,6 +505,7 @@ impl<T: cio::CIO> Torrent<T> {
         if let Some(req) = tracker::Request::interval(self) {
             self.cio.msg_trk(req);
         }
+        self.dht_announce();
     }
 
     pub fn remove_peer(&mut self, rpc_id: &str) {
@@ -1230,7 +1231,10 @@ impl<T: cio::CIO> Torrent<T> {
             self.cio.msg_trk(req);
             self.dump_torrent_file();
         }
-        // TODO: Consider repeatedly sending out these during annoucne intervals
+        self.dht_announce();
+    }
+
+    fn dht_announce(&mut self) {
         if !self.info.private {
             let mut req = tracker::Request::DHTAnnounce(self.info.hash);
             self.cio.msg_trk(req);
@@ -1697,6 +1701,7 @@ impl<T: cio::CIO> Torrent<T> {
             }
             self.request_all();
             self.announce_status();
+            self.dht_announce();
         }
     }
 
