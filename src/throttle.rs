@@ -130,8 +130,6 @@ pub struct Throttle {
     dl_data: Rc<RefCell<ThrottleData>>,
 }
 
-unsafe impl Send for Throttle {}
-
 impl Throttle {
     pub fn new_sibling(&self, id: usize) -> Throttle {
         Throttle {
