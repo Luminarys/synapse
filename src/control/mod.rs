@@ -341,7 +341,12 @@ impl<T: cio::CIO> Control<T> {
         if let Some(tid) = self.hash_idx.get(&msg.hash).cloned() {
             let id = msg.id;
             let rsv = msg.rsv;
-            self.add_inc_peer(tid, peer::PeerConn::new_incoming(msg.conn, msg.reader).unwrap(), id, rsv);
+            match peer::PeerConn::new_incoming(msg.conn, msg.reader) {
+                Ok(p) => self.add_inc_peer(tid, p, id, rsv),
+                Err(e) => {
+                    error!("Failed to create peer connection: {:?}", e);
+                }
+            };
         } else {
             let h = msg.hash;
             error!("Couldn't add peer, torrent with hash {:?} doesn't exist", h);
