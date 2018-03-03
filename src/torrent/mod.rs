@@ -104,7 +104,7 @@ impl Status {
 
     pub fn completed(&self) -> bool {
         match self.state {
-            StatusState::Complete => true,
+            StatusState::Complete => self.validating.is_none(),
             _ => false,
         }
     }
@@ -340,9 +340,11 @@ impl<T: cio::CIO> Torrent<T> {
             created: d.created,
         };
         t.status.error = None;
-        t.status.validating = None;
         t.start();
         t.announce_start();
+        if d.status.validating {
+            t.validate();
+        }
         Some(t)
     }
 
