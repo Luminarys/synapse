@@ -1,5 +1,5 @@
-mod reader;
-mod writer;
+pub mod reader;
+pub mod writer;
 mod message;
 
 use std::net::SocketAddr;
@@ -117,8 +117,10 @@ impl PeerConn {
 
     /// Creates a peer where we are acting as the server.
     /// Once the handshake is received, set_torrent should be called.
-    pub fn new_incoming(sock: TcpStream) -> io::Result<PeerConn> {
-        Ok(PeerConn::new(Socket::from_stream(sock)?))
+    pub fn new_incoming(sock: TcpStream, reader: Reader) -> io::Result<PeerConn> {
+        let mut peer = PeerConn::new(Socket::from_stream(sock)?);
+        peer.reader = reader;
+        Ok(peer)
     }
 
     pub fn writable(&mut self) -> io::Result<()> {

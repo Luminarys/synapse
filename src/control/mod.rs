@@ -256,7 +256,7 @@ impl<T: cio::CIO> Control<T> {
                 return true;
             }
             cio::Event::Listener(Ok(e)) => {
-                self.handle_lst_ev(e);
+                self.handle_lst_ev(*e);
             }
             cio::Event::Listener(Err(e)) => {
                 error!("listener error: {:?}", e);
@@ -336,12 +336,12 @@ impl<T: cio::CIO> Control<T> {
         }
     }
 
-    fn handle_lst_ev(&mut self, msg: Box<listener::Message>) {
+    fn handle_lst_ev(&mut self, msg: listener::Message) {
         debug!("Adding peer for torrent with hash {:?}!", msg.hash);
         if let Some(tid) = self.hash_idx.get(&msg.hash).cloned() {
             let id = msg.id;
             let rsv = msg.rsv;
-            self.add_inc_peer(tid, msg.peer, id, rsv);
+            self.add_inc_peer(tid, peer::PeerConn::new_incoming(msg.conn, msg.reader).unwrap(), id, rsv);
         } else {
             let h = msg.hash;
             error!("Couldn't add peer, torrent with hash {:?} doesn't exist", h);
