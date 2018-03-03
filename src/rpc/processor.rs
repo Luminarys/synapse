@@ -566,8 +566,7 @@ impl Processor {
                     }
                     self.resources
                         .get_mut(update.id())
-                        .expect("Bad resource updated by a CtlMessage")
-                        .update(update);
+                        .map(|res| res.update(update));
                 }
                 for (c, resources) in clients {
                     msgs.push((
@@ -650,9 +649,11 @@ impl Processor {
     ) -> HashMap<(usize, u64), Vec<Cow<'a, str>>> {
         let mut matched = HashMap::new();
         for id in ids {
-            let res = self.resources
-                .get(id)
-                .expect("Bad resource requested from a CtlMessage");
+            let res = if let Some(res) = self.resources.get(id) {
+                res
+            } else {
+                continue;
+            };
             for (k, f) in self.filter_subs.iter() {
                 if f.kind == res.kind() && f.matches(&res) {
                     if !matched.contains_key(k) {

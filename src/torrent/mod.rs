@@ -1431,15 +1431,9 @@ impl<T: cio::CIO> Torrent<T> {
                 util::file_rpc_id(&self.info.hash, f.path.as_path().to_string_lossy().as_ref());
             r.push(id)
         }
-        r.push(util::trk_rpc_id(
-            &self.info.hash,
-            self.info
-                .announce
-                .as_ref()
-                .map(|u| u.as_str())
-                .unwrap_or(""),
-        ));
-        // TODO: Tracker removal too
+        for (_, tracker) in self.trackers.iter().enumerate() {
+            r.push(util::trk_rpc_id(&self.info.hash, tracker.url.as_str()));
+        }
         self.cio.msg_rpc(rpc::CtlMessage::Removed(r));
     }
 
@@ -1460,6 +1454,9 @@ impl<T: cio::CIO> Torrent<T> {
     }
 
     fn availability(&self) -> f32 {
+        if self.leechers.len() != self.peers.len() {
+            return 1.0;
+        }
         let mut peers_have = FHashSet::default();
         for (_, peer) in &self.peers {
             for piece in peer.pieces().iter() {
