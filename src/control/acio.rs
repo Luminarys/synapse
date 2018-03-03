@@ -1,4 +1,4 @@
-use std::cell::UnsafeCell;
+use std::cell::RefCell;
 use std::rc::Rc;
 use std::time;
 
@@ -14,7 +14,7 @@ const PRUNE_GOAL: usize = 50;
 
 /// Amy based CIO implementation. Currently the default one used.
 pub struct ACIO {
-    data: Rc<UnsafeCell<ACIOData>>,
+    data: Rc<RefCell<ACIOData>>,
 }
 
 pub struct ACChans {
@@ -49,31 +49,34 @@ impl ACIO {
             events: Vec::new(),
         };
         ACIO {
-            data: Rc::new(UnsafeCell::new(data)),
+            data: Rc::new(RefCell::new(data)),
         }
     }
 
-    fn process_event(&mut self, not: amy::Notification, events: &mut Vec<cio::Event>) {
+    fn process_event(&self, not: amy::Notification, events: &mut Vec<cio::Event>) {
         let id = not.id;
-        if self.d().chans.disk_rx.get_id() == id {
-            while let Ok(t) = self.d().chans.disk_rx.try_recv() {
+
+        let mut d = self.data.borrow_mut();
+
+        if d.chans.disk_rx.get_id() == id {
+            while let Ok(t) = d.chans.disk_rx.try_recv() {
                 events.push(cio::Event::Disk(Ok(t)));
             }
-        } else if self.d().chans.rpc_rx.get_id() == id {
-            while let Ok(t) = self.d().chans.rpc_rx.try_recv() {
+        } else if d.chans.rpc_rx.get_id() == id {
+            while let Ok(t) = d.chans.rpc_rx.try_recv() {
                 events.push(cio::Event::RPC(Ok(t)));
             }
-        } else if self.d().chans.trk_rx.get_id() == id {
-            while let Ok(t) = self.d().chans.trk_rx.try_recv() {
+        } else if d.chans.trk_rx.get_id() == id {
+            while let Ok(t) = d.chans.trk_rx.try_recv() {
                 events.push(cio::Event::Tracker(Ok(t)));
             }
-        } else if self.d().chans.lst_rx.get_id() == id {
-            while let Ok(t) = self.d().chans.lst_rx.try_recv() {
+        } else if d.chans.lst_rx.get_id() == id {
+            while let Ok(t) = d.chans.lst_rx.try_recv() {
                 events.push(cio::Event::Listener(Ok(Box::new(t))));
             }
-        } else if self.d().peers.contains_key(&id) {
-            if let Err(e) = self.process_peer_ev(not, events) {
-                self.d().remove_peer(id);
+        } else if d.peers.contains_key(&id) {
+            if let Err(e) = self.process_peer_ev(not, events, &mut d.peers) {
+                d.remove_peer(id);
                 events.push(cio::Event::Peer {
                     peer: id,
                     event: Err(e),
@@ -86,12 +89,12 @@ impl ACIO {
     }
 
     fn process_peer_ev(
-        &mut self,
+        &self,
         not: amy::Notification,
         events: &mut Vec<cio::Event>,
+        peers: &mut UHashMap<torrent::PeerConn>,
     ) -> Result<()> {
-        let d = self.d();
-        if let Some(peer) = d.peers.get_mut(&not.id) {
+        if let Some(peer) = peers.get_mut(&not.id) {
             let ev = not.event;
             if ev.readable() {
                 while let Some(msg) = peer.readable().chain_err(|| ErrorKind::IO)? {
@@ -107,18 +110,21 @@ impl ACIO {
         }
         Ok(())
     }
-
-    fn d(&self) -> &'static mut ACIOData {
-        unsafe { self.data.get().as_mut().unwrap() }
-    }
 }
 
 impl cio::CIO for ACIO {
     fn poll(&mut self, events: &mut Vec<cio::Event>) {
-        for event in self.d().events.drain(..) {
-            events.push(event);
+        {
+            let mut d = self.data.borrow_mut();
+
+            for event in d.events.drain(..) {
+                events.push(event);
+            }
         }
-        match self.d().poll.wait(POLL_INT_MS) {
+
+        let res = self.data.borrow_mut().poll.wait(POLL_INT_MS);
+
+        match res {
             Ok(evs) => for event in evs {
                 self.process_event(event, events);
             },
@@ -129,9 +135,9 @@ impl cio::CIO for ACIO {
     }
 
     fn add_peer(&mut self, mut peer: torrent::PeerConn) -> Result<cio::PID> {
-        if self.d().peers.len() > CONFIG.net.max_open_sockets {
+        if self.data.borrow().peers.len() > CONFIG.net.max_open_sockets {
             let mut pruned = Vec::new();
-            for (id, peer) in &self.d().peers {
+            for (id, peer) in &self.data.borrow().peers {
                 if peer.last_action().elapsed()
                     > time::Duration::from_secs(CONFIG.peer.prune_timeout)
                 {
@@ -151,12 +157,12 @@ impl cio::CIO for ACIO {
                 self.remove_peer(id);
             }
         }
-        let id = self.d()
+        let id = self.data.borrow_mut()
             .reg
             .register(peer.sock(), amy::Event::Both)
             .chain_err(|| ErrorKind::IO)?;
         peer.sock_mut().throttle.as_mut().map(|t| t.id = id);
-        self.d().peers.insert(id, peer);
+        self.data.borrow_mut().peers.insert(id, peer);
         Ok(id)
     }
 
@@ -165,27 +171,28 @@ impl cio::CIO for ACIO {
         pid: cio::PID,
         f: F,
     ) -> Option<T> {
-        if let Some(p) = self.d().peers.get_mut(&pid) {
+        if let Some(p) = self.data.borrow_mut().peers.get_mut(&pid) {
             Some(f(p))
         } else {
             None
         }
     }
 
-    fn remove_peer(&mut self, peer: cio::PID) {
-        self.d().remove_peer(peer);
+    fn remove_peer(&self, peer: cio::PID) {
+        self.data.borrow_mut().remove_peer(peer);
     }
 
     fn flush_peers(&mut self, peers: Vec<cio::PID>) {
         let mut events = Vec::new();
+        let mut d = self.data.borrow_mut();
 
         for peer in peers {
             let not = amy::Notification {
                 id: peer,
                 event: amy::Event::Both,
             };
-            if let Err(e) = self.process_peer_ev(not, &mut events) {
-                self.d().remove_peer(peer);
+            if let Err(e) = self.process_peer_ev(not, &mut events, &mut d.peers) {
+                d.remove_peer(peer);
                 events.push(cio::Event::Peer {
                     peer,
                     event: Err(e),
@@ -193,11 +200,11 @@ impl cio::CIO for ACIO {
             }
         }
 
-        self.d().events.extend(events.drain(..));
+        d.events.extend(events.drain(..));
     }
 
     fn msg_peer(&mut self, pid: cio::PID, msg: torrent::Message) {
-        let d = self.d();
+        let mut d = self.data.borrow_mut();
         let err = if let Some(peer) = d.peers.get_mut(&pid) {
             peer.write_message(msg).chain_err(|| ErrorKind::IO).err()
         } else {
@@ -215,16 +222,20 @@ impl cio::CIO for ACIO {
     }
 
     fn msg_rpc(&mut self, msg: rpc::CtlMessage) {
-        if self.d().chans.rpc_tx.send(msg).is_err() {
-            self.d().events.push(cio::Event::RPC(Err(ErrorKind::Channel(
+        let mut d = self.data.borrow_mut();
+
+        if d.chans.rpc_tx.send(msg).is_err() {
+            d.events.push(cio::Event::RPC(Err(ErrorKind::Channel(
                 "Couldn't send to RPC chan",
             ).into())));
         }
     }
 
     fn msg_trk(&mut self, msg: tracker::Request) {
-        if self.d().chans.trk_tx.send(msg).is_err() {
-            self.d()
+        let mut d = self.data.borrow_mut();
+
+        if d.chans.trk_tx.send(msg).is_err() {
+            d
                 .events
                 .push(cio::Event::Tracker(Err(ErrorKind::Channel(
                     "Couldn't send to trk chan",
@@ -233,8 +244,10 @@ impl cio::CIO for ACIO {
     }
 
     fn msg_disk(&mut self, msg: disk::Request) {
-        if self.d().chans.disk_tx.send(msg).is_err() {
-            self.d()
+        let mut d = self.data.borrow_mut();
+
+        if d.chans.disk_tx.send(msg).is_err() {
+            d
                 .events
                 .push(cio::Event::Disk(Err(ErrorKind::Channel(
                     "Couldn't send to disk chan",
@@ -243,8 +256,10 @@ impl cio::CIO for ACIO {
     }
 
     fn msg_listener(&mut self, msg: listener::Request) {
-        if self.d().chans.lst_tx.send(msg).is_err() {
-            self.d()
+        let mut d = self.data.borrow_mut();
+
+        if d.chans.lst_tx.send(msg).is_err() {
+            d
                 .events
                 .push(cio::Event::Listener(Err(ErrorKind::Channel(
                     "Couldn't send to disk chan",
@@ -253,7 +268,7 @@ impl cio::CIO for ACIO {
     }
 
     fn set_timer(&mut self, interval: usize) -> Result<cio::TID> {
-        self.d()
+        self.data.borrow_mut()
             .reg
             .set_interval(interval)
             .chain_err(|| ErrorKind::IO)
