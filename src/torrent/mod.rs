@@ -1591,6 +1591,9 @@ impl<T: cio::CIO> Torrent<T> {
     }
 
     pub fn add_peer(&mut self, conn: PeerConn) -> Option<usize> {
+        if self.peers.values().any(|p| p.addr() == conn.sock().addr()) {
+            return None;
+        }
         if let Ok(p) = Peer::new(conn, self, None, None) {
             let pid = p.id();
             if self.info_idx.is_none() {
@@ -1604,6 +1607,9 @@ impl<T: cio::CIO> Torrent<T> {
     }
 
     pub fn add_inc_peer(&mut self, conn: PeerConn, id: [u8; 20], rsv: [u8; 8]) -> Option<usize> {
+        if self.peers.values().any(|p| p.addr() == conn.sock().addr()) {
+            return None;
+        }
         if let Ok(p) = Peer::new(conn, self, Some(id), Some(rsv)) {
             let pid = p.id();
             debug!("Adding peer {:?}!", pid);
