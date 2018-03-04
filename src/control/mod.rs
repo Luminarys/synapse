@@ -222,7 +222,9 @@ impl<T: cio::CIO> Control<T> {
             trace!("Succesfully parsed torrent file {:?}", dir.path());
             self.hash_idx.insert(t.info().hash, tid);
             self.tid_cnt += 1;
-            self.queue.add(tid, t.priority());
+            if t.status().leeching() {
+                self.queue.add(tid, t.priority());
+            }
             self.torrents.insert(tid, t);
         } else {
             error!("Failed to deserialize torrent {:?}", dir.file_name());
@@ -290,7 +292,7 @@ impl<T: cio::CIO> Control<T> {
     fn handle_trk_ev(&mut self, tr: tracker::Response) {
         let (id, peers) = match tr {
             tracker::Response::Tracker { tid, url, resp } => {
-                debug!("Handling tracker response");
+                debug!("Handling tracker response for {:?}", url);
                 if let Some(torrent) = self.torrents.get_mut(&tid) {
                     torrent.set_tracker_response(url.as_ref(), &resp);
                     if let Ok(r) = resp {
@@ -304,7 +306,6 @@ impl<T: cio::CIO> Control<T> {
             }
             tracker::Response::DHT { tid, peers } => (tid, peers),
         };
-        trace!("Adding peers!");
         for ip in &peers {
             trace!("Adding peer({:?})!", ip);
             if let Ok(peer) = peer::PeerConn::new_outgoing(ip) {
@@ -802,7 +803,7 @@ impl<T: cio::CIO> CJob<T> for EnqueueUpdate {
         let torrents = &mut control.torrents;
 
         queue.active_dl.retain(|tid| match torrents.get(tid) {
-            Some(t) => !t.status().completed(),
+            Some(t) => t.status().should_dl(),
             None => false,
         });
         for q in &mut queue.inactive_dl {

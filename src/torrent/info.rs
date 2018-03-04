@@ -24,6 +24,7 @@ pub struct Info {
     pub files: Vec<File>,
     pub private: bool,
     pub be_name: Option<Vec<u8>>,
+    /// Maps piece idx -> file idx + file offset
     pub piece_idx: Vec<(usize, u64)>,
     pub url_list: Vec<Vec<Url>>,
 }

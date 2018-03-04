@@ -27,7 +27,7 @@ use control::cio;
 use rpc::resource::{self, Resource, SResourceUpdate};
 use throttle::Throttle;
 use tracker::{self, TrackerResponse};
-use util::{AView, FHashSet, MHashMap, UHashMap};
+use util::{AView, FHashSet, UHashMap};
 use session::torrent::current::Session;
 use {session, stat};
 
@@ -50,6 +50,7 @@ pub struct Torrent<T: cio::CIO> {
     uploaded: u64,
     downloaded: u64,
     stat: stat::EMA,
+    files: Files,
     priority: u8,
     priorities: Vec<u8>,
     throttle: Throttle,
@@ -88,6 +89,11 @@ pub struct Tracker {
     pub status: TrackerStatus,
     pub last_announce: DateTime<Utc>,
     pub update: Option<Instant>,
+}
+
+struct Files {
+    done: Vec<u64>,
+    dirty: FHashSet<usize>,
 }
 
 impl Status {
@@ -141,6 +147,44 @@ impl Status {
             }
             StatusState::Magnet => rpc::resource::Status::Magnet,
         }
+    }
+}
+
+impl Files {
+    fn new(info: &Arc<Info>, pieces: &Bitfield) -> Files {
+        let mut f = Files {
+            done: vec![0; info.files.len()],
+            dirty: FHashSet::default(),
+        };
+        f.rebuild(info, pieces);
+        f
+    }
+
+    fn rebuild(&mut self, info: &Arc<Info>, pieces: &Bitfield) {
+        for amnt in &mut self.done {
+            *amnt = 0;
+        }
+
+        for p in pieces.iter() {
+            for loc in Info::piece_disk_locs(info, p as u32) {
+                self.done[loc.file] += (loc.end - loc.start) as u64;
+            }
+        }
+    }
+
+    fn update(&mut self, info: &Arc<Info>, piece: u32) {
+        for loc in Info::piece_disk_locs(info, piece) {
+            self.done[loc.file] += (loc.end - loc.start) as u64;
+            self.dirty.insert(loc.file);
+        }
+    }
+
+    fn flush(&mut self) -> Vec<(usize, u64)> {
+        let mut res = Vec::with_capacity(self.dirty.len());
+        for idx in self.dirty.drain() {
+            res.push((idx, self.done[idx]));
+        }
+        res
     }
 }
 
@@ -201,6 +245,8 @@ impl<T: cio::CIO> Torrent<T> {
             trackers.push_back(tracker);
         }
 
+        let files = Files::new(&info, &pieces);
+
         let mut t = Torrent {
             id,
             info,
@@ -212,6 +258,7 @@ impl<T: cio::CIO> Torrent<T> {
             priorities,
             uploaded: 0,
             downloaded: 0,
+            files,
             stat: stat::EMA::new(),
             cio,
             leechers,
@@ -307,6 +354,8 @@ impl<T: cio::CIO> Torrent<T> {
             trackers.push_back(tracker);
         }
 
+        let files = Files::new(&info, &d.pieces);
+
         let mut t = Torrent {
             id,
             info,
@@ -315,6 +364,7 @@ impl<T: cio::CIO> Torrent<T> {
             picker,
             uploaded: d.uploaded,
             downloaded: d.downloaded,
+            files,
             stat: stat::EMA::new(),
             priorities: d.priorities,
             priority: d.priority,
@@ -490,6 +540,9 @@ impl<T: cio::CIO> Torrent<T> {
     }
 
     pub fn try_update_tracker(&mut self) {
+        if self.status.stopped() {
+            return;
+        }
         if let Some(end) = self.trackers.front().and_then(|t| t.update) {
             debug!("Updating tracker at interval!");
             let cur = Instant::now();
@@ -696,6 +749,7 @@ impl<T: cio::CIO> Torrent<T> {
                             self.picker.invalidate_piece(piece);
                             self.pieces.unset_bit(u64::from(piece));
                         }
+                        self.files.rebuild(&self.info, &self.pieces);
                         self.cio.msg_rpc(rpc::CtlMessage::Update(rpc_updates));
                         self.request_all();
                     }
@@ -936,6 +990,7 @@ impl<T: cio::CIO> Torrent<T> {
                             peer.uninterested();
                         }
                     }
+                    self.files.update(&self.info, index);
                 }
 
                 // If there are any peers we've asked duplicate pieces for,
@@ -1538,7 +1593,6 @@ impl<T: cio::CIO> Torrent<T> {
     pub fn add_peer(&mut self, conn: PeerConn) -> Option<usize> {
         if let Ok(p) = Peer::new(conn, self, None, None) {
             let pid = p.id();
-            trace!("Adding peer {:?}!", pid);
             if self.info_idx.is_none() {
                 self.picker.add_peer(&p);
             }
@@ -1637,27 +1691,15 @@ impl<T: cio::CIO> Torrent<T> {
         }
 
         if self.stat.active() {
-            let mut files = MHashMap::default();
-            for (i, f) in self.info.files.iter().enumerate() {
-                if self.priorities[i] != 0 {
-                    files.insert(f.path.clone(), (0, f.length));
-                }
-            }
-
-            for p in self.pieces.iter() {
-                for loc in Info::piece_disk_locs(&self.info, p as u32) {
-                    if let Some(f) = files.get_mut(loc.path()) {
-                        f.0 += loc.end - loc.start;
-                    }
-                }
-            }
-
-            for (p, d) in files {
-                let id = util::file_rpc_id(&self.info.hash, p.as_path().to_string_lossy().as_ref());
+            for (idx, done) in self.files.flush() {
+                let id = util::file_rpc_id(
+                    &self.info.hash,
+                    self.info.files[idx].path.to_string_lossy().as_ref(),
+                );
                 updates.push(SResourceUpdate::FileProgress {
                     id,
                     kind: resource::ResourceKind::File,
-                    progress: (d.0 as f32 / d.1 as f32),
+                    progress: (done as f32 / self.info.files[idx].length as f32),
                 });
             }
         }

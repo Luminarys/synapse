@@ -19,10 +19,14 @@ use CONFIG;
 static MP_BOUNDARY: &'static str = "qxyllcqgNchqyob";
 
 pub struct Location {
+    /// Info file index
     pub file: usize,
     pub file_len: u64,
+    /// Offset into file
     pub offset: u64,
+    /// Start in the piece
     pub start: usize,
+    /// end in the piece
     pub end: usize,
     info: Arc<Info>,
 }
