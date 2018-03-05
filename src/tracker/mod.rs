@@ -98,7 +98,7 @@ impl Tracker {
         db: amy::Sender<disk::Request>,
     ) -> io::Result<(handle::Handle<Response, Request>, thread::JoinHandle<()>)> {
         let poll = amy::Poller::new()?;
-        let mut reg = poll.get_registrar()?;
+        let mut reg = poll.get_registrar();
         let (ch, dh) = handle::Handle::new(creg, &mut reg)?;
         let timer = reg.set_interval(150)?;
         let (dtx, drx) = reg.channel()?;

@@ -198,7 +198,7 @@ pub fn start(
     ),
 > {
     let poll = amy::Poller::new()?;
-    let mut reg = poll.get_registrar()?;
+    let mut reg = poll.get_registrar();
     let (ch, dh) = handle::Handle::new(creg, &mut reg)?;
     let (tx, rx) = reg.channel()?;
     let h = dh.run("disk", move |h| Disk::new(poll, reg, h, rx).run())?;

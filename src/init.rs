@@ -56,11 +56,11 @@ pub fn run() -> Result<(), ()> {
 
 fn init_threads() -> io::Result<Vec<thread::JoinHandle<()>>> {
     let cpoll = amy::Poller::new()?;
-    let mut creg = cpoll.get_registrar()?;
+    let mut creg = cpoll.get_registrar();
     let (dh, disk_broadcast, dhj) = disk::start(&mut creg)?;
     let (lh, lhj) = listener::Listener::start(&mut creg)?;
-    let (rh, rhj) = rpc::RPC::start(&mut creg, disk_broadcast.try_clone()?)?;
-    let (th, thj) = tracker::Tracker::start(&mut creg, disk_broadcast.try_clone()?)?;
+    let (rh, rhj) = rpc::RPC::start(&mut creg, disk_broadcast.clone())?;
+    let (th, thj) = tracker::Tracker::start(&mut creg, disk_broadcast.clone())?;
     let chans = acio::ACChans {
         disk_tx: dh.tx,
         disk_rx: dh.rx,
@@ -72,7 +72,7 @@ fn init_threads() -> io::Result<Vec<thread::JoinHandle<()>>> {
         lst_rx: lh.rx,
     };
     let (tx, rx) = mpsc::channel();
-    let cdb = disk_broadcast.try_clone()?;
+    let cdb = disk_broadcast.clone();
     let chj = thread::Builder::new()
         .name("control".to_string())
         .spawn(move || {

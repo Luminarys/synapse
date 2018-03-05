@@ -135,7 +135,7 @@ impl TrackerState {
 impl Handler {
     pub fn new(reg: &amy::Registrar) -> io::Result<Handler> {
         Ok(Handler {
-            reg: reg.try_clone()?,
+            reg: reg.clone(),
             connections: UHashMap::default(),
         })
     }

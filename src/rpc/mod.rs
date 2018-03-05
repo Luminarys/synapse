@@ -177,7 +177,7 @@ impl RPC {
         db: amy::Sender<disk::Request>,
     ) -> io::Result<(handle::Handle<Message, CtlMessage>, thread::JoinHandle<()>)> {
         let poll = amy::Poller::new()?;
-        let mut reg = poll.get_registrar()?;
+        let mut reg = poll.get_registrar();
         let cleanup = reg.set_interval(CLEANUP_INT_MS)?;
         let (ch, dh) = handle::Handle::new(creg, &mut reg)?;
 
@@ -191,7 +191,7 @@ impl RPC {
         listener.set_nonblocking(true)?;
         let lid = reg.register(&listener, amy::Event::Both)?;
 
-        let disk = db.try_clone()?;
+        let disk = db.clone();
         let th = dh.run("rpc", move |ch| {
             RPC {
                 ch,

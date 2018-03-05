@@ -18,12 +18,12 @@ impl<I: Debug + Send + 'static, O: Debug + Send + 'static> Handle<I, O> {
         let ch = Handle {
             tx: htx,
             rx: hrx,
-            reg: creg.try_clone()?,
+            reg: creg.clone(),
         };
         let hh = Handle {
             tx: ctx,
             rx: crx,
-            reg: hreg.try_clone()?,
+            reg: hreg.clone(),
         };
         Ok((ch, hh))
     }

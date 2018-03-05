@@ -47,7 +47,7 @@ impl Listener {
         creg: &mut amy::Registrar,
     ) -> io::Result<(handle::Handle<Message, Request>, thread::JoinHandle<()>)> {
         let poll = Poller::new()?;
-        let mut reg = poll.get_registrar()?;
+        let mut reg = poll.get_registrar();
         let ip = Ipv4Addr::new(0, 0, 0, 0);
         let port = CONFIG.port;
         let listener = TcpListener::bind(SocketAddrV4::new(ip, port))?;
