@@ -761,7 +761,7 @@ impl<T: cio::CIO> Torrent<T> {
             }
             disk::Response::Error { err, .. } => {
                 error!("Disk error: {:?}", err);
-                self.status.error = Some(format!("{:?}", err));
+                self.status.error = Some(format!("{}", err));
             }
             disk::Response::FreeSpace(_) => unreachable!(),
         }
