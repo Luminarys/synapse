@@ -61,7 +61,7 @@ struct Request {
 }
 
 const MAX_DUP_REQS: usize = 3;
-const MAX_DL_Q: usize = 150;
+const MAX_DL_Q: usize = 100;
 const REQ_TIMEOUT: u64 = 15;
 
 impl Picker {
@@ -193,6 +193,7 @@ impl Picker {
         let pri = &mut self.priorities;
         self.downloading
             .iter_mut()
+            .take(MAX_DL_Q)
             .max_by_key(|&(idx, _)| pri[*idx as usize])
             .and_then(|(idx, dl)| {
                 dl.iter_mut()
@@ -209,7 +210,7 @@ impl Picker {
 
     /// Attempts to pick an already requested block
     fn pick_downloading<T: cio::CIO>(&mut self, peer: &Peer<T>) -> Option<Block> {
-        for (idx, dl) in &mut self.downloading {
+        for (idx, dl) in self.downloading.iter_mut().take(MAX_DL_Q) {
             if peer.pieces().has_bit(u64::from(*idx)) {
                 let r = dl.iter_mut()
                     .find(|r| {
