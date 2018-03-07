@@ -13,11 +13,20 @@ use util::{native, MHashMap};
 /// can't mmap large files, we load them as needed.
 pub struct FileCache {
     #[cfg(target_pointer_width = "32")]
-    files: MHashMap<path::PathBuf, fs::File>,
-    #[cfg(target_pointer_width = "32")]
     fallback: MmapMut,
-    #[cfg(target_pointer_width = "64")]
-    files: MHashMap<path::PathBuf, (fs::File, MmapMut)>,
+    files: MHashMap<path::PathBuf, Entry>,
+}
+
+#[cfg(target_pointer_width = "32")]
+pub struct Entry {
+    used: bool,
+    file: fs::File,
+}
+
+#[cfg(target_pointer_width = "64")]
+pub struct Entry {
+    used: bool,
+    mmap: MmapMut,
 }
 
 impl FileCache {
@@ -42,7 +51,7 @@ impl FileCache {
 
         #[cfg(target_pointer_width = "32")]
         {
-            let file = self.files.get_mut(path).unwrap();
+            let entry = self.files.get_mut(path).unwrap();
             // TODO: Consider more portable solution based on setting _FILE_OFFSET_BITS=64 or
             // mmap64 rather than this.
             if offset < ::std::usize::MAX as u64 {
@@ -52,14 +61,14 @@ impl FileCache {
                     .map_anon()?;
                 Ok(f(&mut *mmap))
             } else {
-                file.seek(SeekFrom::Start(offset))?;
+                entry.file.seek(SeekFrom::Start(offset))?;
                 let data = &mut self.fallback[0..len];
                 if _read {
-                    file.read_exact(data)?;
+                    entry.file.read_exact(data)?;
                 }
                 let res = Ok(f(data));
                 if !_read {
-                    file.write_all(&data)?;
+                    entry.file.write_all(&data)?;
                 }
                 res
             }
@@ -67,12 +76,9 @@ impl FileCache {
 
         #[cfg(target_pointer_width = "64")]
         {
-            Ok(
-                f(
-                    &mut self.files.get_mut(path).unwrap().1
-                        [offset as usize..offset as usize + len],
-                ),
-            )
+            let entry = self.files.get_mut(path).unwrap();
+            entry.used = true;
+            Ok(f(&mut entry.mmap[offset as usize..offset as usize + len]))
         }
     }
 
@@ -80,25 +86,34 @@ impl FileCache {
         #[cfg(target_pointer_width = "32")]
         self.files.remove(path);
         #[cfg(target_pointer_width = "64")]
-        self.files.remove(path).map(|f| f.1.flush_async().ok());
+        self.files.remove(path).map(|f| f.mmap.flush_async().ok());
     }
 
     pub fn flush_file(&mut self, path: &path::Path) {
         #[cfg(target_pointer_width = "32")]
         {
-            self.files.get_mut(path).map(|f| f.sync_all().ok());
+            self.files.get_mut(path).map(|e| e.file.sync_all().ok());
         }
         #[cfg(target_pointer_width = "64")]
         {
-            self.files.get_mut(path).map(|f| f.1.flush_async().ok());
+            self.files.get_mut(path).map(|f| f.mmap.flush_async().ok());
         }
     }
 
     fn ensure_exists(&mut self, path: &path::Path, len: Option<u64>) -> io::Result<()> {
         if !self.files.contains_key(path) {
             if self.files.len() >= CONFIG.net.max_open_files {
-                let removal = self.files.iter().map(|(id, _)| id.clone()).next().unwrap();
-                self.remove_file(&removal);
+                let mut removal = None;
+                // We rely on random iteration order to prove us something close to a "clock hand"
+                // like algorithm
+                for (id, entry) in &mut self.files {
+                    if entry.used {
+                        entry.used = false;
+                    } else {
+                        removal = Some(id.clone());
+                    }
+                }
+                removal.map(|f| self.remove_file(&f));
             }
 
             fs::create_dir_all(path.parent().unwrap())?;
@@ -113,12 +128,14 @@ impl FileCache {
             }
 
             #[cfg(target_pointer_width = "32")]
-            self.files.insert(path.to_path_buf(), file);
+            self.files
+                .insert(path.to_path_buf(), Entry { file, used: true });
 
             #[cfg(target_pointer_width = "64")]
             {
                 let mmap = unsafe { MmapMut::map_mut(&file)? };
-                self.files.insert(path.to_path_buf(), (file, mmap));
+                self.files
+                    .insert(path.to_path_buf(), Entry { mmap, used: true });
             }
         }
         Ok(())
@@ -129,14 +146,14 @@ impl Drop for FileCache {
     fn drop(&mut self) {
         #[cfg(target_pointer_width = "32")]
         {
-            for (_, file) in self.files.drain() {
-                file.sync_all().ok();
+            for (_, entry) in self.files.drain() {
+                entry.file.sync_all().ok();
             }
         }
         #[cfg(target_pointer_width = "64")]
         {
-            for (_, (_, mmap)) in self.files.drain() {
-                mmap.flush().ok();
+            for (_, entry) in self.files.drain() {
+                entry.mmap.flush().ok();
             }
         }
     }
