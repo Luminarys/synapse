@@ -262,6 +262,12 @@ impl Handler {
         }
 
         http_req.extend_from_slice(b" HTTP/1.1\r\n");
+        let user_agent = format!(
+            "User-Agent: {}/{}",
+            "synapse",
+            env!("CARGO_PKG_VERSION")
+        );
+        http_req.extend_from_slice(user_agent.as_bytes());
         http_req.extend_from_slice(b"Connection: close\r\n");
         http_req.extend_from_slice(b"Host: ");
         let host = url.host_str()
