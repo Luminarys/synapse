@@ -333,7 +333,7 @@ impl Request {
                 }
             }
             Request::Write {
-                data,
+                mut data,
                 locations,
                 path,
                 ..
@@ -346,9 +346,7 @@ impl Request {
                     loc.offset,
                     loc.end - loc.start,
                     false,
-                    |b| {
-                        b.copy_from_slice(&data[loc.start..loc.end]);
-                    },
+                    &mut data[loc.start..loc.end],
                 )?;
                 if loc.end - loc.start != 16_384 {
                     fc.flush_file(&pb);
@@ -364,9 +362,14 @@ impl Request {
                 for loc in locations {
                     let mut pb = path::PathBuf::from(path.as_ref().unwrap_or(dd));
                     pb.push(loc.path());
-                    fc.get_file_range(&pb, None, loc.offset, loc.end - loc.start, true, |b| {
-                        (&mut data[loc.start..loc.end]).copy_from_slice(b);
-                    })?;
+                    fc.get_file_range(
+                        &pb,
+                        None,
+                        loc.offset,
+                        loc.end - loc.start,
+                        true,
+                        &mut data[loc.start..loc.end],
+                    )?;
                 }
                 let data = Arc::new(data);
                 return Ok(JobRes::Resp(Response::read(context, data)));
@@ -647,9 +650,7 @@ impl Request {
                             offset,
                             amnt as usize,
                             true,
-                            |bytes| {
-                                (&mut buf[0..amnt as usize]).copy_from_slice(bytes);
-                            },
+                            &mut buf[0..amnt as usize],
                         )?;
                         ranges[range_idx].length -= amnt;
                         ranges[range_idx].start += amnt;

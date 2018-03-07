@@ -1,13 +1,18 @@
 use std::{fs, io, path};
+
+#[cfg(target_pointer_width = "64")]
+use std::os::unix::fs::MetadataExt;
+
 #[cfg(target_pointer_width = "32")]
 use std::io::{Read, Seek, SeekFrom, Write};
 
 use memmap::MmapMut;
+
 #[cfg(target_pointer_width = "32")]
 use memmap::MmapOptions;
 
 use CONFIG;
-use util::{native, MHashMap};
+use util::{io_err, native, MHashMap};
 
 /// Holds a file and mmap cache. Because 32 bit systems
 /// can't mmap large files, we load them as needed.
@@ -27,6 +32,7 @@ pub struct Entry {
 pub struct Entry {
     used: bool,
     mmap: MmapMut,
+    sparse: bool,
 }
 
 impl FileCache {
@@ -38,15 +44,15 @@ impl FileCache {
         }
     }
 
-    pub fn get_file_range<R, F: FnMut(&mut [u8]) -> R>(
+    pub fn get_file_range(
         &mut self,
         path: &path::Path,
         size: Option<u64>,
         offset: u64,
         len: usize,
-        _read: bool,
-        mut f: F,
-    ) -> io::Result<R> {
+        read: bool,
+        buf: &mut [u8],
+    ) -> io::Result<()> {
         self.ensure_exists(path, size)?;
 
         #[cfg(target_pointer_width = "32")]
@@ -63,12 +69,10 @@ impl FileCache {
             } else {
                 entry.file.seek(SeekFrom::Start(offset))?;
                 let data = &mut self.fallback[0..len];
-                if _read {
-                    entry.file.read_exact(data)?;
-                }
-                let res = Ok(f(data));
-                if !_read {
-                    entry.file.write_all(&data)?;
+                if read {
+                    entry.file.read_exact(&mut buf)?;
+                } else {
+                    entry.file.write_all(&buf)?;
                 }
                 res
             }
@@ -78,7 +82,32 @@ impl FileCache {
         {
             let entry = self.files.get_mut(path).unwrap();
             entry.used = true;
-            Ok(f(&mut entry.mmap[offset as usize..offset as usize + len]))
+            let res = if entry.sparse {
+                assert!(len == buf.len());
+                let res = if read {
+                    native::mmap_read(
+                        &entry.mmap[offset as usize..offset as usize + len],
+                        buf,
+                        len,
+                    )
+                } else {
+                    native::mmap_write(
+                        &mut entry.mmap[offset as usize..offset as usize + len],
+                        &buf,
+                        len,
+                    )
+                };
+                if res.is_err() {
+                    return io_err("Disk full!");
+                }
+            } else {
+                if read {
+                    buf.copy_from_slice(&entry.mmap[offset as usize..offset as usize + len]);
+                } else {
+                    (&mut entry.mmap[offset as usize..offset as usize + len]).copy_from_slice(&buf);
+                }
+            };
+            Ok(res)
         }
     }
 
@@ -133,9 +162,18 @@ impl FileCache {
 
             #[cfg(target_pointer_width = "64")]
             {
+                let stat = file.metadata()?;
+                let sparse = stat.blocks() * stat.blksize() < stat.size();
+
                 let mmap = unsafe { MmapMut::map_mut(&file)? };
-                self.files
-                    .insert(path.to_path_buf(), Entry { mmap, used: true });
+                self.files.insert(
+                    path.to_path_buf(),
+                    Entry {
+                        mmap,
+                        sparse,
+                        used: true,
+                    },
+                );
             }
         }
         Ok(())
