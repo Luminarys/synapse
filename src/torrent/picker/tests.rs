@@ -118,7 +118,7 @@ impl Simulation {
                 let cnt = peer.requested_pieces.get_mut(&ucp.data.id()).unwrap();
                 if peer.data.pieces().usable(ucp.data.pieces()) {
                     while *cnt < self.cfg.req_queue_len {
-                        if let Some(block) = peer.picker.pick(&ucp.data) {
+                        if let Some(block) = peer.picker.pick(&mut ucp.data) {
                             ucp.requests.push(Request {
                                 peer: peer.data.id(),
                                 piece: block.index,
@@ -249,10 +249,10 @@ fn test_seq_picker() {
     for i in 0..10 {
         pb.set_bit(i);
     }
-    let peer = TPeer::test_from_pieces(0, pb);
+    let mut peer = TPeer::test_from_pieces(0, pb);
 
     for i in 0..10 {
-        assert_eq!(p.pick(&peer), Some(Block::new(i, 0)));
+        assert_eq!(p.pick(&mut peer), Some(Block::new(i, 0)));
     }
 
     for i in 0..10 {
@@ -261,5 +261,5 @@ fn test_seq_picker() {
 
     p.invalidate_piece(5);
 
-    assert_eq!(p.pick(&peer), Some(Block::new(5, 0)));
+    assert_eq!(p.pick(&mut peer), Some(Block::new(5, 0)));
 }

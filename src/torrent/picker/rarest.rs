@@ -184,7 +184,7 @@ mod tests {
             Peer::test_from_pieces(0, b.clone()),
             Peer::test_from_pieces(0, b.clone()),
         ];
-        assert_eq!(picker.pick(&peers[0]), None);
+        assert_eq!(picker.pick(&mut peers[0]), None);
 
         peers[0].pieces_mut().set_bit(0);
         peers[1].pieces_mut().set_bit(0);
@@ -194,13 +194,13 @@ mod tests {
         for peer in peers.iter() {
             picker.add_peer(peer);
         }
-        assert_eq!(picker.pick(&peers[1]), Some(2));
+        assert_eq!(picker.pick(&mut peers[1]), Some(2));
         picker.completed(2);
-        assert_eq!(picker.pick(&peers[1]), Some(0));
+        assert_eq!(picker.pick(&mut peers[1]), Some(0));
         picker.completed(0);
-        assert_eq!(picker.pick(&peers[1]), None);
-        assert_eq!(picker.pick(&peers[0]), None);
-        assert_eq!(picker.pick(&peers[2]), Some(1));
+        assert_eq!(picker.pick(&mut peers[1]), None);
+        assert_eq!(picker.pick(&mut peers[0]), None);
+        assert_eq!(picker.pick(&mut peers[2]), Some(1));
         picker.completed(1);
     }
 
@@ -214,7 +214,7 @@ mod tests {
             Peer::test_from_pieces(0, b.clone()),
             Peer::test_from_pieces(0, b.clone()),
         ];
-        assert_eq!(picker.pick(&peers[0]), None);
+        assert_eq!(picker.pick(&mut peers[0]), None);
 
         peers[0].pieces_mut().set_bit(0);
         peers[0].pieces_mut().set_bit(1);
@@ -226,17 +226,17 @@ mod tests {
         for peer in peers.iter() {
             picker.add_peer(peer);
         }
-        picker.remove_peer(&peers[0]);
+        picker.remove_peer(&mut peers[0]);
 
-        assert_eq!(picker.pick(&peers[1]), Some(2));
+        assert_eq!(picker.pick(&mut peers[1]), Some(2));
         picker.completed(2);
-        assert_eq!(picker.pick(&peers[2]), Some(0));
+        assert_eq!(picker.pick(&mut peers[2]), Some(0));
         picker.completed(0);
-        assert_eq!(picker.pick(&peers[2]), Some(1));
+        assert_eq!(picker.pick(&mut peers[2]), Some(1));
         picker.completed(1);
 
-        assert_eq!(picker.pick(&peers[1]), None);
+        assert_eq!(picker.pick(&mut peers[1]), None);
         picker.incomplete(1);
-        assert_eq!(picker.pick(&peers[1]), Some(1));
+        assert_eq!(picker.pick(&mut peers[1]), Some(1));
     }
 }
