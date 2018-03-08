@@ -4,6 +4,7 @@ mod writer;
 use std::time::{Duration, Instant};
 use std::{io, mem};
 use std::net::SocketAddr;
+use std::sync::Arc;
 
 use url::percent_encoding::percent_encode_byte;
 use url::Url;
@@ -13,7 +14,7 @@ use self::writer::Writer;
 use self::reader::{ReadRes, Reader};
 use socket::TSocket;
 use tracker::{self, dns, Announce, Error, ErrorKind, Response, Result, ResultExt, TrackerResponse};
-use util::{AView, UHashMap};
+use util::{UHashMap};
 
 const TIMEOUT_MS: u64 = 5_000;
 
@@ -30,7 +31,7 @@ enum Event {
 
 struct Tracker {
     torrent: usize,
-    url: AView<Url>,
+    url: Arc<Url>,
     last_updated: Instant,
     redirect: bool,
     state: TrackerState,
@@ -293,7 +294,7 @@ impl Handler {
                 last_updated: Instant::now(),
                 redirect: true,
                 torrent,
-                url: AView::value(url.clone()),
+                url: Arc::new(url.clone()),
                 state: TrackerState::new(sock, http_req, port),
             },
         );

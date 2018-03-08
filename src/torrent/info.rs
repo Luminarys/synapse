@@ -14,7 +14,7 @@ use util::{hash_to_id, id_to_hash, sha1_hash};
 #[derive(Clone)]
 pub struct Info {
     pub name: String,
-    pub announce: Option<Url>,
+    pub announce: Option<Arc<Url>>,
     pub creator: Option<String>,
     pub comment: Option<String>,
     pub piece_len: u32,
@@ -26,7 +26,7 @@ pub struct Info {
     pub be_name: Option<Vec<u8>>,
     /// Maps piece idx -> file idx + file offset
     pub piece_idx: Vec<(usize, u64)>,
-    pub url_list: Vec<Vec<Url>>,
+    pub url_list: Vec<Vec<Arc<Url>>>,
 }
 
 impl fmt::Debug for Info {
@@ -114,7 +114,7 @@ impl Info {
             .ok_or("No hash found in magnet")?;
         let announce = url.query_pairs()
             .find(|&(ref k, _)| k == "tr")
-            .and_then(|(_, ref v)| Url::parse(v).map(|u| Some(u)).unwrap_or(None));
+            .and_then(|(_, ref v)| Url::parse(v).ok().map(Arc::new));
         let name = url.query_pairs()
             .find(|&(ref k, _)| k == "dn")
             .map(|(_, ref v)| v.to_string())
@@ -209,9 +209,9 @@ impl Info {
                 BEncode::Dict(i.clone()).encode(&mut info_bytes).unwrap();
                 let hash = sha1_hash(&info_bytes);
 
-                let a = d.remove("announce")
+                let announce = d.remove("announce")
                     .and_then(BEncode::into_string)
-                    .and_then(|a| Url::parse(&a).ok());
+                    .and_then(|a| Url::parse(&a).ok().map(Arc::new));
                 let comment = d.remove("comment").and_then(|b| b.into_string());
                 let creator = d.remove("created by").and_then(|b| b.into_string());
                 let pl = i.remove("piece length")
@@ -273,16 +273,16 @@ impl Info {
                 let total_len = files.iter().map(|f| f.length).sum();
                 let piece_idx = Info::generate_piece_idx(hashes.len(), pl, &files);
 
-                let url_list: Vec<Vec<Url>> = d.remove("announce-list")
+                let url_list: Vec<_> = d.remove("announce-list")
                     .and_then(BEncode::into_list)
                     .unwrap_or_else(Vec::new)
                     .into_iter()
                     .map(|l| {
-                        let mut l: Vec<Url> = l.into_list()
+                        let mut l: Vec<_> = l.into_list()
                             .unwrap_or_else(Vec::new)
                             .into_iter()
                             .filter_map(BEncode::into_string)
-                            .filter_map(|s| Url::parse(&s).ok())
+                            .filter_map(|s| Url::parse(&s).ok().map(Arc::new))
                             .collect();
                         rand::thread_rng().shuffle(&mut l[..]);
                         l
@@ -293,7 +293,7 @@ impl Info {
                     name,
                     comment,
                     creator,
-                    announce: a,
+                    announce,
                     piece_len: pl as u32,
                     hashes,
                     hash,
