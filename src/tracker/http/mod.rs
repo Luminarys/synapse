@@ -14,7 +14,7 @@ use self::writer::Writer;
 use self::reader::{ReadRes, Reader};
 use socket::TSocket;
 use tracker::{self, dns, Announce, Error, ErrorKind, Response, Result, ResultExt, TrackerResponse};
-use util::{UHashMap};
+use util::UHashMap;
 
 const TIMEOUT_MS: u64 = 5_000;
 

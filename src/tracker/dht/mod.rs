@@ -53,7 +53,7 @@ impl Manager {
             info!("Attempting DHT bootstrap!");
             if let Some(addr) = CONFIG.dht.bootstrap_node {
                 let (msg, _) = table.add_addr(addr);
-                sock.send_to(&msg.encode(), addr)?;
+                sock.send_to(&msg.encode(), addr).ok();
             }
         }
 

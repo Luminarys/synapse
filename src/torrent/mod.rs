@@ -298,7 +298,9 @@ impl<T: cio::CIO> Torrent<T> {
 
         let info = Arc::new(Info {
             name: d.info.name,
-            announce: d.info.announce.and_then(|u| Url::parse(&u).ok().map(Arc::new)),
+            announce: d.info
+                .announce
+                .and_then(|u| Url::parse(&u).ok().map(Arc::new)),
             comment: d.info.comment,
             creator: d.info.creator,
             piece_len: d.info.piece_len,
