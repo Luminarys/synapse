@@ -139,10 +139,14 @@ impl ConfigFile {
                 .and_then(|mut f| f.read_to_string(&mut s).chain_err(|| ErrorKind::IO))
                 .and_then(|_| toml::from_str(&s).chain_err(|| ErrorKind::Format));
             match res {
-                Ok(cfg) => {
+                Ok(mut cfg) => {
                     if cfg.max_dl == 0 {
                         error!("Config max_dl must not be 0");
                         process::exit(1);
+                    }
+                    if !cfg!(debug_assertions) && !cfg.disk.validate {
+                        error!("validation skipping can only be used in development, overriding!");
+                        cfg.disk.validate = true;
                     }
                     return Ok(cfg);
                 }
