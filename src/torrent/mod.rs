@@ -85,7 +85,7 @@ pub enum StatusState {
 }
 
 pub struct Tracker {
-    pub url: AView<Url>,
+    pub url: Arc<Url>,
     pub status: TrackerStatus,
     pub last_announce: DateTime<Utc>,
     pub update: Option<Instant>,
@@ -230,17 +230,17 @@ impl<T: cio::CIO> Torrent<T> {
                         status: TrackerStatus::Updating,
                         update: None,
                         last_announce: Utc::now(),
-                        url: AView::new(&info, |inf| &inf.url_list[i][j]),
+                        url: Arc::clone(&info.url_list[i][j]),
                     };
                     trackers.push_back(tracker);
                 }
             }
-        } else if info.announce.is_some() {
+        } else if let Some(ref announce) = info.announce {
             let tracker = Tracker {
                 status: TrackerStatus::Updating,
                 update: None,
                 last_announce: Utc::now(),
-                url: AView::new(&info, |i| i.announce.as_ref().unwrap()),
+                url: announce.clone(),
             };
             trackers.push_back(tracker);
         }
@@ -298,7 +298,7 @@ impl<T: cio::CIO> Torrent<T> {
 
         let info = Arc::new(Info {
             name: d.info.name,
-            announce: d.info.announce.and_then(|u| Url::parse(&u).ok()),
+            announce: d.info.announce.and_then(|u| Url::parse(&u).ok().map(Arc::new)),
             comment: d.info.comment,
             creator: d.info.creator,
             piece_len: d.info.piece_len,
@@ -340,18 +340,20 @@ impl<T: cio::CIO> Torrent<T> {
                 status: TrackerStatus::Updating,
                 update: None,
                 last_announce: Utc::now(),
-                url: AView::value(url),
+                url: Arc::new(url),
             })
             .collect();
 
-        if trackers.is_empty() && info.announce.is_some() {
-            let tracker = Tracker {
-                status: TrackerStatus::Updating,
-                update: None,
-                last_announce: Utc::now(),
-                url: AView::new(&info, |i| i.announce.as_ref().unwrap()),
-            };
-            trackers.push_back(tracker);
+        if trackers.is_empty() {
+            if let Some(ref announce) = info.announce {
+                let tracker = Tracker {
+                    status: TrackerStatus::Updating,
+                    update: None,
+                    last_announce: Utc::now(),
+                    url: announce.clone(),
+                };
+                trackers.push_back(tracker);
+            }
         }
 
         let files = Files::new(&info, &d.pieces);
@@ -576,7 +578,7 @@ impl<T: cio::CIO> Torrent<T> {
             status: TrackerStatus::Updating,
             update: None,
             last_announce: Utc::now(),
-            url: AView::value(url),
+            url: Arc::new(url),
         });
         {
             let trk = &self.trackers[0];
