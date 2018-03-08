@@ -1,3 +1,5 @@
+use std::time;
+
 use torrent::Torrent;
 use control::cio;
 use util::UHashMap;
@@ -38,11 +40,15 @@ impl<T: cio::CIO> Job<T> for SessionUpdate {
     }
 }
 
-pub struct TorrentTxUpdate;
+pub struct TorrentTxUpdate {
+    piece_update: time::Instant,
+}
 
 impl TorrentTxUpdate {
     pub fn new() -> TorrentTxUpdate {
-        TorrentTxUpdate
+        TorrentTxUpdate {
+            piece_update: time::Instant::now(),
+        }
     }
 }
 
@@ -52,7 +58,10 @@ impl<T: cio::CIO> Job<T> for TorrentTxUpdate {
             if torrent.tick() {
                 torrent.update_rpc_transfer();
                 // TODO: consider making tick triggered by on the fly validation
-                torrent.rpc_update_pieces();
+                if self.piece_update.elapsed() > time::Duration::from_secs(60 * 5) {
+                    torrent.rpc_update_pieces();
+                    self.piece_update = time::Instant::now();
+                }
             }
         }
     }
