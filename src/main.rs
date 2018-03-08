@@ -78,14 +78,8 @@ pub const UT_META_ID: u8 = 9;
 pub const THROT_TOKS: usize = 2 * 1024 * 1024;
 
 lazy_static! {
-    pub static ref SHUTDOWN: atomic::AtomicBool = {
-        atomic::AtomicBool::new(false)
-    };
-
-    pub static ref CONFIG: config::Config = {
-        config::Config::load()
-    };
-
+    pub static ref SHUTDOWN: atomic::AtomicBool = { atomic::AtomicBool::new(false) };
+    pub static ref CONFIG: config::Config = { config::Config::load() };
     pub static ref PEER_ID: [u8; 20] = {
         use rand::{self, Rng};
 
@@ -101,10 +95,7 @@ lazy_static! {
         }
         pid
     };
-
-    pub static ref DL_TOKEN: Arc<Mutex<String>> = {
-        Arc::new(Mutex::new(util::random_string(20)))
-    };
+    pub static ref DL_TOKEN: Arc<Mutex<String>> = { Arc::new(Mutex::new(util::random_string(20))) };
 }
 
 fn main() {
