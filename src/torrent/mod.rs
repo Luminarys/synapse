@@ -1234,8 +1234,8 @@ impl<T: cio::CIO> Torrent<T> {
             }
         }
 
-        info!("RPC Pri update");
         self.picker.set_priorities(&self.priorities, &self.info);
+        self.clear_piece_cache();
 
         self.check_complete();
 
@@ -1785,6 +1785,7 @@ impl<T: cio::CIO> Torrent<T> {
         self.picker.set_priorities(&self.priorities, &self.info);
         let id = self.rpc_id();
         let sequential = self.picker.is_sequential();
+        self.clear_piece_cache();
         self.cio.msg_rpc(rpc::CtlMessage::Update(vec![
             SResourceUpdate::TorrentPicker {
                 id,
@@ -1792,6 +1793,12 @@ impl<T: cio::CIO> Torrent<T> {
                 sequential,
             },
         ]));
+    }
+
+    fn clear_piece_cache(&mut self) {
+        for (_, peer) in &mut self.peers {
+            peer.piece_cache().clear();
+        }
     }
 }
 

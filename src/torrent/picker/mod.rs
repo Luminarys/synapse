@@ -61,7 +61,8 @@ struct Request {
 }
 
 const MAX_DUP_REQS: usize = 3;
-const MAX_DL_Q: usize = 100;
+const MAX_DL_Q: usize = 250;
+const MAX_PC_SIZE: usize = 50;
 const REQ_TIMEOUT: u64 = 15;
 
 impl Picker {
@@ -127,7 +128,7 @@ impl Picker {
     }
 
     /// Attempts to select a block for a peer.
-    pub fn pick<T: cio::CIO>(&mut self, peer: &Peer<T>) -> Option<Block> {
+    pub fn pick<T: cio::CIO>(&mut self, peer: &mut Peer<T>) -> Option<Block> {
         if let Some(b) = self.pick_expired(peer) {
             return Some(b);
         }

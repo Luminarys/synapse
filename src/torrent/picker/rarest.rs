@@ -1,7 +1,8 @@
 // Implementation based off of http://blog.libtorrent.org/2011/11/writing-a-fast-piece-picker/
+use std::ops::IndexMut;
 
 use torrent::{Bitfield, Peer};
-use std::ops::IndexMut;
+use super::MAX_PC_SIZE;
 use control::cio;
 
 #[derive(Clone, Debug)]
@@ -109,20 +110,37 @@ impl Picker {
         self.swap_piece(idx, swap_idx);
     }
 
-    pub fn pick<T: cio::CIO>(&mut self, peer: &Peer<T>) -> Option<u32> {
-        // Find the first matching piece which is not complete,
-        // and that the peer also has
-        self.pieces
-            .iter()
-            .cloned()
-            .filter(|p| self.piece_idx[*p as usize].status == PieceStatus::Incomplete)
-            .find(|p| peer.pieces().has_bit(u64::from(*p)))
-            .map(|p| {
-                if (self.piece_idx[p as usize].availability % 2) == 0 {
-                    self.dec_pri(p);
+    pub fn pick<T: cio::CIO>(&mut self, peer: &mut Peer<T>) -> Option<u32> {
+        while !peer.piece_cache().is_empty() {
+            let p = peer.piece_cache().last().cloned().unwrap();
+            if self.piece_idx[p as usize].status == PieceStatus::Complete {
+                peer.piece_cache().pop();
+            } else {
+                break;
+            }
+        }
+
+        if peer.piece_cache().is_empty() {
+            for piece in &self.pieces {
+                if peer.pieces().has_bit(*piece as u64)
+                    && self.piece_idx[*piece as usize].status == PieceStatus::Incomplete
+                {
+                    peer.piece_cache().push(*piece);
                 }
-                p
-            })
+                if peer.piece_cache().len() >= MAX_PC_SIZE {
+                    break;
+                }
+            }
+            peer.piece_cache().reverse();
+        }
+
+        let piece = peer.piece_cache().last();
+        if let Some(p) = piece {
+            if (self.piece_idx[*p as usize].availability % 2) == 0 {
+                self.dec_pri(*p);
+            }
+        }
+        return piece.cloned();
     }
 
     pub fn incomplete(&mut self, piece: u32) {

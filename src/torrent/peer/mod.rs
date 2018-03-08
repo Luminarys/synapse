@@ -38,6 +38,7 @@ pub struct Peer<T: cio::CIO> {
     cio: T,
     pieces: Bitfield,
     piece_count: usize,
+    piece_cache: Vec<u32>,
     remote_status: Status,
     local_status: Status,
     /// Current number of queued requests
@@ -173,6 +174,7 @@ impl Peer<cio::test::TCIO> {
             queued,
             max_queue: queued,
             pieces,
+            piece_cache: Vec::new(),
             piece_count,
             tid: 0,
             t_hash: [0u8; 20],
@@ -223,6 +225,7 @@ impl<T: cio::CIO> Peer<T> {
             queued: 0,
             max_queue: INIT_MAX_QUEUE,
             pieces: Bitfield::new(t.info.hashes.len() as u64),
+            piece_cache: Vec::new(),
             piece_count: 0,
             tid: t.id,
             t_hash: t.info.hash,
@@ -265,6 +268,10 @@ impl<T: cio::CIO> Peer<T> {
 
     pub fn pieces(&self) -> &Bitfield {
         &self.pieces
+    }
+
+    pub fn piece_cache(&mut self) -> &mut Vec<u32> {
+        &mut self.piece_cache
     }
 
     #[cfg(test)]
