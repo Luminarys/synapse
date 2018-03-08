@@ -7,6 +7,7 @@ mod dht;
 use std::collections::VecDeque;
 use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
 use std::{io, result, thread};
+use std::sync::Arc;
 
 use byteorder::{BigEndian, ReadBytesExt};
 use url::Url;
@@ -16,7 +17,6 @@ pub use self::errors::{Error, ErrorKind, Result, ResultExt};
 use torrent::Torrent;
 use bencode::BEncode;
 use control::cio;
-use util::AView;
 use handle;
 use disk;
 use CONFIG;
@@ -46,7 +46,7 @@ pub enum Request {
 #[derive(Debug)]
 pub struct Announce {
     id: usize,
-    url: AView<Url>,
+    url: Arc<Url>,
     hash: [u8; 20],
     port: u16,
     uploaded: u64,
@@ -73,7 +73,7 @@ pub enum Event {
 pub enum Response {
     Tracker {
         tid: usize,
-        url: AView<Url>,
+        url: Arc<Url>,
         resp: Result<TrackerResponse>,
     },
     DHT {
@@ -333,7 +333,7 @@ impl Request {
         Request::new_announce(torrent, None)
     }
 
-    pub fn custom<T: cio::CIO>(torrent: &Torrent<T>, url: AView<Url>) -> Option<Request> {
+    pub fn custom<T: cio::CIO>(torrent: &Torrent<T>, url: Arc<Url>) -> Option<Request> {
         Request::new_announce(torrent, None).map(|mut r| {
             match r {
                 Request::Announce(ref mut a) => a.url = url,
