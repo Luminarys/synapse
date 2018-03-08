@@ -299,6 +299,13 @@ impl Request {
         Request::Shutdown
     }
 
+    pub fn concurrent(&self) -> bool {
+        match self {
+            &Request::Validate { .. } => false,
+            _ => true,
+        }
+    }
+
     pub fn execute(self, fc: &mut FileCache) -> io::Result<JobRes> {
         let sd = &CONFIG.disk.session;
         let dd = &CONFIG.disk.directory;

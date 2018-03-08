@@ -26,6 +26,7 @@ pub struct Disk {
     jobs: amy::Receiver<Request>,
     files: FileCache,
     active: VecDeque<Request>,
+    sequential: VecDeque<Request>,
     blocked: UHashMap<Request>,
 }
 
@@ -43,6 +44,7 @@ impl Disk {
             jobs,
             files: FileCache::new(),
             active: VecDeque::new(),
+            sequential: VecDeque::new(),
             blocked: UHashMap::default(),
         }
     }
@@ -59,7 +61,7 @@ impl Disk {
                     }
                     for ev in v {
                         if let Some(r) = self.blocked.remove(&ev.id) {
-                            self.active.push_back(r);
+                            self.enqueue_req(r);
                         }
                     }
                 }
@@ -73,12 +75,23 @@ impl Disk {
         }
     }
 
+    fn enqueue_req(&mut self, req: Request) {
+        if req.concurrent() || self.active.iter().find(|r| !r.concurrent()).is_none() {
+            self.active.push_back(req);
+        } else {
+            self.sequential.push_back(req);
+        }
+    }
+
     fn handle_active(&mut self) -> bool {
         let mut rotate = 1;
         while let Some(j) = self.active.pop_front() {
             let tid = j.tid();
+            let seq = !j.concurrent();
+            let mut done = false;
             match j.execute(&mut self.files) {
                 Ok(JobRes::Resp(r)) => {
+                    done = true;
                     self.ch.send(r).ok();
                 }
                 Ok(JobRes::Update(s, r)) => {
@@ -99,14 +112,22 @@ impl Disk {
                 Ok(JobRes::Blocked((id, s))) => {
                     self.blocked.insert(id, s);
                 }
-                Ok(JobRes::Done) => {}
+                Ok(JobRes::Done) => {
+                    done = true;
+                }
                 Err(e) => {
+                    done = true;
                     if let Some(t) = tid {
                         self.ch.send(Response::error(t, e)).ok();
                     } else {
                         error!("Disk job failed: {}", e);
                     }
                 }
+            }
+            if done && seq {
+                self.sequential
+                    .pop_front()
+                    .map(|r| self.active.push_back(r));
             }
             match self.poll.wait(0) {
                 Ok(v) => {
@@ -115,7 +136,7 @@ impl Disk {
                     }
                     for ev in v {
                         if let Some(r) = self.blocked.remove(&ev.id) {
-                            self.active.push_back(r);
+                            self.enqueue_req(r);
                         }
                     }
                 }
@@ -148,10 +169,10 @@ impl Disk {
                         }
                         Ok(JobRes::Update(s, r)) => {
                             self.ch.send(r).ok();
-                            self.active.push_back(s);
+                            self.enqueue_req(s);
                         }
                         Ok(JobRes::Paused(s)) => {
-                            self.active.push_back(s);
+                            self.enqueue_req(s);
                         }
                         Ok(JobRes::Blocked((id, s))) => {
                             self.blocked.insert(id, s);
@@ -173,7 +194,7 @@ impl Disk {
             }
             match r.execute(&mut self.files) {
                 Ok(JobRes::Paused(s)) => {
-                    self.active.push_back(s);
+                    self.enqueue_req(s);
                 }
                 Ok(JobRes::Blocked((id, s))) => {
                     self.blocked.insert(id, s);
