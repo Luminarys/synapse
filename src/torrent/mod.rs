@@ -27,7 +27,7 @@ use control::cio;
 use rpc::resource::{self, Resource, SResourceUpdate};
 use throttle::Throttle;
 use tracker::{self, TrackerResponse};
-use util::{AView, FHashSet, UHashMap};
+use util::{FHashSet, UHashMap};
 use session::torrent::current::Session;
 use {session, stat};
 

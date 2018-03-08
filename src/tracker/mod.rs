@@ -17,7 +17,6 @@ pub use self::errors::{Error, ErrorKind, Result, ResultExt};
 use torrent::Torrent;
 use bencode::BEncode;
 use control::cio;
-use util::AView;
 use handle;
 use disk;
 use CONFIG;

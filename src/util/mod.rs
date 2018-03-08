@@ -1,5 +1,4 @@
 pub mod native;
-mod aview;
 mod io;
 
 use std::fmt::Write as FWrite;
@@ -22,7 +21,6 @@ pub type MHashMap<K, V> = HashMap<K, V, MBuildHasher>;
 pub type MHashSet<T> = HashSet<T, MBuildHasher>;
 pub type SHashMap<T> = MHashMap<String, T>;
 
-pub use self::aview::AView;
 pub use self::io::{aread, awrite, io_err, io_err_val, IOR};
 
 pub fn random_sample<A, T>(iter: A) -> Option<T>
