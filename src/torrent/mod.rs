@@ -762,14 +762,15 @@ impl<T: cio::CIO> Torrent<T> {
                 // update the RPC stats once done
                 self.update_rpc_transfer();
                 self.rpc_update_pieces();
+                self.announce_status();
             }
             disk::Response::Error { err, .. } => {
                 error!("Disk error: {:?}", err);
                 self.status.error = Some(format!("{}", err));
+                self.announce_status();
             }
             disk::Response::FreeSpace(_) => unreachable!(),
         }
-        self.announce_status();
     }
 
     fn check_complete(&mut self) {
