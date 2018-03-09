@@ -30,7 +30,7 @@ error_chain! {
 }
 
 const INIT_MAX_QUEUE: u16 = 15;
-const MAX_QUEUE_CAP: u16 = 400;
+const MAX_QUEUE_CAP: u16 = 600;
 
 /// Peer connection and associated metadata.
 pub struct Peer<T: cio::CIO> {
@@ -299,7 +299,7 @@ impl<T: cio::CIO> Peer<T> {
         if !self.stat.active() {
             return false;
         }
-        let (_, dl) = (self.stat.avg_ul(), self.stat.avg_dl());
+        let dl = self.stat.avg_dl();
         let rate = (dl / 1024) as u16;
         // Taken from rtorrent's pipeline calculation
         let nmq = if rate < 20 { rate + 2 } else { rate / 5 + 18 };
@@ -318,10 +318,10 @@ impl<T: cio::CIO> Peer<T> {
     }
 
     pub fn queue_reqs(&mut self) -> Option<u16> {
-        if self.remote_status.choked || self.queued > self.max_queue / 2 {
+        if self.remote_status.choked || self.queued > self.max_queue.saturating_sub(16) {
             None
         } else {
-            Some(cmp::max(self.max_queue.saturating_sub(self.queued), 1))
+            Some(self.max_queue.saturating_sub(self.queued))
         }
     }
 
@@ -510,8 +510,8 @@ impl<T: cio::CIO> fmt::Debug for Peer<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
             f,
-            "Peer {{ id: {}, tid: {}, local_status: {:?}, remote_status: {:?} }}",
-            self.id, self.tid, self.local_status, self.remote_status
+            "Peer {{ IP: {}, tid: {}, local_status: {:?}, remote_status: {:?} }}",
+            self.addr, self.tid, self.local_status, self.remote_status
         )
     }
 }

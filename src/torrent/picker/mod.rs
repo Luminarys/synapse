@@ -61,9 +61,9 @@ struct Request {
 }
 
 const MAX_DUP_REQS: usize = 3;
-const MAX_DL_Q: usize = 250;
+const MAX_DL_Q: usize = 100;
 const MAX_PC_SIZE: usize = 50;
-const REQ_TIMEOUT: u64 = 15;
+const REQ_TIMEOUT: u64 = 10;
 
 impl Picker {
     /// Creates a new picker, which will select over
@@ -132,11 +132,6 @@ impl Picker {
         if let Some(b) = self.pick_expired(peer) {
             return Some(b);
         }
-        if self.downloading.len() > MAX_DL_Q {
-            if let Some(b) = self.pick_pri(peer) {
-                return Some(b);
-            }
-        }
 
         let piece = match self.picker {
             PickerKind::Sequential(ref mut p) => p.pick(peer),
@@ -144,7 +139,7 @@ impl Picker {
         };
         let res = piece
             .and_then(|p| self.pick_piece(p, peer.id()))
-            .or_else(|| self.pick_downloading(peer));
+            .or_else(|| self.pick_dl(peer));
         if res.is_none() && peer.pieces().complete() && !self.unpicked.complete() {
             debug_assert!(
                 false,
@@ -190,27 +185,7 @@ impl Picker {
     }
 
     /// Attempts to pick the highest priority piece in the dl q
-    fn pick_pri<T: cio::CIO>(&mut self, peer: &Peer<T>) -> Option<Block> {
-        let pri = &mut self.priorities;
-        self.downloading
-            .iter_mut()
-            .take(MAX_DL_Q)
-            .max_by_key(|&(idx, _)| pri[*idx as usize])
-            .and_then(|(idx, dl)| {
-                dl.iter_mut()
-                    .find(|r| {
-                        !r.completed && r.requested.len() < MAX_DUP_REQS
-                            && r.requested.iter().all(|req| req.peer != peer.id())
-                    })
-                    .map(|r| {
-                        r.requested.push(Request::new(peer.id()));
-                        Block::new(*idx, r.offset)
-                    })
-            })
-    }
-
-    /// Attempts to pick an already requested block
-    fn pick_downloading<T: cio::CIO>(&mut self, peer: &Peer<T>) -> Option<Block> {
+    fn pick_dl<T: cio::CIO>(&mut self, peer: &Peer<T>) -> Option<Block> {
         for (idx, dl) in self.downloading.iter_mut().take(MAX_DL_Q) {
             if peer.pieces().has_bit(u64::from(*idx)) {
                 let r = dl.iter_mut()
