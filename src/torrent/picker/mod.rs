@@ -1,8 +1,10 @@
 use std::collections::HashMap;
 use std::{mem, time};
 use std::sync::Arc;
-use torrent::{Bitfield, Info, Peer};
+
 use control::cio;
+use torrent::{Bitfield, Info, Peer};
+use util::FHashSet;
 
 mod rarest;
 mod sequential;
@@ -20,6 +22,8 @@ pub struct Picker {
     seeders: u16,
     /// Set of pieces which have blocks waiting. These should be prioritized.
     downloading: HashMap<u32, Vec<Downloading>>,
+    /// Pieces which we've picked fully, but ended up not being downloaded due to a slow peer
+    stalled: FHashSet<u32>,
     /// Bitfield of unpicked pieces, not in progress or
     /// completed yet. A set bit is picked, unset is unpicked.
     unpicked: Bitfield,
@@ -62,8 +66,9 @@ struct Request {
 
 const MAX_DUP_REQS: usize = 3;
 const MAX_DL_Q: usize = 100;
+const MAX_STALLED: usize = 1;
 const MAX_PC_SIZE: usize = 50;
-const REQ_TIMEOUT: u64 = 10;
+const REQ_TIMEOUT: u64 = 15;
 
 impl Picker {
     /// Creates a new picker, which will select over
@@ -93,6 +98,7 @@ impl Picker {
             seeders: 0,
             unpicked: pieces.clone(),
             downloading,
+            stalled: FHashSet::default(),
             priorities: vec![3; info.pieces() as usize],
         };
         picker.set_priorities(priorities, info);
@@ -122,13 +128,13 @@ impl Picker {
                     });
 
                     // Rare situation where we pick from a slow peer, choose every other the chunk
-                    // in the piece then get stuck: need to unpick here and try again
-                    if chunk.requested.is_empty() && cl == self.scale as usize
-                        || (*piece == self.last_piece && cl == self.last_piece_scale as usize)
+                    // in the piece then get stuck: mark piece as stalled
+                    if chunk.requested.is_empty()
+                        && (cl == self.scale as usize
+                            || (*piece == self.last_piece && cl == self.last_piece_scale as usize))
                     {
-                        match self.picker {
-                            PickerKind::Sequential(ref mut p) => p.incomplete(*piece),
-                            PickerKind::Rarest(ref mut p) => p.incomplete(*piece),
+                        if !self.stalled.contains(piece) {
+                            self.stalled.insert(*piece);
                         }
                     }
                 }
@@ -143,6 +149,36 @@ impl Picker {
     pub fn pick<T: cio::CIO>(&mut self, peer: &mut Peer<T>) -> Option<Block> {
         if let Some(b) = self.pick_expired(peer) {
             return Some(b);
+        }
+
+        if self.stalled.len() > MAX_STALLED {
+            let piece = self.stalled
+                .iter()
+                .cloned()
+                .find(|p| peer.pieces().has_bit(*p as u64));
+            if let Some(p) = piece {
+                if let Some(dl) = self.downloading.get_mut(&p) {
+                    let r = dl.iter_mut()
+                        .find(|r| {
+                            !r.completed && r.requested.len() < MAX_DUP_REQS
+                                && r.requested.iter().all(|req| req.peer != peer.id())
+                                && r.requested
+                                    .iter()
+                                    .all(|req| req.requested_at.elapsed().as_secs() >= REQ_TIMEOUT)
+                        })
+                        .map(|r| {
+                            r.requested.push(Request::new(peer.id()));
+                            Block::new(p, r.offset)
+                        });
+                    // At this point we've filled up the stalled piece with requests,
+                    // unmark it
+                    if r.is_none() {
+                        self.stalled.remove(&p);
+                    } else {
+                        return r;
+                    }
+                }
+            }
         }
 
         let piece = match self.picker {
