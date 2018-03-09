@@ -109,7 +109,8 @@ impl Picker {
 
     pub fn tick(&mut self) {
         let mut expired = 0;
-        for chunks in self.downloading.values_mut() {
+        for (piece, chunks) in &mut self.downloading {
+            let cl = chunks.len();
             for chunk in chunks.iter_mut() {
                 if !chunk.completed {
                     chunk.requested.retain(|req| {
@@ -118,7 +119,18 @@ impl Picker {
                             expired += 1;
                         }
                         unexp
-                    })
+                    });
+
+                    // Rare situation where we pick from a slow peer, choose every other the chunk
+                    // in the piece then get stuck: need to unpick here and try again
+                    if chunk.requested.is_empty() && cl == self.scale as usize
+                        || (*piece == self.last_piece && cl == self.last_piece_scale as usize)
+                    {
+                        match self.picker {
+                            PickerKind::Sequential(ref mut p) => p.incomplete(*piece),
+                            PickerKind::Rarest(ref mut p) => p.incomplete(*piece),
+                        }
+                    }
                 }
             }
         }
