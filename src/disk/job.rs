@@ -482,7 +482,7 @@ impl Request {
                         .map(|file| file.seek(SeekFrom::Start(loc.offset)))
                         .ok();
                     if let Ok(Ok(amnt)) = f.as_mut().map(|file| file.read(&mut buf[pos..])) {
-                        ctx.update(&buf[pos..pos + amnt]);
+                        ctx.input(&buf[pos..pos + amnt]);
                         pos += amnt;
                     } else {
                         return Ok(JobRes::Resp(Response::PieceValidated {
@@ -492,11 +492,11 @@ impl Request {
                         }));
                     }
                 }
-                let digest = ctx.digest();
+                let digest = ctx.result();
                 return Ok(JobRes::Resp(Response::PieceValidated {
                     tid,
                     piece,
-                    valid: &digest.bytes() == &info.hashes[piece as usize][..],
+                    valid: &digest[..] == &info.hashes[piece as usize][..],
                 }));
             }
             Request::Validate {
@@ -534,14 +534,14 @@ impl Request {
                             .map(|file| file.seek(SeekFrom::Start(loc.offset)))
                             .ok();
                         if let Ok(Ok(amnt)) = f.as_mut().map(|file| file.read(&mut buf[pos..])) {
-                            ctx.update(&buf[pos..pos + amnt]);
+                            ctx.input(&buf[pos..pos + amnt]);
                             pos += amnt;
                         } else {
                             valid = false;
                         }
                     }
-                    let digest = ctx.digest();
-                    if !valid || &digest.bytes() != &info.hashes[idx as usize][..] {
+                    let digest = ctx.result();
+                    if !valid || &digest[..] != &info.hashes[idx as usize][..] {
                         invalid.push(idx);
                     }
 

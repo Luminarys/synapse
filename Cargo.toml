@@ -12,7 +12,7 @@ path = "src/main.rs"
 name = "synapse"
 
 [workspace]
-members = ["sycli", "rpc"]
+members = ["sycli", "rpc", "sha1"]
 exclude = ["synulator"]
 
 [build-dependencies]
@@ -40,7 +40,6 @@ rand = "0.3"
 serde = "1"
 serde_derive = "1"
 serde_json = "1"
-sha1 = "0.3"
 shellexpand = "1"
 synapse-rpc = { path = "rpc" }
 toml = "0.4"
@@ -73,6 +72,9 @@ features = ["bigint", "serde"]
 [dependencies.nix]
 git = "https://github.com/nix-rust/nix"
 rev = "e2c19c6"
+
+[dependencies.sha1]
+path = "sha1"
 
 [profile.bench]
 opt-level = 3

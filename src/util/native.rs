@@ -17,8 +17,7 @@ mod sys {
 
     #[link(name = "mmap")]
     extern "C" {
-        pub fn mmap_read(mmap: *const c_void, data: *mut c_void, len: size_t) -> c_int;
-        pub fn mmap_write(mmap: *mut c_void, data: *const c_void, len: size_t) -> c_int;
+        pub fn mmap_cpy(dst: *mut c_void, src: *const c_void, len: size_t) -> c_int;
     }
 }
 
@@ -49,9 +48,9 @@ pub fn fallocate(f: &File, len: u64) -> io::Result<()> {
 
 pub fn mmap_read(mmap: &[u8], data: &mut [u8], len: usize) -> Result<(), ()> {
     unsafe {
-        if sys::mmap_read(
-            mmap.as_ptr() as *const c_void,
+        if sys::mmap_cpy(
             data.as_mut_ptr() as *mut c_void,
+            mmap.as_ptr() as *const c_void,
             len,
         ) == 0
         {
@@ -64,7 +63,7 @@ pub fn mmap_read(mmap: &[u8], data: &mut [u8], len: usize) -> Result<(), ()> {
 
 pub fn mmap_write(mmap: &mut [u8], data: &[u8], len: usize) -> Result<(), ()> {
     unsafe {
-        if sys::mmap_write(
+        if sys::mmap_cpy(
             mmap.as_mut_ptr() as *mut c_void,
             data.as_ptr() as *const c_void,
             len,

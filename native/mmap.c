@@ -11,7 +11,7 @@ void sigbus_handler(int sig, siginfo_t *si, void *ctx) {
     }
 }
 
-int mmap_read(const void *mmap, void *data, size_t amnt) {
+int mmap_cpy(void *dst, const void *src, size_t amnt) {
     struct sigaction sa, oldact = {0};
     sa.sa_sigaction = sigbus_handler;
     sa.sa_flags = SA_SIGINFO;
@@ -19,23 +19,7 @@ int mmap_read(const void *mmap, void *data, size_t amnt) {
     sigaction(SIGBUS, &sa, &oldact);
 
     if (setjmp(disk_full) == 0) {
-        memcpy(data, mmap, amnt);
-    } else {
-        return -1;
-    }
-    sigaction(SIGBUS, &oldact, NULL);
-    return 0;
-}
-
-int mmap_write(void *mmap, const void *data, size_t amnt) {
-    struct sigaction sa, oldact = {0};
-    sa.sa_sigaction = sigbus_handler;
-    sa.sa_flags = SA_SIGINFO;
-    sigfillset(&sa.sa_mask);
-    sigaction(SIGBUS, &sa, &oldact);
-
-    if (setjmp(disk_full) == 0) {
-        memcpy(mmap, data, amnt);
+        memcpy(dst, src, amnt);
     } else {
         return -1;
     }

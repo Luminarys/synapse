@@ -47,9 +47,7 @@ pub fn random_string(len: usize) -> String {
 }
 
 pub fn sha1_hash(data: &[u8]) -> [u8; 20] {
-    let mut ctx = sha1::Sha1::new();
-    ctx.update(data);
-    ctx.digest().bytes()
+    sha1::Sha1::digest(data)
 }
 
 pub fn peer_rpc_id(torrent: &[u8; 20], peer: u64) -> String {
@@ -58,28 +56,28 @@ pub fn peer_rpc_id(torrent: &[u8; 20], peer: u64) -> String {
     (&mut idx[..]).write_u64::<BigEndian>(peer).unwrap();
 
     let mut ctx = sha1::Sha1::new();
-    ctx.update(torrent);
-    ctx.update(PEER_ID);
-    ctx.update(&idx[..]);
-    hash_to_id(&ctx.digest().bytes())
+    ctx.input(torrent);
+    ctx.input(PEER_ID);
+    ctx.input(&idx[..]);
+    hash_to_id(&ctx.result())
 }
 
 pub fn file_rpc_id(torrent: &[u8; 20], file: &str) -> String {
     const FILE_ID: &'static [u8] = b"FILE";
     let mut ctx = sha1::Sha1::new();
-    ctx.update(torrent);
-    ctx.update(FILE_ID);
-    ctx.update(file.as_bytes());
-    hash_to_id(&ctx.digest().bytes())
+    ctx.input(torrent);
+    ctx.input(FILE_ID);
+    ctx.input(file.as_bytes());
+    hash_to_id(&ctx.result())
 }
 
 pub fn trk_rpc_id(torrent: &[u8; 20], url: &str) -> String {
     const TRK_ID: &'static [u8] = b"TRK";
     let mut ctx = sha1::Sha1::new();
-    ctx.update(torrent);
-    ctx.update(TRK_ID);
-    ctx.update(url.as_bytes());
-    hash_to_id(&ctx.digest().bytes())
+    ctx.input(torrent);
+    ctx.input(TRK_ID);
+    ctx.input(url.as_bytes());
+    hash_to_id(&ctx.result())
 }
 
 pub fn hash_to_id(hash: &[u8]) -> String {
