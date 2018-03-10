@@ -90,6 +90,9 @@ impl Listener {
             match self.listener.accept() {
                 Ok((conn, ip)) => {
                     debug!("Accepted new connection from {:?}!", ip);
+                    if conn.set_nonblocking(true).is_err() {
+                        continue;
+                    }
                     let pid = self.reg.register(&conn, amy::Event::Read).unwrap();
                     self.incoming.insert(pid, (conn, Reader::new()));
                 }
