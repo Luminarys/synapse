@@ -630,6 +630,22 @@ impl Processor {
                     debug!("Failed to get resource uploaded: {}!", id);
                 }
             }
+            CtlMessage::Error {
+                reason,
+                serial,
+                client,
+            } => {
+                msgs.push((
+                    client,
+                    SMessage::InvalidRequest(Error {
+                        serial: Some(serial),
+                        reason,
+                    }),
+                ));
+            }
+            CtlMessage::Pending { id, serial, client } => {
+                msgs.push((client, SMessage::ResourcePending { serial, id }));
+            }
             CtlMessage::Shutdown => unreachable!(),
         }
         msgs

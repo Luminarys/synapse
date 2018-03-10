@@ -8,7 +8,7 @@ use serde_json;
 use prettytable::Table;
 use url::Url;
 
-use rpc::message::{CMessage, SMessage};
+use rpc::message::{self, CMessage, SMessage};
 use rpc::criterion::{Criterion, Operation, Value};
 use rpc::resource::{CResourceUpdate, Resource, ResourceKind, SResourceUpdate};
 
@@ -53,11 +53,17 @@ fn add_file(c: &mut Client, url: &str, file: &str, dir: Option<&str>, start: boo
         .send()
         .chain_err(|| ErrorKind::HTTP)?;
 
-    if let SMessage::ResourcesExtant { ids, .. } = c.recv()? {
-        get_(c, ids[0].as_ref(), "text")?;
-    } else {
-        bail!("Failed to receieve upload acknowledgement from synapse!");
-    };
+    match c.recv()? {
+        SMessage::ResourcesExtant { ids, .. } => {
+            get_(c, ids[0].as_ref(), "text")?;
+        }
+        SMessage::InvalidRequest(message::Error { reason, .. }) => {
+            bail!("{}", reason);
+        }
+        _ => {
+            bail!("Failed to receieve upload acknowledgement from synapse");
+        }
+    }
 
     Ok(())
 }
@@ -421,10 +427,15 @@ fn add_tracker(c: &mut Client, id: &str, tracker: &str) -> Result<()> {
         id: id.to_owned(),
         uri: tracker.to_owned(),
     };
-    if let SMessage::ResourcesExtant { .. } = c.rr(msg)? {
-        Ok(())
-    } else {
-        bail!("Failed to receieve tracker extancy from synapse!");
+
+    match c.rr(msg)? {
+        SMessage::ResourcesExtant { .. } => Ok(()),
+        SMessage::InvalidRequest(message::Error { reason, .. }) => {
+            bail!("{}", reason);
+        }
+        _ => {
+            bail!("Failed to receieve tracker extancy from synapse!");
+        }
     }
 }
 
@@ -443,10 +454,14 @@ fn remove_res(c: &mut Client, res: &str) -> Result<()> {
         id: res.to_owned(),
         artifacts: None,
     };
-    if let SMessage::ResourcesRemoved { .. } = c.rr(msg)? {
-        Ok(())
-    } else {
-        bail!("Failed to receieve removal confirmation from synapse!");
+    match c.rr(msg)? {
+        SMessage::ResourcesRemoved { .. } => Ok(()),
+        SMessage::InvalidRequest(message::Error { reason, .. }) => {
+            bail!("{}", reason);
+        }
+        _ => {
+            bail!("Failed to receieve removal confirmation from synapse!");
+        }
     }
 }
 
@@ -469,10 +484,14 @@ fn add_peer(c: &mut Client, id: &str, peer: &str) -> Result<()> {
         id: id.to_owned(),
         ip: peer.to_owned(),
     };
-    if let SMessage::ResourcesExtant { .. } = c.rr(msg)? {
-        Ok(())
-    } else {
-        bail!("Failed to receieve peer extancy from synapse!");
+    match c.rr(msg)? {
+        SMessage::ResourcePending { .. } => Ok(()),
+        SMessage::InvalidRequest(message::Error { reason, .. }) => {
+            bail!("{}", reason);
+        }
+        m => {
+            bail!("Failed to peer extancy confirmation from synapse!");
+        }
     }
 }
 

@@ -371,11 +371,11 @@ The client wishes to delete a resource.
         "artifacts": bool,          optional, delete related artifacts(files for torrents).
     }
 
-The semantics of this message vary based on the resource type. 
-If the resource is a torrent, the torrent is deleted from the client. If the resource is a peer, 
-the peer will be removed. If the resource is a tracker, the tracker is removed from the torrent. 
-For other resources, there is no effect (this is subject to change). 
-On success, the client will be notified of the removal via a RESOURCES_REMOVED message 
+The semantics of this message vary based on the resource type.
+If the resource is a torrent, the torrent is deleted from the client. If the resource is a peer,
+the peer will be removed. If the resource is a tracker, the tracker is removed from the torrent.
+For other resources, there is no effect (this is subject to change).
+On success, the client will be notified of the removal via a RESOURCES_REMOVED message
 with the serial of the original message, and any updates from existing subscriptions.
 
                                 SPECIAL MESSAGES
@@ -413,6 +413,17 @@ occurring.
         "expires": datetime,
         "token": string,          bearer token that should be used to authorize the request
         "size": number,             bytes, expected size of transfer
+    }
+
+RESOURCE_PENDING          server->client
+
+The client tried to add a resource to the server which is pending acceptance.
+There is no guarantee that the resource will ever be fully added.
+
+    {
+        "type": "RESOURCE_PENDING",
+        "serial": number,
+        "id": string,
     }
 
 UPLOAD_TORRENT          client->server

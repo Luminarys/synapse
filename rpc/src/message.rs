@@ -128,16 +128,18 @@ pub enum SMessage<'a> {
         token: String,
         size: u64,
     },
+    ResourcePending {
+        serial: u64,
+        id: String,
+    },
 
     // Error messages
     UnknownResource(Error),
     InvalidResource(Error),
-    // InvalidMessage(Error),
     InvalidSchema(Error),
     InvalidRequest(Error),
     PermissionDenied(Error),
     TransferFailed(Error),
-    // ServerError(Error),
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

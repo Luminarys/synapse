@@ -91,6 +91,16 @@ pub enum CtlMessage {
         client: usize,
         serial: u64,
     },
+    Error {
+        reason: String,
+        client: usize,
+        serial: u64,
+    },
+    Pending {
+        id: String,
+        client: usize,
+        serial: u64,
+    },
     Shutdown,
 }
 

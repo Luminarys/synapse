@@ -384,11 +384,16 @@ impl<T: cio::CIO> Control<T> {
         serial: u64,
     ) {
         debug!("Adding {:?}, start: {}!", info, start);
+        let id = hash_to_id(&info.hash);
         if self.hash_idx.contains_key(&info.hash) {
-            info!("Tried to add torrent that already exists!");
+            debug!("Tried to add torrent that already exists!");
+            self.cio.msg_rpc(rpc::CtlMessage::Error {
+                client,
+                serial,
+                reason: format!("Torrent {} already exists", id),
+            });
             return;
         }
-        let id = hash_to_id(&info.hash);
         let tid = self.tid_cnt;
         let throttle = self.throttler.get_throttle(tid);
         let t = Torrent::new(tid, path, info, throttle, self.cio.new_handle(), start);
@@ -447,10 +452,30 @@ impl<T: cio::CIO> Control<T> {
                     .and_then(|d| self.hash_idx.get(d.as_ref()))
                     .cloned();
                 let pres = peer::PeerConn::new_outgoing(&peer);
-                if let (Some(tid), Ok(pc)) = (res, pres) {
-                    self.add_peer_rpc(tid, pc).map(|id| {
-                        self.cio
-                            .msg_rpc(rpc::CtlMessage::Uploaded { id, client, serial })
+                if let Some(tid) = res {
+                    if let Ok(pc) = pres {
+                        if let Some(id) = self.add_peer_rpc(tid, pc) {
+                            self.cio
+                                .msg_rpc(rpc::CtlMessage::Pending { id, client, serial });
+                        } else {
+                            self.cio.msg_rpc(rpc::CtlMessage::Error {
+                                client,
+                                serial,
+                                reason: format!("Could not add peer {}", peer),
+                            });
+                        }
+                    } else {
+                        self.cio.msg_rpc(rpc::CtlMessage::Error {
+                            client,
+                            serial,
+                            reason: format!("Could not create peer {}", peer),
+                        });
+                    }
+                } else {
+                    self.cio.msg_rpc(rpc::CtlMessage::Error {
+                        client,
+                        serial,
+                        reason: format!("torrent {} does not exist", id),
                     });
                 }
             }
@@ -463,11 +488,19 @@ impl<T: cio::CIO> Control<T> {
                 let hash_idx = &self.hash_idx;
                 let torrents = &mut self.torrents;
                 let cio = &mut self.cio;
+                let reason = format!("Could not add tracker {}", tracker);
                 id_to_hash(&id)
                     .and_then(|d| hash_idx.get(d.as_ref()))
                     .and_then(|i| torrents.get_mut(i))
                     .map(|t| t.add_tracker(tracker))
-                    .map(|id| cio.msg_rpc(rpc::CtlMessage::Uploaded { id, client, serial }));
+                    .map(|id| cio.msg_rpc(rpc::CtlMessage::Uploaded { id, client, serial }))
+                    .unwrap_or_else(|| {
+                        cio.msg_rpc(rpc::CtlMessage::Error {
+                            reason,
+                            client,
+                            serial,
+                        })
+                    });
             }
             rpc::Message::UpdateServer {
                 id,
@@ -497,12 +530,20 @@ impl<T: cio::CIO> Control<T> {
             } => {
                 let hash_idx = &mut self.hash_idx;
                 let torrents = &mut self.torrents;
+                let cio = &mut self.cio;
+                let reason = format!("Torrent {} does not exist", id);
                 id_to_hash(&id)
                     .and_then(|d| hash_idx.remove(d.as_ref()))
                     .and_then(|i| torrents.remove(&i))
-                    .map(|mut t| t.delete(artifacts));
-                self.cio
-                    .msg_rpc(rpc::CtlMessage::ClientRemoved { id, client, serial });
+                    .map(|mut t| t.delete(artifacts))
+                    .map(|_| cio.msg_rpc(rpc::CtlMessage::ClientRemoved { id, client, serial }))
+                    .unwrap_or_else(|| {
+                        cio.msg_rpc(rpc::CtlMessage::Error {
+                            client,
+                            serial,
+                            reason,
+                        })
+                    });
             }
             rpc::Message::Pause(id) => {
                 let hash_idx = &mut self.hash_idx;
@@ -538,12 +579,20 @@ impl<T: cio::CIO> Control<T> {
             } => {
                 let hash_idx = &self.hash_idx;
                 let torrents = &mut self.torrents;
+                let cio = &mut self.cio;
+                let reason = format!("Torrent or peer does not exist!");
                 id_to_hash(&torrent_id)
                     .and_then(|d| hash_idx.get(d.as_ref()))
                     .and_then(|i| torrents.get_mut(i))
-                    .map(|t| t.remove_peer(&id));
-                self.cio
-                    .msg_rpc(rpc::CtlMessage::ClientRemoved { id, client, serial });
+                    .map(|t| t.remove_peer(&id))
+                    .map(|_| cio.msg_rpc(rpc::CtlMessage::ClientRemoved { id, client, serial }))
+                    .unwrap_or_else(|| {
+                        cio.msg_rpc(rpc::CtlMessage::Error {
+                            client,
+                            serial,
+                            reason,
+                        })
+                    });
             }
             rpc::Message::RemoveTracker {
                 id,
@@ -553,12 +602,20 @@ impl<T: cio::CIO> Control<T> {
             } => {
                 let hash_idx = &self.hash_idx;
                 let torrents = &mut self.torrents;
+                let cio = &mut self.cio;
+                let reason = format!("Torrent or tracker does not exist!");
                 id_to_hash(&torrent_id)
                     .and_then(|d| hash_idx.get(d.as_ref()))
                     .and_then(|i| torrents.get_mut(i))
-                    .map(|t| t.remove_tracker(&id));
-                self.cio
-                    .msg_rpc(rpc::CtlMessage::ClientRemoved { id, client, serial });
+                    .map(|t| t.remove_tracker(&id))
+                    .map(|_| cio.msg_rpc(rpc::CtlMessage::ClientRemoved { id, client, serial }))
+                    .unwrap_or_else(|| {
+                        cio.msg_rpc(rpc::CtlMessage::Error {
+                            client,
+                            serial,
+                            reason,
+                        })
+                    });
             }
             rpc::Message::UpdateTracker { id, torrent_id } => {
                 let hash_idx = &self.hash_idx;
