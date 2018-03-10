@@ -14,7 +14,8 @@ EXPOSE 16493 \
 USER synapse
 RUN mkdir -p ~/.config
 ADD example_config.toml /synapse/.config/synapse.toml
-RUN sed -i "s/directory \= \".\/\"/directory \= \"\/synapse\/downloads\""/ ~/.config/synapse.toml
+RUN sed -i "s/directory \= \".\/\"/directory \= \"\/synapse\/downloads\"/" ~/.config/synapse.toml && \
+    sed -i "s/local \= true/local \= false/" ~/.config/synapse.toml
 
 VOLUME /synapse/downloads
 
