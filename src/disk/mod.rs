@@ -73,6 +73,13 @@ impl Disk {
                 break;
             }
         }
+
+        // Try to finish up remaining jobs
+        for job in self.active.drain(..) {
+            if job.concurrent() {
+                job.execute(&mut self.files).ok();
+            }
+        }
     }
 
     fn enqueue_req(&mut self, req: Request) {

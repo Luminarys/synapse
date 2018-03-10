@@ -395,9 +395,10 @@ impl<T: cio::CIO> Torrent<T> {
         };
         t.status.error = None;
         t.start();
-        t.announce_start();
         if d.status.validating {
             t.validate();
+        } else {
+            t.announce_start();
         }
         Some(t)
     }
