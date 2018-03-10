@@ -913,7 +913,7 @@ impl<T: cio::CIO> Torrent<T> {
                 }
             }
             Message::Have(idx) => {
-                if self.info.complete() && self.status.validating.is_none() {
+                if self.info.complete() {
                     self.picker.piece_available(idx);
                 }
                 if peer.pieces().complete() {
