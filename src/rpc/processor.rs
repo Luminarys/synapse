@@ -708,7 +708,7 @@ impl Processor {
             .iter()
             .map(|(k, v)| (k.to_owned(), json::to_vec(v).unwrap()))
             .collect();
-        if let Ok(data) = bincode::serialize(&json_data, bincode::Infinite) {
+        if let Ok(data) = bincode::serialize(&json_data) {
             let path = Path::new(&CONFIG.disk.session[..]).join(USER_DATA_FILE);
 
             self.db.send(disk::Request::WriteFile { data, path }).ok();

@@ -438,7 +438,7 @@ impl RoutingTable {
     }
 
     pub fn serialize(&self) -> Vec<u8> {
-        bincode::serialize(self, bincode::Infinite).unwrap()
+        bincode::serialize(self).unwrap()
     }
 
     pub fn is_bootstrapped(&self) -> bool {

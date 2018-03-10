@@ -160,7 +160,7 @@ impl<T: cio::CIO> Control<T> {
         debug!("Serializing server data!");
         let mut path = PathBuf::from(sd);
         path.push("syn_data");
-        match bincode::serialize(&self.data, bincode::Infinite) {
+        match bincode::serialize(&self.data) {
             Ok(data) => {
                 self.db.send(disk::Request::WriteFile { path, data }).ok();
             }
@@ -179,9 +179,7 @@ impl<T: cio::CIO> Control<T> {
         debug!("Deserializing server data!");
         let mut pb = PathBuf::from(sd);
         pb.push("syn_data");
-        if let Ok(Ok(data)) =
-            fs::File::open(pb).map(|mut f| bincode::deserialize_from(&mut f, bincode::Infinite))
-        {
+        if let Ok(Ok(data)) = fs::File::open(pb).map(|mut f| bincode::deserialize_from(&mut f)) {
             self.data = data;
             self.throttler.set_ul_rate(self.data.throttle_ul);
             self.throttler.set_dl_rate(self.data.throttle_dl);

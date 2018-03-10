@@ -450,7 +450,7 @@ impl<T: cio::CIO> Torrent<T> {
                 .map(|trk| trk.url.as_str().to_owned())
                 .collect(),
         };
-        let data = bincode::serialize(&d, bincode::Infinite).expect("Serialization failed!");
+        let data = bincode::serialize(&d).expect("Serialization failed!");
         debug!("Sending serialization request!");
         self.cio
             .msg_disk(disk::Request::serialize(self.id, data, self.info.hash));
