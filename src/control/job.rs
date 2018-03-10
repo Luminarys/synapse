@@ -57,6 +57,7 @@ impl<T: cio::CIO> Job<T> for TorrentTxUpdate {
         for (_, torrent) in torrents.iter_mut() {
             if torrent.tick() {
                 torrent.update_rpc_transfer();
+                torrent.update_rpc_peers();
                 // TODO: consider making tick triggered by on the fly validation
                 if self.piece_update.elapsed() > time::Duration::from_secs(60 * 5) {
                     torrent.rpc_update_pieces();

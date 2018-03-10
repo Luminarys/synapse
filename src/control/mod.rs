@@ -311,9 +311,6 @@ impl<T: cio::CIO> Control<T> {
                 self.add_peer(id, peer);
             }
         }
-        if let Some(torrent) = self.torrents.get_mut(&id) {
-            torrent.update_rpc_peers();
-        }
     }
 
     fn update_jobs(&mut self) {
