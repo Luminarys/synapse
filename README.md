@@ -13,7 +13,7 @@ It currently supports most systems which implement epoll or kqueue, with a focus
 ## Compiling
 Install dependencies:
 
-- rustc >= 1.20
+- rustc >= 1.21
 - cargo >= 0.18
 - OpenSSL >= 1.0.2
 - c-ares 1.13 | autotools + gmake(FreeBSD only) *
