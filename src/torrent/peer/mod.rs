@@ -362,7 +362,7 @@ impl<T: cio::CIO> Peer<T> {
                     return Err(ErrorKind::ProtocolError("Invalid piece provided in HAVE!").into());
                 }
                 if self.pieces.has_bit(u64::from(idx)) {
-                    return Err(());
+                    return Err(ErrorKind::ProtocolError("Duplicate piece provided in HAVE!").into());
                 }
                 self.pieces.set_bit(u64::from(idx));
                 self.piece_count += 1;

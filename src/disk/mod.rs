@@ -163,27 +163,7 @@ impl Disk {
                             self.ch.send(Response::error(t, e)).ok();
                         }
                     }
-                    match r.execute(&mut self.files) {
-                        Ok(JobRes::Resp(r)) => {
-                            self.ch.send(r).ok();
-                        }
-                        Ok(JobRes::Update(s, r)) => {
-                            self.ch.send(r).ok();
-                            self.enqueue_req(s);
-                        }
-                        Ok(JobRes::Paused(s)) => {
-                            self.enqueue_req(s);
-                        }
-                        Ok(JobRes::Blocked((id, s))) => {
-                            self.blocked.insert(id, s);
-                        }
-                        Ok(JobRes::Done) => {}
-                        Err(e) => {
-                            if let Some(t) = tid {
-                                self.ch.send(Response::error(t, e)).ok();
-                            }
-                        }
-                    }
+                    self.enqueue_req(r);
                 }
                 _ => break,
             }
@@ -192,18 +172,7 @@ impl Disk {
             if r.register(&self.reg).is_err() {
                 continue;
             }
-            match r.execute(&mut self.files) {
-                Ok(JobRes::Paused(s)) => {
-                    self.enqueue_req(s);
-                }
-                Ok(JobRes::Blocked((id, s))) => {
-                    self.blocked.insert(id, s);
-                }
-                Err(e) => {
-                    error!("Disk job failed: {}", e);
-                }
-                _ => {}
-            }
+            self.enqueue_req(r);
         }
         false
     }
