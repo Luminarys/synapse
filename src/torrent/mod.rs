@@ -559,6 +559,9 @@ impl<T: cio::CIO> Torrent<T> {
     }
 
     pub fn update_tracker(&mut self) {
+        if self.status.stopped() {
+            return;
+        }
         if let Some(req) = tracker::Request::interval(self) {
             self.cio.msg_trk(req);
         }
@@ -1295,6 +1298,9 @@ impl<T: cio::CIO> Torrent<T> {
     }
 
     fn dht_announce(&mut self) {
+        if self.status.stopped() {
+            return;
+        }
         if !self.info.private {
             let mut req = tracker::Request::DHTAnnounce(self.info.hash);
             self.cio.msg_trk(req);
