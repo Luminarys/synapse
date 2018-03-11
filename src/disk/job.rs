@@ -4,11 +4,11 @@ use std::io::{self, Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 
 use fs_extra;
-use sha1;
 use amy;
 use http_range::HttpRange;
 use nix::sys::statvfs;
 use nix::libc;
+use openssl::sha;
 
 use super::{FileCache, JOB_TIME_SLICE};
 use torrent::{Info, LocIter};
@@ -466,7 +466,7 @@ impl Request {
 
                 let mut f = fs::OpenOptions::new().read(true).open(&pb);
 
-                let mut ctx = sha1::Sha1::new();
+                let mut ctx = sha::Sha1::new();
                 let locs = Info::piece_disk_locs(&info, piece);
                 let mut pos = 0;
                 for loc in locs {
@@ -482,7 +482,7 @@ impl Request {
                         .map(|file| file.seek(SeekFrom::Start(loc.offset)))
                         .ok();
                     if let Ok(Ok(amnt)) = f.as_mut().map(|file| file.read(&mut buf[pos..])) {
-                        ctx.input(&buf[pos..pos + amnt]);
+                        ctx.update(&buf[pos..pos + amnt]);
                         pos += amnt;
                     } else {
                         return Ok(JobRes::Resp(Response::PieceValidated {
@@ -492,7 +492,7 @@ impl Request {
                         }));
                     }
                 }
-                let digest = ctx.result();
+                let digest = ctx.finish();
                 return Ok(JobRes::Resp(Response::PieceValidated {
                     tid,
                     piece,
@@ -518,7 +518,7 @@ impl Request {
                     && start.elapsed() < time::Duration::from_millis(JOB_TIME_SLICE)
                 {
                     let mut valid = true;
-                    let mut ctx = sha1::Sha1::new();
+                    let mut ctx = sha::Sha1::new();
                     let locs = Info::piece_disk_locs(&info, idx);
                     let mut pos = 0;
                     for loc in locs {
@@ -534,13 +534,13 @@ impl Request {
                             .map(|file| file.seek(SeekFrom::Start(loc.offset)))
                             .ok();
                         if let Ok(Ok(amnt)) = f.as_mut().map(|file| file.read(&mut buf[pos..])) {
-                            ctx.input(&buf[pos..pos + amnt]);
+                            ctx.update(&buf[pos..pos + amnt]);
                             pos += amnt;
                         } else {
                             valid = false;
                         }
                     }
-                    let digest = ctx.result();
+                    let digest = ctx.finish();
                     if !valid || &digest[..] != &info.hashes[idx as usize][..] {
                         invalid.push(idx);
                     }

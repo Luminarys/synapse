@@ -12,7 +12,7 @@ path = "src/main.rs"
 name = "synapse"
 
 [workspace]
-members = ["sycli", "rpc", "sha1"]
+members = ["sycli", "rpc"]
 exclude = ["synulator"]
 
 [build-dependencies]
@@ -72,9 +72,6 @@ features = ["bigint", "serde"]
 [dependencies.nix]
 git = "https://github.com/nix-rust/nix"
 rev = "e2c19c6"
-
-[dependencies.sha1]
-path = "sha1"
 
 [profile.bench]
 opt-level = 3
