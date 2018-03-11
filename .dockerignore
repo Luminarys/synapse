@@ -1,0 +1,4 @@
+*
+!target/x86_64-unknown-linux-musl/release/synapse
+!target/x86_64-unknown-linux-musl/release/sycli
+!example_config.toml
