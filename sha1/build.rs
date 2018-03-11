@@ -9,7 +9,6 @@ fn main() {
         "src/generic.c"
     };
     cc::Build::new()
-        .flag("-c")
         .file(asm_path)
         .opt_level(3)
         .compile("sha1-round");
