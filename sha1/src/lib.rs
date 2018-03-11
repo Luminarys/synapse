@@ -57,7 +57,7 @@ use block_buffer::BlockBuffer512;
 mod consts;
 use consts::{H, STATE_LEN};
 
-#[link(name = "sha1", kind = "static")]
+#[link(name = "sha1-round")]
 extern "C" {
     fn sha1_compress(state: &mut [u32; 5], block: &[u8; 64]);
 }

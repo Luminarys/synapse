@@ -12,5 +12,5 @@ fn main() {
         .flag("-c")
         .file(asm_path)
         .opt_level(3)
-        .compile("sha1");
+        .compile("sha1-round");
 }
