@@ -46,6 +46,7 @@ pub struct Peer<T: cio::CIO> {
     /// Maximum number of requests that can be queued
     /// at a time.
     max_queue: u16,
+    pieces_updated: bool,
     tid: usize,
     downloaded: u32,
     uploaded: u32,
@@ -181,6 +182,7 @@ impl Peer<cio::test::TCIO> {
             rsv: None,
             cid: None,
             ext_ids: ExtIDs::new(),
+            pieces_updated: false,
         }
     }
 
@@ -232,6 +234,7 @@ impl<T: cio::CIO> Peer<T> {
             rsv,
             cid,
             ext_ids: ExtIDs::new(),
+            pieces_updated: false,
         };
         p.send_message(Message::handshake(&t.info));
         if t.info.complete() {
@@ -306,7 +309,10 @@ impl<T: cio::CIO> Peer<T> {
         );
         // Keep it under the max cap
         self.max_queue = cmp::min(self.max_queue, MAX_QUEUE_CAP);
-        self.send_rpc_update();
+        if self.pieces_updated {
+            self.pieces_updated = false;
+            self.send_rpc_update();
+        }
         true
     }
 
@@ -365,6 +371,7 @@ impl<T: cio::CIO> Peer<T> {
                 }
                 self.pieces.set_bit(u64::from(idx));
                 self.piece_count += 1;
+                self.pieces_updated = true;
             }
             Message::Bitfield(ref mut pieces) => {
                 // Set the correct length, then swap the pieces

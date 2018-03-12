@@ -42,20 +42,23 @@ impl<T: cio::CIO> Job<T> for SessionUpdate {
 
 pub struct TorrentTxUpdate {
     piece_update: time::Instant,
+    active: UHashMap<bool>,
 }
 
 impl TorrentTxUpdate {
     pub fn new() -> TorrentTxUpdate {
         TorrentTxUpdate {
             piece_update: time::Instant::now(),
+            active: UHashMap::default(),
         }
     }
 }
 
 impl<T: cio::CIO> Job<T> for TorrentTxUpdate {
     fn update(&mut self, torrents: &mut UHashMap<Torrent<T>>) {
-        for (_, torrent) in torrents.iter_mut() {
-            if torrent.tick() {
+        for (id, torrent) in torrents.iter_mut() {
+            let active = torrent.tick();
+            if active {
                 torrent.update_rpc_transfer();
                 torrent.update_rpc_peers();
                 // TODO: consider making tick triggered by on the fly validation
@@ -64,34 +67,17 @@ impl<T: cio::CIO> Job<T> for TorrentTxUpdate {
                     self.piece_update = time::Instant::now();
                 }
             }
-        }
-    }
-}
 
-impl TorrentStatusUpdate {
-    pub fn new() -> TorrentStatusUpdate {
-        TorrentStatusUpdate {
-            transferred: UHashMap::default(),
-        }
-    }
-}
-
-pub struct TorrentStatusUpdate {
-    transferred: UHashMap<(u64, u64)>,
-}
-
-impl<T: cio::CIO> Job<T> for TorrentStatusUpdate {
-    fn update(&mut self, torrents: &mut UHashMap<Torrent<T>>) {
-        for (id, torrent) in torrents.iter_mut() {
-            let (ul, dl) = (torrent.uploaded(), torrent.downloaded());
-            if !self.transferred.contains_key(id) {
-                self.transferred
-                    .insert(*id, (torrent.uploaded(), torrent.downloaded()));
+            if !self.active.contains_key(id) {
+                self.active
+                    .insert(*id, active);
             }
-            let tx = self.transferred.get_mut(id).unwrap();
-            tx.0 = ul;
-            tx.1 = dl;
+            let prev = self.active.get_mut(id).unwrap();
+            if *prev != active {
+                *prev = active;
+                torrent.announce_status();
+            }
         }
-        self.transferred.retain(|id, _| torrents.contains_key(id));
+        self.active.retain(|id, _| torrents.contains_key(id));
     }
 }

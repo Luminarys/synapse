@@ -1709,6 +1709,7 @@ impl<T: cio::CIO> Torrent<T> {
                 });
             }
         }
+        self.announce_status();
         self.cio.msg_rpc(rpc::CtlMessage::Update(updates));
     }
 
