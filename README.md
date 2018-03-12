@@ -10,12 +10,18 @@ It currently supports most systems which implement epoll or kqueue, with a focus
 * HTTP downloads and TLS for easy server usage
 * Can be used via web client with minimal setup - see [receptor](https://web.synapse-bt.org)
 
-## Compiling
+## Installation
+### Package
+A list of packages can be found on [this wiki page](https://github.com/Luminarys/synapse/wiki/Third-party-packages).
+
+### Compiling
 Install dependencies:
 
 - rustc >= 1.21
 - cargo >= 0.18
 - OpenSSL >= 1.0.2
+- pkg-config
+- gcc | clang
 - c-ares 1.13 | autotools + gmake(FreeBSD only) *
 
 _\*Only required for synapse_
