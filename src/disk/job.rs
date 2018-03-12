@@ -455,8 +455,7 @@ impl Request {
                     let dirp: &Path = comp.as_os_str().as_ref();
                     let mut pb = path::PathBuf::from(path.as_ref().unwrap_or(dd));
                     pb.push(&dirp);
-                    // May fail if user has placed files in directory, which is fine.
-                    debug!("Tried to delete dir {:?}: {:?}", pb, fs::remove_dir(&pb));
+                    fs::remove_dir(&pb).ok();
                 }
             }
             Request::ValidatePiece {
