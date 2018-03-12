@@ -89,3 +89,11 @@ panic = 'unwind'
 default = []
 autobahn = []
 allocator = []
+
+[package.metadata.deb]
+assets = [
+    ["target/release/synapse", "usr/bin/", "755"],
+    ["target/release/sycli", "usr/bin/", "755"],
+    ["README.md", "usr/share/doc/synapse/README", "644"],
+    ["example_config.toml", "usr/share/synapse/config.toml.example", "644"]
+]

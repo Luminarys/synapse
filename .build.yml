@@ -1,0 +1,26 @@
+image: debian/stretch
+packages:
+  - libssl-dev
+  - rustup-toolchain
+  - cargo-deb
+  - libc-ares-dev
+  - pkg-config
+  - curl
+sources:
+  - https://github.com/Luminarys/synapse
+repositories:
+  rustydebs: https://dl.bintray.com/hummer12007/rustydebs stretch main 379CE192D401AB61
+secrets:
+  - bce4abbc-2a88-4685-bd21-6b091d46c8ef
+tasks:
+  - build: |
+      cd synapse
+      printf 'revision = "%s-%s"\n' "$(date +%s)" "$(git describe --always)" >> Cargo.toml
+      cargo build --release --all -v
+      cargo deb -v --no-build
+  - deploy: |
+      export DEBFILE="synapse/target/debian/*.deb"
+      export PFILE="$(basename ${DEBFILE})"
+      export PN="$(cut -d_ -f1 <<< "${PFILE}")" PV="$(cut -d_ -f2 <<< "${PFILE}" | cut -d- -f1)"
+      export API_KEY="$(cat ~/.bintray_api_key)"
+      curl --user "Hummer12007:${API_KEY}" -T ${DEBFILE} -XPUT "https://api.bintray.com/content/hummer12007/rustydebs/${PN}/${PV}/pool/${PN::1}/${PN}/${PFILE};deb_distribution=stretch;deb_component=main;deb_architecture=amd64;publish=1;override=1"
