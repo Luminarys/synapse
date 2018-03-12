@@ -21,15 +21,15 @@ mod sys {
     }
 }
 
-pub fn fallocate(f: &File, len: u64) -> io::Result<()> {
+pub fn fallocate(f: &File, len: u64) -> io::Result<bool> {
     // We ignore the len here, if you actually have a u64 max, then you're kinda fucked either way.
     loop {
         match unsafe { sys::native_fallocate(f.as_raw_fd(), len) } {
-            0 => return Ok(()),
+            0 => return Ok(true),
             -1 => match Errno::last() {
                 Errno::EOPNOTSUPP | Errno::ENOSYS => {
                     f.set_len(len)?;
-                    return Ok(());
+                    return Ok(false);
                 }
                 Errno::ENOSPC => {
                     return io_err("Out of disk space!");

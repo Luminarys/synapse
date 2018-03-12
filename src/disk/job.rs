@@ -28,6 +28,8 @@ pub struct Location {
     pub start: usize,
     /// end in the piece
     pub end: usize,
+    /// This file should be fully allocated if possible
+    pub allocate: bool,
     info: Arc<Info>,
 }
 
@@ -353,6 +355,7 @@ impl Request {
                     loc.offset,
                     loc.end - loc.start,
                     false,
+                    loc.allocate,
                     &mut data[loc.start..loc.end],
                 )?;
                 if loc.end - loc.start != 16_384 {
@@ -375,6 +378,7 @@ impl Request {
                         loc.offset,
                         loc.end - loc.start,
                         true,
+                        loc.allocate,
                         &mut data[loc.start..loc.end],
                     )?;
                 }
@@ -441,7 +445,7 @@ impl Request {
                     fc.remove_file(&pb);
                     if artifacts {
                         if let Err(e) = fs::remove_file(&pb) {
-                            error!("Failed to delete file: {:?}, {}", pb, e);
+                            debug!("Failed to delete file: {:?}, {}", pb, e);
                         }
                     }
                 }
@@ -449,8 +453,10 @@ impl Request {
                 if let Some(p) = files.get(0) {
                     let comp = p.components().next().unwrap();
                     let dirp: &Path = comp.as_os_str().as_ref();
+                    let mut pb = path::PathBuf::from(path.as_ref().unwrap_or(dd));
+                    pb.push(&dirp);
                     // May fail if user has placed files in directory, which is fine.
-                    fs::remove_dir(dirp).ok();
+                    debug!("Tried to delete dir {:?}: {:?}", pb, fs::remove_dir(&pb));
                 }
             }
             Request::ValidatePiece {
@@ -657,6 +663,7 @@ impl Request {
                             offset,
                             amnt as usize,
                             true,
+                            false,
                             &mut buf[0..amnt as usize],
                         )?;
                         ranges[range_idx].length -= amnt;
@@ -730,6 +737,7 @@ impl Location {
         start: u64,
         end: u64,
         info: Arc<Info>,
+        allocate: bool,
     ) -> Location {
         Location {
             file,
@@ -738,6 +746,7 @@ impl Location {
             start: start as usize,
             end: end as usize,
             info,
+            allocate,
         }
     }
 

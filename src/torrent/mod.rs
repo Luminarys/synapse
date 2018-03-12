@@ -53,7 +53,7 @@ pub struct Torrent<T: cio::CIO> {
     stat: stat::EMA,
     files: Files,
     priority: u8,
-    priorities: Vec<u8>,
+    priorities: Arc<Vec<u8>>,
     throttle: Throttle,
     trackers: VecDeque<Tracker>,
     peers: UHashMap<Peer<T>>,
@@ -208,7 +208,7 @@ impl<T: cio::CIO> Torrent<T> {
             error: None,
             state: StatusState::Incomplete,
         };
-        let priorities = vec![3; info.files.len()];
+        let priorities = Arc::new(vec![3; info.files.len()]);
         let info_idx = if info.complete() {
             None
         } else {
@@ -373,7 +373,7 @@ impl<T: cio::CIO> Torrent<T> {
             downloaded: d.downloaded,
             files,
             stat: stat::EMA::new(),
-            priorities: d.priorities,
+            priorities: Arc::new(d.priorities),
             priority: d.priority,
             cio,
             leechers,
@@ -444,7 +444,7 @@ impl<T: cio::CIO> Torrent<T> {
                 },
             },
             path: self.path.clone(),
-            priorities: self.priorities.clone(),
+            priorities: self.priorities.as_ref().clone(),
             priority: self.priority,
             created: self.created,
             throttle_ul: self.throttle.ul_rate(),
@@ -1228,7 +1228,7 @@ impl<T: cio::CIO> Torrent<T> {
             let fid =
                 util::file_rpc_id(&self.info.hash, f.path.as_path().to_string_lossy().as_ref());
             if fid == id {
-                self.priorities[i] = priority;
+                Arc::make_mut(&mut self.priorities)[i] = priority;
             }
         }
 
@@ -1332,7 +1332,7 @@ impl<T: cio::CIO> Torrent<T> {
         self.status.state = StatusState::Incomplete;
         self.announce_status();
         self.pieces = Bitfield::new(u64::from(self.info.pieces()));
-        self.priorities = vec![3; self.info.files.len()];
+        self.priorities = Arc::new(vec![3; self.info.files.len()]);
         for peer in self.peers.values_mut() {
             peer.magnet_complete(&self.info);
         }
@@ -1549,7 +1549,7 @@ impl<T: cio::CIO> Torrent<T> {
     /// piece offset begin, piece length of len, and data bytes.
     /// The disk send handle is also provided.
     fn write_piece(&mut self, index: u32, begin: u32, data: Box<[u8; 16_384]>) {
-        let locs = Info::block_disk_locs(&self.info, index, begin);
+        let locs = Info::block_disk_locs_pri(&self.info, &self.priorities, index, begin);
         self.cio
             .msg_disk(disk::Request::write(self.id, data, locs, self.path.clone()));
     }

@@ -188,13 +188,6 @@ impl Picker {
         let res = piece
             .and_then(|p| self.pick_piece(p, peer.id()))
             .or_else(|| self.pick_dl(peer));
-        if res.is_none() && peer.pieces().complete() && !self.unpicked.complete() {
-            debug_assert!(
-                false,
-                "Couldnt pick {:?} from a seeder for some reason!",
-                piece
-            );
-        }
         res
     }
 

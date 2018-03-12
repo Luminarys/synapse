@@ -32,6 +32,7 @@ pub struct Entry {
 pub struct Entry {
     used: bool,
     mmap: MmapMut,
+    alloc_failed: bool,
     sparse: bool,
 }
 
@@ -51,9 +52,10 @@ impl FileCache {
         offset: u64,
         len: usize,
         read: bool,
+        allocate: bool,
         buf: &mut [u8],
     ) -> io::Result<()> {
-        self.ensure_exists(path, size)?;
+        self.ensure_exists(path, size, allocate)?;
 
         #[cfg(target_pointer_width = "32")]
         {
@@ -129,7 +131,12 @@ impl FileCache {
         }
     }
 
-    fn ensure_exists(&mut self, path: &path::Path, len: Option<u64>) -> io::Result<()> {
+    fn ensure_exists(
+        &mut self,
+        path: &path::Path,
+        len: Option<u64>,
+        allocate: bool,
+    ) -> io::Result<()> {
         if !self.files.contains_key(path) {
             if self.files.len() >= CONFIG.net.max_open_files {
                 let mut removal = None;
@@ -152,9 +159,17 @@ impl FileCache {
                 .read(true)
                 .open(path)?;
 
-            if len.is_some() && file.metadata()?.len() != len.unwrap() {
-                native::fallocate(&file, len.unwrap())?;
-            }
+            let alloc_failed =
+                if allocate && len.is_some() && file.metadata()?.len() != len.unwrap() {
+                    let res = !native::fallocate(&file, len.unwrap())?;
+                    debug!("Attempted to fallocate {:?}: success {}!", path, !res);
+                    res
+                } else {
+                    if len.is_some() && !allocate {
+                        file.set_len(len.unwrap())?;
+                    }
+                    false
+                };
 
             #[cfg(target_pointer_width = "32")]
             self.files
@@ -171,8 +186,19 @@ impl FileCache {
                         mmap,
                         sparse,
                         used: true,
+                        alloc_failed,
                     },
                 );
+            }
+        } else if len.is_some() {
+            let entry = self.files.get_mut(path).unwrap();
+            if entry.sparse && allocate && !entry.alloc_failed {
+                debug!("Attempting delayed falloc!");
+                let file = fs::OpenOptions::new().write(true).read(true).open(path)?;
+                entry.alloc_failed = !native::fallocate(&file, len.unwrap())?;
+                if !entry.alloc_failed {
+                    entry.sparse = false;
+                }
             }
         }
         Ok(())

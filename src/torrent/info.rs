@@ -400,18 +400,29 @@ impl Info {
     /// Calculates the file offsets for a given block at index/begin
     pub fn block_disk_locs(info: &Arc<Info>, index: u32, begin: u32) -> LocIter {
         let len = info.block_len(index, begin);
-        LocIter::new(info.clone(), index, begin, len)
+        LocIter::new(info.clone(), None, index, begin, len)
+    }
+
+    pub fn block_disk_locs_pri(
+        info: &Arc<Info>,
+        priorities: &Arc<Vec<u8>>,
+        index: u32,
+        begin: u32,
+    ) -> LocIter {
+        let len = info.block_len(index, begin);
+        LocIter::new(info.clone(), Some(priorities.clone()), index, begin, len)
     }
 
     /// Calculates the file offsets for a given piece at index
     pub fn piece_disk_locs(info: &Arc<Info>, index: u32) -> LocIter {
         let len = info.piece_len(index);
-        LocIter::new(info.clone(), index, 0, len)
+        LocIter::new(info.clone(), None, index, 0, len)
     }
 }
 
 pub struct LocIter {
     info: Arc<Info>,
+    priorities: Option<Arc<Vec<u8>>>,
     state: LocIterState,
 }
 
@@ -428,7 +439,13 @@ struct LocIterPos {
 }
 
 impl LocIter {
-    pub fn new(info: Arc<Info>, index: u32, begin: u32, len: u32) -> LocIter {
+    pub fn new(
+        info: Arc<Info>,
+        priorities: Option<Arc<Vec<u8>>>,
+        index: u32,
+        begin: u32,
+        len: u32,
+    ) -> LocIter {
         let len = u64::from(len);
         // The current file end length.
         let (mut file, mut fidx) = info.piece_idx[index as usize];
@@ -447,6 +464,7 @@ impl LocIter {
 
         LocIter {
             info,
+            priorities,
             state: LocIterState::P(p),
         }
     }
@@ -471,6 +489,10 @@ impl Iterator for LocIter {
                         p.data_start,
                         p.data_start + file_write_len,
                         self.info.clone(),
+                        self.priorities
+                            .as_ref()
+                            .map(|pri| pri[p.file] != 0)
+                            .unwrap_or(false),
                     ))
                 } else {
                     // Write to the end of file, continue
@@ -481,6 +503,10 @@ impl Iterator for LocIter {
                         p.data_start,
                         p.data_start + file_write_len,
                         self.info.clone(),
+                        self.priorities
+                            .as_ref()
+                            .map(|pri| pri[p.file] != 0)
+                            .unwrap_or(false),
                     );
 
                     // Use the next file, updating state as needed
