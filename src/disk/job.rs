@@ -347,6 +347,7 @@ impl Request {
                 path,
                 ..
             } => for loc in locations {
+                // TODO: Share this buffer to reduce allocations
                 let mut pb = path::PathBuf::from(path.as_ref().unwrap_or(dd));
                 pb.push(loc.path());
                 fc.get_file_range(

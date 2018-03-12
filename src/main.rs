@@ -17,7 +17,6 @@ extern crate bincode;
 extern crate byteorder;
 extern crate c_ares;
 extern crate chrono;
-extern crate ctrlc;
 #[macro_use]
 extern crate error_chain;
 extern crate fnv;
@@ -99,7 +98,13 @@ lazy_static! {
 
 fn main() {
     let args = args::args();
-    init::init(args);
+    match init::init(args) {
+        Ok(()) => {}
+        Err(()) => {
+            error!("Failed to initialize synapse!");
+            process::exit(1);
+        }
+    }
     info!("Initialized, starting!");
     match init::run() {
         Ok(()) => process::exit(0),

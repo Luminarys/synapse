@@ -74,6 +74,7 @@ macro_rules! error(
 #[macro_export]
 macro_rules! log(
     ($level:expr, $fmt:expr) => {
+        {
         #[allow(unused_imports)]
         {
             use std::io::Write;
@@ -90,9 +91,11 @@ macro_rules! log(
                 handle.write_all(&msg).unwrap();
             }
         }
+        }
     };
 
     ($level:expr, $fmt:expr, $($arg:tt)*) => {
+        {
         #[allow(unused_imports)]
         {
             use std::io::Write;
@@ -108,6 +111,7 @@ macro_rules! log(
                 let mut handle = stderr.lock();
                 handle.write_all(&msg).unwrap();
             }
+        }
         }
     };
 );

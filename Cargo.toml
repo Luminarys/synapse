@@ -25,7 +25,6 @@ bincode = "1"
 byteorder = "1"
 c-ares = "5"
 clippy = {version = "*", optional = true}
-ctrlc = "3"
 fnv = "1"
 fs_extra = "1"
 httparse = "1"

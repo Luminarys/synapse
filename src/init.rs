@@ -1,14 +1,18 @@
-use std::{process, thread};
+use std::{io, process, thread};
 use std::sync::{atomic, mpsc};
-use std::io;
+use std::os::unix::io::RawFd;
 
-use {amy, ctrlc};
+use amy;
+use nix::sys::signal;
+use nix::{self, fcntl, libc, unistd};
 
 use {args, control, disk, listener, log, rpc, throttle, tracker};
 use {CONFIG, SHUTDOWN, THROT_TOKS};
 use control::acio;
 
-pub fn init(args: args::Args) {
+static mut PIPE: (RawFd, RawFd) = (-1, -1);
+
+pub fn init(args: args::Args) -> Result<(), ()> {
     if let Some(level) = args.level {
         log::log_init(level);
     } else if cfg!(debug_assertions) {
@@ -22,17 +26,11 @@ pub fn init(args: args::Args) {
     // Since the config is lazy loaded, derefernce now to check it.
     CONFIG.port;
 
-    ctrlc::set_handler(|| {
-        if SHUTDOWN.load(atomic::Ordering::SeqCst) {
-            info!("Shutting down immediately!");
-            process::abort();
-        } else {
-            info!(
-                "Caught SIGINT, shutting down cleanly. Interrupt again to shut down immediately."
-            );
-            SHUTDOWN.store(true, atomic::Ordering::SeqCst);
-        }
-    }).expect("Signal installation failed!");
+    if let Err(e) = init_signals() {
+        error!("Failed to initialize signal handlers: {}", e);
+        return Err(());
+    }
+    Ok(())
 }
 
 pub fn run() -> Result<(), ()> {
@@ -92,4 +90,52 @@ fn init_threads() -> io::Result<Vec<thread::JoinHandle<()>>> {
     rx.recv().unwrap()?;
 
     Ok(vec![chj, dhj, lhj, rhj, thj])
+}
+
+fn init_signals() -> nix::Result<()> {
+    unsafe {
+        PIPE = unistd::pipe2(fcntl::OFlag::O_CLOEXEC)?;
+        fcntl::fcntl(PIPE.1, fcntl::FcntlArg::F_SETFL(fcntl::OFlag::O_NONBLOCK))?;
+    }
+
+    let handler = signal::SigHandler::Handler(sig_handler);
+    let sigset = signal::SigSet::empty();
+    let sigflags = signal::SaFlags::SA_RESTART;
+    let sigact = signal::SigAction::new(handler, sigflags, sigset);
+    unsafe {
+        signal::sigaction(signal::Signal::SIGINT, &sigact)?;
+        signal::sigaction(signal::Signal::SIGTERM, &sigact)?;
+        signal::sigaction(signal::Signal::SIGHUP, &sigact)?;
+    }
+    thread::Builder::new()
+        .name("sighandler".to_string())
+        .spawn(move || {
+            let mut buf = [0u8];
+
+            loop {
+                loop {
+                    match unsafe { unistd::read(PIPE.0, &mut buf[..]) } {
+                        Ok(1) => break,
+                        Ok(_) => error!("Signal handler error"),
+                        Err(nix::Error::Sys(nix::errno::Errno::EINTR)) => {}
+                        Err(e) => error!("Signal handler error {}", e),
+                    }
+                }
+                if SHUTDOWN.load(atomic::Ordering::SeqCst) {
+                    info!("Terminating process!");
+                    process::abort();
+                } else {
+                    info!("Shutting down cleanly. Interrupt again to shut down immediately.");
+                    SHUTDOWN.store(true, atomic::Ordering::SeqCst);
+                }
+            }
+        })
+        .expect("Coudln't spawn thread");
+    Ok(())
+}
+
+extern "C" fn sig_handler(_: libc::c_int) {
+    unsafe {
+        unistd::write(PIPE.1, &[0u8]).is_ok();
+    }
 }

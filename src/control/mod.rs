@@ -115,6 +115,7 @@ impl<T: cio::CIO> Control<T> {
         jobs.add_cjob(TokenUpdate, time::Duration::from_secs(TOKEN_JOB_SECS));
         jobs.add_cjob(SpaceUpdate, time::Duration::from_secs(SPACE_JOB_SECS));
         jobs.add_cjob(EnqueueUpdate, time::Duration::from_secs(ENQUEUE_JOB_SECS));
+        jobs.add_cjob(SerializeUpdate, time::Duration::from_secs(SES_JOB_SECS));
         let job_timer = cio.set_timer(JOB_INT_MS)
             .map_err(|_| io_err_val("timer failure!"))?;
         Ok(Control {
@@ -148,7 +149,7 @@ impl<T: cio::CIO> Control<T> {
                     return;
                 }
             }
-            if SHUTDOWN.load(atomic::Ordering::Relaxed) {
+            if SHUTDOWN.load(atomic::Ordering::SeqCst) {
                 self.serialize();
                 break;
             }
@@ -867,5 +868,13 @@ impl<T: cio::CIO> CJob<T> for EnqueueUpdate {
             q.retain(|tid| torrents.contains_key(tid));
         }
         queue.enqueue(|tid| torrents.get_mut(&tid).unwrap().update_tracker());
+    }
+}
+
+pub struct SerializeUpdate;
+
+impl<T: cio::CIO> CJob<T> for SerializeUpdate {
+    fn update(&mut self, control: &mut Control<T>) {
+        control.serialize();
     }
 }
