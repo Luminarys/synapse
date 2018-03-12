@@ -164,7 +164,6 @@ impl FileCache {
             {
                 let stat = file.metadata()?;
                 let sparse = stat.blocks() * stat.blksize() < stat.size();
-
                 let mmap = unsafe { MmapMut::map_mut(&file)? };
                 self.files.insert(
                     path.to_path_buf(),

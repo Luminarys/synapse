@@ -235,11 +235,7 @@ impl<T: cio::CIO> Peer<T> {
         };
         p.send_message(Message::handshake(&t.info));
         if t.info.complete() {
-            if t.complete() {
-                p.send_message(Message::Bitfield(t.pieces.clone()));
-            } else {
-                p.send_message(Message::Bitfield(Bitfield::new(u64::from(t.info.pieces()))));
-            }
+            p.send_message(Message::Bitfield(t.pieces.clone()));
         }
         p.send_rpc_info();
         Ok(p)
@@ -444,13 +440,6 @@ impl<T: cio::CIO> Peer<T> {
         if !self.local_status.interested {
             self.local_status.interested = true;
             self.send_message(Message::Interested);
-        }
-    }
-
-    pub fn uninterested(&mut self) {
-        if self.local_status.interested {
-            self.local_status.interested = false;
-            self.send_message(Message::Uninterested);
         }
     }
 
