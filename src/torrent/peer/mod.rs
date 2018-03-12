@@ -306,6 +306,7 @@ impl<T: cio::CIO> Peer<T> {
         );
         // Keep it under the max cap
         self.max_queue = cmp::min(self.max_queue, MAX_QUEUE_CAP);
+        self.send_rpc_update();
         true
     }
 
@@ -364,7 +365,6 @@ impl<T: cio::CIO> Peer<T> {
                 }
                 self.pieces.set_bit(u64::from(idx));
                 self.piece_count += 1;
-                self.send_rpc_update();
             }
             Message::Bitfield(ref mut pieces) => {
                 // Set the correct length, then swap the pieces

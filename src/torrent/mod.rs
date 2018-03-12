@@ -1710,7 +1710,6 @@ impl<T: cio::CIO> Torrent<T> {
             }
         }
         self.cio.msg_rpc(rpc::CtlMessage::Update(updates));
-        self.announce_status();
     }
 
     fn cleanup_peer(&mut self, peer: &mut Peer<T>) {
