@@ -18,7 +18,11 @@ build:
 	docker build -t $(REPO)/$(NAME):$(VERSION) . -f Dockerfile.musl
 
 run:
-	docker run -v ~/Downloads/synapse:/synapse/downloads -t $(REPO)/$(NAME):$(VERSION)
+	mkdir -p ~/Downloads/synapse
+	sudo chown 1000:1000 -R ~/Downloads/synapse
+	docker run \
+		-v ~/Downloads/synapse:/synapse/downloads \
+		-it $(REPO)/$(NAME):$(VERSION) sh
 
 tag-latest: build
 	docker tag $(REPO)/$(NAME):$(VERSION) $(REPO)/$(NAME):latest
