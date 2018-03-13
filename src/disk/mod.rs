@@ -12,7 +12,7 @@ use std::{fs, io, thread};
 use amy;
 
 use self::job::JobRes;
-use self::cache::FileCache;
+use self::cache::{BufCache, FileCache};
 use {handle, CONFIG};
 use util::UHashMap;
 
@@ -28,6 +28,7 @@ pub struct Disk {
     active: VecDeque<Request>,
     sequential: VecDeque<Request>,
     blocked: UHashMap<Request>,
+    bufs: BufCache,
 }
 
 impl Disk {
@@ -43,6 +44,7 @@ impl Disk {
             ch,
             jobs,
             files: FileCache::new(),
+            bufs: BufCache::new(),
             active: VecDeque::new(),
             sequential: VecDeque::new(),
             blocked: UHashMap::default(),
@@ -77,7 +79,7 @@ impl Disk {
         // Try to finish up remaining jobs
         for job in self.active.drain(..) {
             if job.concurrent() {
-                job.execute(&mut self.files).ok();
+                job.execute(&mut self.files, &mut self.bufs).ok();
             }
         }
     }
@@ -96,7 +98,7 @@ impl Disk {
             let tid = j.tid();
             let seq = !j.concurrent();
             let mut done = false;
-            match j.execute(&mut self.files) {
+            match j.execute(&mut self.files, &mut self.bufs) {
                 Ok(JobRes::Resp(r)) => {
                     done = true;
                     self.ch.send(r).ok();

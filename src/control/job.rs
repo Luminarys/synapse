@@ -69,8 +69,7 @@ impl<T: cio::CIO> Job<T> for TorrentTxUpdate {
             }
 
             if !self.active.contains_key(id) {
-                self.active
-                    .insert(*id, active);
+                self.active.insert(*id, active);
             }
             let prev = self.active.get_mut(id).unwrap();
             if *prev != active {

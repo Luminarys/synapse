@@ -1,6 +1,6 @@
 use std::sync::Arc;
 use std::{cmp, fmt, fs, path, time};
-use std::io::{self, Read, Seek, SeekFrom, Write};
+use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
 use fs_extra;
@@ -10,7 +10,7 @@ use nix::sys::statvfs;
 use nix::libc;
 use openssl::sha;
 
-use super::{FileCache, JOB_TIME_SLICE};
+use super::{BufCache, FileCache, JOB_TIME_SLICE};
 use torrent::{Info, LocIter};
 use socket::TSocket;
 use util::{awrite, hash_to_id, io_err, IOR};
@@ -308,9 +308,10 @@ impl Request {
         }
     }
 
-    pub fn execute(self, fc: &mut FileCache) -> io::Result<JobRes> {
+    pub fn execute(self, fc: &mut FileCache, bc: &mut BufCache) -> io::Result<JobRes> {
         let sd = &CONFIG.disk.session;
         let dd = &CONFIG.disk.directory;
+        let (mut tb, mut tpb, mut tpb2) = bc.data();
         match self {
             Request::FreeSpace => {
                 if let Ok(stat) = statvfs::statvfs(dd.as_str()) {
@@ -321,7 +322,7 @@ impl Request {
                 }
             }
             Request::WriteFile { path, data } => {
-                let mut p = path.clone();
+                let p = tpb.get(path.iter());
                 p.set_extension("temp");
                 let res = fs::OpenOptions::new()
                     .write(true)
@@ -347,8 +348,7 @@ impl Request {
                 path,
                 ..
             } => for loc in locations {
-                // TODO: Share this buffer to reduce allocations
-                let mut pb = path::PathBuf::from(path.as_ref().unwrap_or(dd));
+                let pb = tpb.get(path.as_ref().unwrap_or(dd));
                 pb.push(loc.path());
                 fc.get_file_range(
                     &pb,
@@ -371,7 +371,7 @@ impl Request {
                 ..
             } => {
                 for loc in locations {
-                    let mut pb = path::PathBuf::from(path.as_ref().unwrap_or(dd));
+                    let pb = tpb.get(path.as_ref().unwrap_or(dd));
                     pb.push(loc.path());
                     fc.get_file_range(
                         &pb,
@@ -392,8 +392,8 @@ impl Request {
                 to,
                 target,
             } => {
-                let mut fp = PathBuf::from(&from);
-                let mut tp = PathBuf::from(&to);
+                let mut fp = tpb.get(&from);
+                let mut tp = tpb2.get(&to);
                 fp.push(target.clone());
                 tp.push(target);
                 match fs::rename(&fp, &tp) {
@@ -419,11 +419,11 @@ impl Request {
                 return Ok(JobRes::Resp(Response::moved(tid, to)));
             }
             Request::Serialize { data, hash, .. } => {
-                let mut temp = path::PathBuf::from(sd);
+                let mut temp = tpb.get(sd);
                 temp.push(hash_to_id(&hash) + ".temp");
                 let mut f = fs::OpenOptions::new().write(true).create(true).open(&temp)?;
                 f.write_all(&data)?;
-                let mut actual = path::PathBuf::from(sd);
+                let mut actual = tpb2.get(sd);
                 actual.push(hash_to_id(&hash));
                 fs::rename(temp, actual)?;
             }
@@ -434,14 +434,16 @@ impl Request {
                 artifacts,
                 tid: _,
             } => {
-                let mut spb = path::PathBuf::from(sd);
-                spb.push(hash_to_id(&hash));
-                fs::remove_file(&spb).ok();
-                spb.set_extension("torrent");
-                fs::remove_file(&spb).ok();
+                {
+                    let mut spb = tpb.get(sd);
+                    spb.push(hash_to_id(&hash));
+                    fs::remove_file(&spb).ok();
+                    spb.set_extension("torrent");
+                    fs::remove_file(&spb).ok();
+                }
 
                 for file in &files {
-                    let mut pb = path::PathBuf::from(path.as_ref().unwrap_or(dd));
+                    let mut pb = tpb2.get(path.as_ref().unwrap_or(dd));
                     pb.push(&file);
                     fc.remove_file(&pb);
                     if artifacts {
@@ -454,7 +456,7 @@ impl Request {
                 if let Some(p) = files.get(0) {
                     let comp = p.components().next().unwrap();
                     let dirp: &Path = comp.as_os_str().as_ref();
-                    let mut pb = path::PathBuf::from(path.as_ref().unwrap_or(dd));
+                    let mut pb = tpb.get(path.as_ref().unwrap_or(dd));
                     pb.push(&dirp);
                     fs::remove_dir(&pb).ok();
                 }
@@ -465,38 +467,22 @@ impl Request {
                 path,
                 piece,
             } => {
-                // TODO: what to do if piece is REALLY big
-                let mut buf = vec![0u8; info.piece_len as usize];
-                let mut pb = path::PathBuf::from(path.as_ref().unwrap_or(dd));
-                let mut cf = pb.clone();
-
-                let mut f = fs::OpenOptions::new().read(true).open(&pb);
-
+                let mut buf = tb.get(info.piece_len as usize);
                 let mut ctx = sha::Sha1::new();
                 let locs = Info::piece_disk_locs(&info, piece);
-                let mut pos = 0;
                 for loc in locs {
-                    if loc.path() != cf {
-                        pb = path::PathBuf::from(path.as_ref().unwrap_or(dd));
-                        pb.push(loc.path());
-                        f = fs::OpenOptions::new().read(true).open(&pb);
-                        cf = loc.path().to_owned();
-                    }
-                    // Because this is pausable/resumable, we need to seek to the proper
-                    // file position.
-                    f.as_mut()
-                        .map(|file| file.seek(SeekFrom::Start(loc.offset)))
+                    let pb = tpb.get(path.as_ref().unwrap_or(dd));
+                    pb.push(loc.path());
+                    fc.get_file_range(
+                        &pb,
+                        None,
+                        loc.offset,
+                        loc.end - loc.start,
+                        true,
+                        false,
+                        &mut buf[loc.start..loc.end],
+                    ).map(|_| ctx.update(&buf[loc.start..loc.end]))
                         .ok();
-                    if let Ok(Ok(amnt)) = f.as_mut().map(|file| file.read(&mut buf[pos..])) {
-                        ctx.update(&buf[pos..pos + amnt]);
-                        pos += amnt;
-                    } else {
-                        return Ok(JobRes::Resp(Response::PieceValidated {
-                            tid,
-                            piece,
-                            valid: false,
-                        }));
-                    }
                 }
                 let digest = ctx.finish();
                 return Ok(JobRes::Resp(Response::PieceValidated {
@@ -512,12 +498,7 @@ impl Request {
                 mut idx,
                 mut invalid,
             } => {
-                let mut buf = vec![0u8; info.piece_len as usize];
-                let mut pb = path::PathBuf::from(path.as_ref().unwrap_or(dd));
-                let mut cf = pb.clone();
-
-                let mut f = fs::OpenOptions::new().read(true).open(&pb);
-
+                let mut buf = tb.get(info.piece_len as usize);
                 let start = time::Instant::now();
 
                 while idx < info.pieces()
@@ -526,25 +507,19 @@ impl Request {
                     let mut valid = true;
                     let mut ctx = sha::Sha1::new();
                     let locs = Info::piece_disk_locs(&info, idx);
-                    let mut pos = 0;
                     for loc in locs {
-                        if loc.path() != cf {
-                            pb = path::PathBuf::from(path.as_ref().unwrap_or(dd));
-                            pb.push(loc.path());
-                            f = fs::OpenOptions::new().read(true).open(&pb);
-                            cf = loc.path().to_owned();
-                        }
-                        // Because this is pausable/resumable, we need to seek to the proper
-                        // file position.
-                        f.as_mut()
-                            .map(|file| file.seek(SeekFrom::Start(loc.offset)))
-                            .ok();
-                        if let Ok(Ok(amnt)) = f.as_mut().map(|file| file.read(&mut buf[pos..])) {
-                            ctx.update(&buf[pos..pos + amnt]);
-                            pos += amnt;
-                        } else {
-                            valid = false;
-                        }
+                        let pb = tpb.get(path.as_ref().unwrap_or(dd));
+                        pb.push(loc.path());
+                        valid &= fc.get_file_range(
+                            &pb,
+                            None,
+                            loc.offset,
+                            loc.end - loc.start,
+                            true,
+                            false,
+                            &mut buf[loc.start..loc.end],
+                        ).map(|_| ctx.update(&buf[loc.start..loc.end]))
+                            .is_ok();
                     }
                     let digest = ctx.finish();
                     if !valid || &digest[..] != &info.hashes[idx as usize][..] {

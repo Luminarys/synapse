@@ -1,4 +1,5 @@
-use std::{fs, io, path};
+use std::{fs, io, mem, path};
+use std::ffi::OsString;
 
 #[cfg(target_pointer_width = "64")]
 use std::os::unix::fs::MetadataExt;
@@ -13,6 +14,14 @@ use memmap::MmapOptions;
 
 use CONFIG;
 use util::{io_err, native, MHashMap};
+
+const PB_LEN: usize = 256;
+
+pub struct BufCache {
+    path_a: OsString,
+    path_b: OsString,
+    buf: Vec<u8>,
+}
 
 /// Holds a file and mmap cache. Because 32 bit systems
 /// can't mmap large files, we load them as needed.
@@ -34,6 +43,73 @@ pub struct Entry {
     mmap: MmapMut,
     alloc_failed: bool,
     sparse: bool,
+}
+
+pub struct TempPB<'a> {
+    path: path::PathBuf,
+    buf: &'a mut OsString,
+}
+
+pub struct TempBuf<'a> {
+    buf: &'a mut Vec<u8>,
+}
+
+impl<'a> TempBuf<'a> {
+    pub fn get(&mut self, len: usize) -> &mut [u8] {
+        unsafe {
+            self.buf.reserve(len);
+            self.buf.set_len(len);
+        }
+        &mut self.buf[..]
+    }
+}
+
+fn get_pb(buf: &mut OsString) -> TempPB {
+    debug_assert!(buf.capacity() >= PB_LEN);
+    let path = mem::replace(buf, OsString::with_capacity(0)).into();
+    TempPB { buf, path }
+}
+
+impl<'a> TempPB<'a> {
+    pub fn get<P: AsRef<path::Path>>(&mut self, base: P) -> &mut path::PathBuf {
+        self.clear();
+        self.path.push(base.as_ref());
+        &mut self.path
+    }
+
+    fn clear(&mut self) {
+        let mut s =
+            mem::replace(&mut self.path, OsString::with_capacity(0).into()).into_os_string();
+        s.clear();
+        self.path = s.into();
+    }
+}
+
+impl<'a> Drop for TempPB<'a> {
+    fn drop(&mut self) {
+        let mut path =
+            mem::replace(&mut self.path, OsString::with_capacity(0).into()).into_os_string();
+        mem::swap(self.buf, &mut path);
+        self.buf.clear();
+    }
+}
+
+impl BufCache {
+    pub fn new() -> BufCache {
+        BufCache {
+            path_a: OsString::with_capacity(PB_LEN),
+            path_b: OsString::with_capacity(PB_LEN),
+            buf: Vec::with_capacity(16777216),
+        }
+    }
+
+    pub fn data(&mut self) -> (TempBuf, TempPB, TempPB) {
+        (
+            TempBuf { buf: &mut self.buf },
+            get_pb(&mut self.path_a),
+            get_pb(&mut self.path_b),
+        )
+    }
 }
 
 impl FileCache {
@@ -60,8 +136,6 @@ impl FileCache {
         #[cfg(target_pointer_width = "32")]
         {
             let entry = self.files.get_mut(path).unwrap();
-            // TODO: Consider more portable solution based on setting _FILE_OFFSET_BITS=64 or
-            // mmap64 rather than this.
             if offset < ::std::usize::MAX as u64 {
                 let mut mmap = MmapOptions::new()
                     .offset(offset as usize)
@@ -70,7 +144,6 @@ impl FileCache {
                 Ok(f(&mut *mmap))
             } else {
                 entry.file.seek(SeekFrom::Start(offset))?;
-                let data = &mut self.fallback[0..len];
                 if read {
                     entry.file.read_exact(&mut buf)?;
                 } else {
@@ -178,6 +251,10 @@ impl FileCache {
             #[cfg(target_pointer_width = "64")]
             {
                 let stat = file.metadata()?;
+                // Check if the file was never allocated
+                if stat.size() == 0 {
+                    return io_err("mmap attempted on 0 sized file");
+                }
                 let sparse = stat.blocks() * stat.blksize() < stat.size();
                 let mmap = unsafe { MmapMut::map_mut(&file)? };
                 self.files.insert(
