@@ -22,7 +22,7 @@ run:
 	sudo chown 1000:1000 -R ~/Downloads/synapse
 	docker run \
 		-v ~/Downloads/synapse:/synapse/downloads \
-		-it $(REPO)/$(NAME):$(VERSION) sh
+		-t $(REPO)/$(NAME):$(VERSION)
 
 tag-latest: build
 	docker tag $(REPO)/$(NAME):$(VERSION) $(REPO)/$(NAME):latest
