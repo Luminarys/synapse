@@ -543,7 +543,7 @@ impl Processor {
                                 // Note we don't have to send a client update here because
                                 // this is updated in sync with the trackers field which does
                                 // this for us.
-                                t.url.as_ref().and_then(Url::host_str).map(|host| {
+                                t.url.host_str().map(|host| {
                                     self.resources.get_mut(&t.torrent_id).map(|r| {
                                         r.as_torrent_mut().tracker_urls.push(host.to_string())
                                     })
@@ -623,7 +623,7 @@ impl Processor {
                     match &r {
                         &Resource::Tracker(ref t) => {
                             // Note we don't have to send a client update here: see above
-                            t.url.as_ref().and_then(Url::host_str).map(|host| {
+                            t.url.host_str().map(|host| {
                                 self.resources.get_mut(&t.torrent_id).map(|r| {
                                     r.as_torrent_mut().tracker_urls.retain(|url| url != host)
                                 });

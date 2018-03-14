@@ -447,7 +447,7 @@ pub struct Tracker {
     pub id: String,
     pub torrent_id: String,
     #[serde(with = "url_serde")]
-    pub url: Option<Url>,
+    pub url: Url,
     pub last_report: DateTime<Utc>,
     pub error: Option<String>,
     pub user_data: json::Value,
@@ -814,7 +814,9 @@ impl Queryable for json::Value {
                 }
             }
             Some(&json::Value::String(ref s)) => Some(Field::S(s)),
-            Some(&json::Value::Array(_)) => None,
+            Some(&json::Value::Array(ref a)) => {
+                Some(Field::V(a.iter().filter_map(|v| v.field("")).collect()))
+            }
             Some(&json::Value::Object(_)) => None,
             None => None,
         }
@@ -969,12 +971,7 @@ impl Queryable for Tracker {
         match f {
             "id" => Some(Field::S(&self.id)),
             "torrent_id" => Some(Field::S(&self.torrent_id)),
-            "url" => Some(
-                self.url
-                    .as_ref()
-                    .map(|u| Field::S(u.as_str()))
-                    .unwrap_or(FNULL),
-            ),
+            "url" => Some(Field::S(self.url.as_str())),
             "error" => Some(
                 self.error
                     .as_ref()
@@ -1093,7 +1090,7 @@ impl Default for Tracker {
         Tracker {
             id: "".to_owned(),
             torrent_id: "".to_owned(),
-            url: None,
+            url: Url::parse("http://my.tracker/announce").unwrap(),
             last_report: Utc::now(),
             error: None,
             user_data: json::Value::Null,

@@ -595,7 +595,7 @@ impl<T: cio::CIO> Torrent<T> {
                 resource::Resource::Tracker(resource::Tracker {
                     id: id.clone(),
                     torrent_id: self.rpc_id(),
-                    url: Some(trk.url.as_ref().clone()),
+                    url: trk.url.as_ref().clone(),
                     last_report: trk.last_announce.clone(),
                     error: None,
                     ..Default::default()
@@ -1473,7 +1473,7 @@ impl<T: cio::CIO> Torrent<T> {
                 resource::Resource::Tracker(resource::Tracker {
                     id: util::trk_rpc_id(&self.info.hash, trk.url.as_str()),
                     torrent_id: self.rpc_id(),
-                    url: Some(trk.url.as_ref().clone()),
+                    url: trk.url.as_ref().clone(),
                     last_report: trk.last_announce.clone(),
                     error: None,
                     ..Default::default()

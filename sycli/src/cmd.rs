@@ -239,7 +239,7 @@ pub fn list(mut c: Client, kind: &str, crit: Vec<Criterion>, output: &str) -> Re
                 ResourceKind::Tracker => {
                     let t = res.as_tracker();
                     table.add_row(row![
-                                  t.url.as_ref().map(|s| s.as_str()).unwrap_or(""),
+                                  t.url.as_str(),
                                   t.torrent_id,
                                   t.error.as_ref().map(|s| s.as_str()).unwrap_or("")
                     ]);
@@ -489,7 +489,7 @@ fn add_peer(c: &mut Client, id: &str, peer: &str) -> Result<()> {
         SMessage::InvalidRequest(message::Error { reason, .. }) => {
             bail!("{}", reason);
         }
-        m => {
+        _ => {
             bail!("Failed to peer extancy confirmation from synapse!");
         }
     }
