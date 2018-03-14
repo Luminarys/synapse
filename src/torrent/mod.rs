@@ -171,6 +171,10 @@ impl Files {
                 self.done[loc.file] += (loc.end - loc.start) as u64;
             }
         }
+
+        for i in 0..self.done.len() {
+            self.dirty.insert(i);
+        }
     }
 
     fn update(&mut self, info: &Arc<Info>, piece: u32) {
@@ -763,12 +767,12 @@ impl<T: cio::CIO> Torrent<T> {
                             self.picker.invalidate_piece(piece);
                             self.pieces.unset_bit(u64::from(piece));
                         }
-                        self.files.rebuild(&self.info, &self.pieces);
                         self.request_all();
                     }
                     self.status.state = StatusState::Incomplete;
                 }
                 // update the RPC stats once done
+                self.files.rebuild(&self.info, &self.pieces);
                 self.update_rpc_transfer();
                 self.rpc_update_pieces();
                 self.announce_status();
@@ -1696,18 +1700,16 @@ impl<T: cio::CIO> Torrent<T> {
             });
         }
 
-        if self.stat.active() {
-            for (idx, done) in self.files.flush() {
-                let id = util::file_rpc_id(
-                    &self.info.hash,
-                    self.info.files[idx].path.to_string_lossy().as_ref(),
-                );
-                updates.push(SResourceUpdate::FileProgress {
-                    id,
-                    kind: resource::ResourceKind::File,
-                    progress: (done as f32 / self.info.files[idx].length as f32),
-                });
-            }
+        for (idx, done) in self.files.flush() {
+            let id = util::file_rpc_id(
+                &self.info.hash,
+                self.info.files[idx].path.to_string_lossy().as_ref(),
+            );
+            updates.push(SResourceUpdate::FileProgress {
+                id,
+                kind: resource::ResourceKind::File,
+                progress: (done as f32 / self.info.files[idx].length as f32),
+            });
         }
         self.announce_status();
         self.cio.msg_rpc(rpc::CtlMessage::Update(updates));
