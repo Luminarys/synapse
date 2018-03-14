@@ -1,0 +1,11 @@
+FROM rust:latest
+
+WORKDIR /usr/src
+
+COPY . .
+
+RUN cargo build --release --all \
+  && cargo install \
+  && cargo install --path ./sycli/
+
+CMD ["synapse"]
