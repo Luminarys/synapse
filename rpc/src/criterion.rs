@@ -1,3 +1,5 @@
+use std::f32;
+
 use regex::{self, Regex};
 use chrono::{DateTime, Utc};
 
@@ -131,9 +133,27 @@ impl Criterion {
                 Operation::LT => f < v,
                 _ => false,
             },
+            (&Field::N(f), &Value::F(v)) => match op {
+                Operation::Eq => f as f32 - v <= f32::EPSILON,
+                Operation::Neq => f as f32 - v > f32::EPSILON,
+                Operation::GTE => f as f32 >= v,
+                Operation::GT => f as f32 > v,
+                Operation::LTE => f as f32 <= v,
+                Operation::LT => (f as f32) < v,
+                _ => false,
+            },
+            (&Field::F(f), &Value::N(v)) => match op {
+                Operation::Eq => f - v as f32 <= f32::EPSILON,
+                Operation::Neq => f - v as f32 > f32::EPSILON,
+                Operation::GTE => f >= v as f32,
+                Operation::GT => f > v as f32,
+                Operation::LTE => f <= v as f32,
+                Operation::LT => f < v as f32,
+                _ => false,
+            },
             (&Field::F(f), &Value::F(v)) => match op {
-                Operation::Eq => f == v,
-                Operation::Neq => f != v,
+                Operation::Eq => f - v <= f32::EPSILON,
+                Operation::Neq => f - v > f32::EPSILON,
                 Operation::GTE => f >= v,
                 Operation::GT => f > v,
                 Operation::LTE => f <= v,
