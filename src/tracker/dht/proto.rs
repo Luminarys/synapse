@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 use std::net::SocketAddr;
 use super::{ID, VERSION};
 use bencode::{self, BEncode};
-use num::bigint::BigUint;
+use num_bigint::BigUint;
 use util::{addr_to_bytes, bytes_to_addr};
 use CONFIG;
 // use std::u16;
@@ -585,7 +585,7 @@ impl Node {
 #[cfg(test)]
 mod tests {
     use super::{Request, Response, ResponseKind};
-    use num::bigint::BigUint;
+    use num_bigint::BigUint;
 
     #[test]
     fn test_decode_id_resp() {

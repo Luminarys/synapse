@@ -35,7 +35,7 @@ memmap = "0.6"
 metrohash = "1"
 net2 = "0.2"
 openssl = "0.10"
-rand = "0.3"
+rand = "0.4"
 serde = "1"
 serde_derive = "1"
 serde_json = "1"
@@ -61,11 +61,13 @@ version = "0.11"
 default-features = false
 features = []
 
-[dependencies.num]
-git = "https://github.com/rust-num/num"
-branch = "next"
+# TODO: Change when 0.2 is out
+[dependencies.num-bigint]
+git = "https://github.com/rust-num/num-bigint"
+rev = "007da2a"
+version = "0.2.0-git"
 default-features = false
-features = ["bigint", "serde"]
+features = ["serde"]
 
 # TODO: Change when 0.11 is out
 [dependencies.nix]

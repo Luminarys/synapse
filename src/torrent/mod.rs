@@ -1829,10 +1829,3 @@ impl<T: cio::CIO> Drop for Torrent<T> {
         self.send_rpc_removal();
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use control::cio::{test, CIO};
-    use throttle::*;
-}

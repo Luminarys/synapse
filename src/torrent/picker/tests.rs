@@ -19,12 +19,13 @@ impl Simulation {
         let mut peers = Vec::new();
         for i in 0..cfg.peers {
             let connected =
-                rand::sample(&mut rng, 0..cfg.peers as usize, cfg.connect_limit as usize);
-            let unchoked = rand::sample(
+                rand::seq::sample_iter(&mut rng, 0..cfg.peers as usize, cfg.connect_limit as usize)
+                    .unwrap();
+            let unchoked = rand::seq::sample_iter(
                 &mut rng,
                 connected.iter().map(|v| *v),
                 cfg.unchoke_limit as usize,
-            );
+            ).unwrap();
             let peer = Peer {
                 picker: picker.clone(),
                 connected,

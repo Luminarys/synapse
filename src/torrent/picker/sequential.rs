@@ -96,13 +96,11 @@ impl Picker {
 
 #[cfg(test)]
 mod tests {
-    use torrent::{Bitfield, Info, Peer};
+    use torrent::{Bitfield, Peer};
     use super::Picker;
 
     #[test]
     fn test_piece_pick_order() {
-        let info = Info::with_pieces(3);
-
         let b = Bitfield::new(3);
         let mut picker = Picker::new(&b);
         let mut peer = Peer::test_from_pieces(0, b);

@@ -35,14 +35,12 @@ extern crate rand;
 extern crate serde;
 #[macro_use]
 extern crate serde_derive;
+extern crate num_bigint;
 extern crate serde_json;
 extern crate shellexpand;
 extern crate toml;
 extern crate url;
 extern crate vecio;
-
-// TODO: Get rid of this
-extern crate num;
 
 #[macro_use]
 mod log;

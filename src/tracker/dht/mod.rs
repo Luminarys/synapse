@@ -4,7 +4,7 @@ use std::time;
 use std::fs::OpenOptions;
 use std::path::Path;
 
-use num::bigint::BigUint;
+use num_bigint::BigUint;
 use amy;
 
 use tracker;

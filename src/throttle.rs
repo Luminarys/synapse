@@ -38,18 +38,6 @@ impl Throttler {
         }
     }
 
-    #[cfg(test)]
-    pub fn test(dl_rate: Option<i64>, ul_rate: Option<i64>, max_tokens: usize) -> Throttler {
-        let ut = ThrottleData::new(ul_rate, max_tokens);
-        let dt = ThrottleData::new(dl_rate, max_tokens);
-        Throttler {
-            id: 0,
-            fid: 0,
-            ul_data: Rc::new(RefCell::new(ut)),
-            dl_data: Rc::new(RefCell::new(dt)),
-        }
-    }
-
     pub fn update(&self) -> (u64, u64) {
         let ul = self.ul_data.borrow_mut().add_tokens();
         let dl = self.dl_data.borrow_mut().add_tokens();

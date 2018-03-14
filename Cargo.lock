@@ -724,35 +724,12 @@ dependencies = [
 ]
 
 [[package]]
-name = "num"
-version = "0.2.0-git"
-source = "git+https://github.com/rust-num/num?branch=next#e19ad6eae0c3b62465fe13bcf27a026af52178af"
-dependencies = [
- "num-bigint 0.2.0-git (git+https://github.com/rust-num/num?branch=next)",
- "num-complex 0.2.0-git (git+https://github.com/rust-num/num?branch=next)",
- "num-integer 0.2.0-git (git+https://github.com/rust-num/num?branch=next)",
- "num-iter 0.2.0-git (git+https://github.com/rust-num/num?branch=next)",
- "num-rational 0.2.0-git (git+https://github.com/rust-num/num?branch=next)",
- "num-traits 0.2.0-git (git+https://github.com/rust-num/num?branch=next)",
-]
-
-[[package]]
 name = "num-bigint"
 version = "0.2.0-git"
-source = "git+https://github.com/rust-num/num?branch=next#e19ad6eae0c3b62465fe13bcf27a026af52178af"
+source = "git+https://github.com/rust-num/num-bigint?rev=007da2a#007da2add906db1f1d0b184601d1fc5046cf2c61"
 dependencies = [
- "num-integer 0.2.0-git (git+https://github.com/rust-num/num?branch=next)",
- "num-traits 0.2.0-git (git+https://github.com/rust-num/num?branch=next)",
- "rand 0.3.22 (registry+https://github.com/rust-lang/crates.io-index)",
- "serde 1.0.32 (registry+https://github.com/rust-lang/crates.io-index)",
-]
-
-[[package]]
-name = "num-complex"
-version = "0.2.0-git"
-source = "git+https://github.com/rust-num/num?branch=next#e19ad6eae0c3b62465fe13bcf27a026af52178af"
-dependencies = [
- "num-traits 0.2.0-git (git+https://github.com/rust-num/num?branch=next)",
+ "num-integer 0.1.36 (registry+https://github.com/rust-lang/crates.io-index)",
+ "num-traits 0.2.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "serde 1.0.32 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
@@ -765,14 +742,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "num-integer"
-version = "0.2.0-git"
-source = "git+https://github.com/rust-num/num?branch=next#e19ad6eae0c3b62465fe13bcf27a026af52178af"
-dependencies = [
- "num-traits 0.2.0-git (git+https://github.com/rust-num/num?branch=next)",
-]
-
-[[package]]
 name = "num-iter"
 version = "0.1.35"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -780,31 +749,6 @@ dependencies = [
  "num-integer 0.1.36 (registry+https://github.com/rust-lang/crates.io-index)",
  "num-traits 0.2.1 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
-
-[[package]]
-name = "num-iter"
-version = "0.2.0-git"
-source = "git+https://github.com/rust-num/num?branch=next#e19ad6eae0c3b62465fe13bcf27a026af52178af"
-dependencies = [
- "num-integer 0.2.0-git (git+https://github.com/rust-num/num?branch=next)",
- "num-traits 0.2.0-git (git+https://github.com/rust-num/num?branch=next)",
-]
-
-[[package]]
-name = "num-rational"
-version = "0.2.0-git"
-source = "git+https://github.com/rust-num/num?branch=next#e19ad6eae0c3b62465fe13bcf27a026af52178af"
-dependencies = [
- "num-bigint 0.2.0-git (git+https://github.com/rust-num/num?branch=next)",
- "num-integer 0.2.0-git (git+https://github.com/rust-num/num?branch=next)",
- "num-traits 0.2.0-git (git+https://github.com/rust-num/num?branch=next)",
- "serde 1.0.32 (registry+https://github.com/rust-lang/crates.io-index)",
-]
-
-[[package]]
-name = "num-traits"
-version = "0.2.0-git"
-source = "git+https://github.com/rust-num/num?branch=next#e19ad6eae0c3b62465fe13bcf27a026af52178af"
 
 [[package]]
 name = "num-traits"
@@ -1193,9 +1137,9 @@ dependencies = [
  "metrohash 1.0.5 (registry+https://github.com/rust-lang/crates.io-index)",
  "net2 0.2.32 (registry+https://github.com/rust-lang/crates.io-index)",
  "nix 0.11.0-pre (git+https://github.com/nix-rust/nix?rev=e2c19c6)",
- "num 0.2.0-git (git+https://github.com/rust-num/num?branch=next)",
+ "num-bigint 0.2.0-git (git+https://github.com/rust-num/num-bigint?rev=007da2a)",
  "openssl 0.10.5 (registry+https://github.com/rust-lang/crates.io-index)",
- "rand 0.3.22 (registry+https://github.com/rust-lang/crates.io-index)",
+ "rand 0.4.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "serde 1.0.32 (registry+https://github.com/rust-lang/crates.io-index)",
  "serde_derive 1.0.32 (registry+https://github.com/rust-lang/crates.io-index)",
  "serde_json 1.0.11 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -1665,15 +1609,9 @@ dependencies = [
 "checksum nix 0.11.0-pre (git+https://github.com/nix-rust/nix?rev=e2c19c6)" = "<none>"
 "checksum nodrop 0.1.12 (registry+https://github.com/rust-lang/crates.io-index)" = "9a2228dca57108069a5262f2ed8bd2e82496d2e074a06d1ccc7ce1687b6ae0a2"
 "checksum num 0.1.42 (registry+https://github.com/rust-lang/crates.io-index)" = "4703ad64153382334aa8db57c637364c322d3372e097840c72000dabdcf6156e"
-"checksum num 0.2.0-git (git+https://github.com/rust-num/num?branch=next)" = "<none>"
-"checksum num-bigint 0.2.0-git (git+https://github.com/rust-num/num?branch=next)" = "<none>"
-"checksum num-complex 0.2.0-git (git+https://github.com/rust-num/num?branch=next)" = "<none>"
+"checksum num-bigint 0.2.0-git (git+https://github.com/rust-num/num-bigint?rev=007da2a)" = "<none>"
 "checksum num-integer 0.1.36 (registry+https://github.com/rust-lang/crates.io-index)" = "f8d26da319fb45674985c78f1d1caf99aa4941f785d384a2ae36d0740bc3e2fe"
-"checksum num-integer 0.2.0-git (git+https://github.com/rust-num/num?branch=next)" = "<none>"
 "checksum num-iter 0.1.35 (registry+https://github.com/rust-lang/crates.io-index)" = "4b226df12c5a59b63569dd57fafb926d91b385dfce33d8074a412411b689d593"
-"checksum num-iter 0.2.0-git (git+https://github.com/rust-num/num?branch=next)" = "<none>"
-"checksum num-rational 0.2.0-git (git+https://github.com/rust-num/num?branch=next)" = "<none>"
-"checksum num-traits 0.2.0-git (git+https://github.com/rust-num/num?branch=next)" = "<none>"
 "checksum num-traits 0.2.1 (registry+https://github.com/rust-lang/crates.io-index)" = "0b3c2bd9b9d21e48e956b763c9f37134dc62d9e95da6edb3f672cacb6caf3cd3"
 "checksum num_cpus 1.8.0 (registry+https://github.com/rust-lang/crates.io-index)" = "c51a3322e4bca9d212ad9a158a02abc6934d005490c054a2778df73a70aa0a30"
 "checksum openssl 0.10.5 (registry+https://github.com/rust-lang/crates.io-index)" = "1636c9f1d78af9cbcc50e523bfff4a30274108aad5e86761afd4d31e4e184fa7"

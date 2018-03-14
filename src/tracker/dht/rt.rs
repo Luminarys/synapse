@@ -2,7 +2,7 @@ use std::net::SocketAddr;
 use std::{cmp, mem};
 use std::collections::HashMap;
 use chrono::{DateTime, Utc};
-use num::bigint::BigUint;
+use num_bigint::BigUint;
 use rand::{self, Rng};
 use super::{proto, BUCKET_MAX, ID, MAX_BUCKETS, MIN_BOOTSTRAP_BKTS, TX_TIMEOUT_SECS};
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
@@ -705,7 +705,7 @@ fn id_from_pow(pow: usize) -> ID {
 #[cfg(test)]
 mod tests {
     use super::{id_from_pow, Bucket, Node, RoutingTable};
-    use num::bigint::BigUint;
+    use num_bigint::BigUint;
 
     #[test]
     fn test_id_from_pow() {
