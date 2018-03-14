@@ -81,6 +81,7 @@ torrent
         "transferred_down": number, total bytes leeched
         "peers": number,            # of peers
         "trackers": number,         # of trackers
+        "tracker_urls": [string],   # domains of trackers available for this torrent
         "pieces": number,           # of pieces or null if magnet and unknown
         "piece_size": number,       # size of each piece or null if magnet and unknown
         "piece_field": string,      b64 encoded bitfield indicating piece presence
@@ -96,17 +97,6 @@ Status enum:
     "hashing": hash check in progress
     "magnet": torrent still in magnet state, acquiring metadata
     "error": see "error" field for details
-
-piece
-
-    {
-        "id": ID,
-        "type": "piece",
-        "torrent_id": ID,
-        "available": boolean,
-        "downloaded": boolean,
-        "index": number,
-    }
 
 file
 
@@ -186,6 +176,8 @@ Operation enum:
     "ilike": value is an ILIKE test with SQL syntax
     "in": value is an array of values for equality test
     "!in": value is an array of values for non-equality test
+    "has": field is an array of fields and contains value (via equality or ilike test)
+    "!has": field is an array of fields and does not contain value (via equality or ilike test)
 
                                     MESSAGES
 

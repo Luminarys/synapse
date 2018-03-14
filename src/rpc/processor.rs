@@ -538,6 +538,19 @@ impl Processor {
                             self.torrent_idx.insert(tid.to_owned(), MHashSet::default());
                         }
                         self.torrent_idx.get_mut(tid).unwrap().insert(id.clone());
+                        match &r {
+                            &Resource::Tracker(ref t) => {
+                                // Note we don't have to send a client update here because
+                                // this is updated in sync with the trackers field which does
+                                // this for us.
+                                t.url.as_ref().and_then(Url::host_str).map(|host| {
+                                    self.resources.get_mut(&t.torrent_id).map(|r| {
+                                        r.as_torrent_mut().tracker_urls.push(host.to_string())
+                                    })
+                                });
+                            }
+                            _ => {}
+                        }
                     }
 
                     if let Some(user_data) = self.user_data.get(&id) {
@@ -605,6 +618,18 @@ impl Processor {
                         self.torrent_idx.get_mut(tid).map(|s| s.remove(&id));
                     } else {
                         self.torrent_idx.remove(&id);
+                    }
+
+                    match &r {
+                        &Resource::Tracker(ref t) => {
+                            // Note we don't have to send a client update here: see above
+                            t.url.as_ref().and_then(Url::host_str).map(|host| {
+                                self.resources.get_mut(&t.torrent_id).map(|r| {
+                                    r.as_torrent_mut().tracker_urls.retain(|url| url != host)
+                                });
+                            });
+                        }
+                        _ => {}
                     }
                 }
             }

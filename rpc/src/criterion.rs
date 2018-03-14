@@ -34,6 +34,10 @@ pub enum Operation {
     In,
     #[serde(rename = "!in")]
     NotIn,
+    #[serde(rename = "has")]
+    Has,
+    #[serde(rename = "!has")]
+    NotHas,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
@@ -57,6 +61,7 @@ pub enum Field<'a> {
     F(f32),
     D(DateTime<Utc>),
     O(Box<Option<Field<'a>>>),
+    V(Vec<Field<'a>>),
 }
 
 pub trait Queryable {
@@ -131,6 +136,17 @@ impl Criterion {
                     Operation::Neq => true,
                     _ => false,
                 },
+            },
+            (&Field::V(ref items), v) => match op {
+                Operation::Has => items.iter().any(|f| {
+                    self.match_field(f, Operation::Eq, v)
+                        || self.match_field(f, Operation::ILike, v)
+                }),
+                Operation::NotHas => items.iter().all(|f| {
+                    self.match_field(f, Operation::Neq, v)
+                        && !self.match_field(f, Operation::ILike, v)
+                }),
+                _ => false,
             },
             _ => false,
         }

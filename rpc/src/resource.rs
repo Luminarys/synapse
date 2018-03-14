@@ -284,6 +284,7 @@ pub struct Torrent {
     pub transferred_down: u64,
     pub peers: u16,
     pub trackers: u8,
+    pub tracker_urls: Vec<String>,
     pub size: Option<u64>,
     pub pieces: Option<u64>,
     pub piece_size: Option<u32>,
@@ -547,6 +548,13 @@ impl Resource {
     pub fn as_torrent(&self) -> &Torrent {
         match self {
             &Resource::Torrent(ref t) => t,
+            _ => panic!(),
+        }
+    }
+
+    pub fn as_torrent_mut(&mut self) -> &mut Torrent {
+        match self {
+            &mut Resource::Torrent(ref mut t) => t,
             _ => panic!(),
         }
     }
@@ -866,6 +874,9 @@ impl Queryable for Torrent {
             "transferred_down" => Some(Field::N(self.transferred_down as i64)),
             "peers" => Some(Field::N(self.peers as i64)),
             "trackers" => Some(Field::N(self.trackers as i64)),
+            "tracker_urls" => Some(Field::V(
+                self.tracker_urls.iter().map(|url| Field::S(url)).collect(),
+            )),
             "size" => Some(Field::O(Box::new(self.size.map(|v| Field::N(v as i64))))),
             "pieces" => Some(Field::O(Box::new(self.pieces.map(|v| Field::N(v as i64))))),
             "piece_size" => Some(Field::O(Box::new(
@@ -1050,6 +1061,7 @@ impl Default for Torrent {
             transferred_down: 0,
             peers: 0,
             trackers: 0,
+            tracker_urls: vec![],
             size: None,
             pieces: None,
             piece_size: None,
