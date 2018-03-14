@@ -8,7 +8,7 @@ use serde_json as json;
 use url::Url;
 use url_serde;
 
-use super::criterion::{Field, Queryable};
+use super::criterion::{Field, Queryable, FNULL};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
@@ -804,7 +804,7 @@ impl Queryable for Resource {
 impl Queryable for json::Value {
     fn field(&self, f: &str) -> Option<Field> {
         match self.pointer(f) {
-            Some(&json::Value::Null) => Some(Field::O(Box::new(None))),
+            Some(&json::Value::Null) => Some(FNULL),
             Some(&json::Value::Bool(b)) => Some(Field::B(b)),
             Some(&json::Value::Number(ref n)) => {
                 if n.is_f64() {
@@ -828,8 +828,8 @@ impl Queryable for Server {
 
             "rate_up" => Some(Field::N(self.rate_up as i64)),
             "rate_down" => Some(Field::N(self.rate_down as i64)),
-            "throttle_up" => Some(Field::O(Box::new(self.throttle_up.map(|v| Field::N(v))))),
-            "throttle_down" => Some(Field::O(Box::new(self.throttle_down.map(|v| Field::N(v))))),
+            "throttle_up" => Some(self.throttle_up.map(|v| Field::N(v)).unwrap_or(FNULL)),
+            "throttle_down" => Some(self.throttle_down.map(|v| Field::N(v)).unwrap_or(FNULL)),
             "transferred_up" => Some(Field::N(self.transferred_up as i64)),
             "transferred_down" => Some(Field::N(self.transferred_down as i64)),
             "ses_transferred_up" => Some(Field::N(self.ses_transferred_up as i64)),
@@ -849,27 +849,39 @@ impl Queryable for Torrent {
     fn field(&self, f: &str) -> Option<Field> {
         match f {
             "id" => Some(Field::S(&self.id)),
-            "name" => Some(Field::O(Box::new(
-                self.name.as_ref().map(|v| Field::S(v.as_str())),
-            ))),
+            "name" => Some(
+                self.name
+                    .as_ref()
+                    .map(|v| Field::S(v.as_str()))
+                    .unwrap_or(FNULL),
+            ),
             "private" => Some(Field::B(self.private)),
-            "creator" => Some(Field::O(Box::new(
-                self.creator.as_ref().map(|v| Field::S(v.as_str())),
-            ))),
-            "comment" => Some(Field::O(Box::new(
-                self.comment.as_ref().map(|v| Field::S(v.as_str())),
-            ))),
+            "creator" => Some(
+                self.creator
+                    .as_ref()
+                    .map(|v| Field::S(v.as_str()))
+                    .unwrap_or(FNULL),
+            ),
+            "comment" => Some(
+                self.comment
+                    .as_ref()
+                    .map(|v| Field::S(v.as_str()))
+                    .unwrap_or(FNULL),
+            ),
             "path" => Some(Field::S(&self.path)),
             "status" => Some(Field::S(self.status.as_str())),
-            "error" => Some(Field::O(Box::new(
-                self.error.as_ref().map(|v| Field::S(v.as_str())),
-            ))),
+            "error" => Some(
+                self.error
+                    .as_ref()
+                    .map(|v| Field::S(v.as_str()))
+                    .unwrap_or(FNULL),
+            ),
 
             "priority" => Some(Field::N(self.priority as i64)),
             "rate_up" => Some(Field::N(self.rate_up as i64)),
             "rate_down" => Some(Field::N(self.rate_down as i64)),
-            "throttle_up" => Some(Field::O(Box::new(self.throttle_up.map(|v| Field::N(v))))),
-            "throttle_down" => Some(Field::O(Box::new(self.throttle_down.map(|v| Field::N(v))))),
+            "throttle_up" => Some(self.throttle_up.map(|v| Field::N(v)).unwrap_or(FNULL)),
+            "throttle_down" => Some(self.throttle_down.map(|v| Field::N(v)).unwrap_or(FNULL)),
             "transferred_up" => Some(Field::N(self.transferred_up as i64)),
             "transferred_down" => Some(Field::N(self.transferred_down as i64)),
             "peers" => Some(Field::N(self.peers as i64)),
@@ -877,12 +889,10 @@ impl Queryable for Torrent {
             "tracker_urls" => Some(Field::V(
                 self.tracker_urls.iter().map(|url| Field::S(url)).collect(),
             )),
-            "size" => Some(Field::O(Box::new(self.size.map(|v| Field::N(v as i64))))),
-            "pieces" => Some(Field::O(Box::new(self.pieces.map(|v| Field::N(v as i64))))),
-            "piece_size" => Some(Field::O(Box::new(
-                self.piece_size.map(|v| Field::N(v as i64)),
-            ))),
-            "files" => Some(Field::O(Box::new(self.files.map(|v| Field::N(v as i64))))),
+            "size" => Some(self.size.map(|v| Field::N(v as i64)).unwrap_or(FNULL)),
+            "pieces" => Some(self.pieces.map(|v| Field::N(v as i64)).unwrap_or(FNULL)),
+            "piece_size" => Some(self.piece_size.map(|v| Field::N(v as i64)).unwrap_or(FNULL)),
+            "files" => Some(self.files.map(|v| Field::N(v as i64)).unwrap_or(FNULL)),
 
             "created" => Some(Field::D(self.created)),
             "modified" => Some(Field::D(self.modified)),
@@ -959,12 +969,18 @@ impl Queryable for Tracker {
         match f {
             "id" => Some(Field::S(&self.id)),
             "torrent_id" => Some(Field::S(&self.torrent_id)),
-            "url" => Some(Field::O(Box::new(
-                self.url.as_ref().map(|u| Field::S(u.as_str())),
-            ))),
-            "error" => Some(Field::O(Box::new(
-                self.error.as_ref().map(|v| Field::S(v.as_str())),
-            ))),
+            "url" => Some(
+                self.url
+                    .as_ref()
+                    .map(|u| Field::S(u.as_str()))
+                    .unwrap_or(FNULL),
+            ),
+            "error" => Some(
+                self.error
+                    .as_ref()
+                    .map(|v| Field::S(v.as_str()))
+                    .unwrap_or(FNULL),
+            ),
 
             "last_report" => Some(Field::D(self.last_report)),
 

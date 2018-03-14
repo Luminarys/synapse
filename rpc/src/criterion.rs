@@ -60,9 +60,11 @@ pub enum Field<'a> {
     N(i64),
     F(f32),
     D(DateTime<Utc>),
-    O(Box<Option<Field<'a>>>),
+    E(Option<()>),
     V(Vec<Field<'a>>),
 }
+
+pub const FNULL: Field<'static> = Field::E(None);
 
 pub trait Queryable {
     fn field(&self, field: &str) -> Option<Field>;
@@ -79,6 +81,28 @@ impl Criterion {
 
     fn match_field(&self, field: &Field, op: Operation, value: &Value) -> bool {
         match (field, value) {
+            (&Field::V(ref items), &Value::V(ref vals)) => match op {
+                Operation::Eq => items
+                    .iter()
+                    .zip(vals)
+                    .all(|(f, v)| self.match_field(f, Operation::Eq, v)),
+                Operation::Neq => items
+                    .iter()
+                    .zip(vals)
+                    .any(|(f, v)| self.match_field(f, Operation::Neq, v)),
+                _ => false,
+            },
+            (&Field::V(ref items), v) => match op {
+                Operation::Has => items.iter().any(|f| {
+                    self.match_field(f, Operation::Eq, v)
+                        || self.match_field(f, Operation::ILike, v)
+                }),
+                Operation::NotHas => items.iter().all(|f| {
+                    self.match_field(f, Operation::Neq, v)
+                        && !self.match_field(f, Operation::ILike, v)
+                }),
+                _ => false,
+            },
             (f, &Value::V(ref v)) => match op {
                 Operation::In => v.iter()
                     .any(|item| self.match_field(f, Operation::Eq, item)),
@@ -125,30 +149,18 @@ impl Criterion {
                 Operation::LT => f < v,
                 _ => false,
             },
-            (&Field::O(ref f), &Value::E(_)) => match op {
-                Operation::Eq => f.is_none(),
-                Operation::Neq => f.is_some(),
+            (&Field::E(_), &Value::E(_)) => match op {
+                Operation::Eq => true,
                 _ => false,
             },
-            (&Field::O(ref b), v) => match b.as_ref().as_ref() {
-                Some(f) => self.match_field(f, op, v),
-                None => match op {
-                    Operation::Neq => true,
-                    _ => false,
-                },
-            },
-            (&Field::V(ref items), v) => match op {
-                Operation::Has => items.iter().any(|f| {
-                    self.match_field(f, Operation::Eq, v)
-                        || self.match_field(f, Operation::ILike, v)
-                }),
-                Operation::NotHas => items.iter().all(|f| {
-                    self.match_field(f, Operation::Neq, v)
-                        && !self.match_field(f, Operation::ILike, v)
-                }),
+            (&Field::E(_), _) => match op {
+                Operation::Neq => true,
                 _ => false,
             },
-            _ => false,
+            _ => match op {
+                Operation::Neq => true,
+                _ => false,
+            },
         }
     }
 }
@@ -194,8 +206,8 @@ mod tests {
             match f {
                 "s" => Some(Field::S("foo")),
                 "n" => Some(Field::N(1)),
-                "ob" => Some(Field::O(Box::new(Some(Field::B(true))))),
-                "on" => Some(Field::O(Box::new(None))),
+                "ob" => Some(Field::B(true)),
+                "on" => Some(Field::E(None)),
                 _ => None,
             }
         }
