@@ -1352,6 +1352,7 @@ impl<T: cio::CIO> Torrent<T> {
         let seq = self.picker.is_sequential();
         self.picker = Picker::new(&self.info, &self.pieces, &self.priorities);
         self.change_picker(seq);
+        self.files = Files::new(&self.info, &self.pieces);
         self.validate();
         self.dump_torrent_file();
     }
