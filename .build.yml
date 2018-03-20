@@ -11,7 +11,7 @@ sources:
 repositories:
   rustydebs: https://dl.bintray.com/hummer12007/rustydebs stretch main 379CE192D401AB61
 secrets:
-  - 64b0f494-735d-48fd-9ca9-501e14be8f99
+  - 758ac31b-78cd-4d55-90ec-9dd834783e4f
 tasks:
   - build: |
       cd synapse
