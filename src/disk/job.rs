@@ -95,6 +95,7 @@ pub enum Request {
         file_len: u64,
     },
     FreeSpace,
+    Ping,
     Shutdown,
 }
 
@@ -313,6 +314,7 @@ impl Request {
         let dd = &CONFIG.disk.directory;
         let (mut tb, mut tpb, mut tpb2) = bc.data();
         match self {
+            Request::Ping => {}
             Request::FreeSpace => {
                 if let Ok(stat) = statvfs::statvfs(dd.as_str()) {
                     let space = stat.fragment_size() as u64 * stat.blocks_available() as u64;
@@ -693,6 +695,7 @@ impl Request {
             Request::WriteFile { .. }
             | Request::Download { .. }
             | Request::Shutdown
+            | Request::Ping
             | Request::FreeSpace => None,
         }
     }

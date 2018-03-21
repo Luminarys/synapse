@@ -1819,7 +1819,6 @@ impl<T: cio::CIO> fmt::Display for Torrent<T> {
 
 impl<T: cio::CIO> Drop for Torrent<T> {
     fn drop(&mut self) {
-        debug!("Removing peers");
         for (id, peer) in self.peers.drain() {
             trace!("Removing peer {:?}", peer);
             self.leechers.remove(&id);

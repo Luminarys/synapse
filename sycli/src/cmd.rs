@@ -60,6 +60,9 @@ fn add_file(c: &mut Client, url: &str, file: &str, dir: Option<&str>, start: boo
         SMessage::InvalidRequest(message::Error { reason, .. }) => {
             bail!("{}", reason);
         }
+        SMessage::TransferFailed(message::Error { reason, .. }) => {
+            bail!("{}", reason);
+        }
         _ => {
             bail!("Failed to receieve upload acknowledgement from synapse");
         }

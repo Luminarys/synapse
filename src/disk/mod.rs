@@ -68,7 +68,7 @@ impl Disk {
                     }
                 }
                 Err(e) => {
-                    error!("Failed to poll for events: {:?}", e);
+                    error!("Failed to poll for events: {}", e);
                 }
             }
             if !self.active.is_empty() && self.handle_active() {

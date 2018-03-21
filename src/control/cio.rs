@@ -16,11 +16,6 @@ error_chain! {
             description("removal requested")
                 display("removal requested")
         }
-
-        Channel(r: &'static str) {
-            description("Channel error")
-                display("Encountered channel error: {}", r)
-        }
     }
 }
 
@@ -44,7 +39,7 @@ pub enum Event {
 /// to be done.
 pub trait CIO {
     /// Returns events for peers, timers, channels, etc.
-    fn poll(&mut self, events: &mut Vec<Event>);
+    fn poll(&mut self, events: &mut Vec<Event>) -> Result<()>;
 
     /// Adds a peer to be polled on
     fn add_peer(&mut self, peer: torrent::PeerConn) -> Result<PID>;
@@ -127,8 +122,8 @@ pub mod test {
     }
 
     impl CIO for TCIO {
-        fn poll(&mut self, _: &mut Vec<Event>) {
-            return;
+        fn poll(&mut self, _: &mut Vec<Event>) -> Result<()> {
+            return Ok(());
         }
 
         fn add_peer(&mut self, peer: torrent::PeerConn) -> Result<PID> {

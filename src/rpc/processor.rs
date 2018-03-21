@@ -671,7 +671,8 @@ impl Processor {
             CtlMessage::Pending { id, serial, client } => {
                 msgs.push((client, SMessage::ResourcePending { serial, id }));
             }
-            CtlMessage::Shutdown => unreachable!(),
+            CtlMessage::Ping => unreachable!("ping must be handled before rpc processor"),
+            CtlMessage::Shutdown => unreachable!("shutdown must be handled before rpc processor"),
         }
         msgs
     }

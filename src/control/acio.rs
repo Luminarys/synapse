@@ -2,7 +2,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use std::time;
 
-use amy;
+use amy::{self, ChannelError};
 
 use {disk, listener, rpc, torrent, tracker};
 use CONFIG;
@@ -37,6 +37,7 @@ struct ACIOData {
     peers: UHashMap<torrent::PeerConn>,
     events: Vec<cio::Event>,
     chans: ACChans,
+    crashed: bool,
 }
 
 impl ACIO {
@@ -47,6 +48,7 @@ impl ACIO {
             chans,
             peers: UHashMap::default(),
             events: Vec::new(),
+            crashed: false,
         };
         ACIO {
             data: Rc::new(RefCell::new(data)),
@@ -85,6 +87,28 @@ impl ACIO {
         } else {
             // Timer event
             events.push(cio::Event::Timer(id));
+
+            // Liveness checks
+            match d.chans.disk_tx.send(disk::Request::Ping) {
+                Ok(_) => {}
+                Err(ChannelError::SendError(_)) => d.crashed = true,
+                Err(e) => error!("Unknown error sending to channel: {:?}", e),
+            }
+            match d.chans.rpc_tx.send(rpc::CtlMessage::Ping) {
+                Ok(_) => {}
+                Err(ChannelError::SendError(_)) => d.crashed = true,
+                Err(e) => error!("Unknown error sending to channel: {:?}", e),
+            }
+            match d.chans.trk_tx.send(tracker::Request::Ping) {
+                Ok(_) => {}
+                Err(ChannelError::SendError(_)) => d.crashed = true,
+                Err(e) => error!("Unknown error sending to channel: {:?}", e),
+            }
+            match d.chans.lst_tx.send(listener::Request::Ping) {
+                Ok(_) => {}
+                Err(ChannelError::SendError(_)) => d.crashed = true,
+                Err(e) => error!("Unknown error sending to channel: {:?}", e),
+            }
         }
     }
 
@@ -113,9 +137,12 @@ impl ACIO {
 }
 
 impl cio::CIO for ACIO {
-    fn poll(&mut self, events: &mut Vec<cio::Event>) {
+    fn poll(&mut self, events: &mut Vec<cio::Event>) -> Result<()> {
         {
             let mut d = self.data.borrow_mut();
+            if d.crashed {
+                bail!("crashed thread detected, terminating!");
+            }
 
             for event in d.events.drain(..) {
                 events.push(event);
@@ -129,9 +156,10 @@ impl cio::CIO for ACIO {
                 self.process_event(event, events);
             },
             Err(e) => {
-                error!("Failed to poll for events: {:?}", e);
+                error!("Failed to poll for events: {}", e);
             }
         }
+        Ok(())
     }
 
     fn add_peer(&mut self, mut peer: torrent::PeerConn) -> Result<cio::PID> {
@@ -225,40 +253,36 @@ impl cio::CIO for ACIO {
     fn msg_rpc(&mut self, msg: rpc::CtlMessage) {
         let mut d = self.data.borrow_mut();
 
-        if d.chans.rpc_tx.send(msg).is_err() {
-            d.events.push(cio::Event::RPC(Err(ErrorKind::Channel(
-                "Couldn't send to RPC chan",
-            ).into())));
+        if d.chans.rpc_tx.send(msg).is_err() && !d.crashed {
+            d.crashed = true;
+            error!("RPC thread crashed, shutting down!");
         }
     }
 
     fn msg_trk(&mut self, msg: tracker::Request) {
         let mut d = self.data.borrow_mut();
 
-        if d.chans.trk_tx.send(msg).is_err() {
-            d.events.push(cio::Event::Tracker(Err(ErrorKind::Channel(
-                "Couldn't send to trk chan",
-            ).into())));
+        if d.chans.trk_tx.send(msg).is_err() && !d.crashed {
+            d.crashed = true;
+            error!("tracker thread crashed, shutting down!");
         }
     }
 
     fn msg_disk(&mut self, msg: disk::Request) {
         let mut d = self.data.borrow_mut();
 
-        if d.chans.disk_tx.send(msg).is_err() {
-            d.events.push(cio::Event::Disk(Err(ErrorKind::Channel(
-                "Couldn't send to disk chan",
-            ).into())));
+        if d.chans.disk_tx.send(msg).is_err() && !d.crashed {
+            d.crashed = true;
+            error!("disk thread crashed, shutting down!");
         }
     }
 
     fn msg_listener(&mut self, msg: listener::Request) {
         let mut d = self.data.borrow_mut();
 
-        if d.chans.lst_tx.send(msg).is_err() {
-            d.events.push(cio::Event::Listener(Err(ErrorKind::Channel(
-                "Couldn't send to disk chan",
-            ).into())));
+        if d.chans.lst_tx.send(msg).is_err() && !d.crashed {
+            d.crashed = true;
+            error!("listener thread crashed, shutting down!");
         }
     }
 

@@ -263,7 +263,11 @@ impl Handler {
         }
 
         http_req.extend_from_slice(b" HTTP/1.1\r\n");
-        let user_agent = format!("User-Agent: {}/{}\r\n", "synapse", env!("CARGO_PKG_VERSION"));
+        let user_agent = format!(
+            "User-Agent: {}/{}\r\n",
+            "synapse",
+            env!("CARGO_PKG_VERSION")
+        );
         http_req.extend_from_slice(user_agent.as_bytes());
         http_req.extend_from_slice(b"Connection: close\r\n");
         http_req.extend_from_slice(b"Host: ");
@@ -352,7 +356,11 @@ impl Handler {
 
         // Encode HTTP protocol
         http_req.extend_from_slice(b" HTTP/1.1\r\n");
-        let user_agent = format!("User-Agent: {}/{}\r\n", "synapse", env!("CARGO_PKG_VERSION"));
+        let user_agent = format!(
+            "User-Agent: {}/{}\r\n",
+            "synapse",
+            env!("CARGO_PKG_VERSION")
+        );
         http_req.extend_from_slice(user_agent.as_bytes());
         // Don't keep alive
         http_req.extend_from_slice(b"Connection: close\r\n");

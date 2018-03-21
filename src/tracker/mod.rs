@@ -40,6 +40,7 @@ pub enum Request {
     GetPeers(GetPeers),
     AddNode(SocketAddr),
     DHTAnnounce([u8; 20]),
+    Ping,
     Shutdown,
 }
 
@@ -135,12 +136,11 @@ impl Tracker {
                     }
                 },
                 Err(e) => {
-                    error!("Failed to poll for events: {:?}", e);
+                    error!("Failed to poll for events: {}", e);
                 }
             }
         }
 
-        debug!("Shutting down!");
         self.shutting_down = true;
 
         // Shutdown loop - wait for all requests to complete
@@ -183,6 +183,7 @@ impl Tracker {
                     trace!("Handling dht announce req!");
                     self.dht.announce(hash);
                 }
+                Request::Ping => {}
                 Request::Shutdown => {
                     return Err(());
                 }

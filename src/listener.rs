@@ -37,6 +37,7 @@ impl fmt::Debug for Message {
 
 #[derive(Debug)]
 pub enum Request {
+    Ping,
     Shutdown,
 }
 
@@ -70,17 +71,22 @@ impl Listener {
 
     pub fn run(&mut self) {
         debug!("Accepting connections!");
-        while let Ok(res) = self.poll.wait(POLL_INT_MS) {
-            for not in res {
-                match not.id {
-                    id if id == self.lid => self.handle_conn(),
-                    id if id == self.ch.rx.get_id() => {
-                        if let Ok(Request::Shutdown) = self.ch.recv() {
-                            return;
-                        }
+        loop {
+            match self.poll.wait(POLL_INT_MS) {
+                Ok(res) => for not in res {
+                    match not.id {
+                        id if id == self.lid => self.handle_conn(),
+                        id if id == self.ch.rx.get_id() => loop {
+                            match self.ch.recv() {
+                                Ok(Request::Ping) => continue,
+                                Ok(Request::Shutdown) => return,
+                                _ => break,
+                            }
+                        },
+                        _ => self.handle_peer(not),
                     }
-                    _ => self.handle_peer(not),
-                }
+                },
+                Err(e) => error!("Failed to poll for events: {}", e),
             }
         }
     }

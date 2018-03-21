@@ -30,12 +30,12 @@ extern crate memmap;
 extern crate metrohash;
 extern crate net2;
 extern crate nix;
+extern crate num_bigint;
 extern crate openssl;
 extern crate rand;
 extern crate serde;
 #[macro_use]
 extern crate serde_derive;
-extern crate num_bigint;
 extern crate serde_json;
 extern crate shellexpand;
 extern crate toml;

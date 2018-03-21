@@ -101,6 +101,7 @@ pub enum CtlMessage {
         client: usize,
         serial: u64,
     },
+    Ping,
     Shutdown,
 }
 
@@ -221,7 +222,14 @@ impl RPC {
 
     pub fn run(&mut self) {
         debug!("Running RPC!");
-        'outer: while let Ok(res) = self.poll.wait(POLL_INT_MS) {
+        'outer: loop {
+            let res = match self.poll.wait(POLL_INT_MS) {
+                Ok(res) => res,
+                Err(e) => {
+                    error!("Failed to poll for events: {}", e);
+                    continue;
+                }
+            };
             for not in res {
                 match not.id {
                     id if id == self.lid => self.handle_accept(),
@@ -242,6 +250,7 @@ impl RPC {
     fn handle_ctl(&mut self) -> bool {
         while let Ok(m) = self.ch.recv() {
             match m {
+                CtlMessage::Ping => continue,
                 CtlMessage::Shutdown => return true,
                 m => {
                     let msgs: Vec<_> = {
