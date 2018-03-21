@@ -271,7 +271,7 @@ impl Tracker {
                 self.send_response(resp);
             }
         } else {
-            unreachable!();
+            error!("Unknown event occured for tracker: {:?}", event);
         };
     }
 
