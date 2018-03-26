@@ -241,7 +241,7 @@ impl Request {
             "find_node" => {
                 let target = a.remove("target")
                     .and_then(|b| b.into_bytes())
-                    .map(|b| BigUint::from_bytes_be(&b[..]))
+                    .map(|b| BigUint::from_bytes_be(&b[..20]))
                     .ok_or_else(|| {
                         Error::from(ErrorKind::InvalidRequest(
                             "Invalid BEncoded data(find_node must have target field)",
@@ -257,7 +257,7 @@ impl Request {
                         if b.len() != 20 {
                             return None;
                         }
-                        hash.copy_from_slice(&b[..]);
+                        hash.copy_from_slice(&b[..20]);
                         Some(())
                     })
                     .ok_or_else(|| {
@@ -275,7 +275,7 @@ impl Request {
                         if b.len() != 20 {
                             return None;
                         }
-                        hash.copy_from_slice(&b[..]);
+                        hash.copy_from_slice(&b[..20]);
                         Some(())
                     })
                     .ok_or_else(|| {
