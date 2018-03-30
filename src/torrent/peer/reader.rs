@@ -467,7 +467,7 @@ mod tests {
                 }
             }
             res => {
-                panic!("Failed to piece: {:?}", res);
+                panic!("Failed to get piece: {:?}", res);
             }
         }
     }
