@@ -281,7 +281,7 @@ mod tests {
     fn test_write_piece() {
         use std::io::Cursor;
         let mut w = Writer::new();
-        let mut b = Buffer::get().unwrap();
+        let mut b = Buffer::get().expect("buffers should be present in tests");
         for i in 0..b.len() {
             b[i] = 1;
         }

@@ -336,7 +336,8 @@ impl<T: cio::CIO> Torrent<T> {
         } else {
             vec![]
         };
-        let picker = picker::Picker::new(&info, &d.pieces, &d.priorities);
+        let pieces = Bitfield::from(d.pieces.data, d.pieces.len);
+        let picker = picker::Picker::new(&info, &pieces, &d.priorities);
         throttle.set_ul_rate(d.throttle_ul);
         throttle.set_dl_rate(d.throttle_dl);
 
@@ -363,13 +364,13 @@ impl<T: cio::CIO> Torrent<T> {
             }
         }
 
-        let files = Files::new(&info, &d.pieces);
+        let files = Files::new(&info, &pieces);
 
         let mut t = Torrent {
             id,
             info,
             peers,
-            pieces: d.pieces,
+            pieces,
             validating: FHashSet::default(),
             picker,
             uploaded: d.uploaded,
@@ -433,7 +434,10 @@ impl<T: cio::CIO> Torrent<T> {
                 be_name: self.info.be_name.clone(),
                 piece_idx: self.info.piece_idx.clone(),
             },
-            pieces: self.pieces.clone(),
+            pieces: session::torrent::Bitfield {
+                data: self.pieces.data().clone(),
+                len: self.pieces.len(),
+            },
             uploaded: self.uploaded,
             downloaded: self.downloaded,
             status: session::torrent::current::Status {

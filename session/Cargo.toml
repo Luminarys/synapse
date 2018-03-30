@@ -1,0 +1,17 @@
+[package]
+name = "synapse-session"
+version = "0.1.0"
+authors = ["Luminarys <postmaster@gensok.io>"]
+
+[lib]
+name = "synapse_session"
+
+[dependencies]
+serde = "1"
+serde_derive = "1"
+bincode = "1"
+
+[dependencies.chrono]
+version = "0.4"
+default-features = false
+features = ["serde"]

@@ -12,7 +12,7 @@ path = "src/main.rs"
 name = "synapse"
 
 [workspace]
-members = ["sycli", "rpc"]
+members = ["sycli", "rpc", "session"]
 exclude = ["synulator"]
 
 [build-dependencies]
@@ -41,6 +41,7 @@ serde_derive = "1"
 serde_json = "1"
 shellexpand = "1"
 synapse-rpc = { path = "rpc" }
+synapse-session = { path = "session" }
 toml = "0.4"
 url = "1"
 vecio = "0.1"

@@ -1,6 +1,6 @@
 // Use u64 than usize because it conforms with bittorents network protocol
 // (4 byte big endian integers)
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Clone)]
 pub struct Bitfield {
     len: u64,
     data: Box<[u8]>,
@@ -25,6 +25,10 @@ impl Bitfield {
 
     pub fn len(&self) -> u64 {
         self.len
+    }
+
+    pub fn data(&self) -> &Box<[u8]> {
+        &self.data
     }
 
     pub fn cap(&mut self, len: u64) {

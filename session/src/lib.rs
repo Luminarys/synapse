@@ -1,22 +1,30 @@
+extern crate bincode;
+extern crate chrono;
+extern crate serde;
+#[macro_use]
+extern crate serde_derive;
+
 pub mod torrent {
     pub use self::ver_fa1b6f as current;
     pub use self::current::Session;
     use bincode;
 
+    #[derive(Serialize, Deserialize, Clone)]
+    pub struct Bitfield {
+        pub len: u64,
+        pub data: Box<[u8]>,
+    }
+
     pub fn load(data: &[u8]) -> Option<Session> {
         if let Ok(m) = bincode::deserialize::<ver_fa1b6f::Session>(data) {
             Some(m)
         } else if let Ok(m) = bincode::deserialize::<ver_6e27af::Session>(data) {
-            info!("Migrating torrent session from v6e27af");
             Some(m.migrate())
         } else if let Ok(m) = bincode::deserialize::<ver_249b1b::Session>(data) {
-            info!("Migrating torrent session from v249b1b");
             Some(m.migrate())
         } else if let Ok(m) = bincode::deserialize::<ver_5f166d::Session>(data) {
-            info!("Migrating torrent session from v5f166d");
             Some(m.migrate())
         } else if let Ok(m) = bincode::deserialize::<ver_8e1121::Session>(data) {
-            info!("Migrating torrent session from v8e1121");
             Some(m.migrate())
         } else {
             None
@@ -30,7 +38,7 @@ pub mod torrent {
     }
 
     pub mod ver_fa1b6f {
-        use torrent::Bitfield;
+        use super::Bitfield;
 
         use chrono::{DateTime, Utc};
 
@@ -96,7 +104,7 @@ pub mod torrent {
         pub use super::ver_fa1b6f as next;
         pub use self::next::{File, Status, StatusState};
 
-        use torrent::Bitfield;
+        use super::Bitfield;
 
         use chrono::{DateTime, Utc};
 
@@ -165,9 +173,8 @@ pub mod torrent {
 
     pub mod ver_249b1b {
         pub use super::ver_6e27af as next;
+        use super::Bitfield;
         pub use self::next::{File, Info, Status, StatusState};
-
-        use torrent::Bitfield;
 
         use chrono::{DateTime, Utc};
 
@@ -212,8 +219,7 @@ pub mod torrent {
 
     pub mod ver_5f166d {
         use super::ver_249b1b as next;
-
-        use torrent::Bitfield;
+        use super::Bitfield;
 
         use chrono::{DateTime, Utc};
 
@@ -259,11 +265,26 @@ pub mod torrent {
 
         impl Session {
             pub fn migrate(self) -> super::current::Session {
-                let state = if self.pieces.complete() {
-                    next::StatusState::Complete
-                } else {
-                    next::StatusState::Incomplete
-                };
+                let mut state = next::StatusState::Complete;
+                for i in 0..self.pieces.len - 1 {
+                    if !(self.pieces.data[i as usize]) != 0 {
+                        state = next::StatusState::Incomplete;
+                        break;
+                    }
+                }
+                if self.pieces.data.len() > 0 {
+                    match (self.pieces.len % 8, *self.pieces.data.last().unwrap()) {
+                        (0, 0xFF)
+                        | (7, 0xFE)
+                        | (6, 0xFC)
+                        | (5, 0xF8)
+                        | (4, 0xF0)
+                        | (3, 0xE0)
+                        | (2, 0xC0)
+                        | (1, 0x80) => {}
+                        _ => state = next::StatusState::Incomplete,
+                    }
+                }
                 let paused = match self.status {
                     Status::Paused => true,
                     _ => false,
@@ -327,9 +348,8 @@ pub mod torrent {
 
     pub mod ver_8e1121 {
         use super::ver_5f166d as next;
+        use super::Bitfield;
         use self::next::{Info, Status};
-
-        use torrent::Bitfield;
 
         use chrono::{DateTime, Utc};
 

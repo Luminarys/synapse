@@ -42,6 +42,9 @@ extern crate toml;
 extern crate url;
 extern crate vecio;
 
+extern crate synapse_rpc as rpc_lib;
+extern crate synapse_session as session;
+
 #[macro_use]
 mod log;
 mod args;
@@ -59,7 +62,6 @@ mod rpc;
 mod throttle;
 mod config;
 mod stat;
-mod session;
 mod init;
 
 // We need to do this for the log macros

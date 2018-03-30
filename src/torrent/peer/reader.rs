@@ -31,6 +31,7 @@ enum State {
     Extension { id: u8, payload: Vec<u8> },
 }
 
+#[derive(Debug)]
 pub enum RRes {
     Success(Message),
     Err(io::Error),
@@ -465,8 +466,8 @@ mod tests {
                     assert_eq!(1, data[i]);
                 }
             }
-            _ => {
-                unreachable!();
+            res => {
+                panic!("Failed to piece: {:?}", res);
             }
         }
     }
