@@ -7,7 +7,7 @@ use std::{cmp, fmt, io, mem, time};
 use std::net::TcpStream;
 
 pub use self::message::Message;
-use self::reader::Reader;
+use self::reader::{RRes, Reader};
 use self::writer::Writer;
 use socket::Socket;
 use torrent::{Bitfield, Info, Torrent};
@@ -130,7 +130,7 @@ impl PeerConn {
         self.writer.writable(&mut self.sock)
     }
 
-    pub fn readable(&mut self) -> io::Result<Option<Message>> {
+    pub fn readable(&mut self) -> RRes {
         self.last_action = time::Instant::now();
         self.reader.readable(&mut self.sock)
     }
@@ -528,6 +528,7 @@ mod tests {
     use super::Peer;
     use control::cio::{test, CIO};
     use torrent::Message;
+    use buffers::Buffer;
 
     #[test]
     fn test_cancel() {
@@ -536,19 +537,19 @@ mod tests {
         let p1 = Message::Piece {
             index: 0,
             begin: 0,
-            data: Box::new([0u8; 16_384]),
+            data: Buffer::get().unwrap(),
             length: 16_384,
         };
         let p2 = Message::Piece {
             index: 1,
             begin: 1,
-            data: Box::new([0u8; 16_384]),
+            data: Buffer::get().unwrap(),
             length: 16_384,
         };
         let p3 = Message::Piece {
             index: 2,
             begin: 2,
-            data: Box::new([0u8; 16_384]),
+            data: Buffer::get().unwrap(),
             length: 16_384,
         };
         peer.send_message(Message::KeepAlive);

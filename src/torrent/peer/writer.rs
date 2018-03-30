@@ -1,7 +1,9 @@
-use torrent::peer::Message;
 use std::collections::VecDeque;
 use std::io::{self, ErrorKind, Write};
 use std::sync::Arc;
+
+use buffers::Buffer;
+use torrent::peer::Message;
 use util::io_err;
 
 pub struct Writer {
@@ -27,7 +29,7 @@ enum WriteState {
     },
     WritingPiece {
         prefix: [u8; 17],
-        data: Arc<Box<[u8; 16_384]>>,
+        data: Arc<Buffer>,
         idx: u16,
     },
 }
@@ -190,6 +192,7 @@ mod tests {
     use super::Writer;
     use torrent::peer::Message;
     use std::sync::Arc;
+    use buffers::Buffer;
 
     #[test]
     fn test_write_keepalive() {
@@ -278,7 +281,11 @@ mod tests {
     fn test_write_piece() {
         use std::io::Cursor;
         let mut w = Writer::new();
-        let piece = Arc::new(Box::new([1u8; 16_384]));
+        let mut b = Buffer::get().unwrap();
+        for i in 0..b.len() {
+            b[i] = 1;
+        }
+        let piece = Arc::new(b);
         let mut sbuf = [0u8; 16_384 + 13];
         let mut buf = Cursor::new(&mut sbuf[..]);
         let m = Message::SharedPiece {

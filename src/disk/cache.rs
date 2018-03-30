@@ -96,7 +96,7 @@ impl BufCache {
         BufCache {
             path_a: OsString::with_capacity(PB_LEN),
             path_b: OsString::with_capacity(PB_LEN),
-            buf: Vec::with_capacity(16777216),
+            buf: Vec::with_capacity(1048576),
         }
     }
 

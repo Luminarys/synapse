@@ -11,6 +11,7 @@ use nix::libc;
 use openssl::sha;
 
 use super::{BufCache, FileCache, JOB_TIME_SLICE};
+use buffers::Buffer;
 use torrent::{Info, LocIter};
 use socket::TSocket;
 use util::{awrite, hash_to_id, io_err, IOR};
@@ -36,12 +37,12 @@ pub struct Location {
 pub enum Request {
     Write {
         tid: usize,
-        data: Box<[u8; 16_384]>,
+        data: Buffer,
         locations: LocIter,
         path: Option<String>,
     },
     Read {
-        data: Box<[u8; 16_384]>,
+        data: Buffer,
         locations: LocIter,
         context: Ctx,
         path: Option<String>,
@@ -100,32 +101,13 @@ pub enum Request {
 }
 
 pub enum Response {
-    Read {
-        context: Ctx,
-        data: Arc<Box<[u8; 16_384]>>,
-    },
-    ValidationComplete {
-        tid: usize,
-        invalid: Vec<u32>,
-    },
-    PieceValidated {
-        tid: usize,
-        piece: u32,
-        valid: bool,
-    },
-    ValidationUpdate {
-        tid: usize,
-        percent: f32,
-    },
-    Moved {
-        tid: usize,
-        path: String,
-    },
+    Read { context: Ctx, data: Arc<Buffer> },
+    ValidationComplete { tid: usize, invalid: Vec<u32> },
+    PieceValidated { tid: usize, piece: u32, valid: bool },
+    ValidationUpdate { tid: usize, percent: f32 },
+    Moved { tid: usize, path: String },
     FreeSpace(u64),
-    Error {
-        tid: usize,
-        err: io::Error,
-    },
+    Error { tid: usize, err: io::Error },
 }
 
 pub struct Ctx {
@@ -145,12 +127,7 @@ pub enum JobRes {
 }
 
 impl Request {
-    pub fn write(
-        tid: usize,
-        data: Box<[u8; 16_384]>,
-        locations: LocIter,
-        path: Option<String>,
-    ) -> Request {
+    pub fn write(tid: usize, data: Buffer, locations: LocIter, path: Option<String>) -> Request {
         Request::Write {
             tid,
             data,
@@ -159,12 +136,7 @@ impl Request {
         }
     }
 
-    pub fn read(
-        context: Ctx,
-        data: Box<[u8; 16_384]>,
-        locations: LocIter,
-        path: Option<String>,
-    ) -> Request {
+    pub fn read(context: Ctx, data: Buffer, locations: LocIter, path: Option<String>) -> Request {
         Request::Read {
             context,
             data,
@@ -496,6 +468,9 @@ impl Request {
                     let mut ctx = sha::Sha1::new();
                     let locs = Info::piece_disk_locs(&info, idx);
                     for loc in locs {
+                        if !valid {
+                            break;
+                        }
                         let pb = tpb.get(path.as_ref().unwrap_or(dd));
                         pb.push(loc.path());
                         valid &=
@@ -721,7 +696,7 @@ impl fmt::Debug for Location {
 }
 
 impl Response {
-    pub fn read(context: Ctx, data: Arc<Box<[u8; 16_384]>>) -> Response {
+    pub fn read(context: Ctx, data: Arc<Buffer>) -> Response {
         Response::Read { context, data }
     }
 

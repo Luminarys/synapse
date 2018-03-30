@@ -22,6 +22,7 @@ pub use self::peer::Message;
 pub use self::picker::Block;
 
 use self::picker::Picker;
+use buffers::Buffer;
 use {bencode, disk, rpc, util, CONFIG, EXT_PROTO, UT_META_ID};
 use control::cio;
 use rpc::resource::{self, Resource, SResourceUpdate};
@@ -79,9 +80,7 @@ pub struct Status {
 #[derive(Clone, Debug, PartialEq)]
 pub enum StatusState {
     Magnet,
-    // Torrent has not acquired all pieces
     Incomplete,
-    // Torrent has acquired all pieces, regardless of validity
     Complete,
 }
 
@@ -1019,15 +1018,17 @@ impl<T: cio::CIO> Torrent<T> {
                 if !self.pieces.has_bit(index as u64) {
                     return Err(());
                 }
-                if !self.status.stopped() {
-                    if length != self.info.block_len(index, begin) {
-                        return Err(());
-                    } else {
-                        self.request_read(peer.id(), index, begin, Box::new([0u8; 16_384]));
-                    }
-                } else {
-                    // TODO: add this to a queue to fulfill later
+                if length != self.info.block_len(index, begin) {
+                    return Err(());
                 }
+                if !self.status.stopped() {
+                    if let Some(buf) = Buffer::get() {
+                        self.request_read(peer.id(), index, begin, buf);
+                        return Ok(());
+                    }
+                }
+
+                // TODO: add this to a queue to fulfill later
             }
             Message::Interested => {
                 self.choker.add_peer(peer);
@@ -1553,14 +1554,14 @@ impl<T: cio::CIO> Torrent<T> {
     /// Writes a piece of torrent info, with piece index idx,
     /// piece offset begin, piece length of len, and data bytes.
     /// The disk send handle is also provided.
-    fn write_piece(&mut self, index: u32, begin: u32, data: Box<[u8; 16_384]>) {
+    fn write_piece(&mut self, index: u32, begin: u32, data: Buffer) {
         let locs = Info::block_disk_locs_pri(&self.info, &self.priorities, index, begin);
         self.cio
             .msg_disk(disk::Request::write(self.id, data, locs, self.path.clone()));
     }
 
     /// Issues a read request of the given torrent
-    fn request_read(&mut self, id: usize, index: u32, begin: u32, data: Box<[u8; 16_384]>) {
+    fn request_read(&mut self, id: usize, index: u32, begin: u32, data: Buffer) {
         let locs = Info::block_disk_locs(&self.info, index, begin);
         let len = self.info.block_len(index, begin);
         let ctx = disk::Ctx::new(id, self.id, index, begin, len);

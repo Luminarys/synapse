@@ -4,7 +4,7 @@ use std::net::{Ipv4Addr, SocketAddrV4, TcpListener, TcpStream};
 
 use amy::{self, Poller, Registrar};
 
-use torrent::peer::reader::Reader;
+use torrent::peer::reader::{RRes, Reader};
 use {handle, CONFIG};
 use util::UHashMap;
 
@@ -121,7 +121,7 @@ impl Listener {
         };
 
         match res {
-            Ok(Some(hs)) => {
+            RRes::Success(hs) => {
                 debug!("Completed handshake({:?}) with peer, transferring!", hs);
                 let (conn, reader) = self.incoming.remove(&pid).unwrap();
                 self.reg.deregister(&conn).unwrap();
@@ -139,8 +139,8 @@ impl Listener {
                     error!("failed to send peer to ctrl");
                 }
             }
-            Ok(None) => {}
-            Err(_) => {
+            RRes::Blocked => {}
+            RRes::Err(_) | RRes::Stalled => {
                 debug!("Peer connection failed!");
                 self.incoming.remove(&pid);
             }

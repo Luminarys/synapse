@@ -1,9 +1,12 @@
 use std::io::{self, Read};
 use std::mem;
+
+use byteorder::{BigEndian, ReadBytesExt};
+
+use buffers::Buffer;
 use torrent::peer::Message;
 use torrent::Bitfield;
-use byteorder::{BigEndian, ReadBytesExt};
-use util::{aread, io_err, IOR};
+use util::{aread, io_err_val, IOR};
 
 pub struct Reader {
     blocks_read: usize,
@@ -20,22 +23,29 @@ enum State {
     Request,
     Cancel,
     Port,
-    Handshake {
-        data: [u8; 68],
-    },
+    Handshake { data: [u8; 68] },
     PiecePrefix,
-    Piece {
-        data: Option<Box<[u8; 16_384]>>,
-        len: u32,
-    },
-    Bitfield {
-        data: Vec<u8>,
-    },
+    Piece { data: Option<Buffer>, len: u32 },
+    Bitfield { data: Vec<u8> },
     ExtensionID,
-    Extension {
-        id: u8,
-        payload: Vec<u8>,
-    },
+    Extension { id: u8, payload: Vec<u8> },
+}
+
+pub enum RRes {
+    Success(Message),
+    Err(io::Error),
+    Blocked,
+    Stalled,
+}
+
+#[cfg(test)]
+impl RRes {
+    fn unwrap(self) -> Option<Message> {
+        match self {
+            RRes::Success(m) => Some(m),
+            _ => None,
+        }
+    }
 }
 
 impl Reader {
@@ -48,23 +58,28 @@ impl Reader {
         }
     }
 
-    pub fn readable<R: Read>(&mut self, conn: &mut R) -> io::Result<Option<Message>> {
+    pub fn readable<R: Read>(&mut self, conn: &mut R) -> RRes {
         let res = self.readable_(conn);
-        if res.as_ref().ok().map(|o| o.is_some()).unwrap_or(false) {
-            self.state = State::Len;
-            self.idx = 0;
+        match &res {
+            &RRes::Success(_) => {
+                self.state = State::Len;
+                self.idx = 0;
+            }
+            _ => {}
         }
         res
     }
 
-    fn readable_<R: Read>(&mut self, conn: &mut R) -> io::Result<Option<Message>> {
+    fn readable_<R: Read>(&mut self, conn: &mut R) -> RRes {
         loop {
             let len = self.state.len();
             match self.state {
                 State::Handshake { ref mut data } => match aread(&mut data[self.idx..len], conn) {
                     IOR::Complete => {
                         if &data[1..20] != b"BitTorrent protocol" {
-                            return io_err("Handshake was not for 'BitTorrent protocol'");
+                            return RRes::Err(io_err_val(
+                                "Handshake was not for 'BitTorrent protocol'",
+                            ));
                         }
                         let mut rsv = [0; 8];
                         rsv.clone_from_slice(&data[20..28]);
@@ -73,27 +88,27 @@ impl Reader {
                         let mut id = [0; 20];
                         id.clone_from_slice(&data[48..68]);
 
-                        return Ok(Some(Message::Handshake { rsv, hash, id }));
+                        return RRes::Success(Message::Handshake { rsv, hash, id });
                     }
                     IOR::Incomplete(a) => self.idx += a,
-                    IOR::Blocked => return Ok(None),
-                    IOR::EOF => return io_err("EOF"),
-                    IOR::Err(e) => return Err(e),
+                    IOR::Blocked => return RRes::Blocked,
+                    IOR::EOF => return RRes::Err(io_err_val("EOF")),
+                    IOR::Err(e) => return RRes::Err(e),
                 },
                 State::Len => match aread(&mut self.prefix[self.idx..len], conn) {
                     IOR::Complete => {
                         let mlen = (&self.prefix[0..4]).read_u32::<BigEndian>().unwrap();
                         if mlen == 0 {
-                            return Ok(Some(Message::KeepAlive));
+                            return RRes::Success(Message::KeepAlive);
                         } else {
                             self.idx = 4;
                             self.state = State::ID;
                         }
                     }
                     IOR::Incomplete(a) => self.idx += a,
-                    IOR::Blocked => return Ok(None),
-                    IOR::EOF => return io_err("EOF"),
-                    IOR::Err(e) => return Err(e),
+                    IOR::Blocked => return RRes::Blocked,
+                    IOR::EOF => return RRes::Err(io_err_val("EOF")),
+                    IOR::Err(e) => return RRes::Err(e),
                 },
                 State::ID => match aread(&mut self.prefix[self.idx..len], conn) {
                     IOR::Complete => {
@@ -110,7 +125,7 @@ impl Reader {
                                 } else {
                                     Message::Uninterested
                                 };
-                                return Ok(Some(msg));
+                                return RRes::Success(msg);
                             }
                             4 => self.state = State::Have,
                             5 => {
@@ -125,110 +140,119 @@ impl Reader {
                             8 => self.state = State::Cancel,
                             9 => self.state = State::Port,
                             20 => self.state = State::ExtensionID,
-                            _ => return io_err("Invalid ID used!"),
+                            _ => return RRes::Err(io_err_val("Invalid ID used!")),
                         }
                     }
-                    IOR::Blocked => return Ok(None),
-                    IOR::EOF => return io_err("EOF"),
-                    IOR::Err(e) => return Err(e),
+                    IOR::Blocked => return RRes::Blocked,
+                    IOR::EOF => return RRes::Err(io_err_val("EOF")),
+                    IOR::Err(e) => return RRes::Err(e),
                     IOR::Incomplete(_) => unreachable!(),
                 },
                 State::Have => match aread(&mut self.prefix[self.idx..len], conn) {
                     IOR::Complete => {
                         let have = (&self.prefix[5..9]).read_u32::<BigEndian>().unwrap();
-                        return Ok(Some(Message::Have(have)));
+                        return RRes::Success(Message::Have(have));
                     }
                     IOR::Incomplete(a) => self.idx += a,
-                    IOR::Blocked => return Ok(None),
-                    IOR::EOF => return io_err("EOF"),
-                    IOR::Err(e) => return Err(e),
+                    IOR::Blocked => return RRes::Blocked,
+                    IOR::EOF => return RRes::Err(io_err_val("EOF")),
+                    IOR::Err(e) => return RRes::Err(e),
                 },
                 State::Bitfield { ref mut data } => match aread(&mut data[self.idx..len], conn) {
                     IOR::Complete => {
                         let d = mem::replace(data, vec![]).into_boxed_slice();
                         let bf = Bitfield::from(d, len as u64 * 8);
-                        return Ok(Some(Message::Bitfield(bf)));
+                        return RRes::Success(Message::Bitfield(bf));
                     }
                     IOR::Incomplete(a) => self.idx += a,
-                    IOR::Blocked => return Ok(None),
-                    IOR::EOF => return io_err("EOF"),
-                    IOR::Err(e) => return Err(e),
+                    IOR::Blocked => return RRes::Blocked,
+                    IOR::EOF => return RRes::Err(io_err_val("EOF")),
+                    IOR::Err(e) => return RRes::Err(e),
                 },
                 State::Request => match aread(&mut self.prefix[self.idx..len], conn) {
                     IOR::Complete => {
                         let index = (&self.prefix[5..9]).read_u32::<BigEndian>().unwrap();
                         let begin = (&self.prefix[9..13]).read_u32::<BigEndian>().unwrap();
                         let length = (&self.prefix[13..17]).read_u32::<BigEndian>().unwrap();
-                        return Ok(Some(Message::Request {
+                        return RRes::Success(Message::Request {
                             index,
                             begin,
                             length,
-                        }));
+                        });
                     }
                     IOR::Incomplete(a) => self.idx += a,
-                    IOR::Blocked => return Ok(None),
-                    IOR::EOF => return io_err("EOF"),
-                    IOR::Err(e) => return Err(e),
+                    IOR::Blocked => return RRes::Blocked,
+                    IOR::EOF => return RRes::Err(io_err_val("EOF")),
+                    IOR::Err(e) => return RRes::Err(e),
                 },
                 State::PiecePrefix => match aread(&mut self.prefix[self.idx..len], conn) {
                     IOR::Complete => {
                         let plen = (&self.prefix[0..4]).read_u32::<BigEndian>().unwrap() - 9;
                         self.idx = 0;
                         self.state = State::Piece {
-                            data: Some(Box::new(unsafe { mem::uninitialized() })),
+                            data: Buffer::get(),
                             len: plen,
                         };
                     }
                     IOR::Incomplete(a) => self.idx += a,
-                    IOR::Blocked => return Ok(None),
-                    IOR::EOF => return io_err("EOF"),
-                    IOR::Err(e) => return Err(e),
+                    IOR::Blocked => return RRes::Blocked,
+                    IOR::EOF => return RRes::Err(io_err_val("EOF")),
+                    IOR::Err(e) => return RRes::Err(e),
                 },
                 State::Piece {
                     ref mut data,
                     len: length,
-                } => match aread(&mut data.as_mut().unwrap()[self.idx..len], conn) {
-                    IOR::Complete => {
-                        self.blocks_read += 1;
-                        let index = (&self.prefix[5..9]).read_u32::<BigEndian>().unwrap();
-                        let begin = (&self.prefix[9..13]).read_u32::<BigEndian>().unwrap();
-                        return Ok(Some(Message::Piece {
-                            index,
-                            begin,
-                            length,
-                            data: mem::replace(data, None).unwrap(),
-                        }));
+                } => {
+                    if data.is_none() {
+                        if let Some(buf) = Buffer::get() {
+                            *data = Some(buf);
+                        } else {
+                            return RRes::Stalled;
+                        }
                     }
-                    IOR::Incomplete(a) => self.idx += a,
-                    IOR::Blocked => return Ok(None),
-                    IOR::EOF => return io_err("EOF"),
-                    IOR::Err(e) => return Err(e),
-                },
+                    match aread(&mut data.as_mut().unwrap()[self.idx..len], conn) {
+                        IOR::Complete => {
+                            self.blocks_read += 1;
+                            let index = (&self.prefix[5..9]).read_u32::<BigEndian>().unwrap();
+                            let begin = (&self.prefix[9..13]).read_u32::<BigEndian>().unwrap();
+                            return RRes::Success(Message::Piece {
+                                index,
+                                begin,
+                                length,
+                                data: mem::replace(data, None).unwrap(),
+                            });
+                        }
+                        IOR::Incomplete(a) => self.idx += a,
+                        IOR::Blocked => return RRes::Blocked,
+                        IOR::EOF => return RRes::Err(io_err_val("EOF")),
+                        IOR::Err(e) => return RRes::Err(e),
+                    }
+                }
                 State::Cancel => match aread(&mut self.prefix[self.idx..len], conn) {
                     IOR::Complete => {
                         let index = (&self.prefix[5..9]).read_u32::<BigEndian>().unwrap();
                         let begin = (&self.prefix[9..13]).read_u32::<BigEndian>().unwrap();
                         let length = (&self.prefix[13..17]).read_u32::<BigEndian>().unwrap();
-                        return Ok(Some(Message::Cancel {
+                        return RRes::Success(Message::Cancel {
                             index,
                             begin,
                             length,
-                        }));
+                        });
                     }
                     IOR::Incomplete(a) => self.idx += a,
-                    IOR::Blocked => return Ok(None),
-                    IOR::EOF => return io_err("EOF"),
-                    IOR::Err(e) => return Err(e),
+                    IOR::Blocked => return RRes::Blocked,
+                    IOR::EOF => return RRes::Err(io_err_val("EOF")),
+                    IOR::Err(e) => return RRes::Err(e),
                 },
                 State::Port => match aread(&mut self.prefix[self.idx..len], conn) {
                     IOR::Complete => {
                         let port = (&self.prefix[5..7]).read_u16::<BigEndian>().unwrap();
-                        return Ok(Some(Message::Port(port)));
+                        return RRes::Success(Message::Port(port));
                     }
                     IOR::Incomplete(a) => self.idx += a,
-                    IOR::Blocked => return Ok(None),
-                    IOR::EOF => return io_err("EOF"),
-                    IOR::Err(e) => return Err(e),
+                    IOR::Blocked => return RRes::Blocked,
+                    IOR::EOF => return RRes::Err(io_err_val("EOF")),
+                    IOR::Err(e) => return RRes::Err(e),
                 },
                 State::ExtensionID => match aread(&mut self.prefix[5..6], conn) {
                     IOR::Complete => {
@@ -241,9 +265,9 @@ impl Reader {
                         }
                         self.state = State::Extension { id, payload };
                     }
-                    IOR::Blocked => return Ok(None),
-                    IOR::EOF => return io_err("EOF"),
-                    IOR::Err(e) => return Err(e),
+                    IOR::Blocked => return RRes::Blocked,
+                    IOR::EOF => return RRes::Err(io_err_val("EOF")),
+                    IOR::Err(e) => return RRes::Err(e),
                     IOR::Incomplete(_) => unreachable!(),
                 },
                 State::Extension {
@@ -252,12 +276,12 @@ impl Reader {
                 } => match aread(&mut payload[self.idx..len], conn) {
                     IOR::Complete => {
                         let p = mem::replace(payload, Vec::with_capacity(0));
-                        return Ok(Some(Message::Extension { id, payload: p }));
+                        return RRes::Success(Message::Extension { id, payload: p });
                     }
                     IOR::Incomplete(a) => self.idx += a,
-                    IOR::Blocked => return Ok(None),
-                    IOR::EOF => return io_err("EOF"),
-                    IOR::Err(e) => return Err(e),
+                    IOR::Blocked => return RRes::Blocked,
+                    IOR::EOF => return RRes::Err(io_err_val("EOF")),
+                    IOR::Err(e) => return RRes::Err(e),
                 },
             }
         }
@@ -427,31 +451,13 @@ mod tests {
         // Test partial read
         assert_eq!(r.readable(&mut p1).unwrap(), None);
         assert_eq!(r.readable(&mut p2).unwrap(), None);
-        match r.readable(&mut p3).unwrap().unwrap() {
-            Message::Piece {
+        match r.readable(&mut p3) {
+            RRes::Success(Message::Piece {
                 index,
                 begin,
                 length,
                 ref data,
-            } => {
-                assert_eq!(index, 1);
-                assert_eq!(begin, 1);
-                assert_eq!(length, 16_384);
-                for i in 0..16_384 {
-                    assert_eq!(1, data[i]);
-                }
-            }
-            _ => {
-                unreachable!();
-            }
-        }
-        match r.readable(&mut p3).unwrap().unwrap() {
-            Message::Piece {
-                index,
-                begin,
-                length,
-                ref data,
-            } => {
+            }) => {
                 assert_eq!(index, 1);
                 assert_eq!(begin, 1);
                 assert_eq!(length, 16_384);
@@ -472,12 +478,12 @@ mod tests {
         let v = vec![0u8, 0, 0, 13, 8, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1];
         let mut data = Cursor::new(&v);
         // Test one shot
-        match r.readable(&mut data).unwrap().unwrap() {
-            Message::Cancel {
+        match r.readable(&mut data) {
+            RRes::Success(Message::Cancel {
                 index,
                 begin,
                 length,
-            } => {
+            }) => {
                 assert_eq!(index, 1);
                 assert_eq!(begin, 1);
                 assert_eq!(length, 1);

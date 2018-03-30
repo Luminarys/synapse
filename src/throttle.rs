@@ -177,6 +177,10 @@ impl Throttle {
         Ok(())
     }
 
+    pub fn set_stalled_dl(&mut self) {
+        self.dl_data.borrow_mut().throttled.insert(self.id);
+    }
+
     pub fn ul_rate(&self) -> Option<i64> {
         self.ul_tier.borrow_mut().rate
     }

@@ -5,8 +5,9 @@ use std::time;
 use amy::{self, ChannelError};
 
 use {disk, listener, rpc, torrent, tracker};
+use torrent::peer::reader::RRes;
 use CONFIG;
-use control::cio::{self, ErrorKind, Result, ResultExt};
+use control::cio::{self, Error, ErrorKind, Result, ResultExt};
 use util::UHashMap;
 
 const POLL_INT_MS: usize = 1000;
@@ -121,11 +122,25 @@ impl ACIO {
         if let Some(peer) = peers.get_mut(&not.id) {
             let ev = not.event;
             if ev.readable() {
-                while let Some(msg) = peer.readable().chain_err(|| ErrorKind::IO)? {
-                    events.push(cio::Event::Peer {
-                        peer: not.id,
-                        event: Ok(msg),
-                    });
+                loop {
+                    match peer.readable() {
+                        RRes::Success(msg) => {
+                            events.push(cio::Event::Peer {
+                                peer: not.id,
+                                event: Ok(msg),
+                            });
+                        }
+                        RRes::Blocked => break,
+                        RRes::Stalled => {
+                            if let Some(ref mut throt) = peer.sock_mut().throttle {
+                                throt.set_stalled_dl();
+                            }
+                            break;
+                        }
+                        RRes::Err(e) => {
+                            return Err(Error::with_chain(e, ErrorKind::IO));
+                        }
+                    }
                 }
             }
             if ev.writable() {

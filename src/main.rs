@@ -45,6 +45,7 @@ extern crate vecio;
 #[macro_use]
 mod log;
 mod args;
+mod buffers;
 mod handle;
 mod bencode;
 mod torrent;
@@ -73,8 +74,9 @@ pub const UT_META_ID: u8 = 9;
 /// Throttler max token amount
 pub const THROT_TOKS: usize = 2 * 1024 * 1024;
 
+pub static SHUTDOWN: atomic::AtomicBool = atomic::ATOMIC_BOOL_INIT;
+
 lazy_static! {
-    pub static ref SHUTDOWN: atomic::AtomicBool = { atomic::AtomicBool::new(false) };
     pub static ref CONFIG: config::Config = { config::Config::load() };
     pub static ref PEER_ID: [u8; 20] = {
         use rand::{self, Rng};

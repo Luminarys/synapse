@@ -4,6 +4,7 @@ use std::fmt;
 
 use byteorder::{BigEndian, WriteBytesExt};
 
+use buffers::Buffer;
 use torrent::Bitfield;
 use torrent::info::Info as TorrentInfo;
 
@@ -33,13 +34,13 @@ pub enum Message {
         index: u32,
         begin: u32,
         length: u32,
-        data: Box<[u8; 16_384]>,
+        data: Buffer,
     },
     SharedPiece {
         index: u32,
         begin: u32,
         length: u32,
-        data: Arc<Box<[u8; 16_384]>>,
+        data: Arc<Buffer>,
     },
     Cancel {
         index: u32,
@@ -122,15 +123,15 @@ impl Clone for Message {
                 length,
                 ref data,
             } => {
-                let mut nd = Box::new([0u8; 16_384]);
-                for i in 0..length {
-                    nd[i as usize] = data[i as usize];
-                }
-                Message::Piece {
-                    index,
-                    begin,
-                    length,
-                    data: nd,
+                if cfg!(test) {
+                    Message::Piece {
+                        index,
+                        begin,
+                        length,
+                        data: data.clone(),
+                    }
+                } else {
+                    unreachable!("pieces should not be cloned outside of testing");
                 }
             }
             Message::SharedPiece {
@@ -251,7 +252,7 @@ impl Message {
         }
     }
 
-    pub fn s_piece(index: u32, begin: u32, length: u32, data: Arc<Box<[u8; 16_384]>>) -> Message {
+    pub fn s_piece(index: u32, begin: u32, length: u32, data: Arc<Buffer>) -> Message {
         Message::SharedPiece {
             index,
             begin,
