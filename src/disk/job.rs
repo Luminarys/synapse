@@ -352,12 +352,14 @@ impl Request {
             } => for loc in locations {
                 let pb = tpb.get(path.as_ref().unwrap_or(dd));
                 pb.push(loc.path());
-                fc.get_file_range(
+                fc.write_file_range(
                     &pb,
-                    Some(loc.file_len),
+                    if loc.allocate {
+                        Some(loc.file_len)
+                    } else {
+                        None
+                    },
                     loc.offset,
-                    false,
-                    loc.allocate,
                     &mut data[loc.start..loc.end],
                 )?;
                 if loc.end - loc.start != 16_384 {
@@ -374,14 +376,7 @@ impl Request {
                 for loc in locations {
                     let pb = tpb.get(path.as_ref().unwrap_or(dd));
                     pb.push(loc.path());
-                    fc.get_file_range(
-                        &pb,
-                        None,
-                        loc.offset,
-                        true,
-                        loc.allocate,
-                        &mut data[loc.start..loc.end],
-                    )?;
+                    fc.read_file_range(&pb, None, loc.offset, &mut data[loc.start..loc.end])?;
                 }
                 let data = Arc::new(data);
                 return Ok(JobRes::Resp(Response::read(context, data)));
@@ -473,14 +468,8 @@ impl Request {
                 for loc in locs {
                     let pb = tpb.get(path.as_ref().unwrap_or(dd));
                     pb.push(loc.path());
-                    fc.get_file_range(
-                        &pb,
-                        None,
-                        loc.offset,
-                        true,
-                        false,
-                        &mut buf[loc.start..loc.end],
-                    ).map(|_| ctx.update(&buf[loc.start..loc.end]))
+                    fc.read_file_range(&pb, None, loc.offset, &mut buf[loc.start..loc.end])
+                        .map(|_| ctx.update(&buf[loc.start..loc.end]))
                         .ok();
                 }
                 let digest = ctx.finish();
@@ -509,15 +498,10 @@ impl Request {
                     for loc in locs {
                         let pb = tpb.get(path.as_ref().unwrap_or(dd));
                         pb.push(loc.path());
-                        valid &= fc.get_file_range(
-                            &pb,
-                            None,
-                            loc.offset,
-                            true,
-                            false,
-                            &mut buf[loc.start..loc.end],
-                        ).map(|_| ctx.update(&buf[loc.start..loc.end]))
-                            .is_ok();
+                        valid &=
+                            fc.read_file_range(&pb, None, loc.offset, &mut buf[loc.start..loc.end])
+                                .map(|_| ctx.update(&buf[loc.start..loc.end]))
+                                .is_ok();
                     }
                     let digest = ctx.finish();
                     if !valid || &digest[..] != &info.hashes[idx as usize][..] {
@@ -630,12 +614,10 @@ impl Request {
                         let len = ranges[range_idx].length;
                         let mut amnt = cmp::min(len, 16_384);
 
-                        fc.get_file_range(
+                        fc.read_file_range(
                             path::Path::new(&path),
                             None,
                             offset,
-                            true,
-                            false,
                             &mut buf[0..amnt as usize],
                         )?;
                         ranges[range_idx].length -= amnt;

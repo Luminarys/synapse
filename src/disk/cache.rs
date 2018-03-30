@@ -116,26 +116,20 @@ impl FileCache {
         }
     }
 
-    pub fn get_file_range(
+    pub fn read_file_range(
         &mut self,
         path: &path::Path,
         size: Option<u64>,
         offset: u64,
-        read: bool,
-        allocate: bool,
         buf: &mut [u8],
     ) -> io::Result<()> {
-        self.ensure_exists(path, size, allocate)?;
+        self.ensure_exists(path, size)?;
 
         #[cfg(any(target_pointer_width = "32", not(feature = "mmap")))]
         {
             let entry = self.files.get_mut(path).unwrap();
             entry.file.seek(SeekFrom::Start(offset))?;
-            if read {
-                entry.file.read_exact(buf)?;
-            } else {
-                entry.file.write_all(&buf)?;
-            }
+            entry.file.read_exact(buf)?;
             Ok(())
         }
 
@@ -144,32 +138,57 @@ impl FileCache {
             let len = buf.len();
             let entry = self.files.get_mut(path).unwrap();
             entry.used = true;
-            let res = if entry.sparse {
-                assert!(len == buf.len());
-                let res = if read {
-                    native::mmap_read(
-                        &entry.mmap[offset as usize..offset as usize + len],
-                        buf,
-                        len,
-                    )
-                } else {
-                    native::mmap_write(
-                        &mut entry.mmap[offset as usize..offset as usize + len],
-                        &buf,
-                        len,
-                    )
-                };
+            if entry.sparse {
+                let res = native::mmap_read(
+                    &entry.mmap[offset as usize..offset as usize + len],
+                    buf,
+                    len,
+                );
                 if res.is_err() {
                     return io_err("Disk full!");
                 }
             } else {
-                if read {
-                    buf.copy_from_slice(&entry.mmap[offset as usize..offset as usize + len]);
-                } else {
-                    (&mut entry.mmap[offset as usize..offset as usize + len]).copy_from_slice(&buf);
-                }
+                buf.copy_from_slice(&entry.mmap[offset as usize..offset as usize + len]);
             };
-            Ok(res)
+            Ok(())
+        }
+    }
+
+    pub fn write_file_range(
+        &mut self,
+        path: &path::Path,
+        size: Option<u64>,
+        offset: u64,
+        buf: &[u8],
+    ) -> io::Result<()> {
+        self.ensure_exists(path, size)?;
+
+        #[cfg(any(target_pointer_width = "32", not(feature = "mmap")))]
+        {
+            let entry = self.files.get_mut(path).unwrap();
+            entry.file.seek(SeekFrom::Start(offset))?;
+            entry.file.write_all(&buf)?;
+            Ok(())
+        }
+
+        #[cfg(all(feature = "mmap", target_pointer_width = "64"))]
+        {
+            let len = buf.len();
+            let entry = self.files.get_mut(path).unwrap();
+            entry.used = true;
+            if entry.sparse {
+                let res = native::mmap_write(
+                    &mut entry.mmap[offset as usize..offset as usize + len],
+                    &buf,
+                    len,
+                );
+                if res.is_err() {
+                    return io_err("Disk full!");
+                }
+            } else {
+                (&mut entry.mmap[offset as usize..offset as usize + len]).copy_from_slice(&buf);
+            };
+            Ok(())
         }
     }
 
@@ -191,12 +210,7 @@ impl FileCache {
         }
     }
 
-    fn ensure_exists(
-        &mut self,
-        path: &path::Path,
-        len: Option<u64>,
-        allocate: bool,
-    ) -> io::Result<()> {
+    fn ensure_exists(&mut self, path: &path::Path, len: Option<u64>) -> io::Result<()> {
         if !self.files.contains_key(path) {
             if self.files.len() >= CONFIG.net.max_open_files {
                 let mut removal = None;
@@ -219,17 +233,16 @@ impl FileCache {
                 .read(true)
                 .open(path)?;
 
-            let alloc_failed =
-                if allocate && len.is_some() && file.metadata()?.len() != len.unwrap() {
-                    let res = !native::fallocate(&file, len.unwrap())?;
-                    debug!("Attempted to fallocate {:?}: success {}!", path, !res);
-                    res
-                } else {
-                    if len.is_some() && !allocate {
-                        file.set_len(len.unwrap())?;
-                    }
-                    false
-                };
+            let alloc_failed = if len.is_some() && file.metadata()?.len() != len.unwrap() {
+                let res = !native::fallocate(&file, len.unwrap())?;
+                debug!("Attempted to fallocate {:?}: success {}!", path, !res);
+                res
+            } else {
+                if len.is_some() {
+                    file.set_len(len.unwrap())?;
+                }
+                false
+            };
 
             let stat = file.metadata()?;
             // Check if the file was never allocated
@@ -264,7 +277,7 @@ impl FileCache {
             }
         } else if len.is_some() {
             let entry = self.files.get_mut(path).unwrap();
-            if entry.sparse && allocate && !entry.alloc_failed {
+            if entry.sparse && !entry.alloc_failed {
                 debug!("Attempting delayed falloc!");
                 let file = fs::OpenOptions::new().write(true).read(true).open(path)?;
                 entry.alloc_failed = !native::fallocate(&file, len.unwrap())?;
