@@ -1,16 +1,13 @@
 use std::{fs, io, mem, path};
 use std::ffi::OsString;
 
-#[cfg(target_pointer_width = "64")]
 use std::os::unix::fs::MetadataExt;
 
-#[cfg(target_pointer_width = "32")]
+#[cfg(any(target_pointer_width = "32", not(feature = "mmap")))]
 use std::io::{Read, Seek, SeekFrom, Write};
 
+#[cfg(all(feature = "mmap", target_pointer_width = "64"))]
 use memmap::MmapMut;
-
-#[cfg(target_pointer_width = "32")]
-use memmap::MmapOptions;
 
 use CONFIG;
 use util::{io_err, native, MHashMap};
@@ -26,21 +23,21 @@ pub struct BufCache {
 /// Holds a file and mmap cache. Because 32 bit systems
 /// can't mmap large files, we load them as needed.
 pub struct FileCache {
-    #[cfg(target_pointer_width = "32")]
-    fallback: MmapMut,
     files: MHashMap<path::PathBuf, Entry>,
 }
 
-#[cfg(target_pointer_width = "32")]
+#[cfg(any(target_pointer_width = "32", not(feature = "mmap")))]
 pub struct Entry {
     used: bool,
+    alloc_failed: bool,
+    sparse: bool,
     file: fs::File,
 }
 
-#[cfg(target_pointer_width = "64")]
+#[cfg(all(feature = "mmap", target_pointer_width = "64"))]
 pub struct Entry {
-    used: bool,
     mmap: MmapMut,
+    used: bool,
     alloc_failed: bool,
     sparse: bool,
 }
@@ -116,8 +113,6 @@ impl FileCache {
     pub fn new() -> FileCache {
         FileCache {
             files: MHashMap::default(),
-            #[cfg(target_pointer_width = "32")]
-            fallback: MmapMut::map_anon(16_384).expect("mmap failed!"),
         }
     }
 
@@ -126,35 +121,27 @@ impl FileCache {
         path: &path::Path,
         size: Option<u64>,
         offset: u64,
-        len: usize,
         read: bool,
         allocate: bool,
         buf: &mut [u8],
     ) -> io::Result<()> {
         self.ensure_exists(path, size, allocate)?;
 
-        #[cfg(target_pointer_width = "32")]
+        #[cfg(any(target_pointer_width = "32", not(feature = "mmap")))]
         {
             let entry = self.files.get_mut(path).unwrap();
-            if offset < ::std::usize::MAX as u64 {
-                let mut mmap = MmapOptions::new()
-                    .offset(offset as usize)
-                    .len(len)
-                    .map_anon()?;
-                Ok(f(&mut *mmap))
+            entry.file.seek(SeekFrom::Start(offset))?;
+            if read {
+                entry.file.read_exact(buf)?;
             } else {
-                entry.file.seek(SeekFrom::Start(offset))?;
-                if read {
-                    entry.file.read_exact(&mut buf)?;
-                } else {
-                    entry.file.write_all(&buf)?;
-                }
-                res
+                entry.file.write_all(&buf)?;
             }
+            Ok(())
         }
 
-        #[cfg(target_pointer_width = "64")]
+        #[cfg(all(feature = "mmap", target_pointer_width = "64"))]
         {
+            let len = buf.len();
             let entry = self.files.get_mut(path).unwrap();
             entry.used = true;
             let res = if entry.sparse {
@@ -187,18 +174,18 @@ impl FileCache {
     }
 
     pub fn remove_file(&mut self, path: &path::Path) {
-        #[cfg(target_pointer_width = "32")]
+        #[cfg(any(target_pointer_width = "32", not(feature = "mmap")))]
         self.files.remove(path);
-        #[cfg(target_pointer_width = "64")]
+        #[cfg(all(feature = "mmap", target_pointer_width = "64"))]
         self.files.remove(path).map(|f| f.mmap.flush_async().ok());
     }
 
     pub fn flush_file(&mut self, path: &path::Path) {
-        #[cfg(target_pointer_width = "32")]
+        #[cfg(any(target_pointer_width = "32", not(feature = "mmap")))]
         {
             self.files.get_mut(path).map(|e| e.file.sync_all().ok());
         }
-        #[cfg(target_pointer_width = "64")]
+        #[cfg(all(feature = "mmap", target_pointer_width = "64"))]
         {
             self.files.get_mut(path).map(|f| f.mmap.flush_async().ok());
         }
@@ -244,18 +231,26 @@ impl FileCache {
                     false
                 };
 
-            #[cfg(target_pointer_width = "32")]
-            self.files
-                .insert(path.to_path_buf(), Entry { file, used: true });
+            let stat = file.metadata()?;
+            // Check if the file was never allocated
+            if stat.size() == 0 {
+                return io_err("mmap attempted on 0 sized file");
+            }
+            let sparse = stat.blocks() * stat.blksize() < stat.size();
 
-            #[cfg(target_pointer_width = "64")]
+            #[cfg(any(target_pointer_width = "32", not(feature = "mmap")))]
+            self.files.insert(
+                path.to_path_buf(),
+                Entry {
+                    file,
+                    used: true,
+                    sparse,
+                    alloc_failed,
+                },
+            );
+
+            #[cfg(all(feature = "mmap", target_pointer_width = "64"))]
             {
-                let stat = file.metadata()?;
-                // Check if the file was never allocated
-                if stat.size() == 0 {
-                    return io_err("mmap attempted on 0 sized file");
-                }
-                let sparse = stat.blocks() * stat.blksize() < stat.size();
                 let mmap = unsafe { MmapMut::map_mut(&file)? };
                 self.files.insert(
                     path.to_path_buf(),
@@ -284,13 +279,13 @@ impl FileCache {
 
 impl Drop for FileCache {
     fn drop(&mut self) {
-        #[cfg(target_pointer_width = "32")]
+        #[cfg(any(target_pointer_width = "32", not(feature = "mmap")))]
         {
             for (_, entry) in self.files.drain() {
                 entry.file.sync_all().ok();
             }
         }
-        #[cfg(target_pointer_width = "64")]
+        #[cfg(all(feature = "mmap", target_pointer_width = "64"))]
         {
             for (_, entry) in self.files.drain() {
                 entry.mmap.flush().ok();

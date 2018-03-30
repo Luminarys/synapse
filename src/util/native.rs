@@ -3,18 +3,22 @@ use std::os::unix::io::AsRawFd;
 use std::io;
 
 use nix::errno::Errno;
+#[cfg(all(feature = "mmap", target_pointer_width = "64"))]
 use nix::libc::c_void;
 
 use util::io::io_err;
 
 mod sys {
-    use nix::libc::{c_int, c_void, size_t};
+    #[cfg(all(feature = "mmap", target_pointer_width = "64"))]
+    use nix::libc::{c_void, size_t};
+    use nix::libc::c_int;
 
     #[link(name = "fallocate")]
     extern "C" {
         pub fn native_fallocate(fd: c_int, len: u64) -> c_int;
     }
 
+    #[cfg(all(feature = "mmap", target_pointer_width = "64"))]
     #[link(name = "mmap")]
     extern "C" {
         pub fn mmap_cpy(dst: *mut c_void, src: *const c_void, len: size_t) -> c_int;
@@ -46,6 +50,7 @@ pub fn fallocate(f: &File, len: u64) -> io::Result<bool> {
     }
 }
 
+#[cfg(all(feature = "mmap", target_pointer_width = "64"))]
 pub fn mmap_read(mmap: &[u8], data: &mut [u8], len: usize) -> Result<(), ()> {
     unsafe {
         if sys::mmap_cpy(
@@ -61,6 +66,7 @@ pub fn mmap_read(mmap: &[u8], data: &mut [u8], len: usize) -> Result<(), ()> {
     }
 }
 
+#[cfg(all(feature = "mmap", target_pointer_width = "64"))]
 pub fn mmap_write(mmap: &mut [u8], data: &[u8], len: usize) -> Result<(), ()> {
     unsafe {
         if sys::mmap_cpy(

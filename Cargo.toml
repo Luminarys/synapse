@@ -90,6 +90,7 @@ panic = 'unwind'
 default = []
 autobahn = []
 allocator = []
+mmap = []
 
 [package.metadata.deb]
 assets = [
