@@ -1,5 +1,7 @@
 language: rust
 cache: cargo
+env:
+  - RUST_BACKTRACE=1
 addons:
   apt:
     packages:
