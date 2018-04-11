@@ -29,7 +29,7 @@ error_chain! {
     }
 }
 
-const INIT_MAX_QUEUE: u16 = 15;
+const INIT_MAX_QUEUE: u16 = 5;
 const MAX_QUEUE_CAP: u16 = 600;
 
 /// Peer connection and associated metadata.
@@ -56,6 +56,7 @@ pub struct Peer<T: cio::CIO> {
     cid: Option<[u8; 20]>,
     rsv: Option<[u8; 8]>,
     ext_ids: ExtIDs,
+    pub rank: usize,
 }
 
 pub struct ExtIDs {
@@ -183,6 +184,7 @@ impl Peer<cio::test::TCIO> {
             cid: None,
             ext_ids: ExtIDs::new(),
             pieces_updated: false,
+            rank: 0,
         }
     }
 
@@ -235,6 +237,7 @@ impl<T: cio::CIO> Peer<T> {
             cid,
             ext_ids: ExtIDs::new(),
             pieces_updated: false,
+            rank: t.peers(),
         };
         p.send_message(Message::handshake(&t.info));
         if t.info.complete() {
@@ -324,7 +327,8 @@ impl<T: cio::CIO> Peer<T> {
         if self.remote_status.choked || self.queued > self.max_queue.saturating_sub(16) {
             None
         } else {
-            Some(self.max_queue.saturating_sub(self.queued))
+            let amnt = self.max_queue.saturating_sub(self.queued);
+            Some(amnt)
         }
     }
 

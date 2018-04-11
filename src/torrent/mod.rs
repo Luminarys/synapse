@@ -51,6 +51,7 @@ pub struct Torrent<T: cio::CIO> {
     cio: T,
     uploaded: u64,
     downloaded: u64,
+    wasted: u64,
     stat: stat::EMA,
     files: Files,
     priority: u8,
@@ -263,6 +264,7 @@ impl<T: cio::CIO> Torrent<T> {
             priorities,
             uploaded: 0,
             downloaded: 0,
+            wasted: 0,
             files,
             stat: stat::EMA::new(),
             cio,
@@ -375,6 +377,7 @@ impl<T: cio::CIO> Torrent<T> {
             picker,
             uploaded: d.uploaded,
             downloaded: d.downloaded,
+            wasted: 0,
             files,
             stat: stat::EMA::new(),
             priorities: Arc::new(d.priorities),
@@ -824,6 +827,7 @@ impl<T: cio::CIO> Torrent<T> {
     /// Signal that we've downloaded and verified the torrent
     fn set_finished(&mut self) {
         info!("Torrent {} completed!", self.rpc_id());
+        debug!("Wasted: {} MiB", (self.wasted * 16_384) / (1024 * 1024));
         if let Some(req) = tracker::Request::completed(self) {
             self.cio.msg_trk(req);
         }
@@ -953,6 +957,7 @@ impl<T: cio::CIO> Torrent<T> {
             } => {
                 // Ignore a piece we already have, this could happen from endgame
                 if self.pieces.has_bit(u64::from(index)) || self.validating.contains(&index) {
+                    self.wasted += 1;
                     return Ok(());
                 }
 
@@ -973,8 +978,21 @@ impl<T: cio::CIO> Torrent<T> {
                     return Ok(());
                 }
 
-                let pr = self.picker.completed(Block::new(index, begin));
-                let (piece_done, peers) = if let Ok(r) = pr {
+                let pr = {
+                    let picker = &mut self.picker;
+                    let peers = &mut self.peers;
+
+                    picker.completed(Block::new(index, begin), |pid| {
+                        peers.get_mut(&pid).map(|p| {
+                            p.send_message(Message::Cancel {
+                                index,
+                                begin,
+                                length,
+                            })
+                        });
+                    })
+                };
+                let piece_done = if let Ok(r) = pr {
                     r
                 } else {
                     return Ok(());
@@ -994,20 +1012,6 @@ impl<T: cio::CIO> Torrent<T> {
                         index,
                     ));
                     self.validating.insert(index);
-                }
-
-                // If there are any peers we've asked duplicate pieces for,
-                // cancel them, though we should still assume they'll probably send it anyways
-                let m = Message::Cancel {
-                    index,
-                    begin,
-                    length,
-                };
-
-                for pid in peers.into_iter().filter(|p| *p != peer.id()) {
-                    if let Some(peer) = self.peers.get_mut(&pid) {
-                        peer.send_message(m.clone());
-                    }
                 }
 
                 if self.status.should_dl() {
@@ -1584,7 +1588,7 @@ impl<T: cio::CIO> Torrent<T> {
 
     fn make_requests(peer: &mut Peer<T>, picker: &mut Picker, info: &Info) {
         if let Some(m) = peer.queue_reqs() {
-            for _ in 0..m {
+            for _ in 0..(m) {
                 if let Some(block) = picker.pick(peer) {
                     peer.request_piece(
                         block.index,
@@ -1769,6 +1773,25 @@ impl<T: cio::CIO> Torrent<T> {
         ));
         self.status.validating = Some(0.0);
         self.announce_status();
+    }
+
+    pub fn peers(&self) -> usize {
+        self.peers.len()
+    }
+
+    pub fn rank_peers(&mut self) {
+        let mut pids = self.pids();
+        pids.sort_by_key(|pid| self.peers.get(pid).unwrap().get_tx_rates().1);
+        pids.reverse();
+        if !pids.is_empty() {
+            debug!(
+                "Lowest ranked peer dl {}",
+                self.peers[&pids[0]].get_tx_rates().1
+            );
+        }
+        for (rank, pid) in pids.into_iter().enumerate() {
+            self.peers.get_mut(&pid).unwrap().rank = rank;
+        }
     }
 
     fn request_all(&mut self) {

@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::{mem, time};
+use std::time;
 use std::sync::Arc;
 
 use control::cio;
@@ -20,10 +20,12 @@ pub struct Picker {
     last_piece: u32,
     /// Number of detected seeders
     seeders: u16,
-    /// Set of pieces which have blocks waiting. These should be prioritized.
-    downloading: HashMap<u32, Vec<Downloading>>,
+    /// Currently active requests
+    downloading: HashMap<Block, Request>,
+    /// Blocks requested/completed per piece picked
+    blocks: Vec<(usize, usize)>,
     /// Pieces which we've picked fully, but ended up not being downloaded due to a slow peer
-    stalled: FHashSet<u32>,
+    stalled: FHashSet<Block>,
     /// Bitfield of unpicked pieces, not in progress or
     /// completed yet. A set bit is picked, unset is unpicked.
     unpicked: Bitfield,
@@ -33,7 +35,7 @@ pub struct Picker {
     priorities: Vec<u8>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct Block {
     pub index: u32,
     pub offset: u32,
@@ -60,15 +62,16 @@ struct Downloading {
 /// A request to a peer and the time it was initiated.
 #[derive(Clone, Debug)]
 struct Request {
-    peer: usize,
+    rank: usize,
     requested_at: time::Instant,
+    reqd_from: [usize; MAX_DUP_REQS],
+    num_reqd: usize,
 }
 
 const MAX_DUP_REQS: usize = 3;
-const MAX_DL_Q: usize = 100;
-const MAX_STALLED: usize = 1;
 const MAX_PC_SIZE: usize = 50;
-const REQ_TIMEOUT: u64 = 15;
+const MAX_DL_REREQ: usize = 150;
+const REQ_TIMEOUT: u64 = 5;
 
 impl Picker {
     /// Creates a new picker, which will select over
@@ -88,18 +91,19 @@ impl Picker {
         let downloading = if pieces.complete() {
             HashMap::with_capacity(0)
         } else {
-            HashMap::with_capacity(info.pieces() as usize)
+            HashMap::with_capacity(8192)
         };
         let mut picker = Picker {
             picker: PickerKind::Rarest(picker),
             scale,
             last_piece,
             last_piece_scale,
+            downloading,
             seeders: 0,
             unpicked: pieces.clone(),
-            downloading,
             stalled: FHashSet::default(),
             priorities: vec![3; info.pieces() as usize],
+            blocks: vec![(0, 0); info.pieces() as usize],
         };
         picker.set_priorities(priorities, info);
         picker
@@ -115,69 +119,49 @@ impl Picker {
 
     pub fn tick(&mut self) {
         let mut expired = 0;
-        for (piece, chunks) in &mut self.downloading {
-            let cl = chunks.len();
-            for chunk in chunks.iter_mut() {
-                if !chunk.completed {
-                    chunk.requested.retain(|req| {
-                        let unexp = req.requested_at.elapsed().as_secs() < REQ_TIMEOUT;
-                        if !unexp {
-                            expired += 1;
-                        }
-                        unexp
-                    });
-
-                    // Rare situation where we pick from a slow peer, choose every other the chunk
-                    // in the piece then get stuck: mark piece as stalled
-                    if chunk.requested.is_empty()
-                        && (cl == self.scale as usize
-                            || (*piece == self.last_piece && cl == self.last_piece_scale as usize))
-                    {
-                        if !self.stalled.contains(piece) {
-                            self.stalled.insert(*piece);
-                        }
-                    }
-                }
+        for (block, req) in &mut self.downloading {
+            let reqd = self.blocks[block.index as usize].0;
+            let fully_reqd = reqd == self.scale as usize
+                || (block.index == self.last_piece && reqd == self.last_piece_scale as usize);
+            let deadline = (REQ_TIMEOUT as isize
+                + (3 - self.priorities[block.index as usize] as isize))
+                as u64;
+            if req.requested_at.elapsed().as_secs() >= deadline && !self.stalled.contains(block)
+                && fully_reqd
+            {
+                expired += 1;
+                self.stalled.insert(*block);
             }
         }
         if expired != 0 {
             debug!("Expired {} chunks!", expired);
         }
+        if !self.downloading.is_empty() {
+            debug!(
+                "Unpicked: {}/{}, Downloading: {}",
+                self.unpicked.iter().count(),
+                self.unpicked.len(),
+                self.downloading.len()
+            );
+        } else if self.downloading.capacity() != 0 && self.unpicked.complete() {
+            self.downloading = HashMap::with_capacity(0);
+        }
     }
 
     /// Attempts to select a block for a peer.
     pub fn pick<T: cio::CIO>(&mut self, peer: &mut Peer<T>) -> Option<Block> {
-        if let Some(b) = self.pick_expired(peer) {
-            return Some(b);
-        }
-
-        if self.stalled.len() > MAX_STALLED {
-            let piece = self.stalled
-                .iter()
-                .cloned()
-                .find(|p| peer.pieces().has_bit(*p as u64));
-            if let Some(p) = piece {
-                if let Some(dl) = self.downloading.get_mut(&p) {
-                    let r = dl.iter_mut()
-                        .find(|r| {
-                            !r.completed && r.requested.len() < MAX_DUP_REQS
-                                && r.requested.iter().all(|req| req.peer != peer.id())
-                                && r.requested
-                                    .iter()
-                                    .all(|req| req.requested_at.elapsed().as_secs() >= REQ_TIMEOUT)
-                        })
-                        .map(|r| {
-                            r.requested.push(Request::new(peer.id()));
-                            Block::new(p, r.offset)
-                        });
-                    // At this point we've filled up the stalled piece with requests,
-                    // unmark it
-                    if r.is_none() {
-                        self.stalled.remove(&p);
-                    } else {
-                        return r;
-                    }
-                }
+        if !self.stalled.is_empty() {
+            let block = self.stalled.iter().cloned().find(|b| {
+                peer.pieces().has_bit(b.index as u64)
+                    && (peer.rank == 0 || peer.rank < self.downloading[b].rank)
+                    && !self.downloading[b].has_peer(peer.id())
+            });
+            if let Some(b) = block {
+                self.stalled.remove(&b);
+                self.downloading
+                    .get_mut(&b)
+                    .map(|req| req.force_rereq(peer.id(), peer.rank));
+                return Some(b);
             }
         }
 
@@ -186,32 +170,18 @@ impl Picker {
             PickerKind::Rarest(ref mut p) => p.pick(peer),
         };
         let res = piece
-            .and_then(|p| self.pick_piece(p, peer.id()))
+            .map(|p| self.pick_piece(p, peer.id(), peer.rank))
             .or_else(|| self.pick_dl(peer));
         res
     }
 
-    /// Attempts to pick an expired block
-    fn pick_expired<T: cio::CIO>(&mut self, _: &Peer<T>) -> Option<Block> {
-        // TODO: Use some form of heuristic here to say "we expect to have
-        // downloaded some pieces by X, hit the picker with a tick which checks
-        // that, flags shit as invalid, and then does a double request
-        None
-    }
-
     /// Picks a block from a given piece for a peer
-    fn pick_piece(&mut self, piece: u32, id: usize) -> Option<Block> {
-        self.downloading.entry(piece).or_insert_with(|| vec![]);
-        let dl = self.downloading.get_mut(&piece).unwrap();
-        let offset = dl.len() as u32 * 16_384;
-        dl.push(Downloading {
-            offset,
-            completed: false,
-            requested: vec![Request::new(id)],
-        });
-
-        if dl.len() == self.scale as usize
-            || (piece == self.last_piece && dl.len() == self.last_piece_scale as usize)
+    fn pick_piece(&mut self, piece: u32, id: usize, rank: usize) -> Block {
+        self.blocks[piece as usize].0 += 1;
+        let amnt = self.blocks[piece as usize].0;
+        let offset = (amnt - 1) as u32 * 16_384;
+        if amnt == self.scale as usize
+            || (piece == self.last_piece && amnt == self.last_piece_scale as usize)
         {
             match self.picker {
                 PickerKind::Sequential(ref mut p) => p.completed(piece),
@@ -219,78 +189,56 @@ impl Picker {
             }
             self.unpicked.set_bit(u64::from(piece));
         }
-        Some(Block {
+        let block = Block {
             index: piece,
             offset,
-        })
+        };
+        self.downloading.insert(block, Request::new(id, rank));
+        block
     }
 
     /// Attempts to pick the highest priority piece in the dl q
     fn pick_dl<T: cio::CIO>(&mut self, peer: &Peer<T>) -> Option<Block> {
-        for (idx, dl) in self.downloading.iter_mut().take(MAX_DL_Q) {
-            if peer.pieces().has_bit(u64::from(*idx)) {
-                let r = dl.iter_mut()
-                    .find(|r| {
-                        !r.completed && r.requested.len() < MAX_DUP_REQS
-                            && r.requested.iter().all(|req| req.peer != peer.id())
-                    })
-                    .map(|r| {
-                        r.requested.push(Request::new(peer.id()));
-                        Block::new(*idx, r.offset)
-                    });
-                if r.is_some() {
-                    return r;
-                }
-            }
+        let mut dl: Vec<_> = self.downloading
+            .iter_mut()
+            .filter(|(_, req)| req.num_reqd < MAX_DUP_REQS && !req.has_peer(peer.id()))
+            .take(MAX_DL_REREQ)
+            .collect();
+        dl.sort_by_key(|(_, req)| req.num_reqd);
+        for (block, req) in dl {
+            req.rereq(peer.id(), peer.rank);
+            return Some(*block);
         }
         None
     }
 
     /// Marks a block as completed. Returns a result indicating if the block
     /// was actually requested, the success value containing a bool indicating
-    /// if the block is complete, and a vector of peers from which the block
-    /// was requested(for cancellation).
-    pub fn completed(&mut self, b: Block) -> Result<(bool, Vec<usize>), ()> {
-        // Find the block in our downloading blocks, mark as true,
-        // and extract the current peer list for return.
-        let res = self.downloading
-            .get_mut(&b.index)
-            .and_then(|dl| {
-                dl.iter_mut()
-                    .find(|r| r.offset == b.offset)
-                    .map(|r| r.complete())
-            })
-            .map(|r| r.into_iter().map(|e| e.peer).collect());
-
-        // If we've requested every single block for this piece and they're all complete, remove it
-        // and report completion
-        let scale = self.scale;
-        let lp = self.last_piece;
-        let lps = self.last_piece_scale;
-        let complete = self.downloading
-            .get_mut(&b.index)
-            .map(|r| {
-                (r.len() as u32 == scale || (b.index == lp && r.len() as u32 == lps))
-                    && r.iter().all(|d| d.completed)
-            })
-            .unwrap_or(false);
-
-        if complete {
-            self.downloading.remove(&b.index);
+    /// if the block is complete.
+    pub fn completed<F: FnMut(usize)>(&mut self, b: Block, mut cancel: F) -> Result<bool, ()> {
+        self.stalled.remove(&b);
+        let dl = self.downloading.remove(&b);
+        let dl = match dl {
+            Some(dl) => dl,
+            None => return Err(()),
+        };
+        for peer in dl.reqd_from.iter() {
+            cancel(*peer);
         }
 
-        res.map(|r| (complete, r)).ok_or(())
+        self.blocks[b.index as usize].1 += 1;
+        let amnt = self.blocks[b.index as usize].1;
+        if amnt == self.scale as usize
+            || (b.index == self.last_piece && amnt == self.last_piece_scale as usize)
+        {
+            Ok(true)
+        } else {
+            Ok(false)
+        }
     }
 
     pub fn have_block(&mut self, b: Block) -> bool {
-        self.downloading
-            .get_mut(&b.index)
-            .and_then(|dl| {
-                dl.iter()
-                    .find(|r| r.offset == b.offset)
-                    .map(|r| r.completed)
-            })
-            .unwrap_or(false)
+        !self.downloading.contains_key(&b)
     }
 
     /// Invalidates a piece
@@ -299,8 +247,8 @@ impl Picker {
             PickerKind::Sequential(ref mut p) => p.incomplete(idx),
             PickerKind::Rarest(ref mut p) => p.incomplete(idx),
         }
+        self.blocks[idx as usize] = (0, 0);
         self.unpicked.unset_bit(u64::from(idx));
-        self.downloading.remove(&idx);
     }
 
     pub fn piece_available(&mut self, idx: u32) {
@@ -329,9 +277,14 @@ impl Picker {
             }
         }
 
-        for piece in self.downloading.values_mut() {
-            for block in piece {
-                block.requested.retain(|req| req.peer != peer.id())
+        for (_, req) in self.downloading.iter_mut() {
+            if let Some((idx, _)) = req.reqd_from
+                .iter()
+                .enumerate()
+                .find(|(_, id)| **id == peer.id())
+            {
+                req.num_reqd -= 1;
+                req.reqd_from[idx] = req.reqd_from[req.num_reqd];
             }
         }
     }
@@ -346,7 +299,6 @@ impl Picker {
         } else {
             PickerKind::Rarest(rarest::Picker::new(&self.unpicked))
         };
-        self.downloading.clear();
     }
 
     pub fn set_priorities(&mut self, pri: &[u8], info: &Arc<Info>) {
@@ -443,17 +395,35 @@ impl Block {
 }
 
 impl Request {
-    fn new(peer: usize) -> Request {
+    fn new(peer: usize, rank: usize) -> Request {
+        let mut reqd_from = [0; MAX_DUP_REQS];
+        reqd_from[0] = peer;
         Request {
-            peer,
+            rank,
             requested_at: time::Instant::now(),
+            reqd_from,
+            num_reqd: 1,
         }
     }
-}
 
-impl Downloading {
-    fn complete(&mut self) -> Vec<Request> {
-        self.completed = true;
-        mem::replace(&mut self.requested, Vec::with_capacity(0))
+    fn rereq(&mut self, peer: usize, rank: usize) {
+        self.rank = rank;
+        self.reqd_from[self.num_reqd] = peer;
+        self.num_reqd += 1;
+        self.requested_at = time::Instant::now();
+    }
+
+    fn force_rereq(&mut self, peer: usize, rank: usize) {
+        if self.num_reqd < MAX_DUP_REQS {
+            self.rereq(peer, rank);
+        } else {
+            self.reqd_from[0] = peer;
+            self.requested_at = time::Instant::now();
+            self.rank = rank;
+        }
+    }
+
+    fn has_peer(&self, peer: usize) -> bool {
+        self.reqd_from.contains(&peer)
     }
 }

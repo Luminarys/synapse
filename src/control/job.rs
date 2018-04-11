@@ -67,6 +67,9 @@ impl<T: cio::CIO> Job<T> for TorrentTxUpdate {
                     self.piece_update = time::Instant::now();
                 }
             }
+            if !torrent.complete() {
+                torrent.rank_peers();
+            }
 
             if !self.active.contains_key(id) {
                 self.active.insert(*id, active);

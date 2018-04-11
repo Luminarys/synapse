@@ -93,7 +93,10 @@ impl Simulation {
                         peer.requests.remove(b.ind_sample(&mut rng))
                     };
                     let ref mut received = self.peers.borrow_mut()[req.peer];
-                    received.picker.completed(Block::new(req.piece, 0)).unwrap();
+                    received
+                        .picker
+                        .completed(Block::new(req.piece, 0), |_| ())
+                        .unwrap();
                     received.data.pieces_mut().set_bit(req.piece as u64);
                     if received.data.pieces().complete() {
                         received.compl = Some(self.ticks);
@@ -257,7 +260,14 @@ fn test_seq_picker() {
     }
 
     for i in 0..10 {
-        assert_eq!(p.completed(Block::new(i, 0)), Ok((true, vec![0])));
+        let mut canceled = None;
+        assert_eq!(
+            p.completed(Block::new(i, 0), |p| {
+                canceled = Some(p);
+            }),
+            Ok(true)
+        );
+        assert_eq!(canceled, Some(0));
     }
 
     p.invalidate_piece(5);
