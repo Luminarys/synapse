@@ -61,7 +61,7 @@ fn main() {
                 )
                 .arg(
                     Arg::with_name("files")
-                        .help("Torrent files to add")
+                        .help("Torrent files or magnets to add")
                         .multiple(true)
                         .short("f")
                         .long("files")

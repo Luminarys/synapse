@@ -98,6 +98,13 @@ struct Files {
 }
 
 impl Status {
+    pub fn magnet(&self) -> bool {
+        match self.state {
+            StatusState::Magnet => true,
+            _ => false,
+        }
+    }
+
     pub fn leeching(&self) -> bool {
         match self.state {
             StatusState::Incomplete => true,
@@ -1519,6 +1526,9 @@ impl<T: cio::CIO> Torrent<T> {
     }
 
     fn progress(&self) -> f32 {
+        if self.status.magnet() {
+            return 0.0;
+        }
         if let Some(amnt) = self.status.validating {
             amnt
         } else {
@@ -1529,6 +1539,9 @@ impl<T: cio::CIO> Torrent<T> {
     fn availability(&self) -> f32 {
         if self.leechers.len() != self.peers.len() {
             return 1.0;
+        }
+        if self.status.magnet() {
+            return 0.0;
         }
         let mut peers_have = FHashSet::default();
         for (_, peer) in &self.peers {

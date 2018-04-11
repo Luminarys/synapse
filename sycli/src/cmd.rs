@@ -23,7 +23,11 @@ pub fn add(
     start: bool,
 ) -> Result<()> {
     for file in files {
-        add_file(&mut c, url, file, dir, start)?;
+        if let Ok(magnet) = Url::parse(file) {
+            add_magnet(&mut c, magnet, dir, start)?;
+        } else {
+            add_file(&mut c, url, file, dir, start)?;
+        }
     }
     Ok(())
 }
@@ -68,6 +72,26 @@ fn add_file(c: &mut Client, url: &str, file: &str, dir: Option<&str>, start: boo
         }
     }
 
+    Ok(())
+}
+fn add_magnet(c: &mut Client, magnet: Url, dir: Option<&str>, start: bool) -> Result<()> {
+    let msg = CMessage::UploadMagnet {
+        serial: c.next_serial(),
+        uri: magnet.as_str().to_owned(),
+        path: dir.as_ref().map(|d| format!("{}", d)),
+        start,
+    };
+    match c.rr(msg)? {
+        SMessage::ResourcesExtant { ids, .. } => {
+            get_(c, ids[0].as_ref(), "text")?;
+        }
+        SMessage::InvalidRequest(message::Error { reason, .. }) => {
+            bail!("{}", reason);
+        }
+        _ => {
+            bail!("Failed to receieve upload acknowledgement from synapse");
+        }
+    }
     Ok(())
 }
 

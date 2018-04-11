@@ -733,7 +733,7 @@ impl fmt::Display for Resource {
                 if let Some(s) = t.size {
                     write!(f, "  size: {} B", s)?;
                 } else {
-                    write!(f, "  size: Unknown (magnet0")?;
+                    write!(f, "  size: Unknown (magnet)")?;
                 }
                 write!(f, "\n")?;
                 if let Some(p) = t.pieces {
