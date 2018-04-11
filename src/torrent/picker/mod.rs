@@ -201,10 +201,10 @@ impl Picker {
     fn pick_dl<T: cio::CIO>(&mut self, peer: &Peer<T>) -> Option<Block> {
         let mut dl: Vec<_> = self.downloading
             .iter_mut()
-            .filter(|(_, req)| req.num_reqd < MAX_DUP_REQS && !req.has_peer(peer.id()))
+            .filter(|&(_, ref req)| req.num_reqd < MAX_DUP_REQS && !req.has_peer(peer.id()))
             .take(MAX_DL_REREQ)
             .collect();
-        dl.sort_by_key(|(_, req)| req.num_reqd);
+        dl.sort_by_key(|&(_, ref req)| req.num_reqd);
         for (block, req) in dl {
             req.rereq(peer.id(), peer.rank);
             return Some(*block);
@@ -281,7 +281,7 @@ impl Picker {
             if let Some((idx, _)) = req.reqd_from
                 .iter()
                 .enumerate()
-                .find(|(_, id)| **id == peer.id())
+                .find(|&(_, id)| *id == peer.id())
             {
                 req.num_reqd -= 1;
                 req.reqd_from[idx] = req.reqd_from[req.num_reqd];
