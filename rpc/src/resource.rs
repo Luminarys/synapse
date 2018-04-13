@@ -2,7 +2,7 @@ use std::mem;
 use std::fmt;
 use std::borrow::Cow;
 
-use chrono::{DateTime, Utc};
+use chrono::prelude::{DateTime, Utc};
 use serde;
 use serde_json as json;
 use url::Url;

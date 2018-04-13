@@ -81,6 +81,7 @@ pub struct Status {
 #[derive(Clone, Debug, PartialEq)]
 pub enum StatusState {
     Magnet,
+    Import,
     Incomplete,
     Complete,
 }
@@ -139,7 +140,7 @@ impl Status {
         }
 
         match self.state {
-            StatusState::Incomplete => {
+            StatusState::Incomplete | StatusState::Import => {
                 if dl == 0 {
                     rpc::resource::Status::Pending
                 } else {
@@ -208,6 +209,7 @@ impl<T: cio::CIO> Torrent<T> {
         throttle: Throttle,
         cio: T,
         start: bool,
+        import: bool,
     ) -> Torrent<T> {
         debug!("Creating {:?}", info);
         let peers = UHashMap::default();
@@ -217,7 +219,11 @@ impl<T: cio::CIO> Torrent<T> {
             paused: !start,
             validating: None,
             error: None,
-            state: StatusState::Incomplete,
+            state: if import {
+                StatusState::Import
+            } else {
+                StatusState::Incomplete
+            },
         };
         let priorities = Arc::new(vec![3; info.files.len()]);
         let info_idx = if info.complete() {
@@ -286,7 +292,15 @@ impl<T: cio::CIO> Torrent<T> {
             created: Utc::now(),
         };
         t.start();
-        if CONFIG.disk.validate && t.info_idx.is_none() {
+        if import {
+            t.cio.msg_disk(disk::Request::validate_piece(
+                t.id,
+                t.info.clone(),
+                t.path.clone(),
+                0,
+            ));
+            t.validating.insert(0);
+        } else if CONFIG.disk.validate && t.info_idx.is_none() {
             t.validate();
         } else {
             t.announce_start();
@@ -456,7 +470,9 @@ impl<T: cio::CIO> Torrent<T> {
                 error: self.status.error.clone(),
                 state: match self.status.state {
                     StatusState::Magnet => session::torrent::current::StatusState::Magnet,
-                    StatusState::Incomplete => session::torrent::current::StatusState::Incomplete,
+                    StatusState::Incomplete | StatusState::Import => {
+                        session::torrent::current::StatusState::Incomplete
+                    }
                     StatusState::Complete => session::torrent::current::StatusState::Complete,
                 },
             },
@@ -704,6 +720,19 @@ impl<T: cio::CIO> Torrent<T> {
             }
             disk::Response::PieceValidated { piece, valid, .. } => {
                 self.validating.remove(&piece);
+                if let StatusState::Import = self.status.state {
+                    info!("Torrent imported!");
+                    if valid {
+                        for i in 0..self.info.pieces() {
+                            self.pieces.set_bit(i as u64);
+                        }
+                        self.check_complete();
+                    } else {
+                        info!("Invalid torrent imported, redownloading!");
+                    }
+                    self.announce_start();
+                    return;
+                }
                 if valid {
                     self.pieces.set_bit(piece as u64);
                     // Tell all relevant peers we got the piece

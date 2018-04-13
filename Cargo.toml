@@ -12,7 +12,7 @@ path = "src/main.rs"
 name = "synapse"
 
 [workspace]
-members = ["sycli", "rpc", "session"]
+members = ["sycli", "rpc", "session", "bencode"]
 exclude = ["synulator"]
 
 [build-dependencies]
@@ -42,6 +42,7 @@ serde_json = "1"
 shellexpand = "1"
 synapse-rpc = { path = "rpc" }
 synapse-session = { path = "session" }
+synapse-bencode = { path = "bencode" }
 toml = "0.4"
 url = "1"
 vecio = "0.1"
@@ -55,7 +56,7 @@ features = ["no_timerfd"]
 [dependencies.chrono]
 version = "0.4"
 default-features = false
-features = ["serde"]
+features = ["clock", "serde"]
 
 [dependencies.error-chain]
 version = "0.11"

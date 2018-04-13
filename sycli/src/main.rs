@@ -60,6 +60,12 @@ fn main() {
                         .long("pause"),
                 )
                 .arg(
+                    Arg::with_name("import")
+                        .help("Whether or not the torrent should be imported.")
+                        .short("i")
+                        .long("import"),
+                )
+                .arg(
                     Arg::with_name("files")
                         .help("Torrent files or magnets to add")
                         .multiple(true)
@@ -333,6 +339,7 @@ fn main() {
                 files,
                 args.value_of("directory"),
                 !args.is_present("pause"),
+                args.is_present("import"),
             );
             if let Err(e) = res {
                 eprintln!("Failed to add torrents: {}", e);

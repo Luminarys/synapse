@@ -59,6 +59,7 @@ pub enum TransferKind {
         size: u64,
         path: Option<String>,
         start: bool,
+        import: bool,
     },
     UploadFiles {
         size: u64,
@@ -479,11 +480,17 @@ impl Processor {
                 size,
                 path,
                 start,
+                import,
             } => {
                 resp.push(self.new_transfer(
                     client,
                     serial,
-                    TransferKind::UploadTorrent { size, path, start },
+                    TransferKind::UploadTorrent {
+                        size,
+                        path,
+                        start,
+                        import,
+                    },
                 ));
             }
             CMessage::UploadMagnet {
@@ -497,6 +504,7 @@ impl Processor {
                         info,
                         path,
                         start,
+                        import: false,
                         client,
                         serial,
                     })

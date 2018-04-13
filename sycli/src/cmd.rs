@@ -21,18 +21,26 @@ pub fn add(
     files: Vec<&str>,
     dir: Option<&str>,
     start: bool,
+    import: bool,
 ) -> Result<()> {
     for file in files {
         if let Ok(magnet) = Url::parse(file) {
             add_magnet(&mut c, magnet, dir, start)?;
         } else {
-            add_file(&mut c, url, file, dir, start)?;
+            add_file(&mut c, url, file, dir, start, import)?;
         }
     }
     Ok(())
 }
 
-fn add_file(c: &mut Client, url: &str, file: &str, dir: Option<&str>, start: bool) -> Result<()> {
+fn add_file(
+    c: &mut Client,
+    url: &str,
+    file: &str,
+    dir: Option<&str>,
+    start: bool,
+    import: bool,
+) -> Result<()> {
     let mut torrent = Vec::new();
     let mut f = fs::File::open(file).chain_err(|| ErrorKind::FileIO)?;
     f.read_to_end(&mut torrent).chain_err(|| ErrorKind::FileIO)?;
@@ -42,6 +50,7 @@ fn add_file(c: &mut Client, url: &str, file: &str, dir: Option<&str>, start: boo
         size: torrent.len() as u64,
         path: dir.as_ref().map(|d| format!("{}", d)),
         start,
+        import,
     };
     let token = if let SMessage::TransferOffer { token, .. } = c.rr(msg)? {
         token

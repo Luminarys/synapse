@@ -133,29 +133,44 @@ impl BEncode {
     }
 
     pub fn encode<W: io::Write>(&self, w: &mut W) -> io::Result<()> {
-        // TODO: Make this either procedural or add recursion limit.
-        match *self {
-            BEncode::Int(i) => write!(w, "i{}e", i)?,
-            BEncode::String(ref s) => {
-                write!(w, "{}:", s.len())?;
-                w.write_all(s)?;
-            }
-            BEncode::List(ref v) => {
-                write!(w, "l")?;
-                for b in v.iter() {
-                    b.encode(w)?
+        enum Token<'a> {
+            B(&'a BEncode),
+            OS(&'a str),
+            E,
+        }
+
+        let mut toks = vec![Token::B(self)];
+        while !toks.is_empty() {
+            match toks.pop().unwrap() {
+                Token::B(&BEncode::Int(i)) => {
+                    write!(w, "i{}e", i)?;
                 }
-                write!(w, "e")?;
-            }
-            BEncode::Dict(ref d) => {
-                write!(w, "d")?;
-                for (k, v) in d.iter() {
-                    write!(w, "{}:{}", k.len(), k)?;
-                    v.encode(w)?;
+                Token::B(&BEncode::String(ref s)) => {
+                    write!(w, "{}:", s.len())?;
+                    w.write_all(s)?;
                 }
-                write!(w, "e")?;
+                Token::B(BEncode::List(ref v)) => {
+                    write!(w, "l")?;
+                    toks.push(Token::E);
+                    toks.extend(v.iter().rev().map(|v| Token::B(v)));
+                }
+                Token::B(BEncode::Dict(ref d)) => {
+                    write!(w, "d")?;
+                    toks.push(Token::E);
+                    for (k, v) in d.iter().rev() {
+                        toks.push(Token::B(v));
+                        toks.push(Token::OS(k));
+                    }
+                }
+                Token::OS(s) => {
+                    write!(w, "{}:", s.len())?;
+                    w.write_all(s.as_bytes())?;
+                }
+                Token::E => {
+                    write!(w, "e")?;
+                }
             }
-        };
+        }
         Ok(())
     }
 }
@@ -165,46 +180,82 @@ pub fn decode_buf(bytes: &[u8]) -> Result<BEncode, BError> {
 }
 
 pub fn decode<R: io::Read>(bytes: &mut R) -> Result<BEncode, BError> {
-    match next_byte(bytes) {
-        Ok(b'i') => {
-            let s = read_until(bytes, b'e')?;
-            Ok(BEncode::Int(decode_int(s)?))
-        }
-        Ok(b'l') => {
-            let mut l = vec![];
-            loop {
-                match decode(bytes) {
-                    Ok(val) => l.push(val),
-                    Err(BError::EOF) => break,
-                    e @ Err(_) => return e,
+    enum Kind {
+        Dict(usize),
+        List(usize),
+    }
+    let mut cstack = vec![];
+    let mut vstack = vec![];
+    loop {
+        match next_byte(bytes) {
+            Ok(b'i') => {
+                // Multiple non complex values are not allowed
+                if cstack.is_empty() && !vstack.is_empty() {
+                    return Err(BError::EOF);
                 }
+                let s = read_until(bytes, b'e')?;
+                vstack.push(BEncode::Int(decode_int(s)?));
             }
-            Ok(BEncode::List(l))
-        }
-        Ok(b'd') => {
-            let mut d = BTreeMap::new();
-            loop {
-                let key = match decode(bytes) {
-                    Ok(BEncode::String(s)) => String::from_utf8(s).map_err(|_| BError::UTF8Decode)?,
-                    Ok(_) => return Err(BError::InvalidDict),
-                    Err(BError::EOF) => break,
-                    Err(e) => return Err(e),
-                };
-                d.insert(key, decode(bytes)?);
+            Ok(b'l') => {
+                if cstack.is_empty() && !vstack.is_empty() {
+                    return Err(BError::EOF);
+                }
+                cstack.push(Kind::List(vstack.len()));
             }
-            Ok(BEncode::Dict(d))
+            Ok(b'd') => {
+                if cstack.is_empty() && !vstack.is_empty() {
+                    return Err(BError::EOF);
+                }
+                cstack.push(Kind::Dict(vstack.len()));
+            }
+            Err(BError::EOF) => break,
+            Ok(b'e') => match cstack.pop() {
+                Some(Kind::List(i)) => {
+                    let mut l = Vec::with_capacity(vstack.len() - i);
+                    while vstack.len() > i {
+                        l.push(vstack.pop().unwrap());
+                    }
+                    l.reverse();
+                    vstack.push(BEncode::List(l));
+                }
+                Some(Kind::Dict(i)) => {
+                    let mut d = BTreeMap::new();
+                    if (vstack.len() - i) % 2 != 0 {
+                        return Err(BError::InvalidDict);
+                    }
+                    while vstack.len() > i {
+                        let val = vstack.pop().unwrap();
+                        match vstack.pop().and_then(BEncode::into_string) {
+                            Some(key) => {
+                                d.insert(key, val);
+                            }
+                            None => return Err(BError::InvalidDict),
+                        }
+                    }
+                    vstack.push(BEncode::Dict(d))
+                }
+                None => return Err(BError::InvalidChar(b'e')),
+            },
+            Ok(d @ b'0'...b'9') => {
+                if cstack.is_empty() && !vstack.is_empty() {
+                    return Err(BError::EOF);
+                }
+                let mut slen = read_until(bytes, b':')?;
+                slen.insert(0, d);
+                let len = decode_int(slen)?;
+                let mut v = vec![0u8; len as usize];
+                bytes.read_exact(&mut v).map_err(|_| BError::EOF)?;
+                vstack.push(BEncode::String(v));
+            }
+            Err(e) => return Err(e),
+            Ok(c) => return Err(BError::InvalidChar(c)),
         }
-        Err(BError::EOF) | Ok(b'e') => Err(BError::EOF),
-        Ok(d @ b'0'...b'9') => {
-            let mut slen = read_until(bytes, b':')?;
-            slen.insert(0, d);
-            let len = decode_int(slen)?;
-            let mut v = vec![0u8; len as usize];
-            bytes.read_exact(&mut v).map_err(|_| BError::EOF)?;
-            Ok(BEncode::String(v))
-        }
-        Err(e) => Err(e),
-        Ok(c) => Err(BError::InvalidChar(c)),
+    }
+
+    if cstack.is_empty() && vstack.len() == 1 {
+        Ok(vstack.into_iter().next().unwrap())
+    } else {
+        Err(BError::EOF)
     }
 }
 
@@ -270,15 +321,46 @@ mod tests {
         let d = BEncode::Dict(map);
         v = Vec::new();
         d.encode(&mut v).unwrap();
+        println!("{:?}", ::std::str::from_utf8(&v));
         assert_eq!(v, b"d4:asdfi-10e6:qwertyi-10ee");
 
         decode_encode(b"d4:asdfi-10e6:qwertyi-10ee");
+
+        decode_encode(b"d1:rd2:id20:mnopqrstuvwxyz123456e1:t2:aa1:y1:re");
 
         encode_decode(&i);
         encode_decode(&s);
         encode_decode(&s2);
         encode_decode(&l);
         encode_decode(&d);
+    }
+
+    #[test]
+    fn test_invalid() {
+        let badint = b"i-123.4e";
+        let twoint = b"i123ei123e";
+        let badstr = b"5:eeeeeeeeeeee";
+        let badstr2 = b"5:e";
+        let badstr3 = b"-1:e";
+        let badstr4 = b"1:a2:ab";
+        let badlist = b"l123e";
+        let badlist2 = b"li123e";
+        let badlist3 = b"lllllllllllllllllllllllllllllllllllllleeeeeeeeeeee";
+        let badlist4 = b"lele";
+        let baddict = b"d1:ae";
+        let baddict2 = b"di123ei123ee";
+        assert!(decode_buf(badint).is_err());
+        assert!(decode_buf(twoint).is_err());
+        assert!(decode_buf(badstr).is_err());
+        assert!(decode_buf(badstr2).is_err());
+        assert!(decode_buf(badstr3).is_err());
+        assert!(decode_buf(badstr4).is_err());
+        assert!(decode_buf(badlist).is_err());
+        assert!(decode_buf(badlist2).is_err());
+        assert!(decode_buf(badlist3).is_err());
+        assert!(decode_buf(badlist4).is_err());
+        assert!(decode_buf(baddict).is_err());
+        assert!(decode_buf(baddict2).is_err());
     }
 
     fn encode_decode(b: &BEncode) {
@@ -289,7 +371,9 @@ mod tests {
 
     fn decode_encode(d: &[u8]) {
         let mut v = Vec::new();
-        decode_buf(d).unwrap().encode(&mut v).unwrap();
+        let dec = decode_buf(d).unwrap();
+        println!("{:?}", dec);
+        dec.encode(&mut v).unwrap();
         assert_eq!(d, &v[..]);
     }
 }

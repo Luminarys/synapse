@@ -604,7 +604,8 @@ mod tests {
     fn test_encode_decode_resp() {
         let r = Vec::from(&include_bytes!("test/id")[..]);
         let d = Response::decode(&r).unwrap();
-        assert_eq!(d.encode(), r);
+        let e = d.encode();
+        assert_eq!(e, r);
     }
 
     #[test]

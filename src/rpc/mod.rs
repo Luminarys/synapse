@@ -161,6 +161,7 @@ pub enum Message {
         serial: u64,
         path: Option<String>,
         start: bool,
+        import: bool,
     },
 }
 
@@ -289,6 +290,7 @@ impl RPC {
                 client,
                 serial,
                 start,
+                import,
             } => {
                 debug!("Got torrent via HTTP transfer!");
                 self.reg.deregister(&conn).unwrap();
@@ -301,6 +303,7 @@ impl RPC {
                                     info: i,
                                     path,
                                     start,
+                                    import,
                                     client,
                                     serial,
                                 })
@@ -405,7 +408,12 @@ impl RPC {
                         Some((
                             client,
                             serial,
-                            TransferKind::UploadTorrent { path, size, start },
+                            TransferKind::UploadTorrent {
+                                path,
+                                size,
+                                start,
+                                import,
+                            },
                         )) => {
                             debug!("Torrent transfer initiated");
                             self.transfers.add_torrent(
@@ -417,6 +425,7 @@ impl RPC {
                                 path,
                                 size,
                                 start,
+                                import,
                             );
                             // Since a succesful result means the buffer hasn't been flushed,
                             // immediatly attempt to handle the transfer as if it was ready

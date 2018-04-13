@@ -371,6 +371,7 @@ impl<T: cio::CIO> Control<T> {
         info: torrent::Info,
         path: Option<String>,
         start: bool,
+        import: bool,
         client: usize,
         serial: u64,
     ) {
@@ -387,7 +388,15 @@ impl<T: cio::CIO> Control<T> {
         }
         let tid = self.tid_cnt;
         let throttle = self.throttler.get_throttle(tid);
-        let t = Torrent::new(tid, path, info, throttle, self.cio.new_handle(), start);
+        let t = Torrent::new(
+            tid,
+            path,
+            info,
+            throttle,
+            self.cio.new_handle(),
+            start,
+            import,
+        );
         self.hash_idx.insert(t.info().hash, tid);
         self.tid_cnt += 1;
         self.queue.add(tid, t.priority());
@@ -416,9 +425,10 @@ impl<T: cio::CIO> Control<T> {
                 info,
                 path,
                 start,
+                import,
                 client,
                 serial,
-            } => self.add_torrent(info, path, start, client, serial),
+            } => self.add_torrent(info, path, start, import, client, serial),
             rpc::Message::UpdateFile {
                 id,
                 torrent_id,

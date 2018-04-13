@@ -42,6 +42,7 @@ extern crate toml;
 extern crate url;
 extern crate vecio;
 
+extern crate synapse_bencode as bencode;
 extern crate synapse_rpc as rpc_lib;
 extern crate synapse_session as session;
 
@@ -50,7 +51,6 @@ mod log;
 mod args;
 mod buffers;
 mod handle;
-mod bencode;
 mod torrent;
 mod util;
 mod socket;

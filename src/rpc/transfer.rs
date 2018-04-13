@@ -15,6 +15,7 @@ pub enum TransferResult {
     Torrent {
         conn: TSocket,
         start: bool,
+        import: bool,
         data: Vec<u8>,
         path: Option<String>,
         client: usize,
@@ -35,6 +36,7 @@ struct TorrentTx {
     pos: usize,
     buf: Vec<u8>,
     start: bool,
+    import: bool,
     path: Option<String>,
     last_action: time::Instant,
 }
@@ -58,6 +60,7 @@ impl Transfers {
         path: Option<String>,
         size: u64,
         start: bool,
+        import: bool,
     ) {
         let pos = data.len();
         data.reserve(size as usize);
@@ -72,6 +75,7 @@ impl Transfers {
                 buf: data,
                 path,
                 start,
+                import,
                 last_action: time::Instant::now(),
             },
         );
@@ -96,6 +100,7 @@ impl Transfers {
                     client: tx.client,
                     serial: tx.serial,
                     start: tx.start,
+                    import: tx.import,
                 }
             }
             Some(Ok(false)) => TransferResult::Incomplete,

@@ -432,6 +432,7 @@ The serial should be used to distinguish the two.
         "size": number,             bytes, size of .torrent file
         "path": string,             optional download path
         "start": boolean,           optional, if false torrent will start paused
+        "import": boolean,          optional, if true torrent will be treated as already downloaded
     }
 
 UPLOAD_MAGNET           client->server

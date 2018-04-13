@@ -57,14 +57,16 @@ pub enum CMessage {
         serial: u64,
         size: u64,
         path: Option<String>,
-        #[serde(default = "default_start")]
+        #[serde(default = "default_true")]
         start: bool,
+        #[serde(default = "default_false")]
+        import: bool,
     },
     UploadMagnet {
         serial: u64,
         uri: String,
         path: Option<String>,
-        #[serde(default = "default_start")]
+        #[serde(default = "default_true")]
         start: bool,
     },
     UploadFiles {
@@ -158,7 +160,11 @@ impl Version {
     }
 }
 
-fn default_start() -> bool {
+fn default_true() -> bool {
+    true
+}
+
+fn default_false() -> bool {
     true
 }
 
