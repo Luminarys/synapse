@@ -149,12 +149,12 @@ impl BEncode {
                     write!(w, "{}:", s.len())?;
                     w.write_all(s)?;
                 }
-                Token::B(BEncode::List(ref v)) => {
+                Token::B(&BEncode::List(ref v)) => {
                     write!(w, "l")?;
                     toks.push(Token::E);
                     toks.extend(v.iter().rev().map(|v| Token::B(v)));
                 }
-                Token::B(BEncode::Dict(ref d)) => {
+                Token::B(&BEncode::Dict(ref d)) => {
                     write!(w, "d")?;
                     toks.push(Token::E);
                     for (k, v) in d.iter().rev() {
