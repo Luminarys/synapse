@@ -528,6 +528,7 @@ impl<T: cio::CIO> Torrent<T> {
     pub fn set_tracker_response(&mut self, url: &Url, resp: &tracker::Result<TrackerResponse>) {
         debug!("Processing tracker response");
         let mut time = Instant::now();
+        let mut empty = false;
         match *resp {
             Ok(ref r) => {
                 self.trackers
@@ -542,6 +543,9 @@ impl<T: cio::CIO> Torrent<T> {
                         };
                         tracker.update = Some(time);
                         tracker.last_announce = Utc::now();
+                        if r.peers.len() == 0 {
+                            empty = true;
+                        }
                     });
             }
             Err(tracker::Error(tracker::ErrorKind::TrackerError(ref s), _)) => {
@@ -571,7 +575,7 @@ impl<T: cio::CIO> Torrent<T> {
             }
         }
 
-        if resp.is_err() && self.trackers.iter().find(|t| &*t.url == url).is_some() {
+        if (resp.is_err() || empty) && self.trackers.iter().find(|t| &*t.url == url).is_some() {
             if let Some(front) = self.trackers.pop_front() {
                 self.trackers.push_back(front);
                 self.try_update_tracker();

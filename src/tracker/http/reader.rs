@@ -50,7 +50,7 @@ impl Reader {
                         ReadState::Header => {
                             let mut headers = [httparse::EMPTY_HEADER; 16];
                             let mut resp = httparse::Response::new(&mut headers);
-                            match resp.parse(&self.data) {
+                            match resp.parse(&self.data[..self.idx]) {
                                 Ok(httparse::Status::Complete(i)) => {
                                     // Redirect handling
                                     let redirect_codes = [301, 302, 303, 307, 308];
@@ -81,8 +81,9 @@ impl Reader {
                         ReadState::Body => {}
                     }
                     if let Some(i) = header_done {
-                        self.data = self.data.split_off(i);
-                        self.idx = self.data.len();
+                        let body = self.data.split_off(i);
+                        self.idx -= self.data.len();
+                        self.data = body;
                         self.state = ReadState::Body;
                     }
                 }

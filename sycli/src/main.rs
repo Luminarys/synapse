@@ -236,6 +236,15 @@ fn main() {
                                         .index(1)
                                         .required(true),
                                 ),
+                            SubCommand::with_name("announce")
+                                .about("Announce to a tracker of a torrent")
+                                .arg(
+                                    Arg::with_name("tracker id")
+                                        .help("ids of trackers to announce to")
+                                        .multiple(true)
+                                        .index(1)
+                                        .required(true),
+                                ),
                         ])
                         .setting(AppSettings::SubcommandRequired),
                     SubCommand::with_name("peer")
@@ -462,6 +471,20 @@ fn main() {
                                 client,
                                 sscmd
                                     .subcommand_matches("remove")
+                                    .unwrap()
+                                    .values_of("tracker id")
+                                    .unwrap()
+                                    .collect(),
+                            ) {
+                                eprintln!("Failed to remove trackers: {}", e);
+                                process::exit(1);
+                            }
+                        }
+                        "announce" => {
+                            if let Err(e) = cmd::announce_trackers(
+                                client,
+                                sscmd
+                                    .subcommand_matches("announce")
                                     .unwrap()
                                     .values_of("tracker id")
                                     .unwrap()

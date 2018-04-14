@@ -484,6 +484,17 @@ pub fn remove_trackers(mut c: Client, trackers: Vec<&str>) -> Result<()> {
     Ok(())
 }
 
+pub fn announce_trackers(mut c: Client, trackers: Vec<&str>) -> Result<()> {
+    for id in trackers {
+        let serial = c.next_serial();
+        c.send(CMessage::UpdateTracker {
+            serial,
+            id: id.to_owned(),
+        })?;
+    }
+    Ok(())
+}
+
 fn remove_res(c: &mut Client, res: &str) -> Result<()> {
     let msg = CMessage::RemoveResource {
         serial: c.next_serial(),

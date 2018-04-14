@@ -372,7 +372,6 @@ mod tests {
     fn decode_encode(d: &[u8]) {
         let mut v = Vec::new();
         let dec = decode_buf(d).unwrap();
-        println!("{:?}", dec);
         dec.encode(&mut v).unwrap();
         assert_eq!(d, &v[..]);
     }
