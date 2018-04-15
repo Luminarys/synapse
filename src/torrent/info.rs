@@ -237,7 +237,15 @@ impl Info {
 
                 let private = if let Some(v) = i.remove("private") {
                     v.into_int()
-                        .and_then(|p| if p == 0 { Some(false) } else if p == 1 { Some(true) } else { None })
+                        .and_then(|p| {
+                            if p == 0 {
+                                Some(false)
+                            } else if p == 1 {
+                                Some(true)
+                            } else {
+                                None
+                            }
+                        })
                         .ok_or("private key must be an integer equal to 0 or 1 if present!")?
                 } else {
                     false

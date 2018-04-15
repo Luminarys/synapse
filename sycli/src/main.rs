@@ -8,12 +8,17 @@ extern crate prettytable;
 extern crate reqwest;
 extern crate serde;
 extern crate serde_json;
+#[macro_use]
+extern crate serde_derive;
+extern crate shellexpand;
 extern crate synapse_rpc as rpc;
+extern crate toml;
 extern crate url;
 extern crate websocket;
 
 mod cmd;
 mod client;
+mod config;
 mod error;
 
 use std::process;
@@ -24,17 +29,25 @@ use clap::{App, AppSettings, Arg, SubCommand};
 use self::client::Client;
 
 fn main() {
+    let config = config::load();
     let matches = App::new("sycli")
         .about("cli interface for synapse")
         .author(env!("CARGO_PKG_AUTHORS"))
         .version(env!("CARGO_PKG_VERSION"))
         .setting(AppSettings::SubcommandRequired)
         .arg(
+            Arg::with_name("profile")
+                .help("Profile to use when connecting to synapse.")
+                .short("P")
+                .long("profile")
+                .default_value("default")
+                .takes_value(true),
+        )
+        .arg(
             Arg::with_name("server")
                 .help("URI of the synapse client to connect to.")
                 .short("s")
-                .long("server")
-                .default_value("ws://localhost:8412/"),
+                .long("server"),
         )
         .arg(
             Arg::with_name("password")
@@ -294,16 +307,31 @@ fn main() {
         ])
         .get_matches();
 
-    let mut url = match Url::parse(matches.value_of("server").unwrap()) {
-        Ok(url) => url,
-        Err(_) => {
-            eprintln!("Couldn't parse server URI!");
+    let (mut server, mut pass) = match config.get(matches.value_of("profile").unwrap()) {
+        Some(profile) => (profile.server.as_str(), profile.password.as_str()),
+        None => {
+            eprintln!(
+                "Nonexistent profile {} referenced in argument!",
+                matches.value_of("profile").unwrap()
+            );
             process::exit(1);
         }
     };
-    if let Some(password) = matches.value_of("password") {
-        url.query_pairs_mut().append_pair("password", password);
+    if let Some(url) = matches.value_of("server") {
+        server = url;
     }
+    if let Some(password) = matches.value_of("password") {
+        pass = password;
+    }
+    let mut url = match Url::parse(server) {
+        Ok(url) => url,
+        Err(e) => {
+            eprintln!("Server URL {} is not valid: {}", server, e);
+            process::exit(1);
+        }
+    };
+    url.query_pairs_mut().append_pair("password", pass);
+
     let client = match Client::new(url.as_str()) {
         Ok(c) => c,
         Err(_) => {

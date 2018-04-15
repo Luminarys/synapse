@@ -45,6 +45,8 @@ or `~/.config/synapse.toml`.
 If it is not present or invalid, a default configuration will be used.
 These defaults are given in `example_config.toml`.
 
+Sycli can be configured in a similar manner, using `sycli.toml`.
+
 ## Development
 Please see [this issue](https://github.com/Luminarys/synapse/issues/1) for details on development status.
 If you're interested in developing a client for synapse, see `doc/RPC` for the current RPC spec.
