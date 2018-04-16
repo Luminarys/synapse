@@ -725,6 +725,7 @@ impl<T: cio::CIO> Torrent<T> {
             disk::Response::PieceValidated { piece, valid, .. } => {
                 self.validating.remove(&piece);
                 if let StatusState::Import = self.status.state {
+                    self.status.state = StatusState::Incomplete;
                     info!("Torrent imported!");
                     if valid {
                         for i in 0..self.info.pieces() {

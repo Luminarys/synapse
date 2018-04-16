@@ -80,7 +80,7 @@ impl Picker {
     /// will default to rarest first.
     pub fn new(info: &Arc<Info>, pieces: &Bitfield, priorities: &[u8]) -> Picker {
         let scale = info.piece_len / 16_384;
-        let picker = rarest::Picker::new(pieces);
+        let picker = sequential::Picker::new(pieces);
         let last_piece = info.pieces().saturating_sub(1);
         let lpl = info.piece_len(last_piece);
         let last_piece_scale = if lpl % 16_384 == 0 {
@@ -94,7 +94,7 @@ impl Picker {
             HashMap::with_capacity(8192)
         };
         let mut picker = Picker {
-            picker: PickerKind::Rarest(picker),
+            picker: PickerKind::Sequential(picker),
             scale,
             last_piece,
             last_piece_scale,
@@ -309,11 +309,10 @@ impl Picker {
 
     pub fn apply_priorities(&mut self) {
         if self.is_sequential() {
-            let mut pieces = [vec![], vec![], vec![], vec![], vec![], vec![]];
-            for (piece, pri) in self.priorities.iter().enumerate() {
-                pieces[*pri as usize].push(piece as u32);
-            }
-            self.picker = PickerKind::Sequential(sequential::Picker::new_pri(pieces));
+            self.picker = PickerKind::Sequential(sequential::Picker::with_pri(
+                &self.unpicked,
+                &self.priorities,
+            ));
         } else {
             for (piece, pri) in self.priorities.iter().enumerate() {
                 if let PickerKind::Rarest(ref mut p) = self.picker {

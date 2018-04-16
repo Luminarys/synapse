@@ -30,10 +30,22 @@ impl Picker {
                 pieces[3].push(i as u32);
             }
         }
-        Picker::new_pri(pieces)
+        Picker::build(pieces)
     }
 
-    pub fn new_pri(pieces: [Vec<u32>; 6]) -> Picker {
+    pub fn with_pri(bf: &Bitfield, pri: &[u8]) -> Picker {
+        let mut pieces = [vec![], vec![], vec![], vec![], vec![], vec![]];
+        for (piece, pri) in pri.iter().enumerate() {
+            if bf.has_bit(piece as u64) {
+                pieces[0].push(piece as u32);
+            } else {
+                pieces[*pri as usize].push(piece as u32);
+            }
+        }
+        Picker::build(pieces)
+    }
+
+    fn build(pieces: [Vec<u32>; 6]) -> Picker {
         let mut p = vec![];
         for i in &pieces[0] {
             p.push(Piece {
