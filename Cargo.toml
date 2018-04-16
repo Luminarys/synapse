@@ -99,5 +99,6 @@ assets = [
     ["target/release/synapse", "usr/bin/", "755"],
     ["target/release/sycli", "usr/bin/", "755"],
     ["README.md", "usr/share/doc/synapse/README", "644"],
-    ["example_config.toml", "usr/share/synapse/config.toml.example", "644"]
+    ["example_config.toml", "usr/share/synapse/synapse.toml.example", "644"],
+    ["sycli_config.toml", "usr/share/synapse/sycli.toml.example", "644"]
 ]
