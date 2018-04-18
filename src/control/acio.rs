@@ -177,6 +177,11 @@ impl cio::CIO for ACIO {
         Ok(())
     }
 
+    fn propagate(&mut self, event: cio::Event) {
+        let mut d = self.data.borrow_mut();
+        d.events.push(event);
+    }
+
     fn add_peer(&mut self, mut peer: torrent::PeerConn) -> Result<cio::PID> {
         if self.data.borrow().peers.len() > CONFIG.net.max_open_sockets {
             let mut pruned = Vec::new();

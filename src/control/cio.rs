@@ -41,6 +41,9 @@ pub trait CIO {
     /// Returns events for peers, timers, channels, etc.
     fn poll(&mut self, events: &mut Vec<Event>) -> Result<()>;
 
+    /// Self propagate an event. Used to achieve non standard control flow.
+    fn propagate(&mut self, event: Event);
+
     /// Adds a peer to be polled on
     fn add_peer(&mut self, peer: torrent::PeerConn) -> Result<PID>;
 
@@ -125,6 +128,8 @@ pub mod test {
         fn poll(&mut self, _: &mut Vec<Event>) -> Result<()> {
             return Ok(());
         }
+
+        fn propagate(&mut self, _: Event) {}
 
         fn add_peer(&mut self, peer: torrent::PeerConn) -> Result<PID> {
             let mut d = self.data.lock().unwrap();

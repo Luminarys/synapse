@@ -1,4 +1,6 @@
 use std::time;
+use std::net::SocketAddr;
+use std::collections::HashSet;
 
 use torrent::Torrent;
 use control::cio;
@@ -81,5 +83,39 @@ impl<T: cio::CIO> Job<T> for TorrentTxUpdate {
             }
         }
         self.active.retain(|id, _| torrents.contains_key(id));
+    }
+}
+
+pub struct PEXUpdate {
+    peers: UHashMap<HashSet<SocketAddr>>,
+}
+
+impl PEXUpdate {
+    pub fn new() -> PEXUpdate {
+        PEXUpdate {
+            peers: UHashMap::default(),
+        }
+    }
+}
+
+impl<T: cio::CIO> Job<T> for PEXUpdate {
+    fn update(&mut self, torrents: &mut UHashMap<Torrent<T>>) {
+        for (id, torrent) in torrents.iter_mut().filter(|(_, t)| !t.info().private) {
+            if !self.peers.contains_key(id) {
+                self.peers.insert(*id, HashSet::new());
+            }
+
+            let (added, removed) = {
+                let peers: HashSet<_> = torrent.peers().values().map(|p| p.addr()).collect();
+                let mut prev = self.peers.get_mut(id).unwrap();
+                let mut add: Vec<_> = peers.difference(prev).cloned().collect();
+                let mut rem: Vec<_> = prev.difference(&peers).cloned().collect();
+                add.truncate(50);
+                rem.truncate(50 - add.len());
+                (add, rem)
+            };
+            torrent.update_pex(&added, &removed);
+        }
+        self.peers.retain(|id, _| torrents.contains_key(id));
     }
 }

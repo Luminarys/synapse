@@ -81,6 +81,10 @@ pub enum Response {
         tid: usize,
         peers: Vec<SocketAddr>,
     },
+    PEX {
+        tid: usize,
+        peers: Vec<SocketAddr>,
+    },
 }
 
 #[derive(Debug)]

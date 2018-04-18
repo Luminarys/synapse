@@ -28,6 +28,8 @@ const TX_JOB_MS: u64 = 500;
 const TOKEN_JOB_SECS: u64 = 60 * 60 * 4;
 /// Interval to check space on disk
 const SPACE_JOB_SECS: u64 = 10;
+/// Interval to send PEX updates
+const PEX_JOB_SECS: u64 = 60 * 5;
 /// Interval to enqueue new torrents
 const ENQUEUE_JOB_SECS: u64 = 5;
 
@@ -104,6 +106,10 @@ impl<T: cio::CIO> Control<T> {
         jobs.add_job(
             job::TorrentTxUpdate::new(),
             time::Duration::from_millis(TX_JOB_MS),
+        );
+        jobs.add_job(
+            job::PEXUpdate::new(),
+            time::Duration::from_millis(PEX_JOB_SECS),
         );
 
         jobs.add_cjob(TokenUpdate, time::Duration::from_secs(TOKEN_JOB_SECS));
@@ -298,7 +304,9 @@ impl<T: cio::CIO> Control<T> {
                     return;
                 }
             }
-            tracker::Response::DHT { tid, peers } => (tid, peers),
+            tracker::Response::DHT { tid, peers } | tracker::Response::PEX { tid, peers } => {
+                (tid, peers)
+            }
         };
         for ip in &peers {
             trace!("Adding peer({:?})!", ip);

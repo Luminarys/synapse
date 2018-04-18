@@ -12,8 +12,11 @@ use std::borrow::Cow;
 use std::path::PathBuf;
 
 use bincode;
+use bencode::BEncode;
 use chrono::{DateTime, Utc};
 use url::Url;
+use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
+use byteorder::{BigEndian, ReadBytesExt};
 
 pub use self::bitfield::Bitfield;
 pub use self::info::{Info, LocIter};
@@ -23,7 +26,7 @@ pub use self::picker::Block;
 
 use self::picker::Picker;
 use buffers::Buffer;
-use {bencode, disk, rpc, util, CONFIG, EXT_PROTO, UT_META_ID};
+use {bencode, disk, rpc, util, CONFIG, EXT_PROTO, UT_META_ID, UT_PEX_ID};
 use control::cio;
 use rpc::resource::{self, Resource, SResourceUpdate};
 use throttle::Throttle;
@@ -31,6 +34,8 @@ use tracker::{self, TrackerResponse};
 use util::{FHashSet, UHashMap};
 use session::torrent::current::Session;
 use {session, stat};
+
+const MAX_PEERS: usize = 50;
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum TrackerStatus {
@@ -940,16 +945,25 @@ impl<T: cio::CIO> Torrent<T> {
                 if (rsv[EXT_PROTO.0] & EXT_PROTO.1) != 0 {
                     let mut ed = BTreeMap::new();
                     let mut m = BTreeMap::new();
+
                     m.insert(
                         "ut_metadata".to_owned(),
                         bencode::BEncode::Int(i64::from(UT_META_ID)),
                     );
+                    if !self.info.private {
+                        m.insert(
+                            "ut_pex".to_owned(),
+                            bencode::BEncode::Int(i64::from(UT_PEX_ID)),
+                        );
+                    }
+
                     ed.insert("m".to_owned(), bencode::BEncode::Dict(m));
                     ed.insert(
                         "metadata_size".to_owned(),
                         bencode::BEncode::Int(self.info_bytes.len() as i64),
                     );
                     let payload = bencode::BEncode::Dict(ed).encode_to_buf();
+
                     peer.send_message(Message::Extension { id: 0, payload });
                 }
             }
@@ -1240,6 +1254,45 @@ impl<T: cio::CIO> Torrent<T> {
                 i => {
                     debug!("Got unknown ut_meta id: {}", i);
                 }
+            }
+        } else if id == UT_PEX_ID {
+            const PEX_SEED: u8 = 0x02;
+            const PEX_OUTGOING: u8 = 0x10;
+            if peer.exts().ut_pex.is_none() {
+                return Err(());
+            }
+            if self.info.private {
+                return Err(());
+            }
+            let b = bencode::decode_buf(&payload).map_err(|_| ())?;
+            let mut d = b.into_dict().ok_or(())?;
+            let mut peers = vec![];
+            let flags = d.remove("added.f")
+                .and_then(bencode::BEncode::into_bytes)
+                .unwrap_or_else(|| vec![0; 50]);
+            match d.remove("added") {
+                Some(bencode::BEncode::String(ref data)) => for (p, flag) in
+                    data.chunks(6).zip(flags)
+                {
+                    if (flag & PEX_SEED != 0) && self.complete() {
+                        continue;
+                    }
+                    if !(flag & PEX_OUTGOING != 0) {
+                        continue;
+                    }
+
+                    let ip = Ipv4Addr::new(p[0], p[1], p[2], p[3]);
+                    let socket = SocketAddrV4::new(ip, (&p[4..]).read_u16::<BigEndian>().unwrap());
+                    peers.push(SocketAddr::V4(socket));
+                },
+                _ => {}
+            };
+            if !peers.is_empty() {
+                self.cio
+                    .propagate(cio::Event::Tracker(Ok(tracker::Response::PEX {
+                        tid: self.id,
+                        peers,
+                    })));
             }
         } else {
             debug!("Got unknown extension id: {}", id);
@@ -1658,6 +1711,9 @@ impl<T: cio::CIO> Torrent<T> {
     }
 
     pub fn add_peer(&mut self, conn: PeerConn) -> Option<usize> {
+        if self.peers.len() >= MAX_PEERS {
+            return None;
+        }
         if self.peers.values().any(|p| p.addr() == conn.sock().addr()) {
             return None;
         }
@@ -1828,8 +1884,54 @@ impl<T: cio::CIO> Torrent<T> {
         self.announce_status();
     }
 
-    pub fn peers(&self) -> usize {
+    pub fn num_peers(&self) -> usize {
         self.peers.len()
+    }
+
+    pub fn peers(&self) -> &UHashMap<Peer<T>> {
+        &self.peers
+    }
+
+    pub fn update_pex(&mut self, added: &[SocketAddr], removed: &[SocketAddr]) {
+        let mut a = vec![];
+        let mut a6 = vec![];
+        let mut r = vec![];
+        let mut r6 = vec![];
+        for addr in added {
+            match addr {
+                SocketAddr::V4(addr) => {
+                    a.extend(&addr.ip().octets());
+                }
+                SocketAddr::V6(addr) => {
+                    a6.extend(&addr.ip().octets());
+                }
+            }
+        }
+        for addr in removed {
+            match addr {
+                SocketAddr::V4(addr) => {
+                    r.extend(&addr.ip().octets());
+                }
+                SocketAddr::V6(addr) => {
+                    r6.extend(&addr.ip().octets());
+                }
+            }
+        }
+        let mut dict = BTreeMap::new();
+        dict.insert("added".to_string(), BEncode::String(a));
+        dict.insert("added6".to_string(), BEncode::String(a6));
+        dict.insert("removed".to_string(), BEncode::String(r));
+        dict.insert("removed6".to_string(), BEncode::String(r6));
+        let payload = BEncode::Dict(dict).encode_to_buf();
+
+        for (_, peer) in &mut self.peers {
+            if let Some(id) = peer.exts().ut_pex {
+                peer.send_message(Message::Extension {
+                    id,
+                    payload: payload.clone(),
+                });
+            }
+        }
     }
 
     pub fn rank_peers(&mut self) {

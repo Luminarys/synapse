@@ -61,6 +61,7 @@ pub struct Peer<T: cio::CIO> {
 
 pub struct ExtIDs {
     pub ut_meta: Option<u8>,
+    pub ut_pex: Option<u8>,
 }
 
 #[derive(Debug)]
@@ -237,7 +238,7 @@ impl<T: cio::CIO> Peer<T> {
             cid,
             ext_ids: ExtIDs::new(),
             pieces_updated: false,
-            rank: t.peers(),
+            rank: t.num_peers(),
         };
         p.send_message(Message::handshake(&t.info));
         if t.info.complete() {
@@ -421,6 +422,9 @@ impl<T: cio::CIO> Peer<T> {
                     if let Some(uti) = m.remove("ut_metadata").and_then(|v| v.into_int()) {
                         self.ext_ids.ut_meta = Some(uti as u8);
                     }
+                    if let Some(utp) = m.remove("ut_pex").and_then(|v| v.into_int()) {
+                        self.ext_ids.ut_pex = Some(utp as u8);
+                    }
                 }
             }
         }
@@ -523,7 +527,10 @@ impl<T: cio::CIO> fmt::Debug for Peer<T> {
 
 impl ExtIDs {
     fn new() -> ExtIDs {
-        ExtIDs { ut_meta: None }
+        ExtIDs {
+            ut_meta: None,
+            ut_pex: None,
+        }
     }
 }
 
