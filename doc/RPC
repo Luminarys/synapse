@@ -72,7 +72,7 @@ torrent
         "progress": number,         0..1
         "priority": number*,         1..5 default 3
         "availability": number,     0..1
-        "sequential": boolean*,      true if downloading sequentially
+        "strategy": strategy enum*,
         "rate_up": number,          bit/sec
         "rate_down": number,        bit/sec
         "throttle_up": number*,      bit/sec OR null to use global limit OR -1 to ignore limits
@@ -88,7 +88,7 @@ torrent
         "files": number,            # of files or null if magnet and unknown
     }
 
-Status enum:
+status enum:
     "paused": paused by a client
     "pending": waiting to begin downloading
     "leeching": leeching
@@ -97,6 +97,10 @@ Status enum:
     "hashing": hash check in progress
     "magnet": torrent still in magnet state, acquiring metadata
     "error": see "error" field for details
+
+strategy enum:
+    "rarest": prioritize rare pieces in download
+    "sequential": prioritize sequential pieces in download
 
 file
 

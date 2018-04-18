@@ -1272,8 +1272,10 @@ impl<T: cio::CIO> Torrent<T> {
             self.set_priority(p);
         }
 
-        if let Some(s) = u.sequential {
-            self.change_picker(s);
+        match u.strategy {
+            Some(resource::Strategy::Rarest) => self.change_picker(false),
+            Some(resource::Strategy::Sequential) => self.change_picker(true),
+            None => {}
         }
     }
 
@@ -1463,7 +1465,11 @@ impl<T: cio::CIO> Torrent<T> {
             priority: self.priority,
             progress: self.progress(),
             availability: self.availability(),
-            sequential: self.sequential(),
+            strategy: if self.sequential() {
+                resource::Strategy::Sequential
+            } else {
+                resource::Strategy::Rarest
+            },
             rate_up: 0,
             rate_down: 0,
             throttle_up: self.throttle.ul_rate(),
@@ -1856,6 +1862,7 @@ impl<T: cio::CIO> Torrent<T> {
 
     pub fn change_picker(&mut self, sequential: bool) {
         debug!("Swapping pickers!");
+        let prev_seq = self.picker.is_sequential();
         self.picker.change_picker(sequential, &self.pieces);
         for peer in self.peers.values() {
             self.picker.add_peer(peer);
@@ -1864,13 +1871,19 @@ impl<T: cio::CIO> Torrent<T> {
         let id = self.rpc_id();
         let sequential = self.picker.is_sequential();
         self.clear_piece_cache();
-        self.cio.msg_rpc(rpc::CtlMessage::Update(vec![
-            SResourceUpdate::TorrentPicker {
-                id,
-                kind: resource::ResourceKind::Torrent,
-                sequential,
-            },
-        ]));
+        if prev_seq != sequential {
+            self.cio.msg_rpc(rpc::CtlMessage::Update(vec![
+                SResourceUpdate::TorrentPicker {
+                    id,
+                    kind: resource::ResourceKind::Torrent,
+                    strategy: if sequential {
+                        resource::Strategy::Sequential
+                    } else {
+                        resource::Strategy::Rarest
+                    },
+                },
+            ]));
+        }
     }
 
     fn clear_piece_cache(&mut self) {

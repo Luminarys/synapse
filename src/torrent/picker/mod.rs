@@ -80,7 +80,7 @@ impl Picker {
     /// will default to rarest first.
     pub fn new(info: &Arc<Info>, pieces: &Bitfield, priorities: &[u8]) -> Picker {
         let scale = info.piece_len / 16_384;
-        let picker = sequential::Picker::new(pieces);
+        let picker = rarest::Picker::new(pieces);
         let last_piece = info.pieces().saturating_sub(1);
         let lpl = info.piece_len(last_piece);
         let last_piece_scale = if lpl % 16_384 == 0 {
@@ -94,7 +94,7 @@ impl Picker {
             HashMap::with_capacity(8192)
         };
         let mut picker = Picker {
-            picker: PickerKind::Sequential(picker),
+            picker: PickerKind::Rarest(picker),
             scale,
             last_piece,
             last_piece_scale,

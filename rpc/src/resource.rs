@@ -116,7 +116,7 @@ pub enum SResourceUpdate<'a> {
         id: String,
         #[serde(rename = "type")]
         kind: ResourceKind,
-        sequential: bool,
+        strategy: Strategy,
     },
     TorrentPriority {
         id: String,
@@ -187,7 +187,7 @@ pub struct CResourceUpdate {
     pub id: String,
     pub path: Option<String>,
     pub priority: Option<u8>,
-    pub sequential: Option<bool>,
+    pub strategy: Option<Strategy>,
     #[serde(deserialize_with = "deserialize_throttle")]
     #[serde(default)]
     pub throttle_up: Option<Option<i64>>,
@@ -275,7 +275,7 @@ pub struct Torrent {
     pub priority: u8,
     pub progress: f32,
     pub availability: f32,
-    pub sequential: bool,
+    pub strategy: Strategy,
     pub rate_up: u64,
     pub rate_down: u64,
     pub throttle_up: Option<i64>,
@@ -331,8 +331,8 @@ impl Torrent {
                 self.peers = peers;
                 self.availability = availability;
             }
-            SResourceUpdate::TorrentPicker { sequential, .. } => {
-                self.sequential = sequential;
+            SResourceUpdate::TorrentPicker { strategy, .. } => {
+                self.strategy = strategy;
             }
             SResourceUpdate::TorrentPriority { priority, .. } => {
                 self.priority = priority;
@@ -357,6 +357,23 @@ pub enum Status {
     Seeding,
     Hashing,
     Error,
+}
+
+#[derive(Copy, Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "lowercase")]
+#[serde(deny_unknown_fields)]
+pub enum Strategy {
+    Rarest,
+    Sequential,
+}
+
+impl Strategy {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Strategy::Rarest => "rarest",
+            Strategy::Sequential => "sequential",
+        }
+    }
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
@@ -692,7 +709,7 @@ impl fmt::Display for Resource {
                 write!(f, "\n")?;
                 write!(f, "  availability: {}", t.availability)?;
                 write!(f, "\n")?;
-                write!(f, "  sequential: {}", t.sequential)?;
+                write!(f, "  strategy: {:?}", t.strategy)?;
                 write!(f, "\n")?;
                 write!(f, "  upload: {} B/s", t.rate_up)?;
                 write!(f, "\n")?;
@@ -902,7 +919,7 @@ impl Queryable for Torrent {
             "progress" => Some(Field::F(self.progress)),
             "availability" => Some(Field::F(self.availability)),
 
-            "sequential" => Some(Field::B(self.sequential)),
+            "strategy" => Some(Field::S(self.strategy.as_str())),
 
             _ if f.starts_with("user_data") => self.user_data.field(&f[9..]),
 
@@ -1065,7 +1082,7 @@ impl Default for Torrent {
             priority: 0,
             progress: 0.,
             availability: 0.,
-            sequential: false,
+            strategy: Strategy::Rarest,
             rate_up: 0,
             rate_down: 0,
             throttle_up: None,
