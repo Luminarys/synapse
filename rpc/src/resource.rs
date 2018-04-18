@@ -370,8 +370,8 @@ pub enum Strategy {
 impl Strategy {
     pub fn as_str(&self) -> &'static str {
         match self {
-            Strategy::Rarest => "rarest",
-            Strategy::Sequential => "sequential",
+            &Strategy::Rarest => "rarest",
+            &Strategy::Sequential => "sequential",
         }
     }
 }
