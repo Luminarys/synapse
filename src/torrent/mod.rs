@@ -1899,20 +1899,20 @@ impl<T: cio::CIO> Torrent<T> {
         let mut r6 = vec![];
         for addr in added {
             match addr {
-                SocketAddr::V4(addr) => {
+                &SocketAddr::V4(addr) => {
                     a.extend(&addr.ip().octets());
                 }
-                SocketAddr::V6(addr) => {
+                &SocketAddr::V6(addr) => {
                     a6.extend(&addr.ip().octets());
                 }
             }
         }
         for addr in removed {
             match addr {
-                SocketAddr::V4(addr) => {
+                &SocketAddr::V4(addr) => {
                     r.extend(&addr.ip().octets());
                 }
-                SocketAddr::V6(addr) => {
+                &SocketAddr::V6(addr) => {
                     r6.extend(&addr.ip().octets());
                 }
             }

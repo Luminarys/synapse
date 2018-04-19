@@ -100,7 +100,7 @@ impl PEXUpdate {
 
 impl<T: cio::CIO> Job<T> for PEXUpdate {
     fn update(&mut self, torrents: &mut UHashMap<Torrent<T>>) {
-        for (id, torrent) in torrents.iter_mut().filter(|(_, t)| !t.info().private) {
+        for (id, torrent) in torrents.iter_mut().filter(|&(_, ref t)| !t.info().private) {
             if !self.peers.contains_key(id) {
                 self.peers.insert(*id, HashSet::new());
             }
