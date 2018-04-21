@@ -15,7 +15,6 @@ extern crate base32;
 extern crate base64;
 extern crate bincode;
 extern crate byteorder;
-extern crate c_ares;
 extern crate chrono;
 #[macro_use]
 extern crate error_chain;
@@ -42,6 +41,7 @@ extern crate toml;
 extern crate url;
 extern crate vecio;
 
+extern crate adns;
 extern crate synapse_bencode as bencode;
 extern crate synapse_rpc as rpc_lib;
 extern crate synapse_session as session;

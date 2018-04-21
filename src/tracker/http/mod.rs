@@ -300,7 +300,13 @@ impl Handler {
         );
 
         debug!("Dispatching redirect DNS req, id {:?}", id);
-        dns.new_query(id, host);
+        if let Some(ip) = dns.new_query(id, host).chain_err(|| ErrorKind::IO)? {
+            debug!("Using cached DNS response");
+            let res = self.dns_resolved(dns::QueryResponse { id, res: Ok(ip) });
+            if res.is_some() {
+                bail!("Failed to estbalish connection to tracker!");
+            }
+        }
         Ok(())
     }
 
@@ -403,7 +409,13 @@ impl Handler {
         );
 
         debug!("Dispatching DNS req, id {:?}", id);
-        dns.new_query(id, host);
+        if let Some(ip) = dns.new_query(id, host).chain_err(|| ErrorKind::IO)? {
+            debug!("Using cached DNS response");
+            let res = self.dns_resolved(dns::QueryResponse { id, res: Ok(ip) });
+            if res.is_some() {
+                bail!("Failed to estbalish connection to tracker!");
+            }
+        }
 
         Ok(())
     }

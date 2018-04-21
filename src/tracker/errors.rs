@@ -30,9 +30,14 @@ error_chain! {
             display("tracker timeout")
         }
 
-        DNS {
-            description("the tracker url could not be resolved to an IP address")
-                display("tracker dns failure")
+        DNSTimeout {
+            description("the tracker url dns resolution timed out")
+                display("tracker dns timeout")
+        }
+
+        DNSInvalid {
+            description("the tracker url does not correspond to a valid IP address")
+                display("tracker dns invalid")
         }
     }
 }

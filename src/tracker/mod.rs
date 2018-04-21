@@ -24,7 +24,6 @@ use CONFIG;
 pub struct Tracker {
     poll: amy::Poller,
     ch: handle::Handle<Request, Response>,
-    dns_res: amy::Receiver<dns::QueryResponse>,
     http: http::Handler,
     queue: VecDeque<Announce>,
     udp: udp::Handler,
@@ -106,11 +105,10 @@ impl Tracker {
         let mut reg = poll.get_registrar();
         let (ch, dh) = handle::Handle::new(creg, &mut reg)?;
         let timer = reg.set_interval(150)?;
-        let (dtx, drx) = reg.channel()?;
         let udp = udp::Handler::new(&reg)?;
         let dht = dht::Manager::new(&reg, db)?;
         let http = http::Handler::new(&reg)?;
-        let dns = dns::Resolver::new(dtx);
+        let dns = dns::Resolver::new(&reg)?;
         let th = dh.run("trk", move |h| {
             Tracker {
                 poll,
@@ -119,7 +117,6 @@ impl Tracker {
                 dht,
                 http,
                 dns,
-                dns_res: drx,
                 timer,
                 queue: VecDeque::new(),
                 shutting_down: false,
@@ -161,10 +158,10 @@ impl Tracker {
     fn handle_event(&mut self, event: amy::Notification) -> result::Result<(), ()> {
         if event.id == self.ch.rx.get_id() {
             return self.handle_request();
-        } else if event.id == self.dns_res.get_id() {
-            self.handle_dns_res();
         } else if event.id == self.timer {
             self.handle_timer();
+        } else if event.id == self.dns.id {
+            self.handle_dns();
         } else {
             self.handle_socket(event);
         }
@@ -228,18 +225,29 @@ impl Tracker {
         }
     }
 
-    fn handle_dns_res(&mut self) {
-        while let Ok(r) = self.dns_res.try_recv() {
-            let resp = if self.http.contains(r.id) {
-                self.http.dns_resolved(r)
-            } else if self.udp.contains(r.id) {
-                self.udp.dns_resolved(r)
-            } else {
-                None
-            };
-            if let Some(r) = resp {
-                self.send_response(r);
-            }
+    fn handle_dns(&mut self) {
+        let mut dresps = vec![];
+        let res = self.dns.res.read(&mut self.dns.sock, |resp| {
+            dresps.push(resp);
+        });
+        if let Err(e) = res {
+            error!("DNS resolution failed: {}", e);
+        }
+        for r in dresps {
+            self.handle_dns_resp(r.into());
+        }
+    }
+
+    fn handle_dns_resp(&mut self, r: dns::QueryResponse) {
+        let resp = if self.http.contains(r.id) {
+            self.http.dns_resolved(r)
+        } else if self.udp.contains(r.id) {
+            self.udp.dns_resolved(r)
+        } else {
+            None
+        };
+        if let Some(r) = resp {
+            self.send_response(r);
         }
     }
 
@@ -252,8 +260,14 @@ impl Tracker {
             self.send_response(r);
         }
 
-        self.dns.tick();
         self.dht.tick();
+        let mut dresps = vec![];
+        self.dns.res.tick(|resp| {
+            dresps.push(resp);
+        });
+        for r in dresps {
+            self.handle_dns_resp(r.into());
+        }
     }
 
     fn handle_socket(&mut self, event: amy::Notification) {

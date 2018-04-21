@@ -22,9 +22,6 @@ Install dependencies:
 - OpenSSL >= 1.0.2
 - pkg-config
 - gcc | clang
-- c-ares 1.13 | autotools + gmake(FreeBSD only) *
-
-_\*Only required for synapse_
 
 Synapse and sycli can be installed with:
 ```

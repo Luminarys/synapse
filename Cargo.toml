@@ -12,7 +12,7 @@ path = "src/main.rs"
 name = "synapse"
 
 [workspace]
-members = ["sycli", "rpc", "session", "bencode"]
+members = ["sycli", "rpc", "session", "bencode", "adns"]
 exclude = ["synulator"]
 
 [build-dependencies]
@@ -23,7 +23,6 @@ base32 = "0.3.1"
 base64 = "0.8.0"
 bincode = "1"
 byteorder = "1"
-c-ares = "5"
 clippy = {version = "*", optional = true}
 fnv = "1"
 fs_extra = "1"
@@ -43,6 +42,7 @@ shellexpand = "1"
 synapse-rpc = { path = "rpc" }
 synapse-session = { path = "session" }
 synapse-bencode = { path = "bencode" }
+adns = { path = "adns" }
 toml = "0.4"
 url = "1"
 vecio = "0.1"

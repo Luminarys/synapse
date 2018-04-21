@@ -1,0 +1,8 @@
+[package]
+name = "adns"
+version = "0.1.0"
+authors = ["Luminarys <postmaster@gensok.io>"]
+
+[dependencies]
+resolv-conf = "0.6"
+dns-parser = "0.7"
