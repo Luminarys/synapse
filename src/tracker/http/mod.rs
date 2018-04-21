@@ -209,7 +209,7 @@ impl Handler {
                     })
                 }
                 Ok(HTTPRes::Redirect(l)) => {
-                    loc = Some(l);
+                    loc = Some((l, trk.url.clone()));
                     None
                 }
                 Ok(HTTPRes::None) => None,
@@ -227,7 +227,7 @@ impl Handler {
             self.connections.remove(&id);
         }
 
-        if let Some(l) = loc {
+        if let Some((l, old)) = loc {
             let trk = self.connections.remove(&id).unwrap();
             // Disallow 2 levels of redirection
             if trk.redirect {
@@ -237,7 +237,7 @@ impl Handler {
                     resp: Err(ErrorKind::InvalidResponse("Too many redirects").into()),
                 });
             }
-            if let Err(e) = self.try_redirect(&l, trk.torrent, dns) {
+            if let Err(e) = self.try_redirect(&l, old, trk.torrent, dns) {
                 debug!(
                     "Announce response received for {:?}, redirecting!",
                     trk.torrent
@@ -252,7 +252,13 @@ impl Handler {
         resp
     }
 
-    fn try_redirect(&mut self, url: &str, torrent: usize, dns: &mut dns::Resolver) -> Result<()> {
+    fn try_redirect(
+        &mut self,
+        url: &str,
+        original_url: Arc<Url>,
+        torrent: usize,
+        dns: &mut dns::Resolver,
+    ) -> Result<()> {
         let url = Url::parse(url).chain_err(|| ErrorKind::InvalidResponse("Malformed redirect!"))?;
         let mut http_req = Vec::with_capacity(50);
         http_req.extend_from_slice(b"GET ");
@@ -294,7 +300,7 @@ impl Handler {
                 last_updated: Instant::now(),
                 redirect: true,
                 torrent,
-                url: Arc::new(url.clone()),
+                url: original_url,
                 state: TrackerState::new(sock, http_req, port),
             },
         );

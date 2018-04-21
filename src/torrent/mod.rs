@@ -531,7 +531,6 @@ impl<T: cio::CIO> Torrent<T> {
     }
 
     pub fn set_tracker_response(&mut self, url: &Url, resp: &tracker::Result<TrackerResponse>) {
-        debug!("Processing tracker response");
         let mut time = Instant::now();
         let mut empty = false;
         match *resp {
@@ -540,6 +539,7 @@ impl<T: cio::CIO> Torrent<T> {
                     .iter_mut()
                     .find(|t| &*t.url == url)
                     .map(|tracker| {
+                        debug!("Got valid response for {}", tracker.url);
                         time += Duration::from_secs(u64::from(r.interval));
                         tracker.status = TrackerStatus::Ok {
                             seeders: r.seeders,
@@ -558,6 +558,7 @@ impl<T: cio::CIO> Torrent<T> {
                     .iter_mut()
                     .find(|t| &*t.url == url)
                     .map(|tracker| {
+                        debug!("Got tracker level error for {}", tracker.url);
                         time += Duration::from_secs(300);
                         tracker.update = Some(time);
                         tracker.status = TrackerStatus::Failure(s.clone());
@@ -569,7 +570,7 @@ impl<T: cio::CIO> Torrent<T> {
                     .iter_mut()
                     .find(|t| &*t.url == url)
                     .map(|tracker| {
-                        error!("Failed to query tracker {}: {}", url, e);
+                        error!("Failed to query tracker {}: {}", tracker.url, e);
                         // Wait 5 minutes before trying again
                         time += Duration::from_secs(300);
                         tracker.update = Some(time);

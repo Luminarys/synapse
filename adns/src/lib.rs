@@ -253,7 +253,7 @@ mod tests {
         resolver
             .query(&mut sock, 0, "thiswebsiteshouldexit12589t69.com")
             .unwrap();
-        std::thread::sleep(Duration::from_millis(100));
+        std::thread::sleep(Duration::from_millis(200));
         let mut processed = false;
         resolver
             .read(&mut sock, |resp| {
