@@ -261,6 +261,7 @@ mod tests {
                 assert_eq!(resp.result, Err(Error::NotFound))
             })
             .unwrap();
+        #[cfg(not(target_os = "macos"))]
         assert!(processed);
     }
 }
