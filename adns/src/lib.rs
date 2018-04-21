@@ -54,6 +54,10 @@ impl Resolver {
         }
     }
 
+    pub fn purge(&mut self) {
+        self.cache.clear();
+    }
+
     pub fn from_resolv() -> io::Result<Resolver> {
         let mut buf = Vec::with_capacity(512);
         unsafe {
@@ -180,7 +184,7 @@ impl Resolver {
                                     Query {
                                         id,
                                         domain,
-                                        resps,
+                                        resps: resps + 1,
                                         deadline,
                                     },
                                 );
@@ -250,10 +254,13 @@ mod tests {
             .query(&mut sock, 0, "thiswebsiteshouldexit12589t69.com")
             .unwrap();
         std::thread::sleep(Duration::from_millis(100));
+        let mut processed = false;
         resolver
             .read(&mut sock, |resp| {
+                processed = true;
                 assert_eq!(resp.result, Err(Error::NotFound))
             })
             .unwrap();
+        assert!(processed);
     }
 }
