@@ -235,7 +235,7 @@ impl Resolver {
                 true
             }
         });
-        self.cache.retain(|_, entry| now > entry.deadline);
+        self.cache.retain(|_, entry| now < entry.deadline);
     }
 }
 
