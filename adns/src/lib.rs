@@ -101,25 +101,23 @@ impl Resolver {
         if let Some(entry) = self.cache.get(domain) {
             return Ok(Some(entry.ip));
         }
-
-        let qn = self.qnum;
-        self.qnum.wrapping_add(1);
-
-        let mut query = dns_parser::Builder::new_query(qn, true);
-        query.add_question(domain, dns_parser::QueryType::A, dns_parser::QueryClass::IN);
-        let packet = query.build().unwrap_or_else(|d| d);
-        sock.send_to(&packet, self.server)?;
-
-        let mut query = dns_parser::Builder::new_query(qn, true);
-        query.add_question(
-            domain,
-            dns_parser::QueryType::AAAA,
-            dns_parser::QueryClass::IN,
-        );
-        let packet = query.build().unwrap_or_else(|d| d);
-        sock.send_to(&packet, self.server)?;
-
         if self.responses.get(domain).is_none() {
+            let qn = self.qnum;
+            self.qnum.wrapping_add(1);
+            let mut query = dns_parser::Builder::new_query(qn, true);
+            query.add_question(domain, dns_parser::QueryType::A, dns_parser::QueryClass::IN);
+            let packet = query.build().unwrap_or_else(|d| d);
+            sock.send_to(&packet, self.server)?;
+
+            let mut query = dns_parser::Builder::new_query(qn, true);
+            query.add_question(
+                domain,
+                dns_parser::QueryType::AAAA,
+                dns_parser::QueryClass::IN,
+            );
+            let packet = query.build().unwrap_or_else(|d| d);
+            sock.send_to(&packet, self.server)?;
+
             self.responses.insert(domain.to_string(), vec![]);
             self.queries.insert(
                 qn,
