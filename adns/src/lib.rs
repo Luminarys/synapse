@@ -11,12 +11,12 @@ pub struct Resolver {
     server: SocketAddr,
     cache: HashMap<String, CacheEntry>,
     queries: HashMap<u16, Query>,
+    responses: HashMap<String, Vec<usize>>,
     buf: Vec<u8>,
     qnum: u16,
 }
 
 struct Query {
-    id: usize,
     resps: u8,
     domain: String,
     deadline: Instant,
@@ -48,6 +48,7 @@ impl Resolver {
         Resolver {
             server,
             queries: HashMap::new(),
+            responses: HashMap::new(),
             cache: HashMap::new(),
             buf,
             qnum: 0,
@@ -84,6 +85,7 @@ impl Resolver {
         Ok(Resolver {
             server,
             queries: HashMap::new(),
+            responses: HashMap::new(),
             cache: HashMap::new(),
             buf,
             qnum: 0,
@@ -117,15 +119,18 @@ impl Resolver {
         let packet = query.build().unwrap_or_else(|d| d);
         sock.send_to(&packet, self.server)?;
 
-        self.queries.insert(
-            qn,
-            Query {
-                id,
-                resps: 0,
-                domain: domain.to_string(),
-                deadline: Instant::now() + Duration::from_secs(3),
-            },
-        );
+        if self.responses.get(domain).is_none() {
+            self.responses.insert(domain.to_string(), vec![]);
+            self.queries.insert(
+                qn,
+                Query {
+                    resps: 0,
+                    domain: domain.to_string(),
+                    deadline: Instant::now() + Duration::from_secs(3),
+                },
+            );
+        }
+        self.responses.get_mut(domain).unwrap().push(id);
         Ok(None)
     }
 
@@ -136,8 +141,8 @@ impl Resolver {
                     match dns_parser::Packet::parse(&self.buf[..amnt]) {
                         Ok(packet) => {
                             let qn = packet.header.id;
-                            let (id, domain, mut resps, deadline) = match self.queries.remove(&qn) {
-                                Some(q) => (q.id, q.domain, q.resps, q.deadline),
+                            let (domain, mut resps, deadline) = match self.queries.remove(&qn) {
+                                Some(q) => (q.domain, q.resps, q.deadline),
                                 // This could happen if timeout is exceeeded but we eventually get
                                 // a response, ignore.
                                 None => continue,
@@ -146,6 +151,12 @@ impl Resolver {
                             for answer in packet.answers {
                                 match answer.data {
                                     dns_parser::RRData::A(addr) => {
+                                        for id in self.responses.remove(&domain).unwrap() {
+                                            f(Response {
+                                                id,
+                                                result: Ok(addr.into()),
+                                            });
+                                        }
                                         self.cache.insert(
                                             domain,
                                             CacheEntry {
@@ -154,13 +165,15 @@ impl Resolver {
                                                     + Duration::from_secs(answer.ttl.into()),
                                             },
                                         );
-                                        f(Response {
-                                            id,
-                                            result: Ok(addr.into()),
-                                        });
                                         continue 'process;
                                     }
                                     dns_parser::RRData::AAAA(addr) => {
+                                        for id in self.responses.remove(&domain).unwrap() {
+                                            f(Response {
+                                                id,
+                                                result: Ok(addr.into()),
+                                            });
+                                        }
                                         self.cache.insert(
                                             domain,
                                             CacheEntry {
@@ -169,10 +182,6 @@ impl Resolver {
                                                     + Duration::from_secs(answer.ttl.into()),
                                             },
                                         );
-                                        f(Response {
-                                            id,
-                                            result: Ok(addr.into()),
-                                        });
                                         continue 'process;
                                     }
                                     _ => continue,
@@ -182,17 +191,18 @@ impl Resolver {
                                 self.queries.insert(
                                     qn,
                                     Query {
-                                        id,
                                         domain,
                                         resps: resps + 1,
                                         deadline,
                                     },
                                 );
                             } else {
-                                f(Response {
-                                    id,
-                                    result: Err(Error::NotFound),
-                                });
+                                for id in self.responses.remove(&domain).unwrap() {
+                                    f(Response {
+                                        id,
+                                        result: Err(Error::NotFound),
+                                    });
+                                }
                             }
                         }
                         Err(e) => {
@@ -211,12 +221,15 @@ impl Resolver {
 
     pub fn tick<F: FnMut(Response)>(&mut self, mut f: F) {
         let now = Instant::now();
+        let responses = &mut self.responses;
         self.queries.retain(|_, query| {
             if now > query.deadline {
-                f(Response {
-                    id: query.id,
-                    result: Err(Error::Timeout),
-                });
+                for id in responses.remove(&query.domain).unwrap() {
+                    f(Response {
+                        id,
+                        result: Err(Error::Timeout),
+                    });
+                }
                 false
             } else {
                 true
@@ -237,11 +250,18 @@ mod tests {
         sock.set_nonblocking(true).unwrap();
 
         assert_eq!(resolver.query(&mut sock, 0, "google.com").unwrap(), None);
+        assert_eq!(resolver.query(&mut sock, 1, "google.com").unwrap(), None);
+        assert_eq!(resolver.responses.get("google.com").unwrap().len(), 2);
         std::thread::sleep(Duration::from_millis(100));
         resolver.tick(|_| panic!("timeout should not have occured yet!"));
+        let mut count = 0;
         resolver
-            .read(&mut sock, |resp| assert!(resp.result.is_ok()))
+            .read(&mut sock, |resp| {
+                count += 1;
+                assert!(resp.result.is_ok());
+            })
             .unwrap();
+        assert_eq!(count, 2);
 
         assert!(
             resolver
