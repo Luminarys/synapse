@@ -100,6 +100,9 @@ pub enum CMessage {
         serial: u64,
         ids: Vec<String>,
     },
+    PurgeDNS {
+        serial: u64,
+    },
 }
 
 /// Server -> client message

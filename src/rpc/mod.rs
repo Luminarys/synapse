@@ -163,6 +163,7 @@ pub enum Message {
         start: bool,
         import: bool,
     },
+    PurgeDNS,
 }
 
 #[allow(dead_code)]

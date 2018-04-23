@@ -1,7 +1,7 @@
 [package]
 name = "synapse-rpc"
 description = "RPC data structures used by synapse"
-version = "0.1.18"
+version = "0.1.19"
 authors = ["Luminarys <postmaster@gensok.io>"]
 license = "ISC"
 repository = "https://github.com/Luminarys/synapse"

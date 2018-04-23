@@ -39,6 +39,7 @@ pub enum Request {
     GetPeers(GetPeers),
     AddNode(SocketAddr),
     DHTAnnounce([u8; 20]),
+    PurgeDNS,
     Ping,
     Shutdown,
 }
@@ -185,6 +186,9 @@ impl Tracker {
                     self.dht.announce(hash);
                 }
                 Request::Ping => {}
+                Request::PurgeDNS => {
+                    self.dns.res.purge();
+                }
                 Request::Shutdown => {
                     return Err(());
                 }

@@ -526,6 +526,14 @@ validated, however this may be expanded to includes files in the future.
         ]
     }
 
+PURGE_DNS          client->server
+
+Purges the current DNS cache of the client.
+
+    {
+        "type": "PURGE_DNS",
+    }
+
                                  ERROR MESSAGES
 
 All error messages share a common format and are only sent from server->client.

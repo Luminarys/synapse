@@ -634,6 +634,9 @@ impl<T: cio::CIO> Control<T> {
                     .and_then(|i| torrents.get_mut(i))
                     .map(|t| t.update_tracker_req(&id));
             }
+            rpc::Message::PurgeDNS => {
+                self.cio.msg_trk(tracker::Request::PurgeDNS);
+            }
         }
         false
     }
