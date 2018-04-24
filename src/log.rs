@@ -83,12 +83,12 @@ macro_rules! log(
                 let mut msg = Vec::with_capacity(25);
                 let time = Local::now();
                 write!(&mut msg, "{} [{}:{}] {}: ",
-                       time.format("%x %X"), module_path!(), line!(), $level).unwrap();
-                write!(&mut msg, $fmt).unwrap();
-                write!(&mut msg, "\n").unwrap();
+                       time.format("%x %X"), module_path!(), line!(), $level).ok();
+                write!(&mut msg, $fmt).ok();
+                write!(&mut msg, "\n").ok();
                 let stderr = ::std::io::stderr();
                 let mut handle = stderr.lock();
-                handle.write_all(&msg).unwrap();
+                handle.write_all(&msg).ok();
             }
         }
         }
@@ -104,12 +104,12 @@ macro_rules! log(
                 let mut msg = Vec::with_capacity(25);
                 let time = Local::now();
                 write!(&mut msg, "{} [{}:{}] {}: ",
-                       time.format("%x %X"), module_path!(), line!(), $level).unwrap();
-                write!(&mut msg, $fmt, $($arg)*).unwrap();
-                write!(&mut msg, "\n").unwrap();
+                       time.format("%x %X"), module_path!(), line!(), $level).ok();
+                write!(&mut msg, $fmt, $($arg)*).ok();
+                write!(&mut msg, "\n").ok();
                 let stderr = ::std::io::stderr();
                 let mut handle = stderr.lock();
-                handle.write_all(&msg).unwrap();
+                handle.write_all(&msg).ok();
             }
         }
         }

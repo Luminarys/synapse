@@ -72,7 +72,6 @@ impl Handler {
     }
 
     pub fn new_announce(&mut self, req: Announce, dns: &mut dns::Resolver) -> Result<()> {
-        // TODO: Attempt to parse into an IP address first, then perform dns res
         let url = req.url.clone();
         debug!("Received a new announce req for {:?}", url);
         let host = url.host_str().ok_or_else(|| {

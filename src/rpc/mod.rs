@@ -294,8 +294,10 @@ impl RPC {
                 import,
             } => {
                 debug!("Got torrent via HTTP transfer!");
-                self.reg.deregister(&conn).unwrap();
-                // TODO: Send this to the client in an error msg
+                if self.reg.deregister(&conn).is_err() {
+                    error!("Poll IO failure, dropping HTTP transfer!");
+                    return;
+                }
                 match bencode::decode_buf(&data) {
                     Ok(b) => match torrent::info::Info::from_bencode(b) {
                         Ok(i) => {
@@ -347,11 +349,10 @@ impl RPC {
                 }
             }
             TransferResult::Error {
-                conn,
+                conn: _,
                 err,
                 client: id,
             } => {
-                self.reg.deregister(&conn).unwrap();
                 let res = self.clients
                     .get_mut(&id)
                     .map(|c| {
@@ -572,26 +573,17 @@ impl RPC {
 
     fn cleanup(&mut self) {
         self.processor.remove_expired_tokens();
-        let reg = &self.reg;
         let processor = &mut self.processor;
         self.clients.retain(|id, client| {
             let res = client.timed_out();
             if res {
                 info!("client {} timed out", id);
-                reg.deregister(&client.conn).unwrap();
                 processor.remove_client(*id);
             }
             !res
         });
-        self.incoming.retain(|_, inc| {
-            let res = inc.timed_out();
-            if res {
-                reg.deregister(&inc.conn).unwrap();
-            }
-            !res
-        });
-        for (conn, id, err) in self.transfers.cleanup() {
-            reg.deregister(&conn).unwrap();
+        self.incoming.retain(|_, inc| !inc.timed_out());
+        for (_conn, id, err) in self.transfers.cleanup() {
             self.clients.get_mut(&id).map(|c| {
                 c.send(ws::Frame::Text(
                     serde_json::to_string(&SMessage::TransferFailed(err)).unwrap(),

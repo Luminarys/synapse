@@ -99,8 +99,11 @@ impl Listener {
                     if conn.set_nonblocking(true).is_err() {
                         continue;
                     }
-                    let pid = self.reg.register(&conn, amy::Event::Read).unwrap();
-                    self.incoming.insert(pid, (conn, Reader::new()));
+                    if let Ok(pid) = self.reg.register(&conn, amy::Event::Read) {
+                        self.incoming.insert(pid, (conn, Reader::new()));
+                    } else {
+                        error!("IO poll error, dropping connection!");
+                    }
                 }
                 Err(ref e) if e.kind() == ErrorKind::WouldBlock => {
                     break;
@@ -124,7 +127,10 @@ impl Listener {
             RRes::Success(hs) => {
                 debug!("Completed handshake({:?}) with peer, transferring!", hs);
                 let (conn, reader) = self.incoming.remove(&pid).unwrap();
-                self.reg.deregister(&conn).unwrap();
+                if self.reg.deregister(&conn).is_err() {
+                    error!("IO poll error, dropping connection!");
+                    return;
+                }
                 let hsd = hs.get_handshake_data();
                 if self.ch
                     .send(Message {
