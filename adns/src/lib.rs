@@ -101,6 +101,9 @@ impl Resolver {
         if let Some(entry) = self.cache.get(domain) {
             return Ok(Some(entry.ip));
         }
+        if let Ok(entry) = domain.parse() {
+            return Ok(Some(entry));
+        }
         if self.responses.get(domain).is_none() {
             let qn = self.qnum;
             self.qnum.wrapping_add(1);
