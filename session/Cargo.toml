@@ -1,7 +1,10 @@
 [package]
 name = "synapse-session"
+description = "On disk metadata structures used by synapse"
 version = "0.1.0"
 authors = ["Luminarys <postmaster@gensok.io>"]
+license = "ISC"
+repository = "https://github.com/Luminarys/synapse"
 
 [lib]
 name = "synapse_session"
