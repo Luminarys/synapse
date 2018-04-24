@@ -31,7 +31,8 @@ synapse independently.
 
 ## Releases
 
-- 2018-03-02: **1.0-rc1** is now available (latest): [tar.gz](https://github.com/Luminarys/synapse/archive/1.0-rc1.tar.gz)
+- 2018-04-24: **1.0-rc2** is now available (latest): [tar.gz](https://github.com/Luminarys/synapse/archive/1.0-rc2.tar.gz) [synapse](https://github.com/Luminarys/synapse/releases/download/1.0-rc2/synapse) [sycli](https://github.com/Luminarys/synapse/releases/download/1.0-rc2/sycli)
+- 2018-03-02: **1.0-rc1** is now available: [tar.gz](https://github.com/Luminarys/synapse/archive/1.0-rc1.tar.gz)
 
 ## Development
 
