@@ -106,7 +106,7 @@ impl Resolver {
         }
         if self.responses.get(domain).is_none() {
             let qn = self.qnum;
-            self.qnum.wrapping_add(1);
+            self.qnum = self.qnum.wrapping_add(1);
             let mut query = dns_parser::Builder::new_query(qn, true);
             query.add_question(domain, dns_parser::QueryType::A, dns_parser::QueryClass::IN);
             let packet = query.build().unwrap_or_else(|d| d);
