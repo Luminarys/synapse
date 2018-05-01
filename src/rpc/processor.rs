@@ -523,7 +523,7 @@ impl Processor {
                     TransferKind::UploadFiles { size, path },
                 ));
             }
-            CMessage::PurgeDNS { serial: _ } => {
+            CMessage::PurgeDns { serial: _ } => {
                 rmsg = Some(Message::PurgeDNS);
             }
         }

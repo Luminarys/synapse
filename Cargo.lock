@@ -1047,7 +1047,7 @@ dependencies = [
  "serde_json 1.0.15 (registry+https://github.com/rust-lang/crates.io-index)",
  "shellexpand 1.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "synapse-bencode 0.1.0",
- "synapse-rpc 0.1.19",
+ "synapse-rpc 0.1.20",
  "toml 0.4.6 (registry+https://github.com/rust-lang/crates.io-index)",
  "url 1.7.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "websocket 0.20.2 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -1100,7 +1100,7 @@ dependencies = [
  "serde_json 1.0.15 (registry+https://github.com/rust-lang/crates.io-index)",
  "shellexpand 1.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "synapse-bencode 0.1.0",
- "synapse-rpc 0.1.19",
+ "synapse-rpc 0.1.20",
  "synapse-session 0.1.0",
  "toml 0.4.6 (registry+https://github.com/rust-lang/crates.io-index)",
  "url 1.7.0 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -1109,7 +1109,7 @@ dependencies = [
 
 [[package]]
 name = "synapse-rpc"
-version = "0.1.19"
+version = "0.1.20"
 dependencies = [
  "chrono 0.4.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "regex 0.2.10 (registry+https://github.com/rust-lang/crates.io-index)",

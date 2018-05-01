@@ -100,7 +100,7 @@ pub enum CMessage {
         serial: u64,
         ids: Vec<String>,
     },
-    PurgeDNS {
+    PurgeDns {
         serial: u64,
     },
 }

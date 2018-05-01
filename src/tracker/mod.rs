@@ -266,9 +266,12 @@ impl Tracker {
 
         self.dht.tick();
         let mut dresps = vec![];
-        self.dns.res.tick(|resp| {
+        let res = self.dns.res.tick(&mut self.dns.sock, |resp| {
             dresps.push(resp);
         });
+        if let Err(e) = res {
+            info!("Failed to query dns: {}", e);
+        }
         for r in dresps {
             self.handle_dns_resp(r.into());
         }

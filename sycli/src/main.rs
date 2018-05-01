@@ -47,7 +47,8 @@ fn main() {
             Arg::with_name("server")
                 .help("URI of the synapse client to connect to.")
                 .short("s")
-                .long("server"),
+                .long("server")
+                .takes_value(true),
         )
         .arg(
             Arg::with_name("password")
