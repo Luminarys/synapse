@@ -21,6 +21,8 @@ impl Writer {
             }
             Err(e) => {
                 if e.kind() == io::ErrorKind::WouldBlock || e.kind() == io::ErrorKind::NotConnected
+                    // EPIPE can occur on WSL
+                    || e.kind() == io::ErrorKind::BrokenPipe
                 {
                     Ok(None)
                 } else {

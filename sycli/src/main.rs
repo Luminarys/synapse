@@ -7,9 +7,9 @@ extern crate error_chain;
 extern crate prettytable;
 extern crate reqwest;
 extern crate serde;
-extern crate serde_json;
 #[macro_use]
 extern crate serde_derive;
+extern crate serde_json;
 extern crate shellexpand;
 extern crate synapse_rpc as rpc;
 extern crate toml;

@@ -310,7 +310,7 @@ impl Handler {
             debug!("Using cached DNS response");
             let res = self.dns_resolved(dns::QueryResponse { id, res: Ok(ip) });
             if res.is_some() {
-                bail!("Failed to estbalish connection to tracker!");
+                bail!("Failed to establish connection to tracker!");
             }
         }
         Ok(())

@@ -28,6 +28,7 @@ pub fn aread<R: io::Read>(b: &mut [u8], r: &mut R) -> IOR {
         Ok(a) if a == b.len() => IOR::Complete,
         Ok(a) => IOR::Incomplete(a),
         Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => IOR::Blocked,
+        Err(ref e) if e.kind() == io::ErrorKind::BrokenPipe => IOR::Blocked,
         Err(e) => IOR::Err(e),
     }
 }
@@ -39,6 +40,7 @@ pub fn awrite<W: io::Write>(b: &[u8], w: &mut W) -> IOR {
         Ok(a) if a == b.len() => IOR::Complete,
         Ok(a) => IOR::Incomplete(a),
         Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => IOR::Blocked,
+        Err(ref e) if e.kind() == io::ErrorKind::BrokenPipe => IOR::Blocked,
         Err(e) => IOR::Err(e),
     }
 }
