@@ -63,13 +63,10 @@ version = "0.11"
 default-features = false
 features = []
 
-# TODO: Change when 0.2 is out
 [dependencies.num-bigint]
-git = "https://github.com/rust-num/num-bigint"
-rev = "007da2a"
-version = "0.2.0-git"
+version = "0.2.0"
 default-features = false
-features = ["serde"]
+features = ["serde", "std"]
 
 # TODO: Change when 0.11 is out
 [dependencies.nix]
