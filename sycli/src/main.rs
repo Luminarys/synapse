@@ -34,7 +34,8 @@ fn main() {
         .about("cli interface for synapse")
         .author(env!("CARGO_PKG_AUTHORS"))
         .version(env!("CARGO_PKG_VERSION"))
-        .setting(AppSettings::SubcommandRequired)
+        .global_setting(AppSettings::ColoredHelp)
+        .setting(AppSettings::SubcommandRequiredElseHelp)
         .arg(
             Arg::with_name("profile")
                 .help("Profile to use when connecting to synapse.")
@@ -134,7 +135,7 @@ fn main() {
                                 .required(true),
                         ),
                 ])
-                .setting(AppSettings::SubcommandRequired),
+                .setting(AppSettings::SubcommandRequiredElseHelp),
             SubCommand::with_name("get")
                 .about("Gets the specified resource.")
                 .arg(
@@ -260,7 +261,7 @@ fn main() {
                                         .required(true),
                                 ),
                         ])
-                        .setting(AppSettings::SubcommandRequired),
+                        .setting(AppSettings::SubcommandRequiredElseHelp),
                     SubCommand::with_name("peer")
                         .about("Manipulate peers for a torrent")
                         .subcommands(vec![
@@ -283,7 +284,7 @@ fn main() {
                                         .required(true),
                                 ),
                         ])
-                        .setting(AppSettings::SubcommandRequired),
+                        .setting(AppSettings::SubcommandRequiredElseHelp),
                     SubCommand::with_name("priority")
                         .about("Change priority of a torrent")
                         .arg(
@@ -304,7 +305,7 @@ fn main() {
                         .possible_values(&["json", "text"])
                         .default_value("text"),
                 )
-                .setting(AppSettings::SubcommandRequired),
+                .setting(AppSettings::SubcommandRequiredElseHelp),
         ])
         .get_matches();
 
