@@ -329,6 +329,12 @@ impl State {
                     reason: format!("Upload not supported!"),
                 }));
             }
+            CMessage::PurgeDns { serial, .. } => {
+                resp.push(SMessage::InvalidRequest(Error {
+                    serial: Some(serial),
+                    reason: format!("Purge DNS not supported!"),
+                }));
+            }
         }
         resp
     }
