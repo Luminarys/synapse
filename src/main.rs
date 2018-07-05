@@ -1,5 +1,5 @@
 #![allow(unknown_lints)]
-#![allow(unused_doc_comment)]
+#![allow(unused_doc_comments)]
 #![cfg_attr(feature = "clippy", feature(plugin))]
 #![cfg_attr(feature = "allocator", feature(alloc_system, global_allocator, allocator_api))]
 #[cfg(feature = "allocator")]

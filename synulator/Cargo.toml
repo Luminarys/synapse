@@ -6,5 +6,5 @@ authors = ["Luminarys <postmaster@gensok.io>"]
 [dependencies]
 synapse-rpc = { path = "../rpc" }
 serde_json = "1"
-rand = "0.4"
+rand = "0.5.3"
 ws = "0.7"
