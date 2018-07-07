@@ -57,10 +57,9 @@ fn add_file(
     } else {
         bail!("Failed to receieve transfer offer from synapse!");
     };
-    let client = HClient::new().chain_err(|| ErrorKind::HTTP)?;
+    let client = HClient::new();
     client
         .post(url)
-        .chain_err(|| ErrorKind::HTTP)?
         .header(header::Authorization(header::Bearer { token }))
         .body(torrent)
         .send()
@@ -179,10 +178,9 @@ pub fn dl(mut c: Client, url: &str, name: &str) -> Result<()> {
             .push("dl")
             .push(file.id());
 
-        let client = HClient::new().chain_err(|| ErrorKind::HTTP)?;
+        let client = HClient::new();
         let mut resp = client
             .get(dl_url.as_str())
-            .chain_err(|| ErrorKind::HTTP)?
             .send()
             .chain_err(|| ErrorKind::HTTP)?;
         if let Resource::File(f) = file {

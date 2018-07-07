@@ -7,6 +7,7 @@ use std::hash::BuildHasherDefault;
 use std::collections::{HashMap, HashSet};
 
 use rand::{self, Rng};
+use rand::distributions::Alphanumeric;
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use metrohash::MetroHash;
 use openssl::sha;
@@ -41,7 +42,7 @@ where
 
 pub fn random_string(len: usize) -> String {
     rand::thread_rng()
-        .gen_ascii_chars()
+        .sample_iter(&Alphanumeric)
         .take(len)
         .collect::<String>()
 }
