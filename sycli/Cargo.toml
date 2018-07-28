@@ -10,16 +10,12 @@ clap = "2"
 serde = "1"
 serde_json = "1"
 serde_derive = "1"
+tungstenite = "0.6.0"
 reqwest = "0.8.6"
 url = "1.5.1"
 prettytable-rs = "0.7.0"
 shellexpand = "1"
 toml = "0.4"
-
-[dependencies.websocket]
-version = "0.20"
-default-features = false
-features = ["sync-ssl"]
 
 [dependencies.error-chain]
 version = "0.12"

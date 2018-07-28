@@ -13,8 +13,8 @@ extern crate serde_json;
 extern crate shellexpand;
 extern crate synapse_rpc as rpc;
 extern crate toml;
+extern crate tungstenite as ws;
 extern crate url;
-extern crate websocket;
 
 mod cmd;
 mod client;
@@ -334,7 +334,7 @@ fn main() {
     };
     url.query_pairs_mut().append_pair("password", pass);
 
-    let client = match Client::new(url.as_str()) {
+    let client = match Client::new(url.clone()) {
         Ok(c) => c,
         Err(_) => {
             eprintln!("Failed to connect to synapse, ensure your URI and password are correct");
