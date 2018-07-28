@@ -15,6 +15,8 @@ It currently supports most systems which implement epoll or kqueue, with a focus
 A list of packages can be found on [this wiki page](https://github.com/Luminarys/synapse/wiki/Third-party-packages).
 
 ### Compiling
+Sycli requires the rust nightly compiler.
+
 Install dependencies:
 
 - rustc >= 1.22
