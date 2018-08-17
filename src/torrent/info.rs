@@ -113,11 +113,13 @@ impl Info {
             })
             .ok_or("No hash found in magnet")?;
 
-        let url_list: Vec<_> = url.query_pairs()
+        let mut url_list: Vec<_> = url.query_pairs()
             .filter(|&(ref k, _)| k == "tr")
             .filter_map(|(_, ref v)| Url::parse(v).ok())
             .map(Arc::new)
             .collect();
+        rand::thread_rng().shuffle(&mut url_list[..]);
+
         let name = url.query_pairs()
             .find(|&(ref k, _)| k == "dn")
             .map(|(_, ref v)| v.to_string())
