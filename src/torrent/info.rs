@@ -112,9 +112,14 @@ impl Info {
                 })
             })
             .ok_or("No hash found in magnet")?;
-        let announce = url.query_pairs()
-            .find(|&(ref k, _)| k == "tr")
-            .and_then(|(_, ref v)| Url::parse(v).ok().map(Arc::new));
+
+        let mut url_list: Vec<_> = url.query_pairs()
+            .filter(|&(ref k, _)| k == "tr")
+            .filter_map(|(_, ref v)| Url::parse(v).ok())
+            .map(Arc::new)
+            .collect();
+        rand::thread_rng().shuffle(&mut url_list[..]);
+
         let name = url.query_pairs()
             .find(|&(ref k, _)| k == "dn")
             .map(|(_, ref v)| v.to_string())
@@ -123,7 +128,7 @@ impl Info {
             name,
             comment: None,
             creator: None,
-            announce,
+            announce: None,
             piece_len: 0,
             total_len: 0,
             hashes: vec![],
@@ -132,7 +137,7 @@ impl Info {
             private: false,
             be_name: None,
             piece_idx: vec![],
-            url_list: vec![],
+            url_list: vec![url_list]
         })
     }
 
