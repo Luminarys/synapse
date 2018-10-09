@@ -392,6 +392,10 @@ impl TrackerResponse {
         let mut resp = TrackerResponse::empty();
         match d.remove("peers") {
             Some(BEncode::String(ref data)) => for p in data.chunks(6) {
+                if p.len() != 6 {
+                    debug!("Unusual trailing bytes received for tracker!");
+                    continue;
+                }
                 let ip = Ipv4Addr::new(p[0], p[1], p[2], p[3]);
                 let socket = SocketAddrV4::new(ip, (&p[4..]).read_u16::<BigEndian>().unwrap());
                 resp.peers.push(SocketAddr::V4(socket));

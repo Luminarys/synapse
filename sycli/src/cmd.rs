@@ -3,7 +3,7 @@ use std::path::Path;
 use std::io::{self, Read};
 use std::borrow::Cow;
 
-use reqwest::{header, Client as HClient};
+use reqwest::Client as HClient;
 use serde_json;
 use prettytable::Table;
 use url::Url;
@@ -60,7 +60,7 @@ fn add_file(
     let client = HClient::new();
     client
         .post(url)
-        .header(header::Authorization(header::Bearer { token }))
+        .bearer_auth(token)
         .body(torrent)
         .send()
         .chain_err(|| ErrorKind::HTTP)?;

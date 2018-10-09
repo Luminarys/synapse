@@ -16,9 +16,7 @@ pub struct Client {
 
 impl Client {
     pub fn new(url: Url) -> Result<Client> {
-        let client = ws::connect(url)
-            .chain_err(|| ErrorKind::Websocket)?
-            .0;
+        let client = ws::connect(url).chain_err(|| ErrorKind::Websocket)?.0;
         let mut c = Client {
             ws: client,
             serial: 0,
