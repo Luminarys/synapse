@@ -8,6 +8,7 @@ use std::borrow::Cow;
 use amy;
 use bincode;
 use chrono::{DateTime, Duration, Utc};
+use rpc_lib;
 use serde_json as json;
 use url::Url;
 
@@ -307,6 +308,7 @@ impl Processor {
                 criteria,
             } => {
                 let torrent_idx = &self.torrent_idx;
+                let kinds = &self.kinds;
                 let rkind = &self.kinds[kind as usize];
                 let resources = &self.resources;
 
@@ -324,14 +326,14 @@ impl Processor {
                     if let Some(t) = crit_res {
                         for id in rkind.intersection(t) {
                             let r = resources.get(id).unwrap();
-                            if f.matches(r) {
+                            if f.matches(r, torrent_idx, kinds, resources) {
                                 added.insert(Cow::Borrowed(r.id()));
                             }
                         }
                     } else {
                         for id in rkind.iter() {
                             let r = resources.get(id).unwrap();
-                            if f.matches(r) {
+                            if f.matches(r, torrent_idx, kinds, resources) {
                                 added.insert(Cow::Borrowed(r.id()));
                             }
                         }
@@ -701,6 +703,9 @@ impl Processor {
         ids: I,
     ) -> HashMap<(usize, u64), Vec<Cow<'a, str>>> {
         let mut matched = HashMap::new();
+        let torrent_idx = &self.torrent_idx;
+        let rkind = &self.kinds;
+        let resources = &self.resources;
         for id in ids {
             let res = if let Some(res) = self.resources.get(id) {
                 res
@@ -708,7 +713,7 @@ impl Processor {
                 continue;
             };
             for (k, f) in self.filter_subs.iter() {
-                if f.kind == res.kind() && f.matches(&res) {
+                if f.kind == res.kind() && f.matches(&res, torrent_idx, rkind, resources) {
                     if !matched.contains_key(k) {
                         matched.insert(k.clone(), Vec::new());
                     }
@@ -754,7 +759,49 @@ impl Processor {
 }
 
 impl Filter {
-    pub fn matches(&self, r: &Resource) -> bool {
-        self.criteria.iter().all(|c| c.matches(r))
+    pub fn matches(
+        &self,
+        r: &Resource,
+        tidx: &SHashMap<MHashSet<String>>,
+        kidx: &Vec<MHashSet<String>>,
+        resources: &SHashMap<Resource>,
+    ) -> bool {
+        struct QueryProxy<'a> {
+            r: &'a Resource,
+            tidx: &'a SHashMap<MHashSet<String>>,
+            kidx: &'a Vec<MHashSet<String>>,
+            resources: &'a SHashMap<Resource>,
+        }
+
+        // Proxy queryable implementation to redirect subresource requests
+        impl<'a> rpc_lib::criterion::Queryable for QueryProxy<'a> {
+            fn field(&self, field: &str) -> Option<rpc_lib::criterion::Field> {
+                self.r.field(field).map(|f| match f {
+                    rpc_lib::criterion::Field::R(k) => {
+                        let torrent_resources = self.tidx.get(self.r.id()).unwrap();
+                        let mut subfields = vec![];
+                        let sep_idx = field.find("/").map(|i| i + 1).unwrap_or(0);
+                        let subfield = &field[sep_idx..];
+                        for id in self.kidx[k as usize].intersection(torrent_resources) {
+                            let subres = self.resources.get(id).unwrap();
+                            if let Some(f) = subres.field(subfield) {
+                                subfields.push(f);
+                            }
+                        }
+                        rpc_lib::criterion::Field::V(subfields)
+                    }
+                    _ => f,
+                })
+            }
+        }
+
+        self.criteria.iter().all(|c| {
+            c.matches(&QueryProxy {
+                r,
+                tidx,
+                kidx,
+                resources,
+            })
+        })
     }
 }

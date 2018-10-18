@@ -169,6 +169,14 @@ For example, in a resource which looks like:
 
 accessing the "bar" field can be done with a field "user_data/foo/bar".
 
+Additionally, subresources of a torrent resource can be queried via similar
+JSON pointer syntax. The requested criterion will be considered to
+be true for the torrent if at least one subresource associated with the torrent
+matches the criterion.
+
+For example, to filter torrents with at least one tracker associated with "foo.org",
+the criterion { "field": "tracker/url", "op": ilike, value: "foo.org"} could be used.
+
 Operation enum:
     "==": equal to
     "!=": not equal to

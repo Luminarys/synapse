@@ -64,6 +64,7 @@ pub enum Field<'a> {
     D(DateTime<Utc>),
     E(Option<()>),
     V(Vec<Field<'a>>),
+    R(ResourceKind),
 }
 
 pub const FNULL: Field<'static> = Field::E(None);
@@ -103,7 +104,9 @@ impl Criterion {
                     self.match_field(f, Operation::Neq, v)
                         && !self.match_field(f, Operation::ILike, v)
                 }),
-                _ => false,
+                // If a vector resource is queried without an explicit quantifier,
+                // we default to the existential and apply the requested operator.
+                _ => items.iter().any(|f| self.match_field(f, op, v)),
             },
             (f, &Value::V(ref v)) => match op {
                 Operation::In => v.iter()

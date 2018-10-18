@@ -923,6 +923,10 @@ impl Queryable for Torrent {
 
             _ if f.starts_with("user_data") => self.user_data.field(&f[9..]),
 
+            _ if f.starts_with("tracker/") => Some(Field::R(ResourceKind::Tracker)),
+            _ if f.starts_with("file/") => Some(Field::R(ResourceKind::File)),
+            _ if f.starts_with("peer/") => Some(Field::R(ResourceKind::Peer)),
+
             _ => None,
         }
     }
