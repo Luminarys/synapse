@@ -35,6 +35,9 @@ bootstrap_node = "router.bittorrent.com:6881"
 session = "~/.local/share/synapse/"
 # Default download directory
 directory = "./"
+# Default directory for completed torrents
+# Empty to use the download directory
+completed = ""
 
 [net]
 # These max open limits should be set to be somewhat lower

@@ -100,6 +100,8 @@ pub struct DiskConfig {
     pub session: String,
     #[serde(default = "default_directory_dir")]
     pub directory: String,
+    #[serde(default = "default_completed_dir")]
+    pub completed: Option<String>,
     #[serde(default = "default_validate")]
     pub validate: bool,
 }
@@ -187,8 +189,14 @@ impl Config {
             port: file.dht.port,
             bootstrap_node: addr,
         };
+
         file.disk.session = shellexpand::tilde(&file.disk.session).into();
         file.disk.directory = shellexpand::tilde(&file.disk.directory).into();
+        file.disk.completed = match file.disk.completed {
+            Some(ref dir) => Some(shellexpand::tilde(dir).to_string()),
+            None => None
+        };
+
         Config {
             port: file.port,
             max_dl: file.max_dl,
@@ -237,9 +245,15 @@ fn default_session_dir() -> String {
         .unwrap_or_else(|_| shellexpand::tilde("~/.local/share/synapse"))
         .into()
 }
+
 fn default_directory_dir() -> String {
     "./".into()
 }
+
+fn default_completed_dir() -> Option<String> {
+    None
+}
+
 fn default_validate() -> bool {
     true
 }
@@ -315,6 +329,7 @@ impl Default for DiskConfig {
         DiskConfig {
             session: default_session_dir(),
             directory: default_directory_dir(),
+            completed: default_completed_dir(),
             validate: default_validate(),
         }
     }
