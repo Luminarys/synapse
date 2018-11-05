@@ -362,7 +362,14 @@ impl Request {
                 let mut fp = tpb.get(&from);
                 let mut tp = tpb2.get(&to);
                 fp.push(target.clone());
+
+                if !tp.exists() {
+                    debug!("{:?} does not exist, creating", tp);
+                    fs::create_dir_all(&tp)?;
+                }
+
                 tp.push(target);
+
                 match fs::rename(&fp, &tp) {
                     Ok(_) => {}
                     // Cross filesystem move, try to copy then delete
