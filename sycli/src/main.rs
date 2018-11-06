@@ -336,28 +336,11 @@ fn main() {
 
     let client = match Client::new(url.clone()) {
         Ok(c) => c,
-        Err(_) => {
-            eprintln!("Failed to connect to synapse, ensure your URI and password are correct");
+        Err(e) => {
+            eprintln!("Failed to connect to synapse: {}", e);
             process::exit(1);
         }
     };
-
-    if client.version().major != rpc::MAJOR_VERSION {
-        eprintln!(
-            "synapse RPC major version {} is not compatible with sycli RPC major version {}",
-            client.version().major,
-            rpc::MAJOR_VERSION
-        );
-        process::exit(1);
-    }
-    if client.version().minor < rpc::MINOR_VERSION {
-        eprintln!(
-            "synapse RPC minor version {} is not compatible with sycli RPC minor version {}",
-            client.version().minor,
-            rpc::MINOR_VERSION
-        );
-        process::exit(1);
-    }
 
     if url.scheme() == "wss" {
         url.set_scheme("https").unwrap();

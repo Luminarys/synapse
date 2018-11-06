@@ -22,11 +22,24 @@ impl Client {
             serial: 0,
             version: Version { major: 0, minor: 0 },
         };
-        if let SMessage::RpcVersion(v) = c.recv()? {
-            c.version = v;
-            Ok(c)
-        } else {
-            bail!("Expected a version message on start!");
+
+        match c.recv()? {
+            SMessage::RpcVersion(v) => {
+                if c.version.major != v.major {
+                    bail!("RPC major version missmatch (server: {}, client: {})",
+                        v.major,
+                        c.version.major
+                    )
+                } else if c.version.minor < v.minor {
+                    bail!("RPC minor version missmatch (server: {}, client: {})",
+                        v.minor,
+                        c.version.minor
+                    )
+                } else {
+                    Ok(c)
+                }
+            },
+            _ => bail!("expected version message at start")
         }
     }
 
