@@ -4,7 +4,8 @@ use ws::protocol::Message as WSMessage;
 use serde_json;
 use url::Url;
 
-use rpc::message::{CMessage, SMessage, Version};
+use rpc;
+use rpc::message::{SMessage, CMessage, Version};
 
 use error::{ErrorKind, Result, ResultExt};
 
@@ -20,7 +21,10 @@ impl Client {
         let mut c = Client {
             ws: client,
             serial: 0,
-            version: Version { major: 0, minor: 0 },
+            version: Version {
+                major: rpc::MAJOR_VERSION,
+                minor: rpc::MINOR_VERSION
+            },
         };
 
         match c.recv()? {
