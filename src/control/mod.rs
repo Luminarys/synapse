@@ -377,7 +377,8 @@ impl<T: cio::CIO> Control<T> {
     fn add_torrent(
         &mut self,
         info: torrent::Info,
-        path: Option<String>,
+        comp_path: Option<String>,
+        dl_path: Option<String>,
         start: bool,
         import: bool,
         client: usize,
@@ -398,7 +399,8 @@ impl<T: cio::CIO> Control<T> {
         let throttle = self.throttler.get_throttle(tid);
         let t = Torrent::new(
             tid,
-            path,
+            comp_path,
+            dl_path,
             info,
             throttle,
             self.cio.new_handle(),
@@ -436,7 +438,7 @@ impl<T: cio::CIO> Control<T> {
                 import,
                 client,
                 serial,
-            } => self.add_torrent(info, path, start, import, client, serial),
+            } => self.add_torrent(info, None, None, start, import, client, serial),
             rpc::Message::UpdateFile {
                 id,
                 torrent_id,

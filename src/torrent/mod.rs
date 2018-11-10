@@ -70,6 +70,8 @@ pub struct Torrent<T: cio::CIO> {
     choker: choker::Choker,
     dirty: bool,
     path: Option<String>,
+    dl_path: Option<String>,
+    comp_path: Option<String>,
     info_bytes: Vec<u8>,
     info_idx: Option<usize>,
     created: DateTime<Utc>,
@@ -209,7 +211,8 @@ impl Files {
 impl<T: cio::CIO> Torrent<T> {
     pub fn new(
         id: usize,
-        path: Option<String>,
+        dl_path: Option<String>,
+        comp_path: Option<String>,
         info: Info,
         throttle: Throttle,
         cio: T,
@@ -270,10 +273,19 @@ impl<T: cio::CIO> Torrent<T> {
 
         let files = Files::new(&info, &pieces);
 
+        let path = if import {
+            comp_path.as_ref().unwrap_or(&CONFIG.disk.directory).clone()
+        } else {
+            dl_path.as_ref().unwrap_or(&CONFIG.disk.directory).clone()
+        };
+        let path = Some(path);
+
         let mut t = Torrent {
             id,
             info,
             path,
+            dl_path,
+            comp_path,
             peers,
             pieces,
             validating: FHashSet::default(),
@@ -296,6 +308,7 @@ impl<T: cio::CIO> Torrent<T> {
             info_idx,
             created: Utc::now(),
         };
+
         t.start();
         if import {
             t.cio.msg_disk(disk::Request::validate_piece(
@@ -425,6 +438,8 @@ impl<T: cio::CIO> Torrent<T> {
                 },
             },
             path: d.path,
+            dl_path: d.dl_path,
+            comp_path: d.comp_path,
             info_bytes,
             info_idx,
             created: d.created,
@@ -482,6 +497,8 @@ impl<T: cio::CIO> Torrent<T> {
                 },
             },
             path: self.path.clone(),
+            dl_path: self.dl_path.clone(),
+            comp_path: self.comp_path.clone(),
             priorities: self.priorities.as_ref().clone(),
             priority: self.priority,
             created: self.created,
@@ -878,6 +895,23 @@ impl<T: cio::CIO> Torrent<T> {
         if let Some(req) = tracker::Request::completed(self) {
             self.cio.msg_trk(req);
         }
+
+        if self.comp_path.is_some()
+            && self.path.is_some()
+            && self.comp_path != self.path
+        {
+            let from = self.path.as_ref()
+                .unwrap_or(&CONFIG.disk.directory)
+                .clone();
+
+            self.cio.msg_disk(disk::Request::Move {
+                tid: self.id,
+                from,
+                to: self.comp_path.as_ref().unwrap().clone(),
+                target: self.info.name.clone(),
+            });
+        }
+
         // Order here is important, if we're in an idle status,
         // rpc updates don't occur.
         self.update_rpc_transfer();
