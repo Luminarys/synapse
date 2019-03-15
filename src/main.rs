@@ -66,7 +66,7 @@ mod init;
 
 // We need to do this for the log macros
 use log::LogLevel;
-use std::sync::{atomic, Arc, Mutex};
+use std::sync::atomic;
 use std::process;
 
 pub const DHT_EXT: (usize, u8) = (7, 1);
@@ -96,7 +96,7 @@ lazy_static! {
         }
         pid
     };
-    pub static ref DL_TOKEN: Arc<Mutex<String>> = { Arc::new(Mutex::new(util::random_string(20))) };
+    pub static ref DL_TOKEN: String = { util::random_string(20) };
 }
 
 fn main() {

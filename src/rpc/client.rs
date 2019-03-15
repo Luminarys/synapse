@@ -298,21 +298,28 @@ fn validate_dl(req: &httparse::Request) -> Option<(String, Option<String>)> {
     req.path
         .and_then(|path| Url::parse(&format!("http://localhost{}", path)).ok())
         .and_then(|url| {
+            let id = if url.path().contains("/dl/") {
+                url.path_segments().unwrap().last().map(|v| v.to_owned())
+            } else {
+                return None
+            };
             if CONFIG.rpc.auth {
                 let pw = url.query_pairs()
                     .find(|&(ref k, _)| k == "token")
                     .map(|(_, v)| format!("{}", v))
-                    .map(|p| p == *DL_TOKEN.lock().unwrap())
+                    .and_then(|p| base64::decode(&p).ok())
+                    .map(|p|
+                        p.as_ref() == sha1_hash(format!("{}{}", id.as_ref()
+                                                                  .map(|s| s.as_str())
+                                                                  .unwrap_or(""),
+                                                                *DL_TOKEN).as_bytes())
+                    )
                     .unwrap_or(false);
                 if !pw {
                     return None;
                 }
             }
-            if url.path().contains("/dl/") {
-                url.path_segments().unwrap().last().map(|v| v.to_owned())
-            } else {
-                None
-            }
+            id
         })
         .map(|id| {
             let range = req.headers

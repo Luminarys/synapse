@@ -24,8 +24,6 @@ const UNCHK_JOB_SECS: u64 = 15;
 const SES_JOB_SECS: u64 = 60;
 /// Interval to update RPC of transfer stats
 const TX_JOB_MS: u64 = 500;
-/// Interval to rotate token
-const TOKEN_JOB_SECS: u64 = 60 * 60 * 4;
 /// Interval to check space on disk
 const SPACE_JOB_SECS: u64 = 10;
 /// Interval to send PEX updates
@@ -112,7 +110,6 @@ impl<T: cio::CIO> Control<T> {
             time::Duration::from_millis(PEX_JOB_SECS),
         );
 
-        jobs.add_cjob(TokenUpdate, time::Duration::from_secs(TOKEN_JOB_SECS));
         jobs.add_cjob(SpaceUpdate, time::Duration::from_secs(SPACE_JOB_SECS));
         jobs.add_cjob(EnqueueUpdate, time::Duration::from_secs(ENQUEUE_JOB_SECS));
         jobs.add_cjob(SerializeUpdate, time::Duration::from_secs(SES_JOB_SECS));
@@ -720,7 +717,7 @@ impl<T: cio::CIO> Control<T> {
             ses_transferred_down: self.data.session_dl,
             free_space: self.data.free_space,
             started: Utc::now(),
-            download_token: DL_TOKEN.lock().unwrap().clone(),
+            download_token: DL_TOKEN.clone(),
             ..Default::default()
         });
         self.cio.msg_rpc(rpc::CtlMessage::Extant(vec![res]));
@@ -841,23 +838,6 @@ impl<T: cio::CIO> JobManager<T> {
                 j.last_updated = time::Instant::now();
             }
         }
-    }
-}
-
-pub struct TokenUpdate;
-
-impl<T: cio::CIO> CJob<T> for TokenUpdate {
-    fn update(&mut self, control: &mut Control<T>) {
-        let token = util::random_string(20);
-        let download_token = token.clone();
-        *DL_TOKEN.lock().unwrap() = token;
-        control.cio.msg_rpc(rpc::CtlMessage::Update(vec![
-            rpc::resource::SResourceUpdate::ServerToken {
-                id: control.data.id.clone(),
-                kind: rpc::resource::ResourceKind::Server,
-                download_token,
-            },
-        ]));
     }
 }
 

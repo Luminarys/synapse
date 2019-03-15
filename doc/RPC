@@ -12,8 +12,9 @@ see its specification for details.
 
 Download requests are used to transfer files from the server to the client. Use
 an HTTP GET request on /dl/:id?token=:download_token, where :id is the resource
-(typically a file) you wish to download and :download_token is the token
-specified in the server resource.
+(typically a file) you wish to download and :download_token is the Base64 encoded
+SHA1 hash of the concatenation of the id and the download_token specified in
+the server resource.
 
 Upgrade requests initialize websocket connections per the WHATWG websockets
 specification and become RPC sessions. The URL for these requests is /. If

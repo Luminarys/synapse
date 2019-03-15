@@ -154,7 +154,7 @@ impl ConfigFile {
                     use std::error::Error;
                     error!(
                         "Failed to parse config, terminating: {}",
-                        e.cause().unwrap()
+                        e.source().unwrap()
                     );
                     process::exit(1);
                 }
