@@ -241,7 +241,7 @@ impl Request {
             "find_node" => {
                 let target = a.remove("target")
                     .and_then(|b| b.into_bytes())
-                    .map(|b| BigUint::from_bytes_be(&b[..20]))
+                    .and_then(|b| b.get(0..20).map(BigUint::from_bytes_be))
                     .ok_or_else(|| {
                         Error::from(ErrorKind::InvalidRequest(
                             "Invalid BEncoded data(find_node must have target field)",
@@ -532,7 +532,9 @@ impl Response {
                     let mut nodes = Vec::new();
                     if let Some(ns) = r.remove("nodes").and_then(|b| b.into_bytes()) {
                         for n in ns.chunks(26) {
-                            nodes.push(Node::new(n));
+                            if (n.len() == 26) {
+                                nodes.push(Node::new(n));
+                            }
                         }
                     }
                     ResponseKind::GetPeers {
@@ -544,7 +546,9 @@ impl Response {
                 } else if let Some(ns) = r.remove("nodes").and_then(|b| b.into_bytes()) {
                     let mut nodes = Vec::new();
                     for n in ns.chunks(26) {
-                        nodes.push(Node::new(n));
+                        if (n.len() == 26) {
+                            nodes.push(Node::new(n));
+                        }
                     }
                     ResponseKind::FindNode { id, nodes }
                 } else {
