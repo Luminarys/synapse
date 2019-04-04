@@ -108,8 +108,8 @@ impl Listener {
                 Err(ref e) if e.kind() == ErrorKind::WouldBlock => {
                     break;
                 }
-                _ => {
-                    unimplemented!();
+                Err(e) => {
+                    error!("Unexpected error occured during accept: {}!", e);
                 }
             }
         }

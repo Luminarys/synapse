@@ -149,7 +149,7 @@ pub fn addr_to_bytes(addr: &SocketAddr) -> [u8; 6] {
             data[3] = oct[3];
             (&mut data[4..]).write_u16::<BigEndian>(s.port()).unwrap();
         }
-        _ => unimplemented!(),
+        _ => panic!("IPv6 DHT not supported"),
     }
     data
 }
