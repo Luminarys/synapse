@@ -3,6 +3,8 @@ use std::path::Path;
 use std::io::{self, Read};
 use std::borrow::Cow;
 
+use base64;
+use openssl::sha;
 use reqwest::Client as HClient;
 use serde_json;
 use prettytable::Table;
@@ -10,7 +12,7 @@ use url::Url;
 
 use rpc::message::{self, CMessage, SMessage};
 use rpc::criterion::{Criterion, Operation, Value};
-use rpc::resource::{CResourceUpdate, Resource, ResourceKind, SResourceUpdate};
+use rpc::resource::{CResourceUpdate, Resource, ResourceKind, SResourceUpdate, Server};
 
 use client::Client;
 use error::{ErrorKind, Result, ResultExt};
@@ -137,6 +139,7 @@ fn del_torrent(c: &mut Client, torrent: &str, artifacts: bool) -> Result<()> {
 
 pub fn dl(mut c: Client, url: &str, name: &str) -> Result<()> {
     let resources = search_torrent_name(&mut c, name)?;
+    let token = get_server(&mut c)?.download_token;
     let files = if resources.len() == 1 {
         let msg = CMessage::FilterSubscribe {
             serial: c.next_serial(),
@@ -177,6 +180,10 @@ pub fn dl(mut c: Client, url: &str, name: &str) -> Result<()> {
             .unwrap()
             .push("dl")
             .push(file.id());
+        let mut ctx = sha::Sha1::new();
+        ctx.update(format!("{}{}", file.id(), token).as_bytes());
+        let dl_token = base64::encode(&ctx.finish()[..]);
+        dl_url.set_query(Some(&format!("token={}", dl_token)));
 
         let client = HClient::new();
         let mut resp = client
@@ -650,6 +657,13 @@ pub fn status(mut c: Client) -> Result<()> {
         }
     };
     Ok(())
+}
+
+fn get_server(c: &mut Client) -> Result<Server> {
+    match search(c, ResourceKind::Server, vec![])?.pop() {
+        Some(Resource::Server(s)) => Ok(s),
+        _ => bail!("synapse server failed to server info!"),
+    }
 }
 
 fn search_torrent_name(c: &mut Client, name: &str) -> Result<Vec<Resource>> {

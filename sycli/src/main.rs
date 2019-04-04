@@ -15,6 +15,8 @@ extern crate synapse_rpc as rpc;
 extern crate toml;
 extern crate tungstenite as ws;
 extern crate url;
+extern crate openssl;
+extern crate base64;
 
 mod cmd;
 mod client;
