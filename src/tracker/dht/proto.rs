@@ -532,7 +532,7 @@ impl Response {
                     let mut nodes = Vec::new();
                     if let Some(ns) = r.remove("nodes").and_then(|b| b.into_bytes()) {
                         for n in ns.chunks(26) {
-                            if (n.len() == 26) {
+                            if n.len() == 26 {
                                 nodes.push(Node::new(n));
                             }
                         }
@@ -546,7 +546,7 @@ impl Response {
                 } else if let Some(ns) = r.remove("nodes").and_then(|b| b.into_bytes()) {
                     let mut nodes = Vec::new();
                     for n in ns.chunks(26) {
-                        if (n.len() == 26) {
+                        if n.len() == 26 {
                             nodes.push(Node::new(n));
                         }
                     }

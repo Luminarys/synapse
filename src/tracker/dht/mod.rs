@@ -37,6 +37,10 @@ impl Manager {
         let sock = UdpSocket::bind(("0.0.0.0", CONFIG.dht.port))?;
         sock.set_nonblocking(true)?;
         let id = reg.register(&sock, amy::Event::Read)?;
+        // Turn off DHT if no bootstrap is specified.
+        if CONFIG.dht.bootstrap_node.is_none() {
+            reg.deregister(&sock)?;
+        }
 
         let p = Path::new(&CONFIG.disk.session[..]).join(SESSION_FILE);
         let mut data = Vec::new();
