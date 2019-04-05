@@ -179,14 +179,26 @@ pub fn decode_buf(bytes: &[u8]) -> Result<BEncode, BError> {
     decode(&mut Cursor::new(bytes))
 }
 
+pub fn decode_buf_first(bytes: &[u8]) -> Result<BEncode, BError> {
+    decode_first(&mut Cursor::new(bytes))
+}
+
+pub fn decode_first<R: io::Read>(bytes: &mut R) -> Result<BEncode, BError> {
+    do_decode(bytes, true)
+}
+
 pub fn decode<R: io::Read>(bytes: &mut R) -> Result<BEncode, BError> {
+    do_decode(bytes, false)
+}
+
+fn do_decode<R: io::Read>(bytes: &mut R, first: bool) -> Result<BEncode, BError> {
     enum Kind {
         Dict(usize),
         List(usize),
     }
     let mut cstack = vec![];
     let mut vstack = vec![];
-    loop {
+    while !first || !(cstack.is_empty() && vstack.len() == 1) {
         match next_byte(bytes) {
             Ok(b'i') => {
                 // Multiple non complex values are not allowed
@@ -288,7 +300,7 @@ fn decode_int(v: Vec<u8>) -> Result<i64, BError> {
 
 #[cfg(test)]
 mod tests {
-    use super::{decode_buf, BEncode};
+    use super::{decode_buf, decode_buf_first, BEncode};
     use std::collections::BTreeMap;
 
     #[test]
@@ -333,6 +345,12 @@ mod tests {
         encode_decode(&s2);
         encode_decode(&l);
         encode_decode(&d);
+    }
+
+    #[test]
+    fn test_first_valid() {
+        let twoint = b"i123ei123e";
+        assert!(decode_buf_first(twoint).is_ok());
     }
 
     #[test]

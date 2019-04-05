@@ -1151,9 +1151,9 @@ impl<T: cio::CIO> Torrent<T> {
             let utm_id = if let Some(i) = peer.exts().ut_meta {
                 i
             } else {
-                return Err(());
+                return Ok(());
             };
-            let b = bencode::decode_buf(&payload).map_err(|_| ())?;
+            let b = bencode::decode_buf_first(&payload).map_err(|_| ())?;
             let mut d = b.into_dict().ok_or(())?;
             let t = d.remove("msg_type").and_then(|v| v.into_int()).ok_or(())?;
             let p = d.remove("piece").and_then(|v| v.into_int()).ok_or(())? as usize;
@@ -1260,7 +1260,7 @@ impl<T: cio::CIO> Torrent<T> {
             const PEX_SEED: u8 = 0x02;
             const PEX_OUTGOING: u8 = 0x10;
             if peer.exts().ut_pex.is_none() {
-                return Err(());
+                return Ok(());
             }
             if self.info.private {
                 return Err(());

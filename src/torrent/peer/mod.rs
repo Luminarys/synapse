@@ -419,12 +419,10 @@ impl<T: cio::CIO> Peer<T> {
                     let mut m = d.remove("m").and_then(|v| v.into_dict()).ok_or_else(|| {
                         ErrorKind::ProtocolError("Invalid metadata in in ext handshake")
                     })?;
-                    if let Some(uti) = m.remove("ut_metadata").and_then(|v| v.into_int()) {
-                        self.ext_ids.ut_meta = Some(uti as u8);
-                    }
-                    if let Some(utp) = m.remove("ut_pex").and_then(|v| v.into_int()) {
-                        self.ext_ids.ut_pex = Some(utp as u8);
-                    }
+                    self.ext_ids.ut_meta = m.remove("ut_metadata").and_then(|v| v.into_int())
+                        .map(|v| v as u8);
+                    self.ext_ids.ut_pex = m.remove("ut_pex").and_then(|v| v.into_int())
+                        .map(|v| v as u8);
                 }
             }
         }
