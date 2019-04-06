@@ -3,7 +3,7 @@ use std::io::{self, Cursor, Read, Write};
 use std::time;
 
 use amy;
-use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
+use byteorder::{BigEndian, ByteOrder, ReadBytesExt, WriteBytesExt};
 use rand::random;
 
 use {CONFIG, PEER_ID};
@@ -158,7 +158,7 @@ impl Handler {
     pub fn readable(&mut self) -> Vec<Response> {
         let mut resps = Vec::new();
         while let Ok((v, _)) = self.sock.recv_from(&mut self.buf[..]) {
-            let action = (&self.buf[0..4]).read_u32::<BigEndian>().unwrap();
+            let action = BigEndian::read_u32(&self.buf[0..4]);
             match action {
                 0 if v == 16 => {
                     if let Some(r) = self.process_connect() {

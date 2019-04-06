@@ -1,7 +1,7 @@
 use std::io::{self, Read};
 use std::mem;
 
-use byteorder::{BigEndian, ReadBytesExt};
+use byteorder::{BigEndian, ByteOrder};
 
 use buffers::Buffer;
 use torrent::peer::Message;
@@ -98,7 +98,7 @@ impl Reader {
                 },
                 State::Len => match aread(&mut self.prefix[self.idx..len], conn) {
                     IOR::Complete => {
-                        let mlen = (&self.prefix[0..4]).read_u32::<BigEndian>().unwrap();
+                        let mlen = BigEndian::read_u32(&self.prefix[0..4]);
                         if mlen == 0 {
                             return RRes::Success(Message::KeepAlive);
                         } else {
@@ -130,7 +130,7 @@ impl Reader {
                             }
                             4 => self.state = State::Have,
                             5 => {
-                                let mlen = (&self.prefix[0..4]).read_u32::<BigEndian>().unwrap();
+                                let mlen = BigEndian::read_u32(&self.prefix[0..4]);
                                 self.idx = 0;
                                 self.state = State::Bitfield {
                                     data: vec![0u8; mlen as usize - 1],
@@ -151,7 +151,7 @@ impl Reader {
                 },
                 State::Have => match aread(&mut self.prefix[self.idx..len], conn) {
                     IOR::Complete => {
-                        let have = (&self.prefix[5..9]).read_u32::<BigEndian>().unwrap();
+                        let have = BigEndian::read_u32(&self.prefix[5..9]);
                         return RRes::Success(Message::Have(have));
                     }
                     IOR::Incomplete(a) => self.idx += a,
@@ -172,9 +172,9 @@ impl Reader {
                 },
                 State::Request => match aread(&mut self.prefix[self.idx..len], conn) {
                     IOR::Complete => {
-                        let index = (&self.prefix[5..9]).read_u32::<BigEndian>().unwrap();
-                        let begin = (&self.prefix[9..13]).read_u32::<BigEndian>().unwrap();
-                        let length = (&self.prefix[13..17]).read_u32::<BigEndian>().unwrap();
+                        let index = BigEndian::read_u32(&self.prefix[5..9]);
+                        let begin = BigEndian::read_u32(&self.prefix[9..13]);
+                        let length = BigEndian::read_u32(&self.prefix[13..17]);
                         return RRes::Success(Message::Request {
                             index,
                             begin,
@@ -188,7 +188,7 @@ impl Reader {
                 },
                 State::PiecePrefix => match aread(&mut self.prefix[self.idx..len], conn) {
                     IOR::Complete => {
-                        let plen = (&self.prefix[0..4]).read_u32::<BigEndian>().unwrap() - 9;
+                        let plen = BigEndian::read_u32(&self.prefix[0..4]) - 9;
                         self.idx = 0;
                         self.state = State::Piece {
                             data: Buffer::get(),
@@ -214,8 +214,8 @@ impl Reader {
                     match aread(&mut data.as_mut().unwrap()[self.idx..len], conn) {
                         IOR::Complete => {
                             self.blocks_read += 1;
-                            let index = (&self.prefix[5..9]).read_u32::<BigEndian>().unwrap();
-                            let begin = (&self.prefix[9..13]).read_u32::<BigEndian>().unwrap();
+                            let index = BigEndian::read_u32(&self.prefix[5..9]);
+                            let begin = BigEndian::read_u32(&self.prefix[9..13]);
                             return RRes::Success(Message::Piece {
                                 index,
                                 begin,
@@ -231,9 +231,9 @@ impl Reader {
                 }
                 State::Cancel => match aread(&mut self.prefix[self.idx..len], conn) {
                     IOR::Complete => {
-                        let index = (&self.prefix[5..9]).read_u32::<BigEndian>().unwrap();
-                        let begin = (&self.prefix[9..13]).read_u32::<BigEndian>().unwrap();
-                        let length = (&self.prefix[13..17]).read_u32::<BigEndian>().unwrap();
+                        let index = BigEndian::read_u32(&self.prefix[5..9]);
+                        let begin = BigEndian::read_u32(&self.prefix[9..13]);
+                        let length = BigEndian::read_u32(&self.prefix[13..17]);
                         return RRes::Success(Message::Cancel {
                             index,
                             begin,
@@ -247,7 +247,7 @@ impl Reader {
                 },
                 State::Port => match aread(&mut self.prefix[self.idx..len], conn) {
                     IOR::Complete => {
-                        let port = (&self.prefix[5..7]).read_u16::<BigEndian>().unwrap();
+                        let port = BigEndian::read_u16(&self.prefix[5..7]);
                         return RRes::Success(Message::Port(port));
                     }
                     IOR::Incomplete(a) => self.idx += a,
@@ -259,7 +259,7 @@ impl Reader {
                     IOR::Complete => {
                         let id = self.prefix[5];
                         self.idx = 0;
-                        let plen = (&self.prefix[0..4]).read_u32::<BigEndian>().unwrap() - 2;
+                        let plen = BigEndian::read_u32(&self.prefix[0..4]) - 2;
                         let mut payload = Vec::with_capacity(plen as usize);
                         unsafe {
                             payload.set_len(plen as usize);

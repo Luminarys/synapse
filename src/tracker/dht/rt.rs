@@ -5,7 +5,7 @@ use chrono::{DateTime, Utc};
 use num_bigint::BigUint;
 use rand::{self, Rng};
 use super::{proto, BUCKET_MAX, ID, MAX_BUCKETS, MIN_BOOTSTRAP_BKTS, TX_TIMEOUT_SECS};
-use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
+use byteorder::{BigEndian, ByteOrder, WriteBytesExt};
 use {bincode, tracker};
 
 const MAX_SEARCH_DEPTH: u8 = 5;
@@ -244,7 +244,7 @@ impl RoutingTable {
         if resp.transaction.len() < 4 {
             return Err(reqs);
         }
-        let tid = (&resp.transaction[..]).read_u32::<BigEndian>().unwrap();
+        let tid = BigEndian::read_u32(&resp.transaction[..]);
         let tx = if let Some(tx) = self.transactions.remove(&tid) {
             tx
         } else {

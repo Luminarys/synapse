@@ -8,7 +8,7 @@ use std::collections::{HashMap, HashSet};
 
 use rand::{self, Rng};
 use rand::distributions::Alphanumeric;
-use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
+use byteorder::{BigEndian, ByteOrder};
 use metrohash::MetroHash;
 use openssl::sha;
 use fnv;
@@ -56,7 +56,7 @@ pub fn sha1_hash(data: &[u8]) -> [u8; 20] {
 pub fn peer_rpc_id(torrent: &[u8; 20], peer: u64) -> String {
     const PEER_ID: &'static [u8] = b"PEER";
     let mut idx = [0u8; 8];
-    (&mut idx[..]).write_u64::<BigEndian>(peer).unwrap();
+    BigEndian::write_u64(&mut idx[..], peer);
 
     let mut ctx = sha::Sha1::new();
     ctx.update(torrent);
@@ -134,7 +134,7 @@ pub fn bytes_to_addr(p: &[u8]) -> SocketAddr {
     let ip = Ipv4Addr::new(p[0], p[1], p[2], p[3]);
     SocketAddr::V4(SocketAddrV4::new(
         ip,
-        (&p[4..]).read_u16::<BigEndian>().unwrap(),
+        BigEndian::read_u16(&p[4..]),
     ))
 }
 
@@ -147,7 +147,7 @@ pub fn addr_to_bytes(addr: &SocketAddr) -> [u8; 6] {
             data[1] = oct[1];
             data[2] = oct[2];
             data[3] = oct[3];
-            (&mut data[4..]).write_u16::<BigEndian>(s.port()).unwrap();
+            BigEndian::write_u16(&mut data[4..], s.port());
         }
         _ => panic!("IPv6 DHT not supported"),
     }

@@ -1,5 +1,5 @@
 use std::{io, mem};
-use byteorder::{BigEndian, ReadBytesExt};
+use byteorder::{BigEndian, ByteOrder};
 use super::proto::ws::Message;
 use util::{aread, IOR};
 
@@ -87,10 +87,10 @@ impl Reader {
                         let mut buf = &self.msg.data[start..end];
                         match self.state {
                             State::PayloadLen2 => {
-                                self.msg.len = buf.read_u16::<BigEndian>().unwrap() as u64
+                                self.msg.len = BigEndian::read_u16(buf) as u64
                             }
                             State::PayloadLen8 => {
-                                self.msg.len = buf.read_u64::<BigEndian>().unwrap()
+                                self.msg.len = BigEndian::read_u64(buf)
                             }
                             _ => unreachable!(),
                         }

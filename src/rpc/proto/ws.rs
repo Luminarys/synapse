@@ -1,4 +1,4 @@
-use byteorder::{BigEndian, WriteBytesExt};
+use byteorder::{BigEndian, ByteOrder};
 
 #[derive(Debug)]
 pub enum Frame {
@@ -125,13 +125,11 @@ impl Message {
 
         if hb2 == 126 {
             let mut buf = [0u8; 2];
-            (&mut buf[..])
-                .write_u16::<BigEndian>(self.len as u16)
-                .unwrap();
+            BigEndian::write_u16(&mut buf[..], self.len as u16);
             prefix.extend(buf.iter());
         } else if hb2 == 127 {
             let mut buf = [0u8; 8];
-            (&mut buf[..]).write_u64::<BigEndian>(self.len).unwrap();
+            BigEndian::write_u64(&mut buf[..], self.len);
             prefix.extend(buf.iter());
         }
         prefix.extend(self.data.iter());

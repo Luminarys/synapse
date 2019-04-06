@@ -16,7 +16,7 @@ use bencode::BEncode;
 use chrono::{DateTime, Utc};
 use url::Url;
 use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
-use byteorder::{BigEndian, ReadBytesExt};
+use byteorder::{BigEndian, ByteOrder};
 
 pub use self::bitfield::Bitfield;
 pub use self::info::{Info, LocIter};
@@ -1283,7 +1283,7 @@ impl<T: cio::CIO> Torrent<T> {
                     }
 
                     let ip = Ipv4Addr::new(p[0], p[1], p[2], p[3]);
-                    let socket = SocketAddrV4::new(ip, (&p[4..]).read_u16::<BigEndian>().unwrap());
+                    let socket = SocketAddrV4::new(ip, BigEndian::read_u16(&p[4..]));
                     peers.push(SocketAddr::V4(socket));
                 },
                 _ => {}

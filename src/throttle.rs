@@ -25,17 +25,17 @@ impl Throttler {
         ul_rate: Option<i64>,
         max_tokens: usize,
         reg: &Registrar,
-    ) -> Throttler {
-        let id = reg.set_interval(URATE).unwrap();
-        let fid = reg.set_interval(50).unwrap();
+    ) -> Option<Throttler> {
+        let id = reg.set_interval(URATE).ok()?;
+        let fid = reg.set_interval(50).ok()?;
         let ut = ThrottleData::new(ul_rate, max_tokens);
         let dt = ThrottleData::new(dl_rate, max_tokens);
-        Throttler {
+        Some(Throttler {
             id,
             fid,
             ul_data: Rc::new(RefCell::new(ut)),
             dl_data: Rc::new(RefCell::new(dt)),
-        }
+        })
     }
 
     pub fn update(&self) -> (u64, u64) {

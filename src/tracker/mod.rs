@@ -9,7 +9,7 @@ use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
 use std::{io, result, thread};
 use std::sync::Arc;
 
-use byteorder::{BigEndian, ReadBytesExt};
+use byteorder::{BigEndian, ByteOrder};
 use url::Url;
 use amy;
 
@@ -397,7 +397,7 @@ impl TrackerResponse {
                     continue;
                 }
                 let ip = Ipv4Addr::new(p[0], p[1], p[2], p[3]);
-                let socket = SocketAddrV4::new(ip, (&p[4..]).read_u16::<BigEndian>().unwrap());
+                let socket = SocketAddrV4::new(ip, BigEndian::read_u16(&p[4..]));
                 resp.peers.push(SocketAddr::V4(socket));
             },
             _ => {}

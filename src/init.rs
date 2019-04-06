@@ -74,7 +74,7 @@ fn init_threads() -> io::Result<Vec<thread::JoinHandle<()>>> {
     let chj = thread::Builder::new()
         .name("control".to_string())
         .spawn(move || {
-            let throttler = throttle::Throttler::new(None, None, THROT_TOKS, &creg);
+            let throttler = throttle::Throttler::new(None, None, THROT_TOKS, &creg).unwrap();
             let acio = acio::ACIO::new(cpoll, creg, chans);
             match control::Control::new(acio, throttler, cdb) {
                 Ok(mut c) => {
