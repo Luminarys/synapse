@@ -60,7 +60,7 @@ default-features = false
 features = ["clock", "serde"]
 
 [dependencies.error-chain]
-version = "0.12"
+version = "0.12.1"
 default-features = false
 features = []
 
