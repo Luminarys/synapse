@@ -230,7 +230,7 @@ impl Request {
         })?;
         let id = a.remove("id")
             .and_then(|b| b.into_bytes())
-            .map(|b| BigUint::from_bytes_be(&b[..]))
+            .and_then(|b| b.get(0..20).map(BigUint::from_bytes_be))
             .ok_or_else(|| {
                 Error::from(ErrorKind::InvalidRequest(
                     "Invalid BEncoded data(ping must have id field)",
@@ -511,7 +511,7 @@ impl Response {
 
                 let id = r.remove("id")
                     .and_then(|b| b.into_bytes())
-                    .map(|b| BigUint::from_bytes_be(&b))
+                    .and_then(|b| b.get(0..20).map(BigUint::from_bytes_be))
                     .ok_or_else(|| {
                         Error::from(ErrorKind::InvalidResponse(
                             "Invalid BEncoded data(response must have id)",
