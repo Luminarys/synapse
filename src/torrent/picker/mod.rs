@@ -71,7 +71,7 @@ struct Request {
 const MAX_DUP_REQS: usize = 3;
 const MAX_PC_SIZE: usize = 50;
 const MAX_DL_REREQ: usize = 150;
-const REQ_TIMEOUT: u64 = 5;
+const REQ_TIMEOUT: u64 = 10;
 
 impl Picker {
     /// Creates a new picker, which will select over
@@ -126,9 +126,7 @@ impl Picker {
             let deadline = (REQ_TIMEOUT as isize
                 + (3 - self.priorities[block.index as usize] as isize))
                 as u64;
-            if req.requested_at.elapsed().as_secs() >= deadline && !self.stalled.contains(block)
-                && fully_reqd
-            {
+            if req.requested_at.elapsed().as_secs() >= deadline && !self.stalled.contains(block) {
                 expired += 1;
                 self.stalled.insert(*block);
             }
@@ -153,7 +151,6 @@ impl Picker {
         if !self.stalled.is_empty() {
             let block = self.stalled.iter().cloned().find(|b| {
                 peer.pieces().has_bit(b.index as u64)
-                    && (peer.rank == 0 || peer.rank < self.downloading[b].rank)
                     && !self.downloading[b].has_peer(peer.id())
             });
             if let Some(b) = block {

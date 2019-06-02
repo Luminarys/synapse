@@ -350,6 +350,7 @@ impl<T: cio::CIO> Peer<T> {
             }
             Message::Request { .. } => {
                 if self.local_status.choked {
+                    info!("Got request while choked!");
                     return Err(ErrorKind::ProtocolError("Peer requested while choked!").into());
                 }
             }
