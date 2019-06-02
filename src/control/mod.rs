@@ -107,7 +107,7 @@ impl<T: cio::CIO> Control<T> {
         );
         jobs.add_job(
             job::PEXUpdate::new(),
-            time::Duration::from_millis(PEX_JOB_SECS),
+            time::Duration::from_secs(PEX_JOB_SECS),
         );
 
         jobs.add_cjob(SpaceUpdate, time::Duration::from_secs(SPACE_JOB_SECS));
