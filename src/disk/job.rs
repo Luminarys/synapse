@@ -327,9 +327,9 @@ impl Request {
                 fc.write_file_range(
                     &pb,
                     if loc.allocate {
-                        Some(loc.file_len)
+                        Ok(loc.file_len)
                     } else {
-                        None
+                        Err(loc.file_len)
                     },
                     loc.offset,
                     &mut data[loc.start..loc.end],
@@ -348,7 +348,7 @@ impl Request {
                 for loc in locations {
                     let pb = tpb.get(path.as_ref().unwrap_or(dd));
                     pb.push(loc.path());
-                    fc.read_file_range(&pb, None, loc.offset, &mut data[loc.start..loc.end])?;
+                    fc.read_file_range(&pb, loc.offset, &mut data[loc.start..loc.end])?;
                 }
                 let data = Arc::new(data);
                 return Ok(JobRes::Resp(Response::read(context, data)));
@@ -440,7 +440,7 @@ impl Request {
                 for loc in locs {
                     let pb = tpb.get(path.as_ref().unwrap_or(dd));
                     pb.push(loc.path());
-                    fc.read_file_range(&pb, None, loc.offset, &mut buf[loc.start..loc.end])
+                    fc.read_file_range(&pb, loc.offset, &mut buf[loc.start..loc.end])
                         .map(|_| ctx.update(&buf[loc.start..loc.end]))
                         .ok();
                 }
@@ -474,7 +474,7 @@ impl Request {
                         let pb = tpb.get(path.as_ref().unwrap_or(dd));
                         pb.push(loc.path());
                         valid &=
-                            fc.read_file_range(&pb, None, loc.offset, &mut buf[loc.start..loc.end])
+                            fc.read_file_range(&pb, loc.offset, &mut buf[loc.start..loc.end])
                                 .map(|_| ctx.update(&buf[loc.start..loc.end]))
                                 .is_ok();
                     }
@@ -591,7 +591,6 @@ impl Request {
 
                         fc.read_file_range(
                             path::Path::new(&path),
-                            None,
                             offset,
                             &mut buf[0..amnt as usize],
                         )?;

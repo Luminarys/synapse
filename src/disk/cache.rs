@@ -119,11 +119,10 @@ impl FileCache {
     pub fn read_file_range(
         &mut self,
         path: &path::Path,
-        size: Option<u64>,
         offset: u64,
         buf: &mut [u8],
     ) -> io::Result<()> {
-        self.ensure_exists(path, size)?;
+        self.ensure_exists(path, Err(0))?;
 
         #[cfg(any(target_pointer_width = "32", not(feature = "mmap")))]
         {
@@ -157,7 +156,7 @@ impl FileCache {
     pub fn write_file_range(
         &mut self,
         path: &path::Path,
-        size: Option<u64>,
+        size: Result<u64, u64>,
         offset: u64,
         buf: &[u8],
     ) -> io::Result<()> {
@@ -210,7 +209,8 @@ impl FileCache {
         }
     }
 
-    fn ensure_exists(&mut self, path: &path::Path, len: Option<u64>) -> io::Result<()> {
+    fn ensure_exists(&mut self, path: &path::Path, len: Result<u64, u64>) -> io::Result<()> {
+        let len_val = if let Ok(v) = len { v } else { len.err().unwrap() };
         if !self.files.contains_key(path) {
             if self.files.len() >= CONFIG.net.max_open_files {
                 let mut removal = None;
@@ -229,18 +229,16 @@ impl FileCache {
             fs::create_dir_all(path.parent().unwrap())?;
             let file = fs::OpenOptions::new()
                 .write(true)
-                .create(len.is_some())
+                .create(true)
                 .read(true)
                 .open(path)?;
 
-            let alloc_failed = if len.is_some() && file.metadata()?.len() != len.unwrap() {
+            let alloc_failed = if len.is_ok() && file.metadata()?.len() != len.ok().unwrap() {
                 let res = !native::fallocate(&file, len.unwrap())?;
                 debug!("Attempted to fallocate {:?}: success {}!", path, !res);
                 res
             } else {
-                if len.is_some() {
-                    file.set_len(len.unwrap())?;
-                }
+                file.set_len(len_val)?;
                 false
             };
 
@@ -275,12 +273,12 @@ impl FileCache {
                     },
                 );
             }
-        } else if len.is_some() {
+        } else if len.is_ok() {
             let entry = self.files.get_mut(path).unwrap();
             if entry.sparse && !entry.alloc_failed {
                 debug!("Attempting delayed falloc!");
                 let file = fs::OpenOptions::new().write(true).read(true).open(path)?;
-                entry.alloc_failed = !native::fallocate(&file, len.unwrap())?;
+                entry.alloc_failed = !native::fallocate(&file, len_val)?;
                 if !entry.alloc_failed {
                     entry.sparse = false;
                 }
