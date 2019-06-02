@@ -237,16 +237,12 @@ impl FileCache {
                 let res = !native::fallocate(&file, len.unwrap())?;
                 debug!("Attempted to fallocate {:?}: success {}!", path, !res);
                 res
-            } else {
+            } else if len_val != 0 {
                 file.set_len(len_val)?;
                 false
             };
 
             let stat = file.metadata()?;
-            // Check if the file was never allocated
-            if stat.size() == 0 {
-                return io_err("mmap attempted on 0 sized file");
-            }
             let sparse = stat.blocks() * stat.blksize() < stat.size();
 
             #[cfg(any(target_pointer_width = "32", not(feature = "mmap")))]
@@ -262,6 +258,10 @@ impl FileCache {
 
             #[cfg(all(feature = "mmap", target_pointer_width = "64"))]
             {
+                // Check if the file was never allocated
+                if stat.size() == 0 {
+                    return io_err("mmap attempted on 0 sized file");
+                }
                 let mmap = unsafe { MmapMut::map_mut(&file)? };
                 self.files.insert(
                     path.to_path_buf(),
