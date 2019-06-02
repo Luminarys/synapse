@@ -237,8 +237,10 @@ impl FileCache {
                 let res = !native::fallocate(&file, len.unwrap())?;
                 debug!("Attempted to fallocate {:?}: success {}!", path, !res);
                 res
-            } else if len_val != 0 {
-                file.set_len(len_val)?;
+            } else {
+                if len_val != 0 {
+                    file.set_len(len_val)?;
+                }
                 false
             };
 
