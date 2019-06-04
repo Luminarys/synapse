@@ -365,6 +365,9 @@ impl Handler {
             }
             None => {}
         }
+        for (k, v) in req.url.query_pairs() {
+            append_query_pair(&mut http_req, &k, &v);
+        }
 
         // Encode HTTP protocol
         http_req.extend_from_slice(b" HTTP/1.1\r\n");
