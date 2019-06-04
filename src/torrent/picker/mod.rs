@@ -121,7 +121,7 @@ impl Picker {
         let mut expired = 0;
         for (block, req) in &mut self.downloading {
             let reqd = self.blocks[block.index as usize].0;
-            let fully_reqd = reqd == self.scale as usize
+            let _fully_reqd = reqd == self.scale as usize
                 || (block.index == self.last_piece && reqd == self.last_piece_scale as usize);
             let deadline = (REQ_TIMEOUT as isize
                 + (3 - self.priorities[block.index as usize] as isize))

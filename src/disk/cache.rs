@@ -10,7 +10,7 @@ use std::io::{Read, Seek, SeekFrom, Write};
 use memmap::MmapMut;
 
 use CONFIG;
-use util::{io_err, native, MHashMap};
+use util::{native, MHashMap};
 
 const PB_LEN: usize = 256;
 
