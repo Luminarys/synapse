@@ -198,14 +198,15 @@ fn do_decode<R: io::Read>(bytes: &mut R, first: bool) -> Result<BEncode, BError>
     }
     let mut cstack = vec![];
     let mut vstack = vec![];
+    let mut buf = [0];
     while !first || !(cstack.is_empty() && vstack.len() == 1) {
-        match next_byte(bytes) {
+        match next_byte(bytes, &mut buf) {
             Ok(b'i') => {
                 // Multiple non complex values are not allowed
                 if cstack.is_empty() && !vstack.is_empty() {
                     return Err(BError::EOF);
                 }
-                let s = read_until(bytes, b'e')?;
+                let s = read_until(bytes, b'e', &mut buf)?;
                 vstack.push(BEncode::Int(decode_int(s)?));
             }
             Ok(b'l') => {
@@ -252,7 +253,7 @@ fn do_decode<R: io::Read>(bytes: &mut R, first: bool) -> Result<BEncode, BError>
                 if cstack.is_empty() && !vstack.is_empty() {
                     return Err(BError::EOF);
                 }
-                let mut slen = read_until(bytes, b':')?;
+                let mut slen = read_until(bytes, b':', &mut buf)?;
                 slen.insert(0, d);
                 let len = decode_int(slen)?;
                 let mut v = vec![0u8; len as usize];
@@ -271,20 +272,19 @@ fn do_decode<R: io::Read>(bytes: &mut R, first: bool) -> Result<BEncode, BError>
     }
 }
 
-fn next_byte<R: io::Read>(r: &mut R) -> Result<u8, BError> {
-    let mut v = [0];
-    let amnt = r.read(&mut v).map_err(|_| BError::IO)?;
+fn next_byte<R: io::Read>(r: &mut R, buf: &mut [u8; 1]) -> Result<u8, BError> {
+    let amnt = r.read(buf).map_err(|_| BError::IO)?;
     if amnt == 0 {
         Err(BError::EOF)
     } else {
-        Ok(v[0])
+        Ok(buf[0])
     }
 }
 
-fn read_until<R: io::Read>(r: &mut R, b: u8) -> Result<Vec<u8>, BError> {
+fn read_until<R: io::Read>(r: &mut R, b: u8, buf: &mut [u8; 1]) -> Result<Vec<u8>, BError> {
     let mut v = vec![];
     loop {
-        let n = next_byte(r)?;
+        let n = next_byte(r, buf)?;
         if b == n {
             return Ok(v);
         }
