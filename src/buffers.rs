@@ -3,7 +3,7 @@ use std::mem;
 use std::ops::{Deref, DerefMut};
 
 const MAX_BUFS: usize = 4096;
-static BUF_COUNT: atomic::AtomicUsize = atomic::ATOMIC_USIZE_INIT;
+static BUF_COUNT: atomic::AtomicUsize = atomic::AtomicUsize::new(0);
 
 #[derive(Clone)]
 pub struct Buffer {
