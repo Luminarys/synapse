@@ -9,6 +9,7 @@ It currently supports most systems which implement epoll or kqueue, with a focus
 * Event based RPC using websockets
 * HTTP downloads and TLS for easy server usage
 * Can be used via web client with minimal setup - see [receptor](https://web.synapse-bt.org)
+* See [this wiki page](https://github.com/Luminarys/synapse/wiki/Feature-Stability) for an overview of stability
 
 ## Installation
 ### Package
