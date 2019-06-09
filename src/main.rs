@@ -77,7 +77,7 @@ pub const UT_PEX_ID: u8 = 11;
 /// Throttler max token amount
 pub const THROT_TOKS: usize = 2 * 1024 * 1024;
 
-pub static SHUTDOWN: atomic::AtomicBool = atomic::ATOMIC_BOOL_INIT;
+pub static SHUTDOWN: atomic::AtomicBool = atomic::AtomicBool::new(false);
 
 lazy_static! {
     pub static ref CONFIG: config::Config = { config::Config::load() };
