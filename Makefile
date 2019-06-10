@@ -9,7 +9,7 @@ compile:
 		-v $$PWD:/volume \
 		-w /volume \
 		-it clux/muslrust:stable \
-		cargo build --release --all
+		cargo build --locked --release --all
 	sudo chown $$USER:$$USER -R target
 	strip target/x86_64-unknown-linux-musl/release/synapse
 	strip target/x86_64-unknown-linux-musl/release/sycli

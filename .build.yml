@@ -15,7 +15,7 @@ tasks:
   - build: |
       cd synapse
       printf 'revision = "%s-%s"\n' "$(date +%s)" "$(git describe --always)" >> Cargo.toml
-      cargo build --release --all -v
+      cargo build --locked --release --all -v
       cargo deb -v --no-build
   - deploy: |
       export DEBFILE="synapse/target/debian/*.deb"
