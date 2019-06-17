@@ -212,6 +212,12 @@ impl RoutingTable {
                 proto::Response::id(req.transaction, self.id.clone())
             }
             proto::RequestKind::GetPeers { id, hash } => {
+                if !self.contains_id(&id) {
+                    let n = Node::new(id.clone(), addr);
+                    if self.add_node(n).is_err() {
+                        // This will be processed immediately after.
+                    }
+                }
                 let token = if !self.contains_id(&id) {
                     return proto::Response::error(
                         req.transaction,
