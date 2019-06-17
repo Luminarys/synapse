@@ -93,6 +93,11 @@ impl Picker {
         } else {
             HashMap::with_capacity(8192)
         };
+        let blocks = if pieces.complete() {
+            Vec::with_capacity(0)
+        } else {
+            vec![(0, 0); info.pieces() as usize]
+        };
         let mut picker = Picker {
             picker: PickerKind::Rarest(picker),
             scale,
@@ -103,7 +108,7 @@ impl Picker {
             unpicked: pieces.clone(),
             stalled: FHashSet::default(),
             priorities: vec![3; info.pieces() as usize],
-            blocks: vec![(0, 0); info.pieces() as usize],
+            blocks,
         };
         picker.set_priorities(priorities, info);
         picker
@@ -115,6 +120,12 @@ impl Picker {
             PickerKind::Sequential(_) => true,
             _ => false,
         }
+    }
+
+    pub fn done(&mut self) {
+       self.downloading = HashMap::with_capacity(0);
+       self.blocks = vec![];
+       self.stalled = FHashSet::default();
     }
 
     pub fn tick(&mut self) {
@@ -141,8 +152,6 @@ impl Picker {
                 self.unpicked.len(),
                 self.downloading.len()
             );
-        } else if self.downloading.capacity() != 0 && self.unpicked.complete() {
-            self.downloading = HashMap::with_capacity(0);
         }
     }
 
@@ -244,6 +253,9 @@ impl Picker {
             PickerKind::Sequential(ref mut p) => p.incomplete(idx),
             PickerKind::Rarest(ref mut p) => p.incomplete(idx),
         }
+        if self.blocks.is_empty() {
+            self.blocks = vec![(0, 0); self.priorities.len()];
+        }
         self.blocks[idx as usize] = (0, 0);
         self.unpicked.unset_bit(u64::from(idx));
     }
@@ -289,8 +301,7 @@ impl Picker {
     /// Alters the picker to sequential/non sequential. If changing
     /// from sequential to non sequential, peer state will need to be loaded
     /// after this.
-    pub fn change_picker(&mut self, sequential: bool, pieces: &Bitfield) {
-        self.unpicked = pieces.clone();
+    pub fn change_picker(&mut self, sequential: bool) {
         self.picker = if sequential {
             PickerKind::Sequential(sequential::Picker::new(&self.unpicked))
         } else {
