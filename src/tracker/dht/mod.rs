@@ -154,6 +154,8 @@ impl Manager {
                     error!("Failed to send message on UDP socket: {:?}", e);
                     break;
                 }
+            } else {
+                break;
             }
         }
     }
