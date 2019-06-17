@@ -464,7 +464,7 @@ impl<T: cio::CIO> Torrent<T> {
                 piece_idx: self.info.piece_idx.clone(),
             },
             pieces: session::torrent::Bitfield {
-                data: self.pieces.data().clone(),
+                data: self.pieces.data(),
                 len: self.pieces.len(),
             },
             uploaded: self.uploaded,

@@ -1,9 +1,9 @@
 // Use u64 than usize because it conforms with bittorents network protocol
 // (4 byte big endian integers)
 #[derive(Clone)]
-pub struct Bitfield {
-    len: u64,
-    data: Box<[u8]>,
+pub enum Bitfield {
+    I { len: u64, data: Box<[u8]>, set: u64 },
+    C { len: u64 },
 }
 
 impl Bitfield {
@@ -13,107 +13,180 @@ impl Bitfield {
             size += 1;
         }
 
-        Bitfield {
-            len: len,
+        Bitfield::I {
+            len,
             data: vec![0; size as usize].into_boxed_slice(),
+            set: 0,
         }
     }
 
     pub fn from(b: Box<[u8]>, len: u64) -> Bitfield {
-        Bitfield { len: len, data: b }
+        let i = Bitfield::I { len, data: b, set: 0 };
+        let set = i.iter().count() as u64;
+        if i.complete() {
+            Bitfield::C { len }
+        } else {
+            Bitfield::I { len, data: i.into_data(), set }
+        }
     }
 
     pub fn len(&self) -> u64 {
-        self.len
+        match self {
+            Bitfield::I { len, .. } => *len,
+            Bitfield::C { len } => *len,
+        }
     }
 
-    pub fn data(&self) -> &Box<[u8]> {
-        &self.data
+    pub fn set(&self) -> u64 {
+        match self {
+            Bitfield::I { set, .. } => *set,
+            Bitfield::C { len } => *len,
+        }
     }
 
-    pub fn cap(&mut self, len: u64) {
-        self.len = len;
+    pub fn data(&self) -> Box<[u8]> {
+        match self {
+            Bitfield::I { data, .. } => data.clone(),
+            Bitfield::C { len } => {
+                let mut size = len / 8;
+                if len % 8 != 0 {
+                    size += 1;
+                }
+                vec![255; size as usize].into_boxed_slice()
+            },
+        }
+    }
+
+    pub fn into_data(self) -> Box<[u8]> {
+        match self {
+            Bitfield::I { data, .. } => data,
+            Bitfield::C { len } => {
+                let mut size = len / 8;
+                if len % 8 != 0 {
+                    size += 1;
+                }
+                vec![255; size as usize].into_boxed_slice()
+            },
+        }
+    }
+
+    pub fn cap(&mut self, l: u64) {
+        match self {
+            Bitfield::I { len, .. } => *len = l,
+            Bitfield::C { len } => *len = l,
+        }
     }
 
     pub fn bytes(&self) -> usize {
-        self.data.len()
+        let mut size = self.len() / 8;
+        if self.len() % 8 != 0 {
+            size += 1;
+        }
+        size as usize
     }
 
     pub fn byte_at(&self, pos: u64) -> u8 {
-        self.data[pos as usize]
+        match self {
+            Bitfield::I { data, .. } => data[pos as usize],
+            Bitfield::C { .. } => 255,
+        }
     }
 
     pub fn complete(&self) -> bool {
-        // Fail safe for magnets
-        if self.data.len() == 0 {
-            return false;
-        }
-        for i in 0..self.data.len() - 1 {
-            if !(self.data[i]) != 0 {
-                return false;
+        match self {
+            Bitfield::I { len, data, set } => {
+                // Fail safe for magnets
+                if data.len() == 0 {
+                    return false;
+                }
+                return set == len;
             }
+            Bitfield::C { .. } => true,
         }
-        if self.len % 8 == 0 {
-            return !self.data.last().unwrap() == 0;
-        }
-        for i in 0..(self.len % 8) {
-            if !self.has_bit(self.len - i - 1) {
-                return false;
-            }
-        }
-        true
     }
 
     pub fn has_bit(&self, pos: u64) -> bool {
-        debug_assert!(pos < self.len);
-        if pos >= self.len {
+        debug_assert!(pos < self.len());
+        if pos >= self.len() {
             false
         } else {
-            let block_pos = pos / 8;
-            let index = 7 - (pos % 8);
-            let block = self.data[block_pos as usize];
-            ((block >> index) & 1) == 1
+            match self {
+                Bitfield::I { data, .. } => {
+                    let block_pos = pos / 8;
+                    let index = 7 - (pos % 8);
+                    let block = data[block_pos as usize];
+                    ((block >> index) & 1) == 1
+                }
+                Bitfield::C { .. } => true,
+            }
         }
     }
 
     pub fn set_bit(&mut self, pos: u64) {
-        debug_assert!(pos < self.len);
-        if pos < self.len {
-            let block_pos = pos / 8;
-            let index = 7 - (pos % 8);
-            let block = self.data[block_pos as usize];
-            self.data[block_pos as usize] = block | (1 << index);
+        debug_assert!(pos < self.len());
+        if pos < self.len() {
+            match self {
+                Bitfield::I { data, set, .. } => {
+                    let block_pos = pos / 8;
+                    let index = 7 - (pos % 8);
+                    let block = data[block_pos as usize];
+                    data[block_pos as usize] = block | (1 << index);
+                    *set += 1;
+                }
+                Bitfield::C { .. } => { }
+            }
+            if self.complete() {
+                *self = Bitfield::C { len: self.len() };
+            }
         }
     }
 
     pub fn unset_bit(&mut self, pos: u64) {
-        debug_assert!(pos < self.len);
-        if pos < self.len {
-            let block_pos = pos / 8;
-            let index = 7 - (pos % 8);
-            let block = self.data[block_pos as usize];
-            self.data[block_pos as usize] = block & !(1 << index);
+        debug_assert!(pos < self.len());
+        if pos < self.len() {
+            match self {
+                Bitfield::C { .. } => {
+                    *self = Bitfield::I { len: self.len(), data: self.data(), set: self.set() };
+                }
+                _ => { }
+            }
+            match self {
+                Bitfield::I { data, set, .. } => {
+                    let block_pos = pos / 8;
+                    let index = 7 - (pos % 8);
+                    let block = data[block_pos as usize];
+                    data[block_pos as usize] = block & !(1 << index);
+                    *set -= 1;
+                }
+                Bitfield::C { .. } => unreachable!(),
+            }
         }
     }
 
     pub fn usable(&self, other: &Bitfield) -> bool {
-        debug_assert!(self.len <= other.len);
-        if self.len <= other.len {
-            for i in 0..self.data.len() {
-                // If we encounter a 0 for us and a 1 for them, return true.
-                // XOR will make sure that 0/0 and 1/1 are invalid, and the & with self ensures
-                // that only fields which are set on the other bitfield are the 1 in the 1/0 pair.
-                if ((self.data[i] ^ other.data[i]) & other.data[i]) > 0 {
-                    return true;
+        debug_assert!(self.len() <= other.len());
+        if self.len() <= other.len() {
+            return match (self, other) {
+                (Bitfield::I { data, .. }, Bitfield::I { data: od, .. }) => {
+                    for i in 0..data.len() {
+                        // If we encounter a 0 for us and a 1 for them, return true.
+                        // XOR will make sure that 0/0 and 1/1 are invalid, and the & with self ensures
+                        // that only fields which are set on the other bitfield are the 1 in the 1/0 pair.
+                        if ((data[i] ^ od[i]) & od[i]) > 0 {
+                            return true;
+                        }
+                    }
+                    false
                 }
-            }
+                (Bitfield::I { .. }, Bitfield::C { .. }) => true,
+                (Bitfield::C { .. }, _) => false,
+            };
         }
         false
     }
 
     pub fn b64(&self) -> String {
-        use base64;
-        base64::encode(&self.data)
+        base64::encode(&self.data())
     }
 
     pub fn iter(&self) -> BitfieldIter {
@@ -131,8 +204,8 @@ use std::fmt;
 
 impl fmt::Debug for Bitfield {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
-        write!(f, "Bitfield {{ len: {}, pieces: ", self.len)?;
-        for i in 0..self.len {
+        write!(f, "Bitfield {{ len: {}, pieces: ", self.len())?;
+        for i in 0..self.len() {
             if self.has_bit(i) {
                 write!(f, "1")?;
             } else {
@@ -179,14 +252,14 @@ mod tests {
         for i in 0..100 {
             pf.set_bit(i);
         }
-        assert_eq!(pf.iter().count() as u64, pf.len);
+        assert_eq!(pf.iter().count() as u64, pf.len());
     }
 
     #[test]
     fn test_create() {
         let pf = Bitfield::new(10);
-        assert!(pf.len == 10);
-        assert!(pf.data.len() == 2)
+        assert!(pf.len() == 10);
+        assert!(pf.data().len() == 2)
     }
 
     #[test]
