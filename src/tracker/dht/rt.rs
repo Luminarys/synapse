@@ -43,7 +43,7 @@ enum TransactionKind {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 struct Torrent {
-    peers: Vec<SocketAddr>,
+    peers: Vec<(ID, SocketAddr)>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -208,7 +208,7 @@ impl RoutingTable {
                 if !implied_port {
                     addr.set_port(port);
                 }
-                self.torrents.get_mut(&hash).unwrap().peers.push(addr);
+                self.torrents.get_mut(&hash).unwrap().peers.push((id, addr));
                 proto::Response::id(req.transaction, self.id.clone())
             }
             proto::RequestKind::GetPeers { id, hash } => {
@@ -227,7 +227,7 @@ impl RoutingTable {
                     self.get_node(&id).token.clone()
                 };
                 if let Some(t) = self.torrents.get(&hash) {
-                    proto::Response::peers(req.transaction, self.id.clone(), token, t.peers.clone())
+                    proto::Response::peers(req.transaction, self.id.clone(), token, t.peers.iter().map(|p| p.1).collect())
                 } else {
                     let mut nodes = Vec::new();
                     let b = self.bucket_idx(&BigUint::from_bytes_be(&hash[..]));
@@ -440,6 +440,14 @@ impl RoutingTable {
             let tx = self.new_query_tx(node.id);
             reqs.push((proto::Request::ping(tx, self.id.clone()), node.addr));
         }
+        let buckets = &self.buckets;
+        self.torrents.retain(|_, t| {
+            t.peers.retain(|p| {
+                let idx = RoutingTable::bucket_idx_(&p.0, buckets);
+                buckets[idx].contains(&p.0)
+            });
+            !t.peers.is_empty()
+        });
         reqs
     }
 
@@ -576,7 +584,11 @@ impl RoutingTable {
     }
 
     fn bucket_idx(&self, id: &ID) -> usize {
-        self.buckets
+        RoutingTable::bucket_idx_(id, &self.buckets)
+    }
+
+    fn bucket_idx_(id: &ID, buckets: &[Bucket]) -> usize {
+        buckets
             .binary_search_by(|bucket| {
                 if bucket.could_hold(id) {
                     cmp::Ordering::Equal
