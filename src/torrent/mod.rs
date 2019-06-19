@@ -464,7 +464,7 @@ impl<T: cio::CIO> Torrent<T> {
                 piece_idx: self.info.piece_idx.clone(),
             },
             pieces: session::torrent::Bitfield {
-                data: self.pieces.data().clone(),
+                data: self.pieces.data(),
                 len: self.pieces.len(),
             },
             uploaded: self.uploaded,
@@ -859,13 +859,15 @@ impl<T: cio::CIO> Torrent<T> {
         if complete {
             if self.status.state != StatusState::Complete {
                 self.status.state = StatusState::Complete;
-                let seq = self.picker.is_sequential();
-                self.change_picker(seq);
+                self.picker.done();
                 self.set_finished();
                 self.serialize();
             }
         } else if self.status.state == StatusState::Complete {
             self.status.state = StatusState::Incomplete;
+            let seq = self.picker.is_sequential();
+            self.picker = Picker::new(&self.info, &self.pieces, &self.priorities);
+            self.change_picker(seq);
             self.announce_status();
             self.announce_start();
             self.request_all();
@@ -1976,7 +1978,7 @@ impl<T: cio::CIO> Torrent<T> {
     pub fn change_picker(&mut self, sequential: bool) {
         debug!("Swapping pickers!");
         let prev_seq = self.picker.is_sequential();
-        self.picker.change_picker(sequential, &self.pieces);
+        self.picker.change_picker(sequential);
         for peer in self.peers.values() {
             self.picker.add_peer(peer);
         }
