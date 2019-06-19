@@ -1582,17 +1582,22 @@ impl<T: cio::CIO> Torrent<T> {
     }
 
     fn rpc_trk_info(&self) -> Vec<resource::Resource> {
+        let mut seen_urls = FHashSet::default();
         self.trackers
             .iter()
-            .map(|trk| {
-                resource::Resource::Tracker(resource::Tracker {
+            .filter_map(|trk| {
+                if seen_urls.contains(trk.url.as_str()) {
+                    return None;
+                }
+                seen_urls.insert(trk.url.as_str());
+                Some(resource::Resource::Tracker(resource::Tracker {
                     id: util::trk_rpc_id(&self.info.hash, trk.url.as_str()),
                     torrent_id: self.rpc_id(),
                     url: trk.url.as_ref().clone(),
                     last_report: trk.last_announce.clone(),
                     error: None,
                     ..Default::default()
-                })
+                }))
             })
             .collect()
     }
@@ -1605,7 +1610,12 @@ impl<T: cio::CIO> Torrent<T> {
                 util::file_rpc_id(&self.info.hash, f.path.as_path().to_string_lossy().as_ref());
             r.push(id)
         }
+        let mut seen_urls = FHashSet::default();
         for (_, tracker) in self.trackers.iter().enumerate() {
+            if seen_urls.contains(tracker.url.as_str()) {
+                continue;
+            }
+            seen_urls.insert(tracker.url.as_str());
             r.push(util::trk_rpc_id(&self.info.hash, tracker.url.as_str()));
         }
         self.cio.msg_rpc(rpc::CtlMessage::Removed(r));
