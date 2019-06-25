@@ -13,7 +13,7 @@ name = "synapse"
 
 [workspace]
 members = ["sycli", "rpc", "session", "bencode", "adns"]
-exclude = ["synulator"]
+exclude = ["synulator", "systat"]
 
 [build-dependencies]
 cc = "1.0"

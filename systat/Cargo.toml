@@ -1,0 +1,16 @@
+[package]
+name = "systat"
+description = "Synapse Performance Statistic Testing"
+version = "0.1.0"
+authors = ["Luminarys <8228526+Luminarys@users.noreply.github.com>"]
+edition = "2018"
+
+[dependencies]
+synapse-rpc = { path = "../rpc" }
+synapse-bencode = { path = "../bencode" }
+serde_json = "1"
+rand = "0.5.3"
+ws = "0.8"
+sha1 = "0.6"
+quantiles = "0.7"
+reqwest = "0.9"
