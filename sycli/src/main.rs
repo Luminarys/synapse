@@ -9,6 +9,7 @@ extern crate reqwest;
 extern crate serde;
 #[macro_use]
 extern crate serde_derive;
+#[macro_use]
 extern crate serde_json;
 extern crate shellexpand;
 extern crate synapse_rpc as rpc;
@@ -287,6 +288,29 @@ fn main() {
                                 ),
                         ])
                         .setting(AppSettings::SubcommandRequiredElseHelp),
+                    SubCommand::with_name("tag")
+                        .about("Manipulate tags for a torrent")
+                        .subcommands(vec![
+                            SubCommand::with_name("add")
+                                .about("Add tag to a torrent")
+                                .arg(
+                                    Arg::with_name("tag names")
+                                        .help("Name of tags to add")
+                                        .multiple(true)
+                                        .index(1)
+                                        .required(true),
+                                ),
+                            SubCommand::with_name("remove")
+                                .about("Remove tags from a torrent")
+                                .arg(
+                                    Arg::with_name("tag names")
+                                        .help("Name of tags to remove")
+                                        .multiple(true)
+                                        .index(1)
+                                        .required(true),
+                                ),
+                        ])
+                        .setting(AppSettings::SubcommandRequiredElseHelp),
                     SubCommand::with_name("priority")
                         .about("Change priority of a torrent")
                         .arg(
@@ -297,6 +321,7 @@ fn main() {
                         ),
                     SubCommand::with_name("trackers").about("Prints a torrent's trackers"),
                     SubCommand::with_name("peers").about("Prints a torrent's peers"),
+                    SubCommand::with_name("tags").about("Prints a torrent's tags"),
                     SubCommand::with_name("files").about("Prints a torrent's files"),
                 ])
                 .arg(
@@ -564,6 +589,42 @@ fn main() {
                         _ => unreachable!(),
                     }
                 }
+                "tag" => {
+                    let sscmd = subcmd.subcommand_matches("tag").unwrap();
+                    match sscmd.subcommand_name().unwrap() {
+                        "add" => {
+                            if let Err(e) = cmd::add_tags(
+                                client,
+                                id,
+                                sscmd
+                                    .subcommand_matches("add")
+                                    .unwrap()
+                                    .values_of("tag names")
+                                    .unwrap()
+                                    .collect(),
+                            ) {
+                                eprintln!("Failed to add peers: {}", e);
+                                process::exit(1);
+                            }
+                        }
+                        "remove" => {
+                            if let Err(e) = cmd::remove_tags(
+                                client,
+                                id,
+                                sscmd
+                                    .subcommand_matches("remove")
+                                    .unwrap()
+                                    .values_of("tag names")
+                                    .unwrap()
+                                    .collect(),
+                            ) {
+                                eprintln!("Failed to remove peers: {}", e);
+                                process::exit(1);
+                            }
+                        }
+                        _ => unreachable!(),
+                    }
+                }
                 "priority" => {
                     let pri = subcmd
                         .subcommand_matches("priority")
@@ -584,6 +645,12 @@ fn main() {
                 "peers" => {
                     if let Err(e) = cmd::get_peers(client, id, output) {
                         eprintln!("Failed to get torrent peers: {}", e);
+                        process::exit(1);
+                    }
+                }
+                "tags" => {
+                    if let Err(e) = cmd::get_tags(client, id) {
+                        eprintln!("Failed to get torrent tags: {}", e);
                         process::exit(1);
                     }
                 }

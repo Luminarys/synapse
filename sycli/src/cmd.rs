@@ -1,4 +1,4 @@
-use std::{cmp, fs};
+use std::{cmp, fs, mem};
 use std::path::Path;
 use std::io::{self, Read};
 use std::borrow::Cow;
@@ -6,7 +6,7 @@ use std::borrow::Cow;
 use base64;
 use openssl::sha;
 use reqwest::Client as HClient;
-use serde_json;
+use serde_json as json;
 use prettytable::Table;
 use url::Url;
 
@@ -554,6 +554,70 @@ pub fn remove_peers(mut c: Client, peers: Vec<&str>) -> Result<()> {
         }
     }
     Ok(())
+}
+
+pub fn add_tags(mut c: Client, id: &str, tags: Vec<&str>) -> Result<()> {
+    let mut resource = CResourceUpdate::default();
+    let (id, mut tag_array) = get_tags_(&mut c, id)?;
+    resource.id = id;
+    for tag in tags {
+        let t = tag.to_owned();
+        if !tag_array.contains(&t) {
+            tag_array.push(t);
+        }
+    }
+    let tag_obj = json::Value::Array(tag_array.into_iter()
+                    .map(|t| json::Value::String(t))
+                    .collect());
+    resource.user_data = Some(json!({
+            "tags": tag_obj
+        }));
+    let msg = CMessage::UpdateResource {
+        serial: c.next_serial(),
+        resource,
+    };
+    c.send(msg)
+}
+
+pub fn remove_tags(mut c: Client, id: &str, tags: Vec<&str>) -> Result<()> {
+    let mut resource = CResourceUpdate::default();
+    let (id, mut tag_array) = get_tags_(&mut c, id)?;
+    resource.id = id;
+    tag_array.retain(|t| !tags.contains(&t.as_str()));
+    let tag_obj = json::Value::Array(tag_array.into_iter()
+                    .map(|t| json::Value::String(t))
+                    .collect());
+    resource.user_data = Some(json!({
+            "tags": tag_obj
+        }));
+    let msg = CMessage::UpdateResource {
+        serial: c.next_serial(),
+        resource,
+    };
+    c.send(msg)
+}
+
+pub fn get_tags(mut c: Client, id: &str) -> Result<()> {
+    let (_, tag_array) = get_tags_(&mut c, id)?;
+    println!("Torrent tags: {:?}", tag_array);
+    Ok(())
+}
+
+fn get_tags_(c: &mut Client, id: &str) -> Result<(String, Vec<String>)> {
+    let mut sres = search_torrent_name(c, id)?;
+    if sres.len() != 1 {
+        bail!("Could not find appropriate torrent!");
+    }
+    let torrent = sres[0].as_torrent_mut();
+    let prev_data = mem::replace(&mut torrent.user_data, json::Value::Null);
+    Ok((torrent.id.clone(), match prev_data.pointer("/tags") {
+        Some(json::Value::Array(a)) => {
+            a.into_iter().filter_map(json::Value::as_str)
+                .map(|s| s.to_owned())
+                .collect()
+        }
+        _ => vec![],
+    }))
 }
 
 pub fn set_torrent_pri(mut c: Client, id: &str, pri: &str) -> Result<()> {

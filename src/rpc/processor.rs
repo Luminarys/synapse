@@ -207,7 +207,7 @@ impl Processor {
                 mut resource,
             } => {
                 let udo = mem::replace(&mut resource.user_data, None);
-                if let Some(user_data) = udo {
+                if let Some(user_data) = udo.clone() {
                     let mut modified = false;
                     if let Some(res) = self.resources.get_mut(&resource.id) {
                         modified = true;
@@ -229,6 +229,7 @@ impl Processor {
                         self.serialize();
                     }
                 }
+                resource.user_data = udo;
 
                 match self.resources.get(&resource.id) {
                     Some(&Resource::Torrent(_)) => {

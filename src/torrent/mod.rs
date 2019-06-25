@@ -1333,6 +1333,17 @@ impl<T: cio::CIO> Torrent<T> {
             Some(resource::Strategy::Sequential) => self.change_picker(true),
             None => {}
         }
+
+        if let Some(user_data) = u.user_data {
+            let id = self.rpc_id();
+            self.cio.msg_rpc(rpc::CtlMessage::Update(vec![
+                resource::SResourceUpdate::UserData {
+                    id,
+                    kind: resource::ResourceKind::Torrent,
+                    user_data,
+                },
+            ]));
+        }
     }
 
     pub fn rpc_update_file(&mut self, id: String, priority: u8) {
