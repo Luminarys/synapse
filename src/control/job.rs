@@ -107,7 +107,7 @@ impl<T: cio::CIO> Job<T> for PEXUpdate {
 
             let (added, removed) = {
                 let peers: HashSet<_> = torrent.peers().values().map(|p| p.addr()).collect();
-                let mut prev = self.peers.get_mut(id).unwrap();
+                let prev = self.peers.get_mut(id).unwrap();
                 let mut add: Vec<_> = peers.difference(prev).cloned().collect();
                 let mut rem: Vec<_> = prev.difference(&peers).cloned().collect();
                 add.truncate(50);

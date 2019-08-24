@@ -134,9 +134,9 @@ impl Disk {
                 }
             }
             if done && seq {
-                self.sequential
-                    .pop_front()
-                    .map(|r| self.active.push_back(r));
+                if let Some(r) = self.sequential.pop_front() {
+                    self.active.push_back(r);
+                }
             }
             match self.poll.wait(0) {
                 Ok(v) => {

@@ -54,7 +54,7 @@ pub fn sha1_hash(data: &[u8]) -> [u8; 20] {
 }
 
 pub fn peer_rpc_id(torrent: &[u8; 20], peer: u64) -> String {
-    const PEER_ID: &'static [u8] = b"PEER";
+    const PEER_ID: &[u8] = b"PEER";
     let mut idx = [0u8; 8];
     BigEndian::write_u64(&mut idx[..], peer);
 
@@ -66,7 +66,7 @@ pub fn peer_rpc_id(torrent: &[u8; 20], peer: u64) -> String {
 }
 
 pub fn file_rpc_id(torrent: &[u8; 20], file: &str) -> String {
-    const FILE_ID: &'static [u8] = b"FILE";
+    const FILE_ID: &[u8] = b"FILE";
     let mut ctx = sha::Sha1::new();
     ctx.update(torrent);
     ctx.update(FILE_ID);
@@ -75,7 +75,7 @@ pub fn file_rpc_id(torrent: &[u8; 20], file: &str) -> String {
 }
 
 pub fn trk_rpc_id(torrent: &[u8; 20], url: &str) -> String {
-    const TRK_ID: &'static [u8] = b"TRK";
+    const TRK_ID: &[u8] = b"TRK";
     let mut ctx = sha::Sha1::new();
     ctx.update(torrent);
     ctx.update(TRK_ID);

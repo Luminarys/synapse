@@ -62,7 +62,7 @@ impl Socket {
         Ok(Socket {
             conn,
             throttle: None,
-            addr: addr,
+            addr,
         })
     }
 }

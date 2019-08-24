@@ -122,7 +122,7 @@ impl Picker {
 
         if peer.piece_cache().is_empty() {
             for piece in &self.pieces {
-                if peer.pieces().has_bit(*piece as u64)
+                if peer.pieces().has_bit(u64::from(*piece))
                     && self.piece_idx[*piece as usize].status == PieceStatus::Incomplete
                 {
                     peer.piece_cache().push(*piece);
@@ -140,7 +140,7 @@ impl Picker {
                 self.inc_pri(*p);
             }
         }
-        return piece.cloned();
+        piece.cloned()
     }
 
     pub fn incomplete(&mut self, piece: u32) {

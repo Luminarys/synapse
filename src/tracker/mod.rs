@@ -333,7 +333,7 @@ impl Request {
             // piece_len * pieces_dld (due to shorter last piece), so we always get
             // either the correct amount left or 0.
             left: torrent.info().total_len.saturating_sub(
-                torrent.pieces().iter().count() as u64 * torrent.info().piece_len as u64,
+                torrent.pieces().iter().count() as u64 * u64::from(torrent.info().piece_len),
             ),
             // TODO: Develop better heuristics here.
             // For now, only request peers if we're leeching,
@@ -361,9 +361,8 @@ impl Request {
 
     pub fn custom<T: cio::CIO>(torrent: &Torrent<T>, url: Arc<Url>) -> Option<Request> {
         Request::new_announce(torrent, None).map(|mut r| {
-            match r {
-                Request::Announce(ref mut a) => a.url = url,
-                _ => {}
+            if let Request::Announce(ref mut a) = r {
+                a.url = url
             }
             r
         })
@@ -390,8 +389,8 @@ impl TrackerResponse {
             return Err(ErrorKind::TrackerError(reason).into());
         }
         let mut resp = TrackerResponse::empty();
-        match d.remove("peers") {
-            Some(BEncode::String(ref data)) => for p in data.chunks(6) {
+        if let Some(BEncode::String(ref data)) = d.remove("peers") {
+            for p in data.chunks(6) {
                 if p.len() != 6 {
                     debug!("Unusual trailing bytes received for tracker!");
                     continue;
@@ -399,9 +398,8 @@ impl TrackerResponse {
                 let ip = Ipv4Addr::new(p[0], p[1], p[2], p[3]);
                 let socket = SocketAddrV4::new(ip, BigEndian::read_u16(&p[4..]));
                 resp.peers.push(SocketAddr::V4(socket));
-            },
-            _ => {}
-        };
+            }
+        }
         match d.remove("interval") {
             Some(BEncode::Int(ref i)) => {
                 resp.interval = *i as u32;

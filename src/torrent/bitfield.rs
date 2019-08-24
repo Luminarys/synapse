@@ -99,7 +99,7 @@ impl Bitfield {
                 if data.len() == 0 {
                     return false;
                 }
-                return set == len;
+                set == len
             }
             Bitfield::C { .. } => true,
         }
@@ -144,11 +144,8 @@ impl Bitfield {
     pub fn unset_bit(&mut self, pos: u64) {
         debug_assert!(pos < self.len());
         if pos < self.len() {
-            match self {
-                Bitfield::C { .. } => {
-                    *self = Bitfield::I { len: self.len(), data: self.data(), set: self.set() };
-                }
-                _ => { }
+            if let Bitfield::C { .. } = self {
+                *self = Bitfield::I { len: self.len(), data: self.data(), set: self.set() };
             }
             match self {
                 Bitfield::I { data, set, .. } => {
@@ -224,7 +221,7 @@ pub struct BitfieldIter<'a> {
 
 impl<'a> BitfieldIter<'a> {
     fn new(pf: &'a Bitfield) -> BitfieldIter<'a> {
-        BitfieldIter { pf: pf, idx: 0 }
+        BitfieldIter { pf, idx: 0 }
     }
 }
 

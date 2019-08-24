@@ -535,53 +535,44 @@ impl<T: cio::CIO> Torrent<T> {
         let mut empty = false;
         match *resp {
             Ok(ref r) => {
-                self.trackers
-                    .iter_mut()
-                    .find(|t| &*t.url == url)
-                    .map(|tracker| {
-                        debug!("Got valid response for {}", tracker.url);
-                        time += Duration::from_secs(u64::from(r.interval));
-                        tracker.status = TrackerStatus::Ok {
-                            seeders: r.seeders,
-                            leechers: r.leechers,
-                            interval: r.interval,
-                        };
-                        tracker.update = Some(time);
-                        tracker.last_announce = Utc::now();
-                        if r.peers.len() == 0 {
-                            empty = true;
-                        }
-                    });
+                if let Some(tracker) = self.trackers.iter_mut().find(|t| &*t.url == url) {
+                    debug!("Got valid response for {}", tracker.url);
+                    time += Duration::from_secs(u64::from(r.interval));
+                    tracker.status = TrackerStatus::Ok {
+                        seeders: r.seeders,
+                        leechers: r.leechers,
+                        interval: r.interval,
+                    };
+                    tracker.update = Some(time);
+                    tracker.last_announce = Utc::now();
+                    if r.peers.is_empty() {
+                        empty = true;
+                    }
+                }
             }
             Err(tracker::Error(tracker::ErrorKind::TrackerError(ref s), _)) => {
-                self.trackers
-                    .iter_mut()
-                    .find(|t| &*t.url == url)
-                    .map(|tracker| {
-                        debug!("Got tracker level error for {}", tracker.url);
-                        time += Duration::from_secs(300);
-                        tracker.update = Some(time);
-                        tracker.status = TrackerStatus::Failure(s.clone());
-                        tracker.last_announce = Utc::now();
-                    });
+                if let Some(tracker) = self.trackers.iter_mut().find(|t| &*t.url == url) {
+                    debug!("Got tracker level error for {}", tracker.url);
+                    time += Duration::from_secs(300);
+                    tracker.update = Some(time);
+                    tracker.status = TrackerStatus::Failure(s.clone());
+                    tracker.last_announce = Utc::now();
+                }
             }
             Err(ref e) => {
-                self.trackers
-                    .iter_mut()
-                    .find(|t| &*t.url == url)
-                    .map(|tracker| {
-                        error!("Failed to query tracker {}: {}", tracker.url, e);
-                        // Wait 5 minutes before trying again
-                        time += Duration::from_secs(300);
-                        tracker.update = Some(time);
-                        let reason = format!("Couldn't contact tracker: {}", e);
-                        tracker.status = TrackerStatus::Failure(reason);
-                        tracker.last_announce = Utc::now();
-                    });
+                if let Some(tracker) = self.trackers.iter_mut().find(|t| &*t.url == url) {
+                    error!("Failed to query tracker {}: {}", tracker.url, e);
+                    // Wait 5 minutes before trying again
+                    time += Duration::from_secs(300);
+                    tracker.update = Some(time);
+                    let reason = format!("Couldn't contact tracker: {}", e);
+                    tracker.status = TrackerStatus::Failure(reason);
+                    tracker.last_announce = Utc::now();
+                }
             }
         }
 
-        if (resp.is_err() || empty) && self.trackers.iter().find(|t| &*t.url == url).is_some() {
+        if (resp.is_err() || empty) && self.trackers.iter().any(|t| &*t.url == url) {
             if let Some(front) = self.trackers.pop_front() {
                 self.trackers.push_back(front);
                 self.try_update_tracker();
@@ -618,10 +609,9 @@ impl<T: cio::CIO> Torrent<T> {
     pub fn remove_peer(&mut self, rpc_id: &str) {
         let ih = &self.info.hash;
         let cio = &mut self.cio;
-        self.peers
+        if let Some((id, _)) = self.peers
             .iter()
-            .find(|&(id, _)| util::peer_rpc_id(ih, *id as u64) == rpc_id)
-            .map(|(id, _)| cio.remove_peer(*id));
+            .find(|&(id, _)| util::peer_rpc_id(ih, *id as u64) == rpc_id) { cio.remove_peer(*id) }
     }
 
     pub fn add_tracker(&mut self, url: Url) -> String {
@@ -639,7 +629,7 @@ impl<T: cio::CIO> Torrent<T> {
                     id: id.clone(),
                     torrent_id: self.rpc_id(),
                     url: trk.url.as_ref().clone(),
-                    last_report: trk.last_announce.clone(),
+                    last_report: trk.last_announce,
                     error: None,
                     ..Default::default()
                 }),
@@ -668,11 +658,10 @@ impl<T: cio::CIO> Torrent<T> {
     }
 
     pub fn update_tracker_req(&mut self, rpc_id: &str) {
-        self.trackers
+        if let Some(req) = self.trackers
             .iter()
             .find(|trk| util::trk_rpc_id(&self.info.hash, trk.url.as_str()) == rpc_id)
-            .and_then(|trk| tracker::Request::custom(self, trk.url.clone()))
-            .map(|req| self.cio.msg_trk(req));
+            .and_then(|trk| tracker::Request::custom(self, trk.url.clone())) { self.cio.msg_trk(req) }
     }
 
     pub fn get_throttle(&self, id: usize) -> Throttle {
@@ -735,7 +724,7 @@ impl<T: cio::CIO> Torrent<T> {
                     info!("Torrent imported!");
                     if valid {
                         for i in 0..self.info.pieces() {
-                            self.pieces.set_bit(i as u64);
+                            self.pieces.set_bit(u64::from(i));
                         }
                         self.check_complete();
                     } else {
@@ -745,7 +734,7 @@ impl<T: cio::CIO> Torrent<T> {
                     return;
                 }
                 if valid {
-                    self.pieces.set_bit(piece as u64);
+                    self.pieces.set_bit(u64::from(piece));
                     // Tell all relevant peers we got the piece
                     let m = Message::Have(piece);
                     for pid in &self.leechers {
@@ -836,7 +825,7 @@ impl<T: cio::CIO> Torrent<T> {
                 self.announce_status();
                 for piece in self.validating.drain() {
                     self.picker.invalidate_piece(piece);
-                    self.pieces.unset_bit(piece as u64);
+                    self.pieces.unset_bit(u64::from(piece));
                 }
             }
             disk::Response::FreeSpace(_) => unreachable!(),
@@ -902,7 +891,7 @@ impl<T: cio::CIO> Torrent<T> {
         for pid in leechers {
             if let Some(peer) = self.peers.get_mut(pid) {
                 for i in 0..self.pieces.len() {
-                    if !peer.pieces().has_bit(u64::from(i)) {
+                    if !peer.pieces().has_bit(i) {
                         peer.send_message(Message::Have(i as u32));
                     }
                 }
@@ -1041,13 +1030,13 @@ impl<T: cio::CIO> Torrent<T> {
                     let peers = &mut self.peers;
 
                     picker.completed(Block::new(index, begin), |pid| {
-                        peers.get_mut(&pid).map(|p| {
+                        if let Some(p) = peers.get_mut(&pid) {
                             p.send_message(Message::Cancel {
                                 index,
                                 begin,
                                 length,
                             })
-                        });
+                        }
                     })
                 };
                 let piece_done = if let Ok(r) = pr {
@@ -1081,7 +1070,7 @@ impl<T: cio::CIO> Torrent<T> {
                 begin,
                 length,
             } => {
-                if !self.pieces.has_bit(index as u64) {
+                if !self.pieces.has_bit(u64::from(index)) {
                     return Err(());
                 }
                 if length != self.info.block_len(index, begin) {
@@ -1240,7 +1229,7 @@ impl<T: cio::CIO> Torrent<T> {
                                 return Err(());
                             }
                         } else if p == 0 {
-                            for i in 1..(idx + 1) {
+                            for i in 1..=idx {
                                 let mut respb = BTreeMap::new();
                                 respb.insert("msg_type".to_owned(), bencode::BEncode::Int(0));
                                 respb.insert("piece".to_owned(), bencode::BEncode::Int(i as i64));
@@ -1273,23 +1262,20 @@ impl<T: cio::CIO> Torrent<T> {
             let flags = d.remove("added.f")
                 .and_then(bencode::BEncode::into_bytes)
                 .unwrap_or_else(|| vec![0; 50]);
-            match d.remove("added") {
-                Some(bencode::BEncode::String(ref data)) => for (p, flag) in
-                    data.chunks(6).zip(flags)
-                {
+            if let Some(bencode::BEncode::String(ref data)) = d.remove("added") {
+                for (p, flag) in data.chunks(6).zip(flags) {
                     if (flag & PEX_SEED != 0) && self.complete() {
                         continue;
                     }
-                    if !(flag & PEX_OUTGOING != 0) {
+                    if flag & PEX_OUTGOING == 0 {
                         continue;
                     }
 
                     let ip = Ipv4Addr::new(p[0], p[1], p[2], p[3]);
                     let socket = SocketAddrV4::new(ip, BigEndian::read_u16(&p[4..]));
                     peers.push(SocketAddr::V4(socket));
-                },
-                _ => {}
-            };
+                }
+            }
             if !peers.is_empty() {
                 self.cio
                     .propagate(cio::Event::Tracker(Ok(tracker::Response::PEX {
@@ -1607,7 +1593,7 @@ impl<T: cio::CIO> Torrent<T> {
                     id: util::trk_rpc_id(&self.info.hash, trk.url.as_str()),
                     torrent_id: self.rpc_id(),
                     url: trk.url.as_ref().clone(),
-                    last_report: trk.last_announce.clone(),
+                    last_report: trk.last_announce,
                     error: None,
                     ..Default::default()
                 }))
@@ -1661,7 +1647,7 @@ impl<T: cio::CIO> Torrent<T> {
             return 0.0;
         }
         let mut peers_have = FHashSet::default();
-        for (_, peer) in &self.peers {
+        for peer in self.peers.values() {
             for piece in peer.pieces().iter() {
                 peers_have.insert(piece);
             }
@@ -1922,21 +1908,21 @@ impl<T: cio::CIO> Torrent<T> {
         let mut r = vec![];
         let mut r6 = vec![];
         for addr in added {
-            match addr {
-                &SocketAddr::V4(addr) => {
+            match &addr {
+                SocketAddr::V4(addr) => {
                     a.extend(&addr.ip().octets());
                 }
-                &SocketAddr::V6(addr) => {
+                SocketAddr::V6(addr) => {
                     a6.extend(&addr.ip().octets());
                 }
             }
         }
         for addr in removed {
-            match addr {
-                &SocketAddr::V4(addr) => {
+            match &addr {
+                SocketAddr::V4(addr) => {
                     r.extend(&addr.ip().octets());
                 }
-                &SocketAddr::V6(addr) => {
+                SocketAddr::V6(addr) => {
                     r6.extend(&addr.ip().octets());
                 }
             }
@@ -1948,7 +1934,7 @@ impl<T: cio::CIO> Torrent<T> {
         dict.insert("removed6".to_string(), BEncode::String(r6));
         let payload = BEncode::Dict(dict).encode_to_buf();
 
-        for (_, peer) in &mut self.peers {
+        for peer in self.peers.values_mut() {
             if let Some(id) = peer.exts().ut_pex {
                 peer.send_message(Message::Extension {
                     id,
@@ -2013,7 +1999,7 @@ impl<T: cio::CIO> Torrent<T> {
     }
 
     fn clear_piece_cache(&mut self) {
-        for (_, peer) in &mut self.peers {
+        for peer in self.peers.values_mut() {
             peer.piece_cache().clear();
         }
     }

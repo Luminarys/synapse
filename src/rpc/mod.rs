@@ -53,7 +53,7 @@ lazy_static! {
                 "Access-Control-Request-Headers",
                 "Authorization"
             ),
-            format!("\r\n"),
+            "\r\n".to_string(),
         ];
         lines.join("\r\n").into_bytes()
     };
@@ -62,7 +62,7 @@ lazy_static! {
             format!("HTTP/1.1 {} {}", 401, "Unauthorized"),
             format!("Connection: {}", "Close"),
             format!("WWW-Authenticate: Basic real=m\"{}\"", "Synapse Connection"),
-            format!("\r\n"),
+            "\r\n".to_string(),
         ];
         lines.join("\r\n").into_bytes()
     };
@@ -70,7 +70,7 @@ lazy_static! {
         let lines = vec![
             format!("HTTP/1.1 {} {}", 416, "Requested Range Not Satisfiable"),
             format!("Connection: {}", "Close"),
-            format!("\r\n"),
+            "\r\n".to_string(),
         ];
         lines.join("\r\n").into_bytes()
     };
@@ -224,7 +224,7 @@ impl RPC {
 
     pub fn run(&mut self) {
         debug!("Running RPC!");
-        'outer: loop {
+        loop {
             let res = match self.poll.wait(POLL_INT_MS) {
                 Ok(res) => res,
                 Err(e) => {
@@ -349,9 +349,9 @@ impl RPC {
                 }
             }
             TransferResult::Error {
-                conn: _,
                 err,
                 client: id,
+                ..
             } => {
                 let res = self.clients
                     .get_mut(&id)

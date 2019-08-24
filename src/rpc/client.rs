@@ -118,13 +118,8 @@ impl Client {
         if self.last_action.elapsed().as_secs() > CONN_TIMEOUT {
             return true;
         }
-        if self.last_action.elapsed().as_secs() > CONN_PING
+        self.last_action.elapsed().as_secs() > CONN_PING
             && self.send_msg(Message::ping(vec![0xDE, 0xAD])).is_err()
-        {
-            true
-        } else {
-            false
-        }
     }
 }
 
@@ -387,7 +382,7 @@ fn validate_upgrade(req: &httparse::Request) -> result::Result<String, bool> {
                     .map(|(_, v)| format!("{}", v))
                     .map(|p| p == CONFIG.rpc.password)
             })
-            .or(req.headers
+            .or_else(|| req.headers
                 .iter()
                 .find(|header| header.name.to_lowercase() == "authorization")
                 .and_then(|header| str::from_utf8(header.value).ok())
@@ -402,7 +397,7 @@ fn validate_upgrade(req: &httparse::Request) -> result::Result<String, bool> {
                 .and_then(|auth| base64::decode(auth).ok())
                 .and_then(|auth| String::from_utf8(auth).ok())
                 .and_then(|auth| {
-                    auth.split_terminator(":")
+                    auth.split_terminator(':')
                         .last()
                         .map(|password| password == CONFIG.rpc.password)
                 }))

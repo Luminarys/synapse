@@ -282,7 +282,7 @@ impl Handler {
                 // Key - TODO: randomly generate this
                 announce_req.write_u32::<BigEndian>(0xFFFF_00BA).unwrap();
                 // Num want
-                let nw = conn.announce.num_want.map(|nw| nw as i32).unwrap_or(-1);
+                let nw = conn.announce.num_want.map(|nw| i32::from(nw)).unwrap_or(-1);
                 announce_req.write_i32::<BigEndian>(nw).unwrap();
                 // port
                 announce_req

@@ -23,7 +23,7 @@ pub fn init(args: args::Args) -> Result<(), ()> {
 
     info!("Initializing");
 
-    // Since the config is lazy loaded, derefernce now to check it.
+    // Since the config is lazy loaded, dereference now to check it.
     CONFIG.port;
 
     if let Err(e) = init_signals() {
@@ -37,7 +37,7 @@ pub fn run() -> Result<(), ()> {
     match init_threads() {
         Ok(threads) => {
             for thread in threads {
-                if let Err(_) = thread.join() {
+                if thread.join().is_err() {
                     error!("Unclean shutdown detected, terminating");
                     return Err(());
                 }

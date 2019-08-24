@@ -71,7 +71,7 @@ impl Writer {
             match msg {
                 Message::SharedPiece { data, .. } => WriteState::WritingPiece {
                     prefix: buf,
-                    data: data,
+                    data,
                     idx: 0,
                 },
                 _ => WriteState::WritingMsg {

@@ -182,7 +182,7 @@ impl From<u8> for Opcode {
             0 => Opcode::Continuation,
             1 => Opcode::Text,
             2 => Opcode::Binary,
-            o @ 3...7 => Opcode::Other(o),
+            o @ 3..=7 => Opcode::Other(o),
             8 => Opcode::Close,
             9 => Opcode::Ping,
             10 => Opcode::Pong,

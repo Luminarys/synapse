@@ -17,7 +17,7 @@ use socket::TSocket;
 use util::{awrite, hash_to_id, io_err, IOR};
 use CONFIG;
 
-static MP_BOUNDARY: &'static str = "qxyllcqgNchqyob";
+static MP_BOUNDARY: &str = "qxyllcqgNchqyob";
 
 pub struct Location {
     /// Info file index
@@ -211,7 +211,7 @@ impl Request {
                     format!("Accept-Ranges: {}", "bytes"),
                     format!("Content-Type: {};", "application/octet-stream"),
                     format!("Connection: {}", "Close"),
-                    format!("\r\n"),
+                    "\r\n".to_string(),
                 ]
             } else {
                 vec![
@@ -222,7 +222,7 @@ impl Request {
                         "multipart/byteranges", MP_BOUNDARY
                     ),
                     format!("Connection: {}", "Close"),
-                    format!("\r\n"),
+                    "\r\n".to_string(),
                 ]
             }
         } else {
@@ -239,7 +239,7 @@ impl Request {
                         .to_string_lossy()
                 ),
                 format!("Connection: {}", "Close"),
-                format!("\r\n"),
+                "\r\n".to_string(),
             ]
         };
         let data = lines.join("\r\n");
@@ -276,7 +276,7 @@ impl Request {
 
     pub fn concurrent(&self) -> bool {
         match self {
-            &Request::Validate { .. } => false,
+            Request::Validate { .. } => false,
             _ => true,
         }
     }
@@ -317,7 +317,7 @@ impl Request {
                 }
             }
             Request::Write {
-                mut data,
+                data,
                 locations,
                 path,
                 ..
@@ -332,7 +332,7 @@ impl Request {
                         Err(loc.file_len)
                     },
                     loc.offset,
-                    &mut data[loc.start..loc.end],
+                    &data[loc.start..loc.end],
                 )?;
                 if loc.end - loc.start != 16_384 {
                     fc.flush_file(&pb);
@@ -359,8 +359,8 @@ impl Request {
                 to,
                 target,
             } => {
-                let mut fp = tpb.get(&from);
-                let mut tp = tpb2.get(&to);
+                let fp = tpb.get(&from);
+                let tp = tpb2.get(&to);
                 fp.push(target.clone());
                 tp.push(target);
                 match fs::rename(&fp, &tp) {
@@ -386,11 +386,11 @@ impl Request {
                 return Ok(JobRes::Resp(Response::moved(tid, to)));
             }
             Request::Serialize { data, hash, .. } => {
-                let mut temp = tpb.get(sd);
+                let temp = tpb.get(sd);
                 temp.push(hash_to_id(&hash) + ".temp");
                 let mut f = fs::OpenOptions::new().write(true).create(true).open(&temp)?;
                 f.write_all(&data)?;
-                let mut actual = tpb2.get(sd);
+                let actual = tpb2.get(sd);
                 actual.push(hash_to_id(&hash));
                 fs::rename(temp, actual)?;
             }
@@ -399,10 +399,10 @@ impl Request {
                 files,
                 path,
                 artifacts,
-                tid: _,
+                ..
             } => {
                 {
-                    let mut spb = tpb.get(sd);
+                    let spb = tpb.get(sd);
                     spb.push(hash_to_id(&hash));
                     fs::remove_file(&spb).ok();
                     spb.set_extension("torrent");
@@ -410,7 +410,7 @@ impl Request {
                 }
 
                 for file in &files {
-                    let mut pb = tpb2.get(path.as_ref().unwrap_or(dd));
+                    let pb = tpb2.get(path.as_ref().unwrap_or(dd));
                     pb.push(&file);
                     fc.remove_file(&pb);
                     if artifacts {
@@ -423,7 +423,7 @@ impl Request {
                 if let Some(p) = files.get(0) {
                     let comp = p.components().next().unwrap();
                     let dirp: &Path = comp.as_os_str().as_ref();
-                    let mut pb = tpb.get(path.as_ref().unwrap_or(dd));
+                    let pb = tpb.get(path.as_ref().unwrap_or(dd));
                     pb.push(&dirp);
                     fs::remove_dir(&pb).ok();
                 }
@@ -434,7 +434,7 @@ impl Request {
                 path,
                 piece,
             } => {
-                let mut buf = tb.get(info.piece_len as usize);
+                let buf = tb.get(info.piece_len as usize);
                 let mut ctx = sha::Sha1::new();
                 let locs = Info::piece_disk_locs(&info, piece);
                 for loc in locs {
@@ -448,7 +448,7 @@ impl Request {
                 return Ok(JobRes::Resp(Response::PieceValidated {
                     tid,
                     piece,
-                    valid: &digest[..] == &info.hashes[piece as usize][..],
+                    valid: digest[..] == info.hashes[piece as usize][..],
                 }));
             }
             Request::Validate {
@@ -458,7 +458,7 @@ impl Request {
                 mut idx,
                 mut invalid,
             } => {
-                let mut buf = tb.get(info.piece_len as usize);
+                let buf = tb.get(info.piece_len as usize);
                 let start = time::Instant::now();
 
                 while idx < info.pieces()
@@ -479,7 +479,7 @@ impl Request {
                                 .is_ok();
                     }
                     let digest = ctx.finish();
-                    if !valid || &digest[..] != &info.hashes[idx as usize][..] {
+                    if !valid || digest[..] != info.hashes[idx as usize][..] {
                         invalid.push(idx);
                     }
 
@@ -523,7 +523,7 @@ impl Request {
                         loop {
                             // Need the mod here because after the first 16 KiBs complete
                             // no will be too big
-                            match awrite(&mut buf[buf_idx..buf_max], &mut client) {
+                            match awrite(&buf[buf_idx..buf_max], &mut client) {
                                 IOR::Complete => {
                                     writing = false;
                                     break;
@@ -576,7 +576,7 @@ impl Request {
                                     ranges[range_idx].start + ranges[range_idx].length - 1,
                                     file_len
                                 ),
-                                format!("\r\n"),
+                                "\r\n".to_string(),
                             ];
                             let data = lines.join("\r\n");
                             (&mut buf[..data.len()]).copy_from_slice(data.as_bytes());
@@ -587,7 +587,7 @@ impl Request {
                     } else {
                         let offset = ranges[range_idx].start;
                         let len = ranges[range_idx].length;
-                        let mut amnt = cmp::min(len, 16_384);
+                        let amnt = cmp::min(len, 16_384);
 
                         fc.read_file_range(
                             path::Path::new(&path),

@@ -74,8 +74,8 @@ pub trait CJob<T: cio::CIO> {
 }
 
 struct JobManager<T: cio::CIO> {
-    jobs: Vec<JobData<Box<job::Job<T>>>>,
-    cjobs: Vec<JobData<Box<CJob<T>>>>,
+    jobs: Vec<JobData<Box<dyn job::Job<T>>>>,
+    cjobs: Vec<JobData<Box<dyn CJob<T>>>>,
 }
 
 struct JobData<T> {
@@ -354,15 +354,15 @@ impl<T: cio::CIO> Control<T> {
         let p = &mut self.peers;
         let t = &mut self.torrents;
 
-        p.get(&peer)
+        if let Some(torrent) = p.get(&peer)
             .cloned()
             .and_then(|id| t.get_mut(&id))
-            .map(|torrent| {
-                if torrent.peer_ev(peer, ev).is_err() {
-                    p.remove(&peer);
-                    torrent.update_rpc_peers();
-                }
-            });
+        {
+            if torrent.peer_ev(peer, ev).is_err() {
+                p.remove(&peer);
+                torrent.update_rpc_peers();
+            }
+        }
     }
 
     fn flush_blocked_peers(&mut self) {
@@ -513,8 +513,8 @@ impl<T: cio::CIO> Control<T> {
                 throttle_up,
                 throttle_down,
             } => {
-                let tu = throttle_up.unwrap_or(self.throttler.ul_rate());
-                let td = throttle_down.unwrap_or(self.throttler.dl_rate());
+                let tu = throttle_up.unwrap_or_else(|| self.throttler.ul_rate());
+                let td = throttle_down.unwrap_or_else(|| self.throttler.dl_rate());
                 self.throttler.set_ul_rate(tu);
                 self.throttler.set_dl_rate(td);
                 self.data.throttle_ul = tu;
@@ -554,27 +554,33 @@ impl<T: cio::CIO> Control<T> {
             rpc::Message::Pause(id) => {
                 let hash_idx = &mut self.hash_idx;
                 let torrents = &mut self.torrents;
-                id_to_hash(&id)
+                if let Some(t) = id_to_hash(&id)
                     .and_then(|d| hash_idx.get(d.as_ref()))
                     .and_then(|i| torrents.get_mut(i))
-                    .map(|t| t.pause());
+                {
+                    t.pause()
+                }
             }
             rpc::Message::Resume(id) => {
                 let hash_idx = &mut self.hash_idx;
                 let torrents = &mut self.torrents;
-                id_to_hash(&id)
+                if let Some(t) = id_to_hash(&id)
                     .and_then(|d| hash_idx.get(d.as_ref()))
                     .and_then(|i| torrents.get_mut(i))
-                    .map(|t| t.resume());
+                {
+                    t.resume();
+                }
             }
             rpc::Message::Validate(ids) => {
                 let hash_idx = &mut self.hash_idx;
                 let torrents = &mut self.torrents;
                 for id in ids {
-                    id_to_hash(&id)
+                    if let Some(t) = id_to_hash(&id)
                         .and_then(|d| hash_idx.get(d.as_ref()))
                         .and_then(|i| torrents.get_mut(i))
-                        .map(|t| t.validate());
+                    {
+                        t.validate();
+                    }
                 }
             }
             rpc::Message::RemovePeer {
@@ -586,7 +592,7 @@ impl<T: cio::CIO> Control<T> {
                 let hash_idx = &self.hash_idx;
                 let torrents = &mut self.torrents;
                 let cio = &mut self.cio;
-                let reason = format!("Torrent or peer does not exist!");
+                let reason = "Torrent or peer does not exist!".to_string();
                 id_to_hash(&torrent_id)
                     .and_then(|d| hash_idx.get(d.as_ref()))
                     .and_then(|i| torrents.get_mut(i))
@@ -609,7 +615,7 @@ impl<T: cio::CIO> Control<T> {
                 let hash_idx = &self.hash_idx;
                 let torrents = &mut self.torrents;
                 let cio = &mut self.cio;
-                let reason = format!("Torrent or tracker does not exist!");
+                let reason = "Torrent or tracker does not exist!".to_string();
                 id_to_hash(&torrent_id)
                     .and_then(|d| hash_idx.get(d.as_ref()))
                     .and_then(|i| torrents.get_mut(i))
@@ -626,10 +632,12 @@ impl<T: cio::CIO> Control<T> {
             rpc::Message::UpdateTracker { id, torrent_id } => {
                 let hash_idx = &self.hash_idx;
                 let torrents = &mut self.torrents;
-                id_to_hash(&torrent_id)
+                if let Some(t) = id_to_hash(&torrent_id)
                     .and_then(|d| hash_idx.get(d.as_ref()))
                     .and_then(|i| torrents.get_mut(i))
-                    .map(|t| t.update_tracker_req(&id));
+                {
+                    t.update_tracker_req(&id);
+                }
             }
             rpc::Message::PurgeDNS => {
                 self.cio.msg_trk(tracker::Request::PurgeDNS);

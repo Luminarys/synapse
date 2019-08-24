@@ -190,7 +190,7 @@ impl Request {
                     String::from("implied_port"),
                     BEncode::Int(if implied_port { 1 } else { 0 }),
                 );
-                args.insert(String::from("port"), BEncode::Int(port as i64));
+                args.insert(String::from("port"), BEncode::Int(i64::from(port)));
                 args.insert(String::from("token"), BEncode::String(token));
 
                 b.insert(String::from("a"), BEncode::Dict(args));

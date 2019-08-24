@@ -210,7 +210,9 @@ impl cio::CIO for ACIO {
             .reg
             .register(peer.sock(), amy::Event::Both)
             .chain_err(|| ErrorKind::IO)?;
-        peer.sock_mut().throttle.as_mut().map(|t| t.id = id);
+        if let Some(t) = peer.sock_mut().throttle.as_mut() {
+            t.id = id
+        }
         self.data.borrow_mut().peers.insert(id, peer);
         Ok(id)
     }

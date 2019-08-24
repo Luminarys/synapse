@@ -10,7 +10,9 @@ use std::io::{Read, Seek, SeekFrom, Write};
 use memmap::MmapMut;
 
 use CONFIG;
-use util::{native, MHashMap, io_err};
+use util::{native, MHashMap};
+#[cfg(all(feature = "mmap", target_pointer_width = "64"))]
+use util::io_err;
 
 
 const PB_LEN: usize = 256;
@@ -97,7 +99,7 @@ impl BufCache {
         BufCache {
             path_a: OsString::with_capacity(PB_LEN),
             path_b: OsString::with_capacity(PB_LEN),
-            buf: Vec::with_capacity(1048576),
+            buf: Vec::with_capacity(1_048_576),
         }
     }
 
@@ -224,7 +226,9 @@ impl FileCache {
                         removal = Some(id.clone());
                     }
                 }
-                removal.map(|f| self.remove_file(&f));
+                if let Some(f) = removal {
+                    self.remove_file(&f);
+                }
             }
 
             fs::create_dir_all(path.parent().unwrap())?;

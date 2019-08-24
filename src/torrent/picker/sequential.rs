@@ -78,23 +78,18 @@ impl Picker {
 
     /// Returns whether or not the whole piece is complete.
     pub fn completed(&mut self, idx: u32) {
-        self.pieces[self.piece_idx..]
-            .iter_mut()
-            .find(|p| p.pos == idx)
-            .map(|p| p.status = PieceStatus::Complete);
+        if let Some(p) = self.pieces[self.piece_idx..].iter_mut().find(|p| p.pos == idx) {
+            p.status = PieceStatus::Complete;
+        }
         self.update_piece_idx();
     }
 
     pub fn incomplete(&mut self, idx: u32) {
         let piece_idx = &mut self.piece_idx;
-        self.pieces
-            .iter_mut()
-            .enumerate()
-            .find(|&(_, ref p)| p.pos == idx)
-            .map(|(idx, p)| {
-                p.status = PieceStatus::Incomplete;
-                *piece_idx = idx;
-            });
+        if let Some((idx, p)) = self.pieces.iter_mut().enumerate().find(|&(_, ref p)| p.pos == idx) {
+            p.status = PieceStatus::Incomplete;
+            *piece_idx = idx;
+        }
     }
 
     fn update_piece_idx(&mut self) {

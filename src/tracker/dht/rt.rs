@@ -654,7 +654,7 @@ impl Node {
             last_updated: Utc::now(),
             prev_token: token.clone(),
             rem_token: None,
-            token: token,
+            token,
         }
     }
 

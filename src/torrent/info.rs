@@ -233,7 +233,7 @@ impl Info {
                             v.push(next);
                             s = &s[20..];
                         }
-                        if s.len() != 0 {
+                        if !s.is_empty() {
                             return None;
                         }
                         Some(v)
@@ -462,7 +462,7 @@ impl LocIter {
         let len = u64::from(len);
         // The current file end length.
         let (mut file, mut fidx) = info.piece_idx[index as usize];
-        fidx += begin as u64;
+        fidx += u64::from(begin);
         while info.files[file].length < fidx {
             fidx -= info.files[file].length;
             file += 1;

@@ -86,9 +86,7 @@ lazy_static! {
 
         let mut pid = [0u8; 20];
         let prefix = b"-SY0010-";
-        for i in 0..prefix.len() {
-            pid[i] = prefix[i];
-        }
+        pid[..prefix.len()].clone_from_slice(&prefix[..]);
 
         let mut rng = rand::thread_rng();
         for i in prefix.len()..20 {
