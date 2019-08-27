@@ -1,8 +1,8 @@
+use serde_json;
+use url::Url;
 use ws;
 use ws::client::AutoStream;
 use ws::protocol::Message as WSMessage;
-use serde_json;
-use url::Url;
 
 use rpc::message::{CMessage, SMessage, Version};
 

@@ -1,9 +1,9 @@
-use std::collections::{HashMap, HashSet};
-use std::mem;
-use std::io::Read;
-use std::fs::OpenOptions;
-use std::path::Path;
 use std::borrow::Cow;
+use std::collections::{HashMap, HashSet};
+use std::fs::OpenOptions;
+use std::io::Read;
+use std::mem;
+use std::path::Path;
 
 use amy;
 use bincode;
@@ -12,14 +12,14 @@ use rpc_lib;
 use serde_json as json;
 use url::Url;
 
-use super::proto::message::{CMessage, Error, SMessage};
 use super::proto::criterion::{self, Criterion, Operation};
+use super::proto::message::{CMessage, Error, SMessage};
 use super::proto::resource::{merge_json, Resource, ResourceKind, SResourceUpdate};
 use super::{CtlMessage, Message};
-use CONFIG;
 use disk;
 use torrent::info::Info;
 use util::{random_string, FHashMap, FHashSet, MHashSet, SHashMap};
+use CONFIG;
 
 const USER_DATA_FILE: &str = "rpc_user_data";
 type RpcDiskFmt = SHashMap<Vec<u8>>;
@@ -199,9 +199,11 @@ impl Processor {
                     resources,
                 });
             }
-            CMessage::Unsubscribe { ids, .. } => for id in ids {
-                self.subs.get_mut(&id).map(|s| s.remove(&client));
-            },
+            CMessage::Unsubscribe { ids, .. } => {
+                for id in ids {
+                    self.subs.get_mut(&id).map(|s| s.remove(&client));
+                }
+            }
             CMessage::UpdateResource {
                 serial,
                 mut resource,
@@ -216,13 +218,11 @@ impl Processor {
                             .insert(res.id().to_owned(), res.user_data().clone());
                         resp.push(SMessage::UpdateResources {
                             serial: Some(serial),
-                            resources: vec![
-                                SResourceUpdate::UserData {
-                                    id: resource.id.clone(),
-                                    kind: res.kind(),
-                                    user_data: user_data,
-                                },
-                            ],
+                            resources: vec![SResourceUpdate::UserData {
+                                id: resource.id.clone(),
+                                kind: res.kind(),
+                                user_data: user_data,
+                            }],
                         });
                     }
                     if modified {
@@ -315,7 +315,8 @@ impl Processor {
 
                 let get_matching = |f: &Filter| {
                     let mut added = HashSet::new();
-                    let crit_res = f.criteria
+                    let crit_res = f
+                        .criteria
                         .iter()
                         .find(|c| c.field == "torrent_id" && c.op == Operation::Eq)
                         .and_then(|c| match &c.value {
@@ -557,9 +558,9 @@ impl Processor {
                             // this is updated in sync with the trackers field which does
                             // this for us.
                             t.url.host_str().map(|host| {
-                                self.resources.get_mut(&t.torrent_id).map(|r| {
-                                    r.as_torrent_mut().tracker_urls.push(host.to_string())
-                                })
+                                self.resources
+                                    .get_mut(&t.torrent_id)
+                                    .map(|r| r.as_torrent_mut().tracker_urls.push(host.to_string()))
                             });
                         }
                     }
@@ -741,7 +742,8 @@ impl Processor {
     }
 
     fn serialize(&self) {
-        let json_data: RpcDiskFmt = self.user_data
+        let json_data: RpcDiskFmt = self
+            .user_data
             .iter()
             .map(|(k, v)| (k.to_owned(), json::to_vec(v).unwrap()))
             .collect();

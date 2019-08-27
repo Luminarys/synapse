@@ -1,19 +1,20 @@
-use std::{fs, io, mem, process, time};
 use std::io::Read;
-use std::sync::atomic;
 use std::path::PathBuf;
+use std::sync::atomic;
+use std::{fs, io, mem, process, time};
 
 use chrono::Utc;
 use {amy, bincode};
 
-use {disk, listener, rpc, stat, tracker, CONFIG, DL_TOKEN, SHUTDOWN};
-use util::{self, hash_to_id, id_to_hash, io_err, io_err_val, random_string, FHashSet, MHashMap,
-           UHashMap};
-use torrent::{self, peer, Torrent};
 use throttle::Throttler;
+use torrent::{self, peer, Torrent};
+use util::{
+    self, hash_to_id, id_to_hash, io_err, io_err_val, random_string, FHashSet, MHashMap, UHashMap,
+};
+use {disk, listener, rpc, stat, tracker, CONFIG, DL_TOKEN, SHUTDOWN};
 
-pub mod cio;
 pub mod acio;
+pub mod cio;
 mod job;
 
 /// Tracker update job interval
@@ -113,7 +114,8 @@ impl<T: cio::CIO> Control<T> {
         jobs.add_cjob(SpaceUpdate, time::Duration::from_secs(SPACE_JOB_SECS));
         jobs.add_cjob(EnqueueUpdate, time::Duration::from_secs(ENQUEUE_JOB_SECS));
         jobs.add_cjob(SerializeUpdate, time::Duration::from_secs(SES_JOB_SECS));
-        let job_timer = cio.set_timer(JOB_INT_MS)
+        let job_timer = cio
+            .set_timer(JOB_INT_MS)
             .map_err(|_| io_err_val("timer failure!"))?;
         Ok(Control {
             throttler,
@@ -354,10 +356,7 @@ impl<T: cio::CIO> Control<T> {
         let p = &mut self.peers;
         let t = &mut self.torrents;
 
-        if let Some(torrent) = p.get(&peer)
-            .cloned()
-            .and_then(|id| t.get_mut(&id))
-        {
+        if let Some(torrent) = p.get(&peer).cloned().and_then(|id| t.get_mut(&id)) {
             if torrent.peer_ev(peer, ev).is_err() {
                 p.remove(&peer);
                 torrent.update_rpc_peers();

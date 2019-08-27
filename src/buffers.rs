@@ -1,6 +1,6 @@
-use std::sync::atomic;
 use std::mem;
 use std::ops::{Deref, DerefMut};
+use std::sync::atomic;
 
 const MAX_BUFS: usize = 4096;
 static BUF_COUNT: atomic::AtomicUsize = atomic::AtomicUsize::new(0);

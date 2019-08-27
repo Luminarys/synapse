@@ -1,5 +1,5 @@
-use std::{fs, io, mem, path};
 use std::ffi::OsString;
+use std::{fs, io, mem, path};
 
 use std::os::unix::fs::MetadataExt;
 
@@ -9,11 +9,10 @@ use std::io::{Read, Seek, SeekFrom, Write};
 #[cfg(all(feature = "mmap", target_pointer_width = "64"))]
 use memmap::MmapMut;
 
-use CONFIG;
-use util::{native, MHashMap};
 #[cfg(all(feature = "mmap", target_pointer_width = "64"))]
 use util::io_err;
-
+use util::{native, MHashMap};
+use CONFIG;
 
 const PB_LEN: usize = 256;
 
@@ -213,7 +212,11 @@ impl FileCache {
     }
 
     fn ensure_exists(&mut self, path: &path::Path, len: Result<u64, u64>) -> io::Result<()> {
-        let len_val = if let Ok(v) = len { v } else { len.err().unwrap() };
+        let len_val = if let Ok(v) = len {
+            v
+        } else {
+            len.err().unwrap()
+        };
         if !self.files.contains_key(path) {
             if self.files.len() >= CONFIG.net.max_open_files {
                 let mut removal = None;

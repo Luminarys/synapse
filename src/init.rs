@@ -1,14 +1,14 @@
-use std::{io, process, thread};
-use std::sync::{atomic, mpsc};
 use std::os::unix::io::RawFd;
+use std::sync::{atomic, mpsc};
+use std::{io, process, thread};
 
 use amy;
 use nix::sys::signal;
 use nix::{self, fcntl, libc, unistd};
 
+use control::acio;
 use {args, control, disk, listener, log, rpc, throttle, tracker};
 use {CONFIG, SHUTDOWN, THROT_TOKS};
-use control::acio;
 
 static mut PIPE: (RawFd, RawFd) = (-1, -1);
 

@@ -11,23 +11,23 @@ extern crate serde;
 extern crate serde_derive;
 #[macro_use]
 extern crate serde_json;
+extern crate base64;
+extern crate openssl;
 extern crate shellexpand;
 extern crate synapse_rpc as rpc;
 extern crate toml;
 extern crate tungstenite as ws;
 extern crate url;
-extern crate openssl;
-extern crate base64;
 
-mod cmd;
 mod client;
+mod cmd;
 mod config;
 mod error;
 
 use std::process;
 
-use url::Url;
 use clap::{App, AppSettings, Arg, SubCommand};
+use url::Url;
 
 use self::client::Client;
 
@@ -128,16 +128,14 @@ fn main() {
                         .index(1)
                         .required(true),
                 )
-                .subcommands(vec![
-                    SubCommand::with_name("priority")
-                        .about("Adjust a file's priority.")
-                        .arg(
-                            Arg::with_name("file pri")
-                                .help("priority to set file to (0-5)")
-                                .index(1)
-                                .required(true),
-                        ),
-                ])
+                .subcommands(vec![SubCommand::with_name("priority")
+                    .about("Adjust a file's priority.")
+                    .arg(
+                        Arg::with_name("file pri")
+                            .help("priority to set file to (0-5)")
+                            .index(1)
+                            .required(true),
+                    )])
                 .setting(AppSettings::SubcommandRequiredElseHelp),
             SubCommand::with_name("get")
                 .about("Gets the specified resource.")
@@ -464,7 +462,8 @@ fn main() {
         }
         "list" => {
             let args = matches.subcommand_matches("list").unwrap();
-            let crit = args.value_of("filter")
+            let crit = args
+                .value_of("filter")
                 .and_then(|f| {
                     let single_crit = serde_json::from_str(f).map(|c| vec![c]).ok();
                     single_crit.or_else(|| serde_json::from_str(f).ok())

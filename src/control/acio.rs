@@ -4,11 +4,11 @@ use std::time;
 
 use amy::{self, ChannelError};
 
-use {disk, listener, rpc, torrent, tracker};
-use torrent::peer::reader::RRes;
-use CONFIG;
 use control::cio::{self, Error, ErrorKind, Result, ResultExt};
+use torrent::peer::reader::RRes;
 use util::UHashMap;
+use CONFIG;
+use {disk, listener, rpc, torrent, tracker};
 
 const POLL_INT_MS: usize = 1000;
 const PRUNE_GOAL: usize = 50;
@@ -167,9 +167,11 @@ impl cio::CIO for ACIO {
         let res = self.data.borrow_mut().poll.wait(POLL_INT_MS);
 
         match res {
-            Ok(evs) => for event in evs {
-                self.process_event(event, events);
-            },
+            Ok(evs) => {
+                for event in evs {
+                    self.process_event(event, events);
+                }
+            }
             Err(e) => {
                 error!("Failed to poll for events: {}", e);
             }
@@ -205,7 +207,8 @@ impl cio::CIO for ACIO {
                 self.remove_peer(id);
             }
         }
-        let id = self.data
+        let id = self
+            .data
             .borrow_mut()
             .reg
             .register(peer.sock(), amy::Event::Both)

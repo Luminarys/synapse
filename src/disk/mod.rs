@@ -1,20 +1,20 @@
-mod job;
 mod cache;
+mod job;
 
+pub use self::job::Ctx;
+pub use self::job::Location;
 pub use self::job::Request;
 pub use self::job::Response;
-pub use self::job::Location;
-pub use self::job::Ctx;
 
 use std::collections::VecDeque;
 use std::{fs, io, thread};
 
 use amy;
 
-use self::job::JobRes;
 use self::cache::{BufCache, FileCache};
-use {handle, CONFIG};
+use self::job::JobRes;
 use util::UHashMap;
+use {handle, CONFIG};
 
 const POLL_INT_MS: usize = 1000;
 const JOB_TIME_SLICE: u64 = 150;
@@ -189,13 +189,11 @@ impl Disk {
 
 pub fn start(
     creg: &mut amy::Registrar,
-) -> io::Result<
-    (
-        handle::Handle<Response, Request>,
-        amy::Sender<Request>,
-        thread::JoinHandle<()>,
-    ),
-> {
+) -> io::Result<(
+    handle::Handle<Response, Request>,
+    amy::Sender<Request>,
+    thread::JoinHandle<()>,
+)> {
     let poll = amy::Poller::new()?;
     let mut reg = poll.get_registrar();
     let (ch, dh) = handle::Handle::new(creg, &mut reg)?;

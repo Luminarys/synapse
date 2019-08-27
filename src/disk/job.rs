@@ -1,19 +1,19 @@
-use std::sync::Arc;
-use std::{cmp, fmt, fs, path, time};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use std::{cmp, fmt, fs, path, time};
 
-use fs_extra;
 use amy;
+use fs_extra;
 use http_range::HttpRange;
-use nix::sys::statvfs;
 use nix::libc;
+use nix::sys::statvfs;
 use openssl::sha;
 
 use super::{BufCache, FileCache, JOB_TIME_SLICE};
 use buffers::Buffer;
-use torrent::{Info, LocIter};
 use socket::TSocket;
+use torrent::{Info, LocIter};
 use util::{awrite, hash_to_id, io_err, IOR};
 use CONFIG;
 
@@ -321,23 +321,25 @@ impl Request {
                 locations,
                 path,
                 ..
-            } => for loc in locations {
-                let pb = tpb.get(path.as_ref().unwrap_or(dd));
-                pb.push(loc.path());
-                fc.write_file_range(
-                    &pb,
-                    if loc.allocate {
-                        Ok(loc.file_len)
-                    } else {
-                        Err(loc.file_len)
-                    },
-                    loc.offset,
-                    &data[loc.start..loc.end],
-                )?;
-                if loc.end - loc.start != 16_384 {
-                    fc.flush_file(&pb);
+            } => {
+                for loc in locations {
+                    let pb = tpb.get(path.as_ref().unwrap_or(dd));
+                    pb.push(loc.path());
+                    fc.write_file_range(
+                        &pb,
+                        if loc.allocate {
+                            Ok(loc.file_len)
+                        } else {
+                            Err(loc.file_len)
+                        },
+                        loc.offset,
+                        &data[loc.start..loc.end],
+                    )?;
+                    if loc.end - loc.start != 16_384 {
+                        fc.flush_file(&pb);
+                    }
                 }
-            },
+            }
             Request::Read {
                 context,
                 mut data,
@@ -388,7 +390,10 @@ impl Request {
             Request::Serialize { data, hash, .. } => {
                 let temp = tpb.get(sd);
                 temp.push(hash_to_id(&hash) + ".temp");
-                let mut f = fs::OpenOptions::new().write(true).create(true).open(&temp)?;
+                let mut f = fs::OpenOptions::new()
+                    .write(true)
+                    .create(true)
+                    .open(&temp)?;
                 f.write_all(&data)?;
                 let actual = tpb2.get(sd);
                 actual.push(hash_to_id(&hash));
@@ -473,10 +478,10 @@ impl Request {
                         }
                         let pb = tpb.get(path.as_ref().unwrap_or(dd));
                         pb.push(loc.path());
-                        valid &=
-                            fc.read_file_range(&pb, loc.offset, &mut buf[loc.start..loc.end])
-                                .map(|_| ctx.update(&buf[loc.start..loc.end]))
-                                .is_ok();
+                        valid &= fc
+                            .read_file_range(&pb, loc.offset, &mut buf[loc.start..loc.end])
+                            .map(|_| ctx.update(&buf[loc.start..loc.end]))
+                            .is_ok();
                     }
                     let digest = ctx.finish();
                     if !valid || digest[..] != info.hashes[idx as usize][..] {

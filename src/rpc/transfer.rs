@@ -121,7 +121,8 @@ impl Transfers {
 
     pub fn cleanup(&mut self) -> Vec<(TSocket, usize, Error)> {
         let mut res = Vec::new();
-        let ids: Vec<usize> = self.torrents
+        let ids: Vec<usize> = self
+            .torrents
             .iter()
             .filter(|&(_, ref t)| t.timed_out())
             .map(|(id, _)| *id)

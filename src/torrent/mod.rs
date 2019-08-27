@@ -1,38 +1,38 @@
+pub mod bitfield;
+mod choker;
 pub mod info;
 pub mod peer;
-pub mod bitfield;
 mod picker;
-mod choker;
 
-use std::fmt;
+use std::borrow::Cow;
 use std::collections::{BTreeMap, VecDeque};
+use std::fmt;
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use std::borrow::Cow;
-use std::path::PathBuf;
 
-use bincode;
 use bencode::BEncode;
-use chrono::{DateTime, Utc};
-use url::Url;
-use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
+use bincode;
 use byteorder::{BigEndian, ByteOrder};
+use chrono::{DateTime, Utc};
+use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
+use url::Url;
 
 pub use self::bitfield::Bitfield;
 pub use self::info::{Info, LocIter};
-pub use self::peer::{Peer, PeerConn};
 pub use self::peer::Message;
+pub use self::peer::{Peer, PeerConn};
 pub use self::picker::Block;
 
 use self::picker::Picker;
 use buffers::Buffer;
-use {bencode, disk, rpc, util, CONFIG, EXT_PROTO, UT_META_ID, UT_PEX_ID};
 use control::cio;
 use rpc::resource::{self, Resource, SResourceUpdate};
+use session::torrent::current::Session;
 use throttle::Throttle;
 use tracker::{self, TrackerResponse};
 use util::{FHashSet, UHashMap};
-use session::torrent::current::Session;
+use {bencode, disk, rpc, util, CONFIG, EXT_PROTO, UT_META_ID, UT_PEX_ID};
 use {session, stat};
 
 const MAX_PEERS: usize = 50;
@@ -331,7 +331,8 @@ impl<T: cio::CIO> Torrent<T> {
 
         let info = Arc::new(Info {
             name: d.info.name,
-            announce: d.info
+            announce: d
+                .info
                 .announce
                 .and_then(|u| Url::parse(&u).ok().map(Arc::new)),
             comment: d.info.comment,
@@ -340,7 +341,8 @@ impl<T: cio::CIO> Torrent<T> {
             total_len: d.info.total_len,
             hashes: d.info.hashes,
             hash: d.info.hash,
-            files: d.info
+            files: d
+                .info
                 .files
                 .into_iter()
                 .map(|f| info::File {
@@ -369,7 +371,8 @@ impl<T: cio::CIO> Torrent<T> {
         throttle.set_ul_rate(d.throttle_ul);
         throttle.set_dl_rate(d.throttle_dl);
 
-        let mut trackers: VecDeque<_> = d.trackers
+        let mut trackers: VecDeque<_> = d
+            .trackers
             .into_iter()
             .filter_map(|url| Url::parse(&url).ok())
             .map(|url| Tracker {
@@ -450,7 +453,8 @@ impl<T: cio::CIO> Torrent<T> {
                 total_len: self.info.total_len,
                 hashes: self.info.hashes.clone(),
                 hash: self.info.hash,
-                files: self.info
+                files: self
+                    .info
                     .files
                     .iter()
                     .cloned()
@@ -487,7 +491,8 @@ impl<T: cio::CIO> Torrent<T> {
             created: self.created,
             throttle_ul: self.throttle.ul_rate(),
             throttle_dl: self.throttle.dl_rate(),
-            trackers: self.trackers
+            trackers: self
+                .trackers
                 .iter()
                 .map(|trk| trk.url.as_str().to_owned())
                 .collect(),
@@ -609,9 +614,13 @@ impl<T: cio::CIO> Torrent<T> {
     pub fn remove_peer(&mut self, rpc_id: &str) {
         let ih = &self.info.hash;
         let cio = &mut self.cio;
-        if let Some((id, _)) = self.peers
+        if let Some((id, _)) = self
+            .peers
             .iter()
-            .find(|&(id, _)| util::peer_rpc_id(ih, *id as u64) == rpc_id) { cio.remove_peer(*id) }
+            .find(|&(id, _)| util::peer_rpc_id(ih, *id as u64) == rpc_id)
+        {
+            cio.remove_peer(*id)
+        }
     }
 
     pub fn add_tracker(&mut self, url: Url) -> String {
@@ -624,16 +633,14 @@ impl<T: cio::CIO> Torrent<T> {
         });
         {
             let trk = &self.trackers[0];
-            let res = vec![
-                resource::Resource::Tracker(resource::Tracker {
-                    id: id.clone(),
-                    torrent_id: self.rpc_id(),
-                    url: trk.url.as_ref().clone(),
-                    last_report: trk.last_announce,
-                    error: None,
-                    ..Default::default()
-                }),
-            ];
+            let res = vec![resource::Resource::Tracker(resource::Tracker {
+                id: id.clone(),
+                torrent_id: self.rpc_id(),
+                url: trk.url.as_ref().clone(),
+                last_report: trk.last_announce,
+                error: None,
+                ..Default::default()
+            })];
             self.cio.msg_rpc(rpc::CtlMessage::Extant(res));
         }
         self.announce_start();
@@ -658,10 +665,14 @@ impl<T: cio::CIO> Torrent<T> {
     }
 
     pub fn update_tracker_req(&mut self, rpc_id: &str) {
-        if let Some(req) = self.trackers
+        if let Some(req) = self
+            .trackers
             .iter()
             .find(|trk| util::trk_rpc_id(&self.info.hash, trk.url.as_str()) == rpc_id)
-            .and_then(|trk| tracker::Request::custom(self, trk.url.clone())) { self.cio.msg_trk(req) }
+            .and_then(|trk| tracker::Request::custom(self, trk.url.clone()))
+        {
+            self.cio.msg_trk(req)
+        }
     }
 
     pub fn get_throttle(&self, id: usize) -> Throttle {
@@ -878,7 +889,8 @@ impl<T: cio::CIO> Torrent<T> {
         // Remove all seeding peers.
         let leechers = &self.leechers;
         {
-            let seeders = self.peers
+            let seeders = self
+                .peers
                 .iter()
                 .filter(|&(id, _)| !leechers.contains(id))
                 .map(|(id, _)| *id);
@@ -1107,7 +1119,8 @@ impl<T: cio::CIO> Torrent<T> {
             let mut d = b.into_dict().ok_or(())?;
             let m = d.remove("m").and_then(|v| v.into_dict()).ok_or(())?;
             if m.contains_key("ut_metadata") {
-                let size = d.remove("metadata_size")
+                let size = d
+                    .remove("metadata_size")
                     .and_then(|v| v.into_int())
                     .ok_or(())?;
                 if let Some(::std::usize::MAX) = self.info_idx {
@@ -1219,7 +1232,8 @@ impl<T: cio::CIO> Torrent<T> {
                                 ),
                             );
                             b.insert("info".to_owned(), bni);
-                            let ni = Info::from_bencode(bencode::BEncode::Dict(b)).map_err(|_| ())?;
+                            let ni =
+                                Info::from_bencode(bencode::BEncode::Dict(b)).map_err(|_| ())?;
                             if ni.hash == self.info.hash {
                                 debug!("Magnet file acquired succesfully!");
                                 self.info_idx = None;
@@ -1259,7 +1273,8 @@ impl<T: cio::CIO> Torrent<T> {
             let b = bencode::decode_buf(&payload).map_err(|_| ())?;
             let mut d = b.into_dict().ok_or(())?;
             let mut peers = vec![];
-            let flags = d.remove("added.f")
+            let flags = d
+                .remove("added.f")
                 .and_then(bencode::BEncode::into_bytes)
                 .unwrap_or_else(|| vec![0; 50]);
             if let Some(bencode::BEncode::String(ref data)) = d.remove("added") {
@@ -1449,9 +1464,10 @@ impl<T: cio::CIO> Torrent<T> {
         let resources = self.rpc_rel_info();
         self.cio.msg_rpc(rpc::CtlMessage::Extant(resources));
         let update = self.rpc_info();
-        self.cio.msg_rpc(rpc::CtlMessage::Update(vec![
-            SResourceUpdate::Resource(Cow::Owned(update)),
-        ]));
+        self.cio
+            .msg_rpc(rpc::CtlMessage::Update(vec![SResourceUpdate::Resource(
+                Cow::Owned(update),
+            )]));
         self.serialize();
 
         let seq = self.picker.is_sequential();
@@ -1695,7 +1711,8 @@ impl<T: cio::CIO> Torrent<T> {
 
     fn make_requests_pid(&mut self, pid: usize) {
         if self.status.should_dl() {
-            let peer = self.peers
+            let peer = self
+                .peers
                 .get_mut(&pid)
                 .expect("Expected peer id not present");
             Torrent::make_requests(peer, &mut self.picker, &self.info);
@@ -1782,7 +1799,8 @@ impl<T: cio::CIO> Torrent<T> {
     }
 
     pub fn update_rpc_tracker(&mut self) {
-        let updates = self.trackers
+        let updates = self
+            .trackers
             .iter()
             .map(|tracker| {
                 let id = util::trk_rpc_id(&self.info.hash, tracker.url.as_str());

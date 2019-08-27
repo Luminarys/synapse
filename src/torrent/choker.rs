@@ -1,7 +1,7 @@
 use std::time::{Duration, Instant};
 
-use torrent::Peer;
 use control::cio;
+use torrent::Peer;
 use util::{random_sample, FHashSet, UHashMap};
 
 pub struct Choker {
@@ -65,7 +65,8 @@ impl Choker {
     }
 
     fn update_timer(&mut self) -> Result<(), ()> {
-        if self.last_updated.elapsed() < Duration::from_secs(10) || self.unchoked.len() < 5
+        if self.last_updated.elapsed() < Duration::from_secs(10)
+            || self.unchoked.len() < 5
             || self.interested.is_empty()
         {
             Err(())
@@ -138,8 +139,8 @@ impl Choker {
 #[cfg(test)]
 mod tests {
     use super::{Choker, SwapRes};
-    use torrent::{Bitfield, Peer};
     use std::time::{Duration, Instant};
+    use torrent::{Bitfield, Peer};
     use util::UHashMap;
 
     #[test]

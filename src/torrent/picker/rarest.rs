@@ -1,9 +1,9 @@
 // Implementation based off of http://blog.libtorrent.org/2011/11/writing-a-fast-piece-picker/
 use std::ops::IndexMut;
 
-use torrent::{Bitfield, Peer};
 use super::MAX_PC_SIZE;
 use control::cio;
+use torrent::{Bitfield, Peer};
 
 #[derive(Clone, Debug)]
 pub struct Picker {

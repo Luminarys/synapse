@@ -1,6 +1,6 @@
 use std::collections::HashMap;
-use std::time;
 use std::sync::Arc;
+use std::time;
 
 use control::cio;
 use torrent::{Bitfield, Info, Peer};
@@ -123,9 +123,9 @@ impl Picker {
     }
 
     pub fn done(&mut self) {
-       self.downloading = HashMap::with_capacity(0);
-       self.blocks = vec![];
-       self.stalled = FHashSet::default();
+        self.downloading = HashMap::with_capacity(0);
+        self.blocks = vec![];
+        self.stalled = FHashSet::default();
     }
 
     pub fn tick(&mut self) {
@@ -175,8 +175,9 @@ impl Picker {
             PickerKind::Sequential(ref mut p) => p.pick(peer),
             PickerKind::Rarest(ref mut p) => p.pick(peer),
         };
-        piece.map(|p| self.pick_piece(p, peer.id(), peer.rank))
-             .or_else(|| self.pick_dl(peer))
+        piece
+            .map(|p| self.pick_piece(p, peer.id(), peer.rank))
+            .or_else(|| self.pick_dl(peer))
     }
 
     /// Picks a block from a given piece for a peer
@@ -203,7 +204,8 @@ impl Picker {
 
     /// Attempts to pick the highest priority piece in the dl q
     fn pick_dl<T: cio::CIO>(&mut self, peer: &Peer<T>) -> Option<Block> {
-        let mut dl: Vec<_> = self.downloading
+        let mut dl: Vec<_> = self
+            .downloading
             .iter_mut()
             .filter(|&(_, ref req)| req.num_reqd < MAX_DUP_REQS && !req.has_peer(peer.id()))
             .take(MAX_DL_REREQ)
@@ -281,7 +283,8 @@ impl Picker {
         }
 
         for (_, req) in self.downloading.iter_mut() {
-            if let Some((idx, _)) = req.reqd_from
+            if let Some((idx, _)) = req
+                .reqd_from
                 .iter()
                 .enumerate()
                 .find(|&(_, id)| *id == peer.id())

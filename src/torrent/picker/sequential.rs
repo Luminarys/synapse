@@ -1,5 +1,5 @@
-use torrent::{Bitfield, Peer};
 use control::cio;
+use torrent::{Bitfield, Peer};
 
 #[derive(Clone, Debug)]
 pub struct Picker {
@@ -78,7 +78,10 @@ impl Picker {
 
     /// Returns whether or not the whole piece is complete.
     pub fn completed(&mut self, idx: u32) {
-        if let Some(p) = self.pieces[self.piece_idx..].iter_mut().find(|p| p.pos == idx) {
+        if let Some(p) = self.pieces[self.piece_idx..]
+            .iter_mut()
+            .find(|p| p.pos == idx)
+        {
             p.status = PieceStatus::Complete;
         }
         self.update_piece_idx();
@@ -86,7 +89,12 @@ impl Picker {
 
     pub fn incomplete(&mut self, idx: u32) {
         let piece_idx = &mut self.piece_idx;
-        if let Some((idx, p)) = self.pieces.iter_mut().enumerate().find(|&(_, ref p)| p.pos == idx) {
+        if let Some((idx, p)) = self
+            .pieces
+            .iter_mut()
+            .enumerate()
+            .find(|&(_, ref p)| p.pos == idx)
+        {
             p.status = PieceStatus::Incomplete;
             *piece_idx = idx;
         }
@@ -103,8 +111,8 @@ impl Picker {
 
 #[cfg(test)]
 mod tests {
-    use torrent::{Bitfield, Peer};
     use super::Picker;
+    use torrent::{Bitfield, Peer};
 
     #[test]
     fn test_piece_pick_order() {

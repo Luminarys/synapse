@@ -1,7 +1,10 @@
 #![allow(unknown_lints)]
 #![allow(unused_doc_comments)]
 #![cfg_attr(feature = "clippy", feature(plugin))]
-#![cfg_attr(feature = "allocator", feature(alloc_system, global_allocator, allocator_api))]
+#![cfg_attr(
+    feature = "allocator",
+    feature(alloc_system, global_allocator, allocator_api)
+)]
 #[cfg(feature = "allocator")]
 extern crate alloc_system;
 #[cfg(feature = "allocator")]
@@ -50,24 +53,24 @@ extern crate synapse_session as session;
 mod log;
 mod args;
 mod buffers;
-mod handle;
-mod torrent;
-mod util;
-mod socket;
-mod disk;
-mod tracker;
+mod config;
 mod control;
+mod disk;
+mod handle;
+mod init;
 mod listener;
 mod rpc;
-mod throttle;
-mod config;
+mod socket;
 mod stat;
-mod init;
+mod throttle;
+mod torrent;
+mod tracker;
+mod util;
 
 // We need to do this for the log macros
 use log::LogLevel;
-use std::sync::atomic;
 use std::process;
+use std::sync::atomic;
 
 pub const DHT_EXT: (usize, u8) = (7, 1);
 pub const EXT_PROTO: (usize, u8) = (5, 0x10);

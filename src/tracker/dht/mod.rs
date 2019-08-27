@@ -1,18 +1,18 @@
-use std::net::{SocketAddr, UdpSocket};
-use std::io::{self, Read};
-use std::time;
 use std::fs::OpenOptions;
+use std::io::{self, Read};
+use std::net::{SocketAddr, UdpSocket};
 use std::path::Path;
+use std::time;
 
-use num_bigint::BigUint;
 use amy;
+use num_bigint::BigUint;
 
-use tracker;
 use disk;
+use tracker;
 use CONFIG;
 
-mod rt;
 mod proto;
+mod rt;
 
 type ID = BigUint;
 
@@ -94,9 +94,11 @@ impl Manager {
                     } else if let Ok(resp) = proto::Response::decode(&self.buf[..v]) {
                         match self.table.handle_resp(resp, addr) {
                             Ok(r) => resps.push(r),
-                            Err(q) => for (req, a) in q {
-                                self.send_msg(&req.encode(), a);
-                            },
+                            Err(q) => {
+                                for (req, a) in q {
+                                    self.send_msg(&req.encode(), a);
+                                }
+                            }
                         }
                     } else {
                         trace!("Received invalid message from {:?}!", addr);

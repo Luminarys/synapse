@@ -1,9 +1,9 @@
-use std::time;
-use std::net::SocketAddr;
 use std::collections::HashSet;
+use std::net::SocketAddr;
+use std::time;
 
-use torrent::Torrent;
 use control::cio;
+use torrent::Torrent;
 use util::UHashMap;
 
 pub trait Job<T: cio::CIO> {

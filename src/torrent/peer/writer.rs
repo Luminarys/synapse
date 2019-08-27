@@ -105,7 +105,8 @@ impl Writer {
                 }
                 Ok(false) => {}
                 Err(e) => {
-                    if e.kind() == ErrorKind::WouldBlock || e.kind() == ErrorKind::NotConnected
+                    if e.kind() == ErrorKind::WouldBlock
+                        || e.kind() == ErrorKind::NotConnected
                         || e.kind() == ErrorKind::BrokenPipe
                     {
                         break;
@@ -192,9 +193,9 @@ impl Writer {
 #[cfg(test)]
 mod tests {
     use super::Writer;
-    use torrent::peer::Message;
-    use std::sync::Arc;
     use buffers::Buffer;
+    use std::sync::Arc;
+    use torrent::peer::Message;
 
     #[test]
     fn test_write_keepalive() {

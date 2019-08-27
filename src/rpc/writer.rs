@@ -1,6 +1,6 @@
+use super::proto::ws::Message;
 use std::collections::VecDeque;
 use std::io;
-use super::proto::ws::Message;
 use util::{awrite, IOR};
 
 // TODO: Consider how to handle larger streamed messages(maybe)

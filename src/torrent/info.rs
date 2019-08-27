@@ -1,14 +1,14 @@
-use std::path::PathBuf;
 use std::collections::BTreeMap;
-use std::{cmp, fmt, mem};
+use std::path::PathBuf;
 use std::sync::Arc;
+use std::{cmp, fmt, mem};
 
 use base32;
 use rand::{self, Rng};
 use url::Url;
 
-use disk;
 use bencode::BEncode;
+use disk;
 use util::{hash_to_id, id_to_hash, sha1_hash};
 
 #[derive(Clone)]
@@ -71,8 +71,10 @@ impl File {
             (None, Some(path), Some(l)) => {
                 let mut p = PathBuf::new();
                 for dir in path.into_list().ok_or("File path should be a list")? {
-                    p.push(dir.into_string()
-                        .ok_or("File path parts should be strings")?);
+                    p.push(
+                        dir.into_string()
+                            .ok_or("File path parts should be strings")?,
+                    );
                 }
                 let f = File {
                     path: p,
@@ -95,32 +97,34 @@ impl Info {
         if url.scheme() != "magnet" {
             return Err("magnet URL must use magnet URL scheme");
         };
-        let hash = url.query_pairs()
-            .find(|&(ref k, ref v)| k == "xt" && v.starts_with("urn:btih:"))
-            .and_then(|(_, ref v)| {
-                id_to_hash(&v[9..]).or_else(|| {
-                    base32::decode(base32::Alphabet::RFC4648 { padding: true }, &v[9..]).and_then(
-                        |b| {
-                            if b.len() != 20 {
-                                return None;
-                            }
-                            let mut a = [0; 20];
-                            (&mut a[..]).copy_from_slice(&b);
-                            Some(a)
-                        },
-                    )
+        let hash =
+            url.query_pairs()
+                .find(|&(ref k, ref v)| k == "xt" && v.starts_with("urn:btih:"))
+                .and_then(|(_, ref v)| {
+                    id_to_hash(&v[9..]).or_else(|| {
+                        base32::decode(base32::Alphabet::RFC4648 { padding: true }, &v[9..])
+                            .and_then(|b| {
+                                if b.len() != 20 {
+                                    return None;
+                                }
+                                let mut a = [0; 20];
+                                (&mut a[..]).copy_from_slice(&b);
+                                Some(a)
+                            })
+                    })
                 })
-            })
-            .ok_or("No hash found in magnet")?;
+                .ok_or("No hash found in magnet")?;
 
-        let mut url_list: Vec<_> = url.query_pairs()
+        let mut url_list: Vec<_> = url
+            .query_pairs()
             .filter(|&(ref k, _)| k == "tr")
             .filter_map(|(_, ref v)| Url::parse(v).ok())
             .map(Arc::new)
             .collect();
         rand::thread_rng().shuffle(&mut url_list[..]);
 
-        let name = url.query_pairs()
+        let name = url
+            .query_pairs()
             .find(|&(ref k, _)| k == "dn")
             .map(|(_, ref v)| v.to_string())
             .unwrap_or_else(|| "".to_owned());
@@ -181,7 +185,8 @@ impl Info {
                 BEncode::Int(self.files[0].length as i64),
             );
         } else {
-            let files = self.files
+            let files = self
+                .files
                 .iter()
                 .map(|f| {
                     let mut fb = BTreeMap::new();
@@ -214,15 +219,18 @@ impl Info {
                 BEncode::Dict(i.clone()).encode(&mut info_bytes).unwrap();
                 let hash = sha1_hash(&info_bytes);
 
-                let announce = d.remove("announce")
+                let announce = d
+                    .remove("announce")
                     .and_then(BEncode::into_string)
                     .and_then(|a| Url::parse(&a).ok().map(Arc::new));
                 let comment = d.remove("comment").and_then(|b| b.into_string());
                 let creator = d.remove("created by").and_then(|b| b.into_string());
-                let pl = i.remove("piece length")
+                let pl = i
+                    .remove("piece length")
                     .and_then(|i| i.into_int())
                     .ok_or("Info must specify piece length")? as u64;
-                let hashes = i.remove("pieces")
+                let hashes = i
+                    .remove("pieces")
                     .and_then(|p| p.into_bytes())
                     .and_then(|p| {
                         let mut v = Vec::new();
@@ -286,12 +294,14 @@ impl Info {
                 let total_len = files.iter().map(|f| f.length).sum();
                 let piece_idx = Info::generate_piece_idx(hashes.len(), pl, &files);
 
-                let url_list: Vec<_> = d.remove("announce-list")
+                let url_list: Vec<_> = d
+                    .remove("announce-list")
                     .and_then(BEncode::into_list)
                     .unwrap_or_else(Vec::new)
                     .into_iter()
                     .map(|l| {
-                        let mut l: Vec<_> = l.into_list()
+                        let mut l: Vec<_> = l
+                            .into_list()
                             .unwrap_or_else(Vec::new)
                             .into_iter()
                             .filter_map(BEncode::into_string)
@@ -541,9 +551,11 @@ fn parse_bencode_files(mut data: BTreeMap<String, BEncode>) -> Result<Vec<File>,
     match data.remove("files").and_then(|l| l.into_list()) {
         Some(fs) => {
             let mut path = PathBuf::new();
-            path.push(data.remove("name")
-                .and_then(|v| v.into_string())
-                .ok_or("Multifile mode must have a name field")?);
+            path.push(
+                data.remove("name")
+                    .and_then(|v| v.into_string())
+                    .ok_or("Multifile mode must have a name field")?,
+            );
             let mut files = Vec::new();
             for f in fs {
                 let mut file = File::from_bencode(f)?;

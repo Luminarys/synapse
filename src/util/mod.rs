@@ -1,17 +1,17 @@
-pub mod native;
 mod io;
+pub mod native;
 
-use std::fmt::Write as FWrite;
-use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
-use std::hash::BuildHasherDefault;
 use std::collections::{HashMap, HashSet};
+use std::fmt::Write as FWrite;
+use std::hash::BuildHasherDefault;
+use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
 
-use rand::{self, Rng};
-use rand::distributions::Alphanumeric;
 use byteorder::{BigEndian, ByteOrder};
+use fnv;
 use metrohash::MetroHash;
 use openssl::sha;
-use fnv;
+use rand::distributions::Alphanumeric;
+use rand::{self, Rng};
 
 pub type FHashMap<K, V> = fnv::FnvHashMap<K, V>;
 pub type FHashSet<T> = fnv::FnvHashSet<T>;
@@ -132,10 +132,7 @@ fn hex_to_bit(c: char) -> Option<u8> {
 
 pub fn bytes_to_addr(p: &[u8]) -> SocketAddr {
     let ip = Ipv4Addr::new(p[0], p[1], p[2], p[3]);
-    SocketAddr::V4(SocketAddrV4::new(
-        ip,
-        BigEndian::read_u16(&p[4..]),
-    ))
+    SocketAddr::V4(SocketAddrV4::new(ip, BigEndian::read_u16(&p[4..])))
 }
 
 pub fn addr_to_bytes(addr: &SocketAddr) -> [u8; 6] {

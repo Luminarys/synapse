@@ -307,8 +307,8 @@ impl State {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use torrent::peer::Message;
     use std::io::{self, Read};
+    use torrent::peer::Message;
 
     /// Cursor to emulate a mio socket using readv.
     struct Cursor<'a> {
@@ -402,9 +402,11 @@ mod tests {
         let mut data = Cursor::new(&v);
         // Test one shot
         match r.readable(&mut data).unwrap().unwrap() {
-            Message::Bitfield(ref pf) => for i in 0..32 {
-                assert!(pf.has_bit(i as u64));
-            },
+            Message::Bitfield(ref pf) => {
+                for i in 0..32 {
+                    assert!(pf.has_bit(i as u64));
+                }
+            }
             _ => {
                 unreachable!();
             }

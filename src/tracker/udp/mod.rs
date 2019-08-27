@@ -1,14 +1,16 @@
-use std::net::{SocketAddr, UdpSocket};
 use std::io::{self, Cursor, Read, Write};
+use std::net::{SocketAddr, UdpSocket};
 use std::time;
 
 use amy;
 use byteorder::{BigEndian, ByteOrder, ReadBytesExt, WriteBytesExt};
 use rand::random;
 
-use {CONFIG, PEER_ID};
-use tracker::{dns, Announce, Error, ErrorKind, Event, Response, Result, ResultExt, TrackerResponse};
+use tracker::{
+    dns, Announce, Error, ErrorKind, Event, Response, Result, ResultExt, TrackerResponse,
+};
 use util::{bytes_to_addr, FHashMap, UHashMap};
+use {CONFIG, PEER_ID};
 
 // We're not going to bother with backoff, if the tracker/network aren't working now
 // the torrent can just resend a request later.

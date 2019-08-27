@@ -1,9 +1,9 @@
+use std::io::Read;
 use std::net::{SocketAddr, ToSocketAddrs};
 use std::{fs, process};
-use std::io::Read;
 
-use toml;
 use shellexpand;
+use toml;
 
 use args;
 
@@ -179,7 +179,8 @@ impl Config {
     }
 
     pub fn from_file(mut file: ConfigFile) -> Config {
-        let addr = file.dht
+        let addr = file
+            .dht
             .bootstrap_node
             .and_then(|n| n.to_socket_addrs().ok())
             .and_then(|mut a| a.next());

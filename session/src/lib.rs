@@ -5,8 +5,8 @@ extern crate serde;
 extern crate serde_derive;
 
 pub mod torrent {
-    pub use self::ver_fa1b6f as current;
     pub use self::current::Session;
+    pub use self::ver_fa1b6f as current;
     use bincode;
 
     #[derive(Serialize, Deserialize, Clone)]
@@ -101,8 +101,8 @@ pub mod torrent {
     }
 
     pub mod ver_6e27af {
-        pub use super::ver_fa1b6f as next;
         pub use self::next::{File, Status, StatusState};
+        pub use super::ver_fa1b6f as next;
 
         use super::Bitfield;
 
@@ -166,15 +166,16 @@ pub mod torrent {
                     throttle_ul: self.throttle_ul,
                     throttle_dl: self.throttle_dl,
                     trackers: self.trackers,
-                }.migrate()
+                }
+                .migrate()
             }
         }
     }
 
     pub mod ver_249b1b {
+        pub use self::next::{File, Info, Status, StatusState};
         pub use super::ver_6e27af as next;
         use super::Bitfield;
-        pub use self::next::{File, Info, Status, StatusState};
 
         use chrono::{DateTime, Utc};
 
@@ -212,7 +213,8 @@ pub mod torrent {
                     throttle_ul: self.throttle_ul,
                     throttle_dl: self.throttle_dl,
                     trackers,
-                }.migrate()
+                }
+                .migrate()
             }
         }
     }
@@ -326,7 +328,8 @@ pub mod torrent {
                     created: self.created,
                     throttle_ul: self.throttle_ul,
                     throttle_dl: self.throttle_dl,
-                }.migrate()
+                }
+                .migrate()
             }
         }
 
@@ -347,9 +350,9 @@ pub mod torrent {
     }
 
     pub mod ver_8e1121 {
+        use self::next::{Info, Status};
         use super::ver_5f166d as next;
         use super::Bitfield;
-        use self::next::{Info, Status};
 
         use chrono::{DateTime, Utc};
 
@@ -383,7 +386,8 @@ pub mod torrent {
                     created: self.created,
                     throttle_ul: self.throttle_ul,
                     throttle_dl: self.throttle_dl,
-                }.migrate()
+                }
+                .migrate()
             }
         }
     }

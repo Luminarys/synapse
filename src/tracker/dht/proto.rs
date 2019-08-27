@@ -1,8 +1,8 @@
-use std::collections::BTreeMap;
-use std::net::SocketAddr;
 use super::{ID, VERSION};
 use bencode::{self, BEncode};
 use num_bigint::BigUint;
+use std::collections::BTreeMap;
+use std::net::SocketAddr;
 use util::{addr_to_bytes, bytes_to_addr};
 use CONFIG;
 // use std::u16;
@@ -202,7 +202,8 @@ impl Request {
     pub fn decode(buf: &[u8]) -> Result<Self> {
         let b: BEncode = bencode::decode_buf(buf)
             .chain_err(|| ErrorKind::InvalidRequest("Invalid BEncoded data"))?;
-        let mut d = b.into_dict()
+        let mut d = b
+            .into_dict()
             .ok_or_else(|| ErrorKind::InvalidRequest("Invalid BEncoded data(must be dict)"))?;
         let transaction = d.remove("t").and_then(|b| b.into_bytes()).ok_or_else(|| {
             ErrorKind::InvalidRequest("Invalid BEncoded data(dict must have t field)")
@@ -228,7 +229,8 @@ impl Request {
                 "Invalid BEncoded data(dict must have a field)",
             ))
         })?;
-        let id = a.remove("id")
+        let id = a
+            .remove("id")
             .and_then(|b| b.into_bytes())
             .and_then(|b| b.get(0..20).map(BigUint::from_bytes_be))
             .ok_or_else(|| {
@@ -239,7 +241,8 @@ impl Request {
         let kind = match &q[..] {
             "ping" => RequestKind::Ping(id),
             "find_node" => {
-                let target = a.remove("target")
+                let target = a
+                    .remove("target")
                     .and_then(|b| b.into_bytes())
                     .and_then(|b| b.get(0..20).map(BigUint::from_bytes_be))
                     .ok_or_else(|| {
@@ -283,11 +286,13 @@ impl Request {
                             "Invalid BEncoded data(announce_peer must have hash field)",
                         ))
                     })?;
-                let implied_port = a.remove("implied_port")
+                let implied_port = a
+                    .remove("implied_port")
                     .and_then(|b| b.into_int())
                     .map(|b| b > 0)
                     .unwrap_or(false);
-                let port = a.remove("port")
+                let port = a
+                    .remove("port")
                     .and_then(|b| b.into_int())
                     .and_then(|b| {
                         if b > 65_535 || b < 0 {
@@ -301,7 +306,8 @@ impl Request {
                             "Invalid BEncoded data(announce_peer must have port field)",
                         ))
                     })?;
-                let token = a.remove("token")
+                let token = a
+                    .remove("token")
                     .and_then(|b| b.into_bytes())
                     .ok_or_else(|| {
                         Error::from(ErrorKind::InvalidRequest(
@@ -319,7 +325,8 @@ impl Request {
             _ => {
                 return Err(ErrorKind::InvalidRequest(
                     "Invalid BEncoded data(request must be a valid query type)",
-                ).into());
+                )
+                .into());
             }
         };
         Ok(Request {
@@ -474,7 +481,8 @@ impl Response {
                 if e.len() != 2 {
                     return Err(ErrorKind::InvalidResponse(
                         "Invalid BEncoded data(e field must have two terms)",
-                    ).into());
+                    )
+                    .into());
                 }
                 let code = e.remove(0).into_int().ok_or_else(|| {
                     Error::from(ErrorKind::InvalidResponse(
@@ -494,7 +502,8 @@ impl Response {
                     _ => {
                         return Err(ErrorKind::InvalidResponse(
                             "Invalid BEncoded data(invalid error code)",
-                        ).into())
+                        )
+                        .into())
                     }
                 };
                 Ok(Response {
@@ -509,7 +518,8 @@ impl Response {
                     ))
                 })?;
 
-                let id = r.remove("id")
+                let id = r
+                    .remove("id")
                     .and_then(|b| b.into_bytes())
                     .and_then(|b| b.get(0..20).map(BigUint::from_bytes_be))
                     .ok_or_else(|| {

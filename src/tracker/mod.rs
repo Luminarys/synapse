@@ -1,24 +1,24 @@
+mod dht;
+mod dns;
+mod errors;
 mod http;
 mod udp;
-mod errors;
-mod dns;
-mod dht;
 
 use std::collections::VecDeque;
 use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
-use std::{io, result, thread};
 use std::sync::Arc;
+use std::{io, result, thread};
 
+use amy;
 use byteorder::{BigEndian, ByteOrder};
 use url::Url;
-use amy;
 
 pub use self::errors::{Error, ErrorKind, Result, ResultExt};
-use torrent::Torrent;
 use bencode::BEncode;
 use control::cio;
-use handle;
 use disk;
+use handle;
+use torrent::Torrent;
 use CONFIG;
 
 pub struct Tracker {
@@ -121,7 +121,8 @@ impl Tracker {
                 timer,
                 queue: VecDeque::new(),
                 shutting_down: false,
-            }.run()
+            }
+            .run()
         })?;
         Ok((ch, th))
     }
@@ -132,11 +133,13 @@ impl Tracker {
         debug!("Initialized!");
         'outer: loop {
             match self.poll.wait(POLL_INT_MS) {
-                Ok(events) => for event in events {
-                    if self.handle_event(event).is_err() {
-                        break 'outer;
+                Ok(events) => {
+                    for event in events {
+                        if self.handle_event(event).is_err() {
+                            break 'outer;
+                        }
                     }
-                },
+                }
                 Err(e) => {
                     error!("Failed to poll for events: {}", e);
                 }
@@ -256,7 +259,8 @@ impl Tracker {
     }
 
     fn handle_timer(&mut self) {
-        for r in self.http
+        for r in self
+            .http
             .tick()
             .into_iter()
             .chain(self.udp.tick().into_iter())

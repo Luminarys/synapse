@@ -1,6 +1,6 @@
-use std::{io, mem};
-use byteorder::{BigEndian, ByteOrder};
 use super::proto::ws::Message;
+use byteorder::{BigEndian, ByteOrder};
+use std::{io, mem};
 use util::{aread, IOR};
 
 pub struct Reader {
@@ -89,9 +89,7 @@ impl Reader {
                             State::PayloadLen2 => {
                                 self.msg.len = u64::from(BigEndian::read_u16(buf))
                             }
-                            State::PayloadLen8 => {
-                                self.msg.len = BigEndian::read_u64(buf)
-                            }
+                            State::PayloadLen8 => self.msg.len = BigEndian::read_u64(buf),
                             _ => unreachable!(),
                         }
                     }
