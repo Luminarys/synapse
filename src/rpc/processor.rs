@@ -1,9 +1,9 @@
-use std::collections::{HashMap, HashSet};
-use std::mem;
-use std::io::Read;
-use std::fs::OpenOptions;
-use std::path::Path;
 use std::borrow::Cow;
+use std::collections::{HashMap, HashSet};
+use std::fs::OpenOptions;
+use std::io::Read;
+use std::mem;
+use std::path::Path;
 
 use amy;
 use bincode;
@@ -12,16 +12,16 @@ use rpc_lib;
 use serde_json as json;
 use url::Url;
 
-use super::proto::message::{CMessage, Error, SMessage};
 use super::proto::criterion::{self, Criterion, Operation};
+use super::proto::message::{CMessage, Error, SMessage};
 use super::proto::resource::{merge_json, Resource, ResourceKind, SResourceUpdate};
 use super::{CtlMessage, Message};
-use CONFIG;
 use disk;
 use torrent::info::Info;
 use util::{random_string, FHashMap, FHashSet, MHashSet, SHashMap};
+use CONFIG;
 
-const USER_DATA_FILE: &'static str = "rpc_user_data";
+const USER_DATA_FILE: &str = "rpc_user_data";
 type RpcDiskFmt = SHashMap<Vec<u8>>;
 
 // TODO: Figure out a way to reduce allocations
@@ -199,9 +199,11 @@ impl Processor {
                     resources,
                 });
             }
-            CMessage::Unsubscribe { ids, .. } => for id in ids {
-                self.subs.get_mut(&id).map(|s| s.remove(&client));
-            },
+            CMessage::Unsubscribe { ids, .. } => {
+                for id in ids {
+                    self.subs.get_mut(&id).map(|s| s.remove(&client));
+                }
+            }
             CMessage::UpdateResource {
                 serial,
                 mut resource,
@@ -216,13 +218,11 @@ impl Processor {
                             .insert(res.id().to_owned(), res.user_data().clone());
                         resp.push(SMessage::UpdateResources {
                             serial: Some(serial),
-                            resources: vec![
-                                SResourceUpdate::UserData {
-                                    id: resource.id.clone(),
-                                    kind: res.kind(),
-                                    user_data: user_data,
-                                },
-                            ],
+                            resources: vec![SResourceUpdate::UserData {
+                                id: resource.id.clone(),
+                                kind: res.kind(),
+                                user_data: user_data,
+                            }],
                         });
                     }
                     if modified {
@@ -315,11 +315,12 @@ impl Processor {
 
                 let get_matching = |f: &Filter| {
                     let mut added = HashSet::new();
-                    let crit_res = f.criteria
+                    let crit_res = f
+                        .criteria
                         .iter()
                         .find(|c| c.field == "torrent_id" && c.op == Operation::Eq)
                         .and_then(|c| match &c.value {
-                            &criterion::Value::S(ref s) => Some(s),
+                            criterion::Value::S(ref s) => Some(s),
                             _ => None,
                         })
                         .and_then(|id| torrent_idx.get(id));
@@ -526,7 +527,7 @@ impl Processor {
                     TransferKind::UploadFiles { size, path },
                 ));
             }
-            CMessage::PurgeDns { serial: _ } => {
+            CMessage::PurgeDns { .. } => {
                 rmsg = Some(Message::PurgeDNS);
             }
         }
@@ -552,18 +553,15 @@ impl Processor {
                             self.torrent_idx.insert(tid.to_owned(), MHashSet::default());
                         }
                         self.torrent_idx.get_mut(tid).unwrap().insert(id.clone());
-                        match &r {
-                            &Resource::Tracker(ref t) => {
-                                // Note we don't have to send a client update here because
-                                // this is updated in sync with the trackers field which does
-                                // this for us.
-                                t.url.host_str().map(|host| {
-                                    self.resources.get_mut(&t.torrent_id).map(|r| {
-                                        r.as_torrent_mut().tracker_urls.push(host.to_string())
-                                    })
-                                });
-                            }
-                            _ => {}
+                        if let Resource::Tracker(ref t) = &r {
+                            // Note we don't have to send a client update here because
+                            // this is updated in sync with the trackers field which does
+                            // this for us.
+                            t.url.host_str().map(|host| {
+                                self.resources
+                                    .get_mut(&t.torrent_id)
+                                    .map(|r| r.as_torrent_mut().tracker_urls.push(host.to_string()))
+                            });
                         }
                     }
 
@@ -591,9 +589,9 @@ impl Processor {
                         }
                         clients.get_mut(c).unwrap().push(update.clone());
                     }
-                    self.resources
-                        .get_mut(update.id())
-                        .map(|res| res.update(update));
+                    if let Some(res) = self.resources.get_mut(update.id()) {
+                        res.update(update);
+                    }
                 }
                 for (c, resources) in clients {
                     msgs.push((
@@ -634,16 +632,13 @@ impl Processor {
                         self.torrent_idx.remove(&id);
                     }
 
-                    match &r {
-                        &Resource::Tracker(ref t) => {
-                            // Note we don't have to send a client update here: see above
-                            t.url.host_str().map(|host| {
-                                self.resources.get_mut(&t.torrent_id).map(|r| {
-                                    r.as_torrent_mut().tracker_urls.retain(|url| url != host)
-                                });
-                            });
+                    if let Resource::Tracker(ref t) = &r {
+                        // Note we don't have to send a client update here: see above
+                        if let Some(host) = t.url.host_str() {
+                            if let Some(r) = self.resources.get_mut(&t.torrent_id) {
+                                r.as_torrent_mut().tracker_urls.retain(|url| url != host)
+                            }
                         }
-                        _ => {}
                     }
                 }
             }
@@ -747,7 +742,8 @@ impl Processor {
     }
 
     fn serialize(&self) {
-        let json_data: RpcDiskFmt = self.user_data
+        let json_data: RpcDiskFmt = self
+            .user_data
             .iter()
             .map(|(k, v)| (k.to_owned(), json::to_vec(v).unwrap()))
             .collect();
@@ -781,7 +777,7 @@ impl Filter {
                     rpc_lib::criterion::Field::R(k) => {
                         let torrent_resources = self.tidx.get(self.r.id()).unwrap();
                         let mut subfields = vec![];
-                        let sep_idx = field.find("/").map(|i| i + 1).unwrap_or(0);
+                        let sep_idx = field.find('/').map(|i| i + 1).unwrap_or(0);
                         let subfield = &field[sep_idx..];
                         for id in self.kidx[k as usize].intersection(torrent_resources) {
                             let subres = self.resources.get(id).unwrap();

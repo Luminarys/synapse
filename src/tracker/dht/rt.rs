@@ -1,11 +1,11 @@
-use std::net::SocketAddr;
-use std::{cmp, mem};
-use std::collections::HashMap;
+use super::{proto, BUCKET_MAX, ID, MAX_BUCKETS, MIN_BOOTSTRAP_BKTS, TX_TIMEOUT_SECS};
+use byteorder::{BigEndian, ByteOrder, WriteBytesExt};
 use chrono::{DateTime, Utc};
 use num_bigint::BigUint;
 use rand::{self, Rng};
-use super::{proto, BUCKET_MAX, ID, MAX_BUCKETS, MIN_BOOTSTRAP_BKTS, TX_TIMEOUT_SECS};
-use byteorder::{BigEndian, ByteOrder, WriteBytesExt};
+use std::collections::HashMap;
+use std::net::SocketAddr;
+use std::{cmp, mem};
 use {bincode, tracker};
 
 const MAX_SEARCH_DEPTH: u8 = 5;
@@ -227,7 +227,12 @@ impl RoutingTable {
                     self.get_node(&id).token.clone()
                 };
                 if let Some(t) = self.torrents.get(&hash) {
-                    proto::Response::peers(req.transaction, self.id.clone(), token, t.peers.iter().map(|p| p.1).collect())
+                    proto::Response::peers(
+                        req.transaction,
+                        self.id.clone(),
+                        token,
+                        t.peers.iter().map(|p| p.1).collect(),
+                    )
                 } else {
                     let mut nodes = Vec::new();
                     let b = self.bucket_idx(&BigUint::from_bytes_be(&hash[..]));
@@ -290,8 +295,7 @@ impl RoutingTable {
                     id: ref id2,
                     ref mut nodes,
                 },
-            ) if id1 == id2 =>
-            {
+            ) if id1 == id2 => {
                 if !self.contains_id(id1) {
                     return Err(reqs);
                 }
@@ -316,8 +320,7 @@ impl RoutingTable {
                     ref mut token,
                     ..
                 },
-            ) if id1 == id2 =>
-            {
+            ) if id1 == id2 => {
                 if !self.contains_id(id1) {
                     return Err(reqs);
                 }
@@ -343,8 +346,7 @@ impl RoutingTable {
                     ref mut nodes,
                     ref mut token,
                 },
-            ) if id1 == id2 =>
-            {
+            ) if id1 == id2 => {
                 if self.contains_id(id1) {
                     let node = self.get_node_mut(id1);
                     node.update();
@@ -654,7 +656,7 @@ impl Node {
             last_updated: Utc::now(),
             prev_token: token.clone(),
             rem_token: None,
-            token: token,
+            token,
         }
     }
 

@@ -51,7 +51,8 @@ impl EMA {
         self.dl = 0;
         // Put everything in terms of milliseconds
         let elapsed = self.updated.elapsed();
-        let dur = (elapsed.as_secs() * 1000) as f64 + elapsed.subsec_nanos() as f64 / 1000000.0;
+        let dur =
+            (elapsed.as_secs() * 1000) as f64 + f64::from(elapsed.subsec_nanos()) / 1_000_000.0;
         self.accum_time = (ALPHA * dur) + (1.0 - ALPHA) * self.accum_time;
         self.updated = time::Instant::now();
     }

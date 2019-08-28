@@ -1,5 +1,5 @@
-use std::net::{IpAddr, UdpSocket};
 use std::io;
+use std::net::{IpAddr, UdpSocket};
 
 use {adns, amy};
 

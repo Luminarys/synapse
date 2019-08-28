@@ -1,6 +1,6 @@
-use std::{io, thread};
-use std::fmt::Debug;
 use amy;
+use std::fmt::Debug;
+use std::{io, thread};
 
 pub struct Handle<I, O> {
     pub tx: amy::Sender<O>,

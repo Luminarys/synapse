@@ -1,12 +1,13 @@
-use std::net::{SocketAddr, TcpStream};
-use std::os::unix::io::{AsRawFd, RawFd};
 use std::io::{self, ErrorKind};
 use std::mem;
+use std::net::{SocketAddr, TcpStream};
+use std::os::unix::io::{AsRawFd, RawFd};
 
-use nix::libc;
 use net2::{TcpBuilder, TcpStreamExt};
-use openssl::ssl::{HandshakeError, MidHandshakeSslStream, SslAcceptor, SslConnector, SslMethod,
-                   SslStream};
+use nix::libc;
+use openssl::ssl::{
+    HandshakeError, MidHandshakeSslStream, SslAcceptor, SslConnector, SslMethod, SslStream,
+};
 
 use throttle::Throttle;
 use util;
@@ -62,7 +63,7 @@ impl Socket {
         Ok(Socket {
             conn,
             throttle: None,
-            addr: addr,
+            addr,
         })
     }
 }

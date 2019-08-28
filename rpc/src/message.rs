@@ -2,8 +2,8 @@ use std::borrow::Cow;
 
 use chrono::{DateTime, Utc};
 
-use super::resource::{CResourceUpdate, ResourceKind, SResourceUpdate};
 use super::criterion::Criterion;
+use super::resource::{CResourceUpdate, ResourceKind, SResourceUpdate};
 
 #[derive(Copy, Clone, Debug, Serialize, Deserialize)]
 pub struct Version {
@@ -174,8 +174,8 @@ fn default_false() -> bool {
 #[cfg(test)]
 mod tests {
     extern crate serde_json;
-    use super::*;
     use super::super::{criterion, resource};
+    use super::*;
 
     #[test]
     fn test_json_repr() {

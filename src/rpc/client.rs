@@ -1,19 +1,19 @@
-use std::{mem, result, str, time};
 use std::io::{self, Write};
+use std::{mem, result, str, time};
 
 use base64;
 use httparse;
 use serde_json;
 use url::Url;
 
+use super::proto::message::{SMessage, Version};
+use super::proto::ws::{Frame, Message, Opcode};
 use super::reader::Reader;
 use super::writer::Writer;
-use super::proto::ws::{Frame, Message, Opcode};
-use super::proto::message::{SMessage, Version};
 use super::{ErrorKind, Result, ResultExt};
 use super::{EMPTY_HTTP_RESP, UNAUTH_HTTP_RESP};
-use util::{aread, sha1_hash, IOR};
 use socket::TSocket;
+use util::{aread, sha1_hash, IOR};
 use {CONFIG, DL_TOKEN};
 
 pub struct Client {
@@ -118,13 +118,8 @@ impl Client {
         if self.last_action.elapsed().as_secs() > CONN_TIMEOUT {
             return true;
         }
-        if self.last_action.elapsed().as_secs() > CONN_PING
+        self.last_action.elapsed().as_secs() > CONN_PING
             && self.send_msg(Message::ping(vec![0xDE, 0xAD])).is_err()
-        {
-            true
-        } else {
-            false
-        }
     }
 }
 
@@ -159,7 +154,8 @@ impl Into<Client> for Incoming {
 
         c.send(Frame::Text(
             serde_json::to_string(&SMessage::RpcVersion(Version::current())).unwrap(),
-        )).ok();
+        ))
+        .ok();
         c
     }
 }
@@ -301,19 +297,25 @@ fn validate_dl(req: &httparse::Request) -> Option<(String, Option<String>)> {
             let id = if url.path().contains("/dl/") {
                 url.path_segments().unwrap().last().map(|v| v.to_owned())
             } else {
-                return None
+                return None;
             };
             if CONFIG.rpc.auth {
-                let pw = url.query_pairs()
+                let pw = url
+                    .query_pairs()
                     .find(|&(ref k, _)| k == "token")
                     .map(|(_, v)| format!("{}", v))
                     .and_then(|p| base64::decode(&p).ok())
-                    .map(|p|
-                        p.as_ref() == sha1_hash(format!("{}{}", id.as_ref()
-                                                                  .map(|s| s.as_str())
-                                                                  .unwrap_or(""),
-                                                                *DL_TOKEN).as_bytes())
-                    )
+                    .map(|p| {
+                        p.as_ref()
+                            == sha1_hash(
+                                format!(
+                                    "{}{}",
+                                    id.as_ref().map(|s| s.as_str()).unwrap_or(""),
+                                    *DL_TOKEN
+                                )
+                                .as_bytes(),
+                            )
+                    })
                     .unwrap_or(false);
                 if !pw {
                     return None;
@@ -322,7 +324,8 @@ fn validate_dl(req: &httparse::Request) -> Option<(String, Option<String>)> {
             id
         })
         .map(|id| {
-            let range = req.headers
+            let range = req
+                .headers
                 .iter()
                 .find(|header| header.name.to_lowercase() == "range")
                 .and_then(|header| str::from_utf8(header.value).ok())
@@ -379,7 +382,8 @@ fn validate_upgrade(req: &httparse::Request) -> result::Result<String, bool> {
     }
 
     if CONFIG.rpc.auth {
-        let auth = req.path
+        let auth = req
+            .path
             .and_then(|path| Url::parse(&format!("http://localhost{}", path)).ok())
             .and_then(|url| {
                 url.query_pairs()
@@ -387,25 +391,27 @@ fn validate_upgrade(req: &httparse::Request) -> result::Result<String, bool> {
                     .map(|(_, v)| format!("{}", v))
                     .map(|p| p == CONFIG.rpc.password)
             })
-            .or(req.headers
-                .iter()
-                .find(|header| header.name.to_lowercase() == "authorization")
-                .and_then(|header| str::from_utf8(header.value).ok())
-                .and_then(|value| {
-                    if value.to_lowercase().starts_with("basic ") {
-                        let (_, auth) = value.split_at(6);
-                        Some(auth)
-                    } else {
-                        None
-                    }
-                })
-                .and_then(|auth| base64::decode(auth).ok())
-                .and_then(|auth| String::from_utf8(auth).ok())
-                .and_then(|auth| {
-                    auth.split_terminator(":")
-                        .last()
-                        .map(|password| password == CONFIG.rpc.password)
-                }))
+            .or_else(|| {
+                req.headers
+                    .iter()
+                    .find(|header| header.name.to_lowercase() == "authorization")
+                    .and_then(|header| str::from_utf8(header.value).ok())
+                    .and_then(|value| {
+                        if value.to_lowercase().starts_with("basic ") {
+                            let (_, auth) = value.split_at(6);
+                            Some(auth)
+                        } else {
+                            None
+                        }
+                    })
+                    .and_then(|auth| base64::decode(auth).ok())
+                    .and_then(|auth| String::from_utf8(auth).ok())
+                    .and_then(|auth| {
+                        auth.split_terminator(':')
+                            .last()
+                            .map(|password| password == CONFIG.rpc.password)
+                    })
+            })
             .unwrap_or(false);
         if !auth {
             return Err(true);

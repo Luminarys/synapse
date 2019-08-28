@@ -1,8 +1,8 @@
 use super::{Block, Picker};
-use std::collections::HashMap;
-use std::cell::RefCell;
-use torrent::{Bitfield, Info, Peer as TGPeer};
 use rand::distributions::{IndependentSample, Range};
+use std::cell::RefCell;
+use std::collections::HashMap;
+use torrent::{Bitfield, Info, Peer as TGPeer};
 use {control, rand};
 
 type TPeer = TGPeer<control::cio::test::TCIO>;
@@ -25,7 +25,8 @@ impl Simulation {
                 &mut rng,
                 connected.iter().map(|v| *v),
                 cfg.unchoke_limit as usize,
-            ).unwrap();
+            )
+            .unwrap();
             let peer = Peer {
                 picker: picker.clone(),
                 connected,
@@ -135,7 +136,8 @@ impl Simulation {
                 }
             }
         }
-        let inc = self.peers
+        let inc = self
+            .peers
             .borrow_mut()
             .iter()
             .filter(|p| !p.data.pieces().complete())

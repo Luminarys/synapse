@@ -1,33 +1,33 @@
+mod client;
+mod errors;
+mod processor;
 pub mod proto;
 mod reader;
-mod writer;
-mod errors;
-mod client;
-mod processor;
 mod transfer;
+mod writer;
 
-use std::{io, result, str, thread};
 use std::io::Write;
 use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4, TcpListener};
+use std::{io, result, str, thread};
 
 use amy;
-use serde_json;
 use http_range::HttpRange;
-use url::Url;
 use openssl::ssl::{SslAcceptor, SslFiletype, SslMethod};
+use serde_json;
+use url::Url;
 
-pub use self::proto::resource;
-pub use self::errors::{Error, ErrorKind, Result, ResultExt};
-use self::proto::message::{self, SMessage};
-use self::proto::ws;
 use self::client::{Client, Incoming, IncomingStatus};
+pub use self::errors::{Error, ErrorKind, Result, ResultExt};
 use self::processor::{Processor, TransferKind};
+use self::proto::message::{self, SMessage};
+pub use self::proto::resource;
+use self::proto::ws;
 use self::transfer::{TransferResult, Transfers};
 use bencode;
-use handle;
-use torrent;
 use disk;
+use handle;
 use socket::TSocket;
+use torrent;
 use util::UHashMap;
 use CONFIG;
 
@@ -53,7 +53,7 @@ lazy_static! {
                 "Access-Control-Request-Headers",
                 "Authorization"
             ),
-            format!("\r\n"),
+            "\r\n".to_string(),
         ];
         lines.join("\r\n").into_bytes()
     };
@@ -62,7 +62,7 @@ lazy_static! {
             format!("HTTP/1.1 {} {}", 401, "Unauthorized"),
             format!("Connection: {}", "Close"),
             format!("WWW-Authenticate: Basic real=m\"{}\"", "Synapse Connection"),
-            format!("\r\n"),
+            "\r\n".to_string(),
         ];
         lines.join("\r\n").into_bytes()
     };
@@ -70,7 +70,7 @@ lazy_static! {
         let lines = vec![
             format!("HTTP/1.1 {} {}", 416, "Requested Range Not Satisfiable"),
             format!("Connection: {}", "Close"),
-            format!("\r\n"),
+            "\r\n".to_string(),
         ];
         lines.join("\r\n").into_bytes()
     };
@@ -217,14 +217,15 @@ impl RPC {
                 processor: Processor::new(db),
                 transfers: Transfers::new(),
                 acceptor: build_acceptor(&CONFIG.rpc.ssl_cert, &CONFIG.rpc.ssl_key),
-            }.run()
+            }
+            .run()
         })?;
         Ok((ch, th))
     }
 
     pub fn run(&mut self) {
         debug!("Running RPC!");
-        'outer: loop {
+        loop {
             let res = match self.poll.wait(POLL_INT_MS) {
                 Ok(res) => res,
                 Err(e) => {
@@ -301,7 +302,8 @@ impl RPC {
                 match bencode::decode_buf(&data) {
                     Ok(b) => match torrent::info::Info::from_bencode(b) {
                         Ok(i) => {
-                            if self.ch
+                            if self
+                                .ch
                                 .send(Message::Torrent {
                                     info: i,
                                     path,
@@ -327,7 +329,8 @@ impl RPC {
                                                 e
                                             ),
                                         },
-                                    )).unwrap(),
+                                    ))
+                                    .unwrap(),
                                 ))
                             });
                         }
@@ -342,18 +345,18 @@ impl RPC {
                                         "Invalid torrent file uploaded, bad bencoded data: {}.",
                                         e
                                     ),
-                                })).unwrap(),
+                                }))
+                                .unwrap(),
                             ))
                         });
                     }
                 }
             }
             TransferResult::Error {
-                conn: _,
-                err,
-                client: id,
+                err, client: id, ..
             } => {
-                let res = self.clients
+                let res = self
+                    .clients
                     .get_mut(&id)
                     .map(|c| {
                         c.send(ws::Frame::Text(
@@ -462,12 +465,10 @@ impl RPC {
                                 return;
                             }
                         } else {
-                            vec![
-                                HttpRange {
-                                    start: 0,
-                                    length: size,
-                                },
-                            ]
+                            vec![HttpRange {
+                                start: 0,
+                                length: size,
+                            }]
                         };
                         debug!("Initiating DL");
                         self.disk

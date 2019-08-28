@@ -1,24 +1,24 @@
+mod dht;
+mod dns;
+mod errors;
 mod http;
 mod udp;
-mod errors;
-mod dns;
-mod dht;
 
 use std::collections::VecDeque;
 use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
-use std::{io, result, thread};
 use std::sync::Arc;
+use std::{io, result, thread};
 
+use amy;
 use byteorder::{BigEndian, ByteOrder};
 use url::Url;
-use amy;
 
 pub use self::errors::{Error, ErrorKind, Result, ResultExt};
-use torrent::Torrent;
 use bencode::BEncode;
 use control::cio;
-use handle;
 use disk;
+use handle;
+use torrent::Torrent;
 use CONFIG;
 
 pub struct Tracker {
@@ -121,7 +121,8 @@ impl Tracker {
                 timer,
                 queue: VecDeque::new(),
                 shutting_down: false,
-            }.run()
+            }
+            .run()
         })?;
         Ok((ch, th))
     }
@@ -132,11 +133,13 @@ impl Tracker {
         debug!("Initialized!");
         'outer: loop {
             match self.poll.wait(POLL_INT_MS) {
-                Ok(events) => for event in events {
-                    if self.handle_event(event).is_err() {
-                        break 'outer;
+                Ok(events) => {
+                    for event in events {
+                        if self.handle_event(event).is_err() {
+                            break 'outer;
+                        }
                     }
-                },
+                }
                 Err(e) => {
                     error!("Failed to poll for events: {}", e);
                 }
@@ -256,7 +259,8 @@ impl Tracker {
     }
 
     fn handle_timer(&mut self) {
-        for r in self.http
+        for r in self
+            .http
             .tick()
             .into_iter()
             .chain(self.udp.tick().into_iter())
@@ -333,7 +337,7 @@ impl Request {
             // piece_len * pieces_dld (due to shorter last piece), so we always get
             // either the correct amount left or 0.
             left: torrent.info().total_len.saturating_sub(
-                torrent.pieces().iter().count() as u64 * torrent.info().piece_len as u64,
+                torrent.pieces().iter().count() as u64 * u64::from(torrent.info().piece_len),
             ),
             // TODO: Develop better heuristics here.
             // For now, only request peers if we're leeching,
@@ -361,9 +365,8 @@ impl Request {
 
     pub fn custom<T: cio::CIO>(torrent: &Torrent<T>, url: Arc<Url>) -> Option<Request> {
         Request::new_announce(torrent, None).map(|mut r| {
-            match r {
-                Request::Announce(ref mut a) => a.url = url,
-                _ => {}
+            if let Request::Announce(ref mut a) = r {
+                a.url = url
             }
             r
         })
@@ -390,8 +393,8 @@ impl TrackerResponse {
             return Err(ErrorKind::TrackerError(reason).into());
         }
         let mut resp = TrackerResponse::empty();
-        match d.remove("peers") {
-            Some(BEncode::String(ref data)) => for p in data.chunks(6) {
+        if let Some(BEncode::String(ref data)) = d.remove("peers") {
+            for p in data.chunks(6) {
                 if p.len() != 6 {
                     debug!("Unusual trailing bytes received for tracker!");
                     continue;
@@ -399,9 +402,8 @@ impl TrackerResponse {
                 let ip = Ipv4Addr::new(p[0], p[1], p[2], p[3]);
                 let socket = SocketAddrV4::new(ip, BigEndian::read_u16(&p[4..]));
                 resp.peers.push(SocketAddr::V4(socket));
-            },
-            _ => {}
-        };
+            }
+        }
         match d.remove("interval") {
             Some(BEncode::Int(ref i)) => {
                 resp.interval = *i as u32;

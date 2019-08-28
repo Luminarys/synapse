@@ -21,12 +21,20 @@ impl Bitfield {
     }
 
     pub fn from(b: Box<[u8]>, len: u64) -> Bitfield {
-        let i = Bitfield::I { len, data: b, set: 0 };
+        let i = Bitfield::I {
+            len,
+            data: b,
+            set: 0,
+        };
         let set = i.iter().count() as u64;
         if i.complete() {
             Bitfield::C { len }
         } else {
-            Bitfield::I { len, data: i.into_data(), set }
+            Bitfield::I {
+                len,
+                data: i.into_data(),
+                set,
+            }
         }
     }
 
@@ -53,7 +61,7 @@ impl Bitfield {
                     size += 1;
                 }
                 vec![255; size as usize].into_boxed_slice()
-            },
+            }
         }
     }
 
@@ -66,7 +74,7 @@ impl Bitfield {
                     size += 1;
                 }
                 vec![255; size as usize].into_boxed_slice()
-            },
+            }
         }
     }
 
@@ -99,7 +107,7 @@ impl Bitfield {
                 if data.len() == 0 {
                     return false;
                 }
-                return set == len;
+                set == len
             }
             Bitfield::C { .. } => true,
         }
@@ -133,7 +141,7 @@ impl Bitfield {
                     data[block_pos as usize] = block | (1 << index);
                     *set += 1;
                 }
-                Bitfield::C { .. } => { }
+                Bitfield::C { .. } => {}
             }
             if self.complete() {
                 *self = Bitfield::C { len: self.len() };
@@ -144,11 +152,12 @@ impl Bitfield {
     pub fn unset_bit(&mut self, pos: u64) {
         debug_assert!(pos < self.len());
         if pos < self.len() {
-            match self {
-                Bitfield::C { .. } => {
-                    *self = Bitfield::I { len: self.len(), data: self.data(), set: self.set() };
-                }
-                _ => { }
+            if let Bitfield::C { .. } = self {
+                *self = Bitfield::I {
+                    len: self.len(),
+                    data: self.data(),
+                    set: self.set(),
+                };
             }
             match self {
                 Bitfield::I { data, set, .. } => {
@@ -224,7 +233,7 @@ pub struct BitfieldIter<'a> {
 
 impl<'a> BitfieldIter<'a> {
     fn new(pf: &'a Bitfield) -> BitfieldIter<'a> {
-        BitfieldIter { pf: pf, idx: 0 }
+        BitfieldIter { pf, idx: 0 }
     }
 }
 

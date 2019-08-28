@@ -1,7 +1,7 @@
-use std::cell::RefCell;
-use std::rc::Rc;
 use amy::Registrar;
+use std::cell::RefCell;
 use std::collections::HashSet;
+use std::rc::Rc;
 
 /// Creates a throttler from which sub throttles may be created.
 /// Note that all created throttle's have a lifetime tied to the

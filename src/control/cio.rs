@@ -84,9 +84,9 @@ pub trait CIO {
 #[cfg(test)]
 pub mod test {
     use super::{Event, Result, CIO, PID, TID};
-    use {disk, listener, rpc, torrent, tracker};
     use std::collections::HashMap;
     use std::sync::{Arc, Mutex};
+    use {disk, listener, rpc, torrent, tracker};
 
     pub struct TCIO {
         data: Arc<Mutex<TCIOD>>,

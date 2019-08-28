@@ -1,12 +1,12 @@
+use std::fmt;
 use std::io::{self, Write};
 use std::sync::Arc;
-use std::fmt;
 
 use byteorder::{BigEndian, WriteBytesExt};
 
 use buffers::Buffer;
-use torrent::Bitfield;
 use torrent::info::Info as TorrentInfo;
+use torrent::Bitfield;
 
 pub enum Message {
     // TODO: Consider moving this to the heap,

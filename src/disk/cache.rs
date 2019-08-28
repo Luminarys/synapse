@@ -1,5 +1,5 @@
-use std::{fs, io, mem, path};
 use std::ffi::OsString;
+use std::{fs, io, mem, path};
 
 use std::os::unix::fs::MetadataExt;
 
@@ -9,9 +9,10 @@ use std::io::{Read, Seek, SeekFrom, Write};
 #[cfg(all(feature = "mmap", target_pointer_width = "64"))]
 use memmap::MmapMut;
 
+#[cfg(all(feature = "mmap", target_pointer_width = "64"))]
+use util::io_err;
+use util::{native, MHashMap};
 use CONFIG;
-use util::{native, MHashMap, io_err};
-
 
 const PB_LEN: usize = 256;
 
@@ -97,7 +98,7 @@ impl BufCache {
         BufCache {
             path_a: OsString::with_capacity(PB_LEN),
             path_b: OsString::with_capacity(PB_LEN),
-            buf: Vec::with_capacity(1048576),
+            buf: Vec::with_capacity(1_048_576),
         }
     }
 
@@ -211,7 +212,11 @@ impl FileCache {
     }
 
     fn ensure_exists(&mut self, path: &path::Path, len: Result<u64, u64>) -> io::Result<()> {
-        let len_val = if let Ok(v) = len { v } else { len.err().unwrap() };
+        let len_val = if let Ok(v) = len {
+            v
+        } else {
+            len.err().unwrap()
+        };
         if !self.files.contains_key(path) {
             if self.files.len() >= CONFIG.net.max_open_files {
                 let mut removal = None;
@@ -224,7 +229,9 @@ impl FileCache {
                         removal = Some(id.clone());
                     }
                 }
-                removal.map(|f| self.remove_file(&f));
+                if let Some(f) = removal {
+                    self.remove_file(&f);
+                }
             }
 
             fs::create_dir_all(path.parent().unwrap())?;

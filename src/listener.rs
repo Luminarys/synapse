@@ -1,12 +1,12 @@
-use std::{fmt, thread};
 use std::io::{self, ErrorKind};
 use std::net::{Ipv4Addr, SocketAddrV4, TcpListener, TcpStream};
+use std::{fmt, thread};
 
 use amy::{self, Poller, Registrar};
 
 use torrent::peer::reader::{RRes, Reader};
-use {handle, CONFIG};
 use util::UHashMap;
+use {handle, CONFIG};
 
 pub struct Listener {
     listener: TcpListener,
@@ -64,7 +64,8 @@ impl Listener {
                 poll,
                 reg,
                 ch: h,
-            }.run()
+            }
+            .run()
         })?;
         Ok((ch, th))
     }
@@ -73,19 +74,21 @@ impl Listener {
         debug!("Accepting connections!");
         loop {
             match self.poll.wait(POLL_INT_MS) {
-                Ok(res) => for not in res {
-                    match not.id {
-                        id if id == self.lid => self.handle_conn(),
-                        id if id == self.ch.rx.get_id() => loop {
-                            match self.ch.recv() {
-                                Ok(Request::Ping) => continue,
-                                Ok(Request::Shutdown) => return,
-                                _ => break,
-                            }
-                        },
-                        _ => self.handle_peer(not),
+                Ok(res) => {
+                    for not in res {
+                        match not.id {
+                            id if id == self.lid => self.handle_conn(),
+                            id if id == self.ch.rx.get_id() => loop {
+                                match self.ch.recv() {
+                                    Ok(Request::Ping) => continue,
+                                    Ok(Request::Shutdown) => return,
+                                    _ => break,
+                                }
+                            },
+                            _ => self.handle_peer(not),
+                        }
                     }
-                },
+                }
                 Err(e) => error!("Failed to poll for events: {}", e),
             }
         }
@@ -132,7 +135,8 @@ impl Listener {
                     return;
                 }
                 let hsd = hs.get_handshake_data();
-                if self.ch
+                if self
+                    .ch
                     .send(Message {
                         conn,
                         reader,

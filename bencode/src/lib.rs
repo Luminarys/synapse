@@ -1,8 +1,8 @@
 use std::collections::BTreeMap;
+use std::error::Error;
+use std::fmt;
 use std::io::{self, Cursor};
 use std::str;
-use std::fmt;
-use std::error::Error;
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum BEncode {

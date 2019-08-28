@@ -7,9 +7,9 @@ extern crate serde_json;
 extern crate url;
 extern crate url_serde;
 
-pub mod resource;
 pub mod criterion;
 pub mod message;
+pub mod resource;
 
 pub const MAJOR_VERSION: u16 = 0;
 pub const MINOR_VERSION: u16 = 1;

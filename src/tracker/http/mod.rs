@@ -1,20 +1,22 @@
 mod reader;
 mod writer;
 
-use std::time::{Duration, Instant};
-use std::{io, mem};
 use std::net::SocketAddr;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
+use std::{io, mem};
 
 use url::percent_encoding::percent_encode_byte;
 use url::Url;
 
-use {amy, bencode, PEER_ID};
-use self::writer::Writer;
 use self::reader::{ReadRes, Reader};
+use self::writer::Writer;
 use socket::TSocket;
-use tracker::{self, dns, Announce, Error, ErrorKind, Response, Result, ResultExt, TrackerResponse};
+use tracker::{
+    self, dns, Announce, Error, ErrorKind, Response, Result, ResultExt, TrackerResponse,
+};
 use util::UHashMap;
+use {amy, bencode, PEER_ID};
 
 const TIMEOUT_MS: u64 = 5_000;
 
@@ -94,8 +96,9 @@ impl TrackerState {
                 Ok(TrackerState::Writing {
                     sock,
                     writer: Writer::new(req),
-                }.next(Event::Writable)?
-                    .next(Event::Readable)?)
+                }
+                .next(Event::Writable)?
+                .next(Event::Readable)?)
             }
             (
                 TrackerState::Writing {
@@ -259,7 +262,8 @@ impl Handler {
         torrent: usize,
         dns: &mut dns::Resolver,
     ) -> Result<()> {
-        let url = Url::parse(url).chain_err(|| ErrorKind::InvalidResponse("Malformed redirect!"))?;
+        let url =
+            Url::parse(url).chain_err(|| ErrorKind::InvalidResponse("Malformed redirect!"))?;
         let mut http_req = Vec::with_capacity(50);
         http_req.extend_from_slice(b"GET ");
         http_req.extend_from_slice(url.path().as_bytes());
@@ -277,7 +281,8 @@ impl Handler {
         http_req.extend_from_slice(user_agent.as_bytes());
         http_req.extend_from_slice(b"Connection: close\r\n");
         http_req.extend_from_slice(b"Host: ");
-        let host = url.host_str()
+        let host = url
+            .host_str()
             .ok_or_else(|| Error::from(ErrorKind::InvalidResponse("Malformed redirect!")))?;
         let port = url.port().unwrap_or(80);
         http_req.extend_from_slice(host.as_bytes());
@@ -291,7 +296,8 @@ impl Handler {
 
         // Setup actual connection and start DNS query
         let sock = TSocket::new_v4(ohost).chain_err(|| ErrorKind::IO)?;
-        let id = self.reg
+        let id = self
+            .reg
             .register(&sock, amy::Event::Both)
             .chain_err(|| ErrorKind::IO)?;
         self.connections.insert(
@@ -403,7 +409,8 @@ impl Handler {
 
         // Setup actual connection and start DNS query
         let sock = TSocket::new_v4(ohost).chain_err(|| ErrorKind::IO)?;
-        let id = self.reg
+        let id = self
+            .reg
             .register(&sock, amy::Event::Both)
             .chain_err(|| ErrorKind::IO)?;
         self.connections.insert(

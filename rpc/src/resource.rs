@@ -1,6 +1,6 @@
-use std::mem;
-use std::fmt;
 use std::borrow::Cow;
+use std::fmt;
+use std::mem;
 
 use chrono::prelude::{DateTime, Utc};
 use serde;

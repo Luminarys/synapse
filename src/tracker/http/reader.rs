@@ -54,19 +54,22 @@ impl Reader {
                                 Ok(httparse::Status::Complete(i)) => {
                                     // Redirect handling
                                     let redirect_codes = [301, 302, 303, 307, 308];
-                                    if resp.code
+                                    if resp
+                                        .code
                                         .as_ref()
                                         .map(|c| redirect_codes.contains(c))
                                         .unwrap_or(false)
                                     {
-                                        let loc = resp.headers
+                                        let loc = resp
+                                            .headers
                                             .iter()
                                             .find(|h| h.name == "Location")
                                             .and_then(|h| String::from_utf8(h.value.to_vec()).ok());
                                         if loc.is_none() {
-                                            return Err(
-                                                ErrorKind::InvalidResponse("malformed HTTP").into(),
-                                            );
+                                            return Err(ErrorKind::InvalidResponse(
+                                                "malformed HTTP",
+                                            )
+                                            .into());
                                         }
                                         return Ok(ReadRes::Redirect(loc.unwrap()));
                                     }

@@ -1,17 +1,17 @@
-pub mod native;
 mod io;
+pub mod native;
 
-use std::fmt::Write as FWrite;
-use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
-use std::hash::BuildHasherDefault;
 use std::collections::{HashMap, HashSet};
+use std::fmt::Write as FWrite;
+use std::hash::BuildHasherDefault;
+use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
 
-use rand::{self, Rng};
-use rand::distributions::Alphanumeric;
 use byteorder::{BigEndian, ByteOrder};
+use fnv;
 use metrohash::MetroHash;
 use openssl::sha;
-use fnv;
+use rand::distributions::Alphanumeric;
+use rand::{self, Rng};
 
 pub type FHashMap<K, V> = fnv::FnvHashMap<K, V>;
 pub type FHashSet<T> = fnv::FnvHashSet<T>;
@@ -54,7 +54,7 @@ pub fn sha1_hash(data: &[u8]) -> [u8; 20] {
 }
 
 pub fn peer_rpc_id(torrent: &[u8; 20], peer: u64) -> String {
-    const PEER_ID: &'static [u8] = b"PEER";
+    const PEER_ID: &[u8] = b"PEER";
     let mut idx = [0u8; 8];
     BigEndian::write_u64(&mut idx[..], peer);
 
@@ -66,7 +66,7 @@ pub fn peer_rpc_id(torrent: &[u8; 20], peer: u64) -> String {
 }
 
 pub fn file_rpc_id(torrent: &[u8; 20], file: &str) -> String {
-    const FILE_ID: &'static [u8] = b"FILE";
+    const FILE_ID: &[u8] = b"FILE";
     let mut ctx = sha::Sha1::new();
     ctx.update(torrent);
     ctx.update(FILE_ID);
@@ -75,7 +75,7 @@ pub fn file_rpc_id(torrent: &[u8; 20], file: &str) -> String {
 }
 
 pub fn trk_rpc_id(torrent: &[u8; 20], url: &str) -> String {
-    const TRK_ID: &'static [u8] = b"TRK";
+    const TRK_ID: &[u8] = b"TRK";
     let mut ctx = sha::Sha1::new();
     ctx.update(torrent);
     ctx.update(TRK_ID);
@@ -132,10 +132,7 @@ fn hex_to_bit(c: char) -> Option<u8> {
 
 pub fn bytes_to_addr(p: &[u8]) -> SocketAddr {
     let ip = Ipv4Addr::new(p[0], p[1], p[2], p[3]);
-    SocketAddr::V4(SocketAddrV4::new(
-        ip,
-        BigEndian::read_u16(&p[4..]),
-    ))
+    SocketAddr::V4(SocketAddrV4::new(ip, BigEndian::read_u16(&p[4..])))
 }
 
 pub fn addr_to_bytes(addr: &SocketAddr) -> [u8; 6] {

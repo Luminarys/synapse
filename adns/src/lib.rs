@@ -1,11 +1,11 @@
 extern crate dns_parser;
 extern crate resolv_conf;
 
-use std::time::{Duration, Instant};
-use std::io::{self, Read};
-use std::fs::File;
-use std::net::{IpAddr, SocketAddr, UdpSocket};
 use std::collections::HashMap;
+use std::fs::File;
+use std::io::{self, Read};
+use std::net::{IpAddr, SocketAddr, UdpSocket};
+use std::time::{Duration, Instant};
 
 const QUERY_TIMEOUT_MS: u64 = 1000;
 
@@ -78,7 +78,8 @@ impl Resolver {
             io::Error::new(io::ErrorKind::Other, format!("invalid resolv.conf: {}", e))
         })?;
 
-        let servers: Vec<_> = cfg.nameservers
+        let servers: Vec<_> = cfg
+            .nameservers
             .into_iter()
             .filter_map(|ip| match ip {
                 resolv_conf::ScopedIp::V4(ip) => Some(SocketAddr::new(IpAddr::V4(ip), 53)),
@@ -320,12 +321,10 @@ mod tests {
             .unwrap();
         assert_eq!(count, 2);
 
-        assert!(
-            resolver
-                .query(&mut sock, 0, "google.com")
-                .unwrap()
-                .is_some()
-        );
+        assert!(resolver
+            .query(&mut sock, 0, "google.com")
+            .unwrap()
+            .is_some());
 
         resolver
             .query(&mut sock, 0, "thiswebsiteshouldexit12589t69.com")

@@ -1,23 +1,23 @@
+mod message;
 pub mod reader;
 pub mod writer;
-mod message;
 
 use std::net::SocketAddr;
-use std::{cmp, fmt, io, mem, time};
 use std::net::TcpStream;
+use std::{cmp, fmt, io, mem, time};
 
 pub use self::message::Message;
 use self::reader::{RRes, Reader};
 use self::writer::Writer;
-use socket::Socket;
-use torrent::{Bitfield, Info, Torrent};
-use throttle::Throttle;
+use bencode;
 use control::cio;
 use rpc::{self, resource};
-use bencode;
+use socket::Socket;
+use stat;
+use throttle::Throttle;
+use torrent::{Bitfield, Info, Torrent};
 use tracker;
 use util;
-use stat;
 use {CONFIG, DHT_EXT};
 
 error_chain! {
@@ -412,17 +412,22 @@ impl<T: cio::CIO> Peer<T> {
             }
             Message::Extension { id, ref payload } => {
                 if id == 0 {
-                    let b = bencode::decode_buf(payload)
-                        .map_err(|_| ErrorKind::ProtocolError("Invalid bencode in ext handshake"))?;
+                    let b = bencode::decode_buf(payload).map_err(|_| {
+                        ErrorKind::ProtocolError("Invalid bencode in ext handshake")
+                    })?;
                     let mut d = b.into_dict().ok_or_else(|| {
                         ErrorKind::ProtocolError("Invalid bencode type in ext handshake")
                     })?;
                     let mut m = d.remove("m").and_then(|v| v.into_dict()).ok_or_else(|| {
                         ErrorKind::ProtocolError("Invalid metadata in in ext handshake")
                     })?;
-                    self.ext_ids.ut_meta = m.remove("ut_metadata").and_then(|v| v.into_int())
+                    self.ext_ids.ut_meta = m
+                        .remove("ut_metadata")
+                        .and_then(|v| v.into_int())
                         .map(|v| v as u8);
-                    self.ext_ids.ut_pex = m.remove("ut_pex").and_then(|v| v.into_int())
+                    self.ext_ids.ut_pex = m
+                        .remove("ut_pex")
+                        .and_then(|v| v.into_int())
                         .map(|v| v as u8);
                 }
             }
@@ -471,18 +476,19 @@ impl<T: cio::CIO> Peer<T> {
     fn send_rpc_info(&mut self) {
         if let Some(cid) = self.cid {
             let id = util::peer_rpc_id(&self.t_hash, self.id as u64);
-            self.cio.msg_rpc(rpc::CtlMessage::Extant(vec![
-                resource::Resource::Peer(resource::Peer {
-                    id,
-                    torrent_id: util::hash_to_id(&self.t_hash[..]),
-                    client_id: util::hash_to_id(&cid[..]),
-                    ip: self.addr.to_string(),
-                    rate_up: 0,
-                    rate_down: 0,
-                    availability: self.piece_count as f32 / self.pieces.len() as f32,
-                    ..Default::default()
-                }),
-            ]));
+            self.cio
+                .msg_rpc(rpc::CtlMessage::Extant(vec![resource::Resource::Peer(
+                    resource::Peer {
+                        id,
+                        torrent_id: util::hash_to_id(&self.t_hash[..]),
+                        client_id: util::hash_to_id(&cid[..]),
+                        ip: self.addr.to_string(),
+                        rate_up: 0,
+                        rate_down: 0,
+                        availability: self.piece_count as f32 / self.pieces.len() as f32,
+                        ..Default::default()
+                    },
+                )]));
         }
     }
 
@@ -501,9 +507,11 @@ impl<T: cio::CIO> Peer<T> {
 
     pub fn send_rpc_removal(&mut self) {
         if self.ready() {
-            self.cio.msg_rpc(rpc::CtlMessage::Removed(vec![
-                util::peer_rpc_id(&self.t_hash, self.id as u64),
-            ]));
+            self.cio
+                .msg_rpc(rpc::CtlMessage::Removed(vec![util::peer_rpc_id(
+                    &self.t_hash,
+                    self.id as u64,
+                )]));
         }
     }
 }
@@ -536,9 +544,9 @@ impl ExtIDs {
 #[cfg(test)]
 mod tests {
     use super::Peer;
+    use buffers::Buffer;
     use control::cio::{test, CIO};
     use torrent::Message;
-    use buffers::Buffer;
 
     #[test]
     fn test_cancel() {
@@ -573,7 +581,8 @@ mod tests {
             length: 16_384,
         };
         peer.handle_msg(&mut c).unwrap();
-        let wq = tcio.get_peer(peer.id, |p| p.writer.write_queue.clone())
+        let wq = tcio
+            .get_peer(peer.id, |p| p.writer.write_queue.clone())
             .unwrap();
         assert_eq!(wq.len(), 2);
         assert_eq!(wq[0], p1);

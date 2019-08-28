@@ -1,7 +1,7 @@
 use std::f32;
 
-use regex::{self, Regex};
 use chrono::{DateTime, Utc};
+use regex::{self, Regex};
 
 use resource::ResourceKind;
 
@@ -109,9 +109,11 @@ impl Criterion {
                 _ => items.iter().any(|f| self.match_field(f, op, v)),
             },
             (f, &Value::V(ref v)) => match op {
-                Operation::In => v.iter()
+                Operation::In => v
+                    .iter()
                     .any(|item| self.match_field(f, Operation::Eq, item)),
-                Operation::NotIn => v.iter()
+                Operation::NotIn => v
+                    .iter()
                     .all(|item| self.match_field(f, Operation::Neq, item)),
                 _ => false,
             },

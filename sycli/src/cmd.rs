@@ -1,17 +1,17 @@
-use std::{cmp, fs, mem};
-use std::path::Path;
-use std::io::{self, Read};
 use std::borrow::Cow;
+use std::io::{self, Read};
+use std::path::Path;
+use std::{cmp, fs, mem};
 
 use base64;
 use openssl::sha;
+use prettytable::Table;
 use reqwest::Client as HClient;
 use serde_json as json;
-use prettytable::Table;
 use url::Url;
 
-use rpc::message::{self, CMessage, SMessage};
 use rpc::criterion::{Criterion, Operation, Value};
+use rpc::message::{self, CMessage, SMessage};
 use rpc::resource::{CResourceUpdate, Resource, ResourceKind, SResourceUpdate, Server};
 
 use client::Client;
@@ -45,7 +45,8 @@ fn add_file(
 ) -> Result<()> {
     let mut torrent = Vec::new();
     let mut f = fs::File::open(file).chain_err(|| ErrorKind::FileIO)?;
-    f.read_to_end(&mut torrent).chain_err(|| ErrorKind::FileIO)?;
+    f.read_to_end(&mut torrent)
+        .chain_err(|| ErrorKind::FileIO)?;
 
     let msg = CMessage::UploadTorrent {
         serial: c.next_serial(),
@@ -144,13 +145,11 @@ pub fn dl(mut c: Client, url: &str, name: &str) -> Result<()> {
         let msg = CMessage::FilterSubscribe {
             serial: c.next_serial(),
             kind: ResourceKind::File,
-            criteria: vec![
-                Criterion {
-                    field: "torrent_id".to_owned(),
-                    op: Operation::Eq,
-                    value: Value::S(resources[0].id().to_owned()),
-                },
-            ],
+            criteria: vec![Criterion {
+                field: "torrent_id".to_owned(),
+                op: Operation::Eq,
+                value: Value::S(resources[0].id().to_owned()),
+            }],
         };
         if let SMessage::ResourcesExtant { ids, .. } = c.rr(msg)? {
             get_resources(&mut c, ids.iter().map(Cow::to_string).collect())?
@@ -566,12 +565,13 @@ pub fn add_tags(mut c: Client, id: &str, tags: Vec<&str>) -> Result<()> {
             tag_array.push(t);
         }
     }
-    let tag_obj = json::Value::Array(tag_array.into_iter()
-                    .map(|t| json::Value::String(t))
-                    .collect());
-    resource.user_data = Some(json!({
-            "tags": tag_obj
-        }));
+    let tag_obj = json::Value::Array(
+        tag_array
+            .into_iter()
+            .map(|t| json::Value::String(t))
+            .collect(),
+    );
+    resource.user_data = Some(json!({ "tags": tag_obj }));
     let msg = CMessage::UpdateResource {
         serial: c.next_serial(),
         resource,
@@ -584,12 +584,13 @@ pub fn remove_tags(mut c: Client, id: &str, tags: Vec<&str>) -> Result<()> {
     let (id, mut tag_array) = get_tags_(&mut c, id)?;
     resource.id = id;
     tag_array.retain(|t| !tags.contains(&t.as_str()));
-    let tag_obj = json::Value::Array(tag_array.into_iter()
-                    .map(|t| json::Value::String(t))
-                    .collect());
-    resource.user_data = Some(json!({
-            "tags": tag_obj
-        }));
+    let tag_obj = json::Value::Array(
+        tag_array
+            .into_iter()
+            .map(|t| json::Value::String(t))
+            .collect(),
+    );
+    resource.user_data = Some(json!({ "tags": tag_obj }));
     let msg = CMessage::UpdateResource {
         serial: c.next_serial(),
         resource,
@@ -610,14 +611,17 @@ fn get_tags_(c: &mut Client, id: &str) -> Result<(String, Vec<String>)> {
     }
     let torrent = sres[0].as_torrent_mut();
     let prev_data = mem::replace(&mut torrent.user_data, json::Value::Null);
-    Ok((torrent.id.clone(), match prev_data.pointer("/tags") {
-        Some(json::Value::Array(a)) => {
-            a.into_iter().filter_map(json::Value::as_str)
+    Ok((
+        torrent.id.clone(),
+        match prev_data.pointer("/tags") {
+            Some(json::Value::Array(a)) => a
+                .into_iter()
+                .filter_map(json::Value::as_str)
                 .map(|s| s.to_owned())
-                .collect()
-        }
-        _ => vec![],
-    }))
+                .collect(),
+            _ => vec![],
+        },
+    ))
 }
 
 pub fn set_torrent_pri(mut c: Client, id: &str, pri: &str) -> Result<()> {
@@ -672,13 +676,11 @@ fn print_torrent_res(c: &mut Client, id: &str, kind: ResourceKind, output: &str)
     let files = search(
         c,
         kind,
-        vec![
-            Criterion {
-                field: "torrent_id".to_owned(),
-                op: Operation::Eq,
-                value: Value::S(torrent[0].id().to_owned()),
-            },
-        ],
+        vec![Criterion {
+            field: "torrent_id".to_owned(),
+            op: Operation::Eq,
+            value: Value::S(torrent[0].id().to_owned()),
+        }],
     )?;
     for file in files {
         match output {
@@ -734,25 +736,21 @@ fn search_torrent_name(c: &mut Client, name: &str) -> Result<Vec<Resource>> {
     let mut res = search(
         c,
         ResourceKind::Torrent,
-        vec![
-            Criterion {
-                field: "id".to_owned(),
-                op: Operation::Eq,
-                value: Value::S(name.to_owned()),
-            },
-        ],
+        vec![Criterion {
+            field: "id".to_owned(),
+            op: Operation::Eq,
+            value: Value::S(name.to_owned()),
+        }],
     )?;
     if res.is_empty() {
         res = search(
             c,
             ResourceKind::Torrent,
-            vec![
-                Criterion {
-                    field: "name".to_owned(),
-                    op: Operation::ILike,
-                    value: Value::S(format!("%{}%", name)),
-                },
-            ],
+            vec![Criterion {
+                field: "name".to_owned(),
+                op: Operation::ILike,
+                value: Value::S(format!("%{}%", name)),
+            }],
         )?;
     }
     Ok(res)
@@ -819,7 +817,8 @@ fn fmt_bytes(num: f64) -> String {
     );
     let pretty_bytes = format!("{:.2}", num / delimiter.powi(exponent))
         .parse::<f64>()
-        .unwrap() * 1_f64;
+        .unwrap()
+        * 1_f64;
     let unit = units[exponent as usize];
     format!("{} {}", pretty_bytes, unit)
 }

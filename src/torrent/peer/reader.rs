@@ -61,12 +61,9 @@ impl Reader {
 
     pub fn readable<R: Read>(&mut self, conn: &mut R) -> RRes {
         let res = self.readable_(conn);
-        match &res {
-            &RRes::Success(_) => {
-                self.state = State::Len;
-                self.idx = 0;
-            }
-            _ => {}
+        if let RRes::Success(_) = &res {
+            self.state = State::Len;
+            self.idx = 0;
         }
         res
     }
@@ -115,7 +112,7 @@ impl Reader {
                     IOR::Complete => {
                         self.idx = 5;
                         match self.prefix[4] {
-                            0...3 => {
+                            0..=3 => {
                                 let id = self.prefix[4];
                                 let msg = if id == 0 {
                                     Message::Choke
@@ -220,7 +217,7 @@ impl Reader {
                                 index,
                                 begin,
                                 length,
-                                data: mem::replace(data, None).unwrap(),
+                                data: data.take().unwrap(),
                             });
                         }
                         IOR::Incomplete(a) => self.idx += a,
@@ -310,8 +307,8 @@ impl State {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use torrent::peer::Message;
     use std::io::{self, Read};
+    use torrent::peer::Message;
 
     /// Cursor to emulate a mio socket using readv.
     struct Cursor<'a> {
@@ -405,9 +402,11 @@ mod tests {
         let mut data = Cursor::new(&v);
         // Test one shot
         match r.readable(&mut data).unwrap().unwrap() {
-            Message::Bitfield(ref pf) => for i in 0..32 {
-                assert!(pf.has_bit(i as u64));
-            },
+            Message::Bitfield(ref pf) => {
+                for i in 0..32 {
+                    assert!(pf.has_bit(i as u64));
+                }
+            }
             _ => {
                 unreachable!();
             }

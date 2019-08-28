@@ -1,6 +1,6 @@
 use std::collections::HashMap;
-use std::time;
 use std::sync::Arc;
+use std::time;
 
 use control::cio;
 use torrent::{Bitfield, Info, Peer};
@@ -123,9 +123,9 @@ impl Picker {
     }
 
     pub fn done(&mut self) {
-       self.downloading = HashMap::with_capacity(0);
-       self.blocks = vec![];
-       self.stalled = FHashSet::default();
+        self.downloading = HashMap::with_capacity(0);
+        self.blocks = vec![];
+        self.stalled = FHashSet::default();
     }
 
     pub fn tick(&mut self) {
@@ -159,14 +159,14 @@ impl Picker {
     pub fn pick<T: cio::CIO>(&mut self, peer: &mut Peer<T>) -> Option<Block> {
         if !self.stalled.is_empty() {
             let block = self.stalled.iter().cloned().find(|b| {
-                peer.pieces().has_bit(b.index as u64)
+                peer.pieces().has_bit(u64::from(b.index))
                     && !self.downloading[b].has_peer(peer.id())
             });
             if let Some(b) = block {
                 self.stalled.remove(&b);
-                self.downloading
-                    .get_mut(&b)
-                    .map(|req| req.force_rereq(peer.id(), peer.rank));
+                if let Some(req) = self.downloading.get_mut(&b) {
+                    req.force_rereq(peer.id(), peer.rank);
+                }
                 return Some(b);
             }
         }
@@ -175,10 +175,9 @@ impl Picker {
             PickerKind::Sequential(ref mut p) => p.pick(peer),
             PickerKind::Rarest(ref mut p) => p.pick(peer),
         };
-        let res = piece
+        piece
             .map(|p| self.pick_piece(p, peer.id(), peer.rank))
-            .or_else(|| self.pick_dl(peer));
-        res
+            .or_else(|| self.pick_dl(peer))
     }
 
     /// Picks a block from a given piece for a peer
@@ -205,7 +204,8 @@ impl Picker {
 
     /// Attempts to pick the highest priority piece in the dl q
     fn pick_dl<T: cio::CIO>(&mut self, peer: &Peer<T>) -> Option<Block> {
-        let mut dl: Vec<_> = self.downloading
+        let mut dl: Vec<_> = self
+            .downloading
             .iter_mut()
             .filter(|&(_, ref req)| req.num_reqd < MAX_DUP_REQS && !req.has_peer(peer.id()))
             .take(MAX_DL_REREQ)
@@ -269,10 +269,8 @@ impl Picker {
     pub fn add_peer<T: cio::CIO>(&mut self, peer: &Peer<T>) {
         if peer.pieces().complete() {
             self.seeders += 1;
-        } else {
-            if let PickerKind::Rarest(ref mut p) = self.picker {
-                p.add_peer(peer);
-            }
+        } else if let PickerKind::Rarest(ref mut p) = self.picker {
+            p.add_peer(peer);
         }
     }
 
@@ -280,14 +278,13 @@ impl Picker {
         // Have to consider situation where a peer became a seeder but joined as leecher.
         if peer.pieces().complete() && self.seeders > 0 {
             self.seeders -= 1;
-        } else {
-            if let PickerKind::Rarest(ref mut p) = self.picker {
-                p.remove_peer(peer);
-            }
+        } else if let PickerKind::Rarest(ref mut p) = self.picker {
+            p.remove_peer(peer);
         }
 
         for (_, req) in self.downloading.iter_mut() {
-            if let Some((idx, _)) = req.reqd_from
+            if let Some((idx, _)) = req
+                .reqd_from
                 .iter()
                 .enumerate()
                 .find(|&(_, id)| *id == peer.id())
