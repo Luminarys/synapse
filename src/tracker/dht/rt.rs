@@ -392,8 +392,10 @@ impl RoutingTable {
                 self.remove_node(&id);
             }
 
+            // Bad response to initialization ping
             (TransactionKind::Initialization, _) => {
-                unreachable!();
+                // No need to do anything here, we haven't added the node to the routing
+                // table yet.
             }
         }
         Err(reqs)
