@@ -108,11 +108,11 @@ impl Choker {
         let (slowest, _) = self.unchoked.iter().enumerate().fold(
             (0, ::std::u32::MAX),
             |(slowest, min), (idx, id)| {
-                let (_, dl) = peers.get_mut(id).unwrap().flush();
-                if dl < min {
-                    (idx, dl)
-                } else {
-                    (slowest, min)
+                match peers.get_mut(id).map(|peer| peer.flush()) {
+                    Some((_, dl)) if dl < min =>
+                        (idx, dl),
+                    _ =>
+                        (slowest, min),
                 }
             },
         );
