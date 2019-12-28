@@ -136,6 +136,6 @@ fn init_signals() -> nix::Result<()> {
 
 extern "C" fn sig_handler(_: libc::c_int) {
     unsafe {
-        unistd::write(PIPE.1, &[0u8]).is_ok();
+        unistd::write(PIPE.1, &[0u8]).ok();
     }
 }

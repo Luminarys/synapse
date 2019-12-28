@@ -1,5 +1,5 @@
 use super::{Block, Picker};
-use rand::distributions::{IndependentSample, Range};
+use rand::distributions::{Distribution, Range};
 use std::cell::RefCell;
 use std::collections::HashMap;
 use torrent::{Bitfield, Info, Peer as TGPeer};
@@ -91,7 +91,7 @@ impl Simulation {
                         peer.requests.pop().unwrap()
                     } else {
                         let b = Range::new(0, peer.requests.len());
-                        peer.requests.remove(b.ind_sample(&mut rng))
+                        peer.requests.remove(b.sample(&mut rng))
                     };
                     let ref mut received = self.peers.borrow_mut()[req.peer];
                     received
