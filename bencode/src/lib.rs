@@ -249,7 +249,7 @@ fn do_decode<R: io::Read>(bytes: &mut R, first: bool) -> Result<BEncode, BError>
                 }
                 None => return Err(BError::InvalidChar(b'e')),
             },
-            Ok(d @ b'0'...b'9') => {
+            Ok(d @ b'0'..=b'9') => {
                 if cstack.is_empty() && !vstack.is_empty() {
                     return Err(BError::EOF);
                 }

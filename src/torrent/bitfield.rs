@@ -310,7 +310,8 @@ mod tests {
         for i in 4..7 {
             pf.set_bit(i as u64);
         }
-        pf.iter()
+        let _ = pf
+            .iter()
             .map(|r| {
                 assert!(r > 3 && r < 7);
             })

@@ -1,13 +1,13 @@
-use std::mem;
 use std::ops::{Deref, DerefMut};
 use std::sync::atomic;
 
 const MAX_BUFS: usize = 4096;
+const BUF_SIZE: usize = 16_384;
 static BUF_COUNT: atomic::AtomicUsize = atomic::AtomicUsize::new(0);
 
 #[derive(Clone)]
 pub struct Buffer {
-    data: Box<[u8; 16_384]>,
+    data: Box<[u8; BUF_SIZE]>,
 }
 
 impl Buffer {
@@ -16,16 +16,14 @@ impl Buffer {
             return None;
         }
         BUF_COUNT.fetch_add(1, atomic::Ordering::AcqRel);
-        unsafe {
-            Some(Buffer {
-                data: Box::new(mem::uninitialized()),
-            })
-        }
+        Some(Buffer {
+            data: Box::new([0; BUF_SIZE]),
+        })
     }
 }
 
 impl Deref for Buffer {
-    type Target = Box<[u8; 16_384]>;
+    type Target = [u8; BUF_SIZE];
 
     fn deref(&self) -> &Self::Target {
         &self.data
