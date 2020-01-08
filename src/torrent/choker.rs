@@ -37,10 +37,11 @@ impl Choker {
 
     fn unchoke_random<T: cio::CIO>(&mut self, peers: &mut UHashMap<Peer<T>>) -> Option<usize> {
         if let Some(random_id) = random_sample(self.interested.iter()).cloned() {
-            let mut peer = peers.get_mut(&random_id).unwrap();
-            self.interested.remove(&random_id);
-            self.add_peer(&mut peer);
-            Some(random_id)
+            peers.get_mut(&random_id).map(|mut peer| {
+                self.interested.remove(&random_id);
+                self.add_peer(&mut peer);
+                random_id
+            })
         } else {
             None
         }
@@ -86,13 +87,11 @@ impl Choker {
         let (slowest, _) = self.unchoked.iter().enumerate().fold(
             (0, ::std::u32::MAX),
             |(slowest, min), (idx, id)| {
-                let (ul, _) = peers.get_mut(id).unwrap().flush();
-                if ul < min {
-                    (idx, ul)
-                } else {
-                    (slowest, min)
+                match peers.get_mut(id).map(Peer::flush) {
+                    Some((ul, _)) if ul < min => (idx, ul),
+                    _ => (slowest, min),
                 }
-            },
+            }
         );
         Some(self.swap_peer(slowest, peers))
     }
@@ -108,7 +107,7 @@ impl Choker {
         let (slowest, _) = self.unchoked.iter().enumerate().fold(
             (0, ::std::u32::MAX),
             |(slowest, min), (idx, id)| {
-                match peers.get_mut(id).map(|peer| peer.flush()) {
+                match peers.get_mut(id).map(Peer::flush) {
                     Some((_, dl)) if dl < min =>
                         (idx, dl),
                     _ =>
@@ -122,8 +121,7 @@ impl Choker {
     fn swap_peer<T: cio::CIO>(&mut self, idx: usize, peers: &mut UHashMap<Peer<T>>) -> SwapRes {
         let id = self.unchoked.remove(idx);
         {
-            let peer = peers.get_mut(&id).unwrap();
-            peer.choke();
+            peers.get_mut(&id).map(Peer::choke);
         }
 
         // Unchoke one random interested peer
