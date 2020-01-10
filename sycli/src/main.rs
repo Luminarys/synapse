@@ -458,7 +458,7 @@ fn main() {
                     let single_crit = serde_json::from_str(f).map(|c| vec![c]).ok();
                     single_crit.or_else(|| serde_json::from_str(f).ok())
                 })
-                .unwrap_or(vec![]);
+                .unwrap_or_else(Vec::new);
             let kind = args.value_of("kind").unwrap();
             let output = args.value_of("output").unwrap();
             let res = cmd::list(client, kind, crit, output);

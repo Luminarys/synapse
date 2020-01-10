@@ -131,7 +131,10 @@ fn del_torrent(c: &mut Client, torrent: &str, artifacts: bool) -> Result<()> {
         );
         for res in resources.into_iter().take(3) {
             if let Resource::Torrent(t) = res {
-                eprintln!("{}", t.name.unwrap_or("[Unknown Magnet]".to_owned()));
+                eprintln!(
+                    "{}",
+                    t.name.unwrap_or_else(|| "[Unknown Magnet]".to_owned())
+                );
             }
         }
     }
@@ -166,7 +169,10 @@ pub fn dl(mut c: Client, url: &str, name: &str) -> Result<()> {
         );
         for res in resources.into_iter().take(3) {
             if let Resource::Torrent(t) = res {
-                eprintln!("{}", t.name.unwrap_or("[Unknown Magnet]".to_owned()));
+                eprintln!(
+                    "{}",
+                    t.name.unwrap_or_else(|| "[Unknown Magnet]".to_owned())
+                );
             }
         }
         return Ok(());
@@ -346,7 +352,10 @@ fn pause_torrent(c: &mut Client, torrent: &str) -> Result<()> {
         );
         for res in resources.into_iter().take(3) {
             if let Resource::Torrent(t) = res {
-                eprintln!("{}", t.name.unwrap_or("[Unknown Magnet]".to_owned()));
+                eprintln!(
+                    "{}",
+                    t.name.unwrap_or_else(|| "[Unknown Magnet]".to_owned())
+                );
             }
         }
     }
@@ -377,7 +386,10 @@ fn resume_torrent(c: &mut Client, torrent: &str) -> Result<()> {
         );
         for res in resources.into_iter().take(3) {
             if let Resource::Torrent(t) = res {
-                eprintln!("{}", t.name.unwrap_or("[Unknown Magnet]".to_owned()));
+                eprintln!(
+                    "{}",
+                    t.name.unwrap_or_else(|| "[Unknown Magnet]".to_owned())
+                );
             }
         }
     }
@@ -435,7 +447,7 @@ pub fn watch(mut c: Client, id: &str, output: &str, completion: bool) -> Result<
         loop {
             if let SMessage::UpdateResources { resources, .. } = c.recv()? {
                 for r in resources {
-                    if let &SResourceUpdate::TorrentTransfer { progress, .. } = &r {
+                    if let SResourceUpdate::TorrentTransfer { progress, .. } = r {
                         if completion && progress == 1.0 {
                             return Ok(());
                         }
@@ -565,12 +577,7 @@ pub fn add_tags(mut c: Client, id: &str, tags: Vec<&str>) -> Result<()> {
             tag_array.push(t);
         }
     }
-    let tag_obj = json::Value::Array(
-        tag_array
-            .into_iter()
-            .map(|t| json::Value::String(t))
-            .collect(),
-    );
+    let tag_obj = json::Value::Array(tag_array.into_iter().map(json::Value::String).collect());
     resource.user_data = Some(json::json!({ "tags": tag_obj }));
     let msg = CMessage::UpdateResource {
         serial: c.next_serial(),
@@ -584,12 +591,7 @@ pub fn remove_tags(mut c: Client, id: &str, tags: Vec<&str>) -> Result<()> {
     let (id, mut tag_array) = get_tags_(&mut c, id)?;
     resource.id = id;
     tag_array.retain(|t| !tags.contains(&t.as_str()));
-    let tag_obj = json::Value::Array(
-        tag_array
-            .into_iter()
-            .map(|t| json::Value::String(t))
-            .collect(),
-    );
+    let tag_obj = json::Value::Array(tag_array.into_iter().map(json::Value::String).collect());
     resource.user_data = Some(json::json!({ "tags": tag_obj }));
     let msg = CMessage::UpdateResource {
         serial: c.next_serial(),
@@ -615,7 +617,7 @@ fn get_tags_(c: &mut Client, id: &str) -> Result<(String, Vec<String>)> {
         torrent.id.clone(),
         match prev_data.pointer("/tags") {
             Some(json::Value::Array(a)) => a
-                .into_iter()
+                .iter()
                 .filter_map(json::Value::as_str)
                 .map(|s| s.to_owned())
                 .collect(),
@@ -702,7 +704,7 @@ fn print_torrent_res(c: &mut Client, id: &str, kind: ResourceKind, output: &str)
 pub fn status(mut c: Client) -> Result<()> {
     match search(&mut c, ResourceKind::Server, vec![])?.pop() {
         Some(Resource::Server(s)) => {
-            let vi = s.id.find("-").unwrap();
+            let vi = s.id.find('-').unwrap();
             let version = &s.id[..vi];
             println!(
                 "synapse v{}, RPC v{}.{}",
