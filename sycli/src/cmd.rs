@@ -14,8 +14,8 @@ use rpc::criterion::{Criterion, Operation, Value};
 use rpc::message::{self, CMessage, SMessage};
 use rpc::resource::{CResourceUpdate, Resource, ResourceKind, SResourceUpdate, Server};
 
-use client::Client;
-use error::{ErrorKind, Result, ResultExt};
+use crate::client::Client;
+use crate::error::{ErrorKind, Result, ResultExt};
 
 pub fn add(
     mut c: Client,
@@ -571,7 +571,7 @@ pub fn add_tags(mut c: Client, id: &str, tags: Vec<&str>) -> Result<()> {
             .map(|t| json::Value::String(t))
             .collect(),
     );
-    resource.user_data = Some(json!({ "tags": tag_obj }));
+    resource.user_data = Some(json::json!({ "tags": tag_obj }));
     let msg = CMessage::UpdateResource {
         serial: c.next_serial(),
         resource,
@@ -590,7 +590,7 @@ pub fn remove_tags(mut c: Client, id: &str, tags: Vec<&str>) -> Result<()> {
             .map(|t| json::Value::String(t))
             .collect(),
     );
-    resource.user_data = Some(json!({ "tags": tag_obj }));
+    resource.user_data = Some(json::json!({ "tags": tag_obj }));
     let msg = CMessage::UpdateResource {
         serial: c.next_serial(),
         resource,

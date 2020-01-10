@@ -1,23 +1,13 @@
 #![allow(unused_doc_comments)]
 
-extern crate clap;
 #[macro_use]
 extern crate error_chain;
 #[macro_use]
 extern crate prettytable;
-extern crate reqwest;
-extern crate serde;
 #[macro_use]
 extern crate serde_derive;
-#[macro_use]
-extern crate serde_json;
-extern crate base64;
-extern crate openssl;
-extern crate shellexpand;
 extern crate synapse_rpc as rpc;
-extern crate toml;
 extern crate tungstenite as ws;
-extern crate url;
 
 mod client;
 mod cmd;
