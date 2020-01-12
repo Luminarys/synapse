@@ -93,7 +93,7 @@ impl Choker {
                 }
             }
         );
-        Some(self.swap_peer(slowest, peers))
+        self.swap_peer(slowest, peers)
     }
 
     pub fn update_download<T: cio::CIO>(
@@ -115,22 +115,24 @@ impl Choker {
                 }
             },
         );
-        Some(self.swap_peer(slowest, peers))
+        self.swap_peer(slowest, peers)
     }
 
-    fn swap_peer<T: cio::CIO>(&mut self, idx: usize, peers: &mut UHashMap<Peer<T>>) -> SwapRes {
+    fn swap_peer<T: cio::CIO>(&mut self, idx: usize, peers: &mut UHashMap<Peer<T>>) -> Option<SwapRes> {
         let id = self.unchoked.remove(idx);
         {
             peers.get_mut(&id).map(Peer::choke);
         }
 
         // Unchoke one random interested peer
-        let r = SwapRes {
-            choked: id,
-            unchoked: self.unchoke_random(peers).unwrap(),
-        };
-        self.interested.insert(id);
-        r
+        self.unchoke_random(peers)
+            .map(|unchoked| {
+                self.interested.insert(id);
+                SwapRes {
+                    choked: id,
+                    unchoked
+                }
+            })
     }
 }
 
