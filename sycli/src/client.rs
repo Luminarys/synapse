@@ -6,7 +6,7 @@ use ws::protocol::Message as WSMessage;
 
 use rpc::message::{CMessage, SMessage, Version};
 
-use error::{ErrorKind, Result, ResultExt};
+use crate::error::{ErrorKind, Result, ResultExt};
 
 pub struct Client {
     ws: ws::WebSocket<AutoStream>,

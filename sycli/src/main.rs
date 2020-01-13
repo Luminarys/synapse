@@ -1,23 +1,13 @@
 #![allow(unused_doc_comments)]
 
-extern crate clap;
 #[macro_use]
 extern crate error_chain;
 #[macro_use]
 extern crate prettytable;
-extern crate reqwest;
-extern crate serde;
 #[macro_use]
 extern crate serde_derive;
-#[macro_use]
-extern crate serde_json;
-extern crate base64;
-extern crate openssl;
-extern crate shellexpand;
 extern crate synapse_rpc as rpc;
-extern crate toml;
 extern crate tungstenite as ws;
-extern crate url;
 
 mod client;
 mod cmd;
@@ -468,7 +458,7 @@ fn main() {
                     let single_crit = serde_json::from_str(f).map(|c| vec![c]).ok();
                     single_crit.or_else(|| serde_json::from_str(f).ok())
                 })
-                .unwrap_or(vec![]);
+                .unwrap_or_else(Vec::new);
             let kind = args.value_of("kind").unwrap();
             let output = args.value_of("output").unwrap();
             let res = cmd::list(client, kind, crit, output);
