@@ -4,10 +4,10 @@ use std::path::Path;
 use std::{cmp, fs, mem};
 
 use base64;
-use openssl::sha;
 use prettytable::Table;
 use reqwest::Client as HClient;
 use serde_json as json;
+use sha1::{Sha1, Digest};
 use url::Url;
 
 use rpc::criterion::{Criterion, Operation, Value};
@@ -185,9 +185,8 @@ pub fn dl(mut c: Client, url: &str, name: &str) -> Result<()> {
             .unwrap()
             .push("dl")
             .push(file.id());
-        let mut ctx = sha::Sha1::new();
-        ctx.update(format!("{}{}", file.id(), token).as_bytes());
-        let dl_token = base64::encode(&ctx.finish()[..]);
+        let digest = Sha1::digest(format!("{}{}", file.id(), token).as_bytes());
+        let dl_token = base64::encode(&digest.as_slice());
         dl_url.set_query(Some(&format!("token={}", dl_token)));
 
         let client = HClient::new();
