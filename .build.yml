@@ -22,3 +22,5 @@ tasks:
       export PFILE="$(basename ${DEBFILE})"
       export PN="$(cut -d_ -f1 <<< "${PFILE}")" PV="$(cut -d_ -f2 <<< "${PFILE}" | cut -d- -f1)"
       curl --netrc-file ~/.bintray_netrc -T ${DEBFILE} -XPUT "https://api.bintray.com/content/hummer12007/rustydebs/${PN}/${PV}/pool/${PN::1}/${PN}/${PFILE};deb_distribution=stretch;deb_component=main;deb_architecture=amd64;publish=1;override=1"
+      curl --netrc-file ~/.bintray_netrc -T ${DEBFILE} -XPUT "https://api.bintray.com/content/hummer12007/rustydebs/${PN}/${PV}/pool/${PN::1}/${PN}/${PFILE};deb_distribution=buster;deb_component=main;deb_architecture=amd64;publish=1;override=1"
+      curl --netrc-file ~/.bintray_netrc -T ${DEBFILE} -XPUT "https://api.bintray.com/content/hummer12007/rustydebs/${PN}/${PV}/pool/${PN::1}/${PN}/${PFILE};deb_distribution=sid;deb_component=main;deb_architecture=amd64;publish=1;override=1"
