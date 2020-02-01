@@ -333,7 +333,7 @@ mod tests {
         let d = BEncode::Dict(map);
         v = Vec::new();
         d.encode(&mut v).unwrap();
-        println!("{:?}", ::std::str::from_utf8(&v));
+        println!("{:?}", std::str::from_utf8(&v));
         assert_eq!(v, b"d4:asdfi-10e6:qwertyi-10ee");
 
         decode_encode(b"d4:asdfi-10e6:qwertyi-10ee");

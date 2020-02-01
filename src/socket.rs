@@ -228,7 +228,7 @@ impl io::Read for TSocket {
             }
             TConn::SSLC(conn) => match conn.handshake() {
                 Ok(s) => {
-                    res = Ok(::std::usize::MAX);
+                    res = Ok(std::usize::MAX);
                     TConn::SSL(s)
                 }
                 Err(HandshakeError::WouldBlock(s)) => {
@@ -247,7 +247,7 @@ impl io::Read for TSocket {
             _ => return util::io_err("Socket in failed state!"),
         };
 
-        if let Ok(::std::usize::MAX) = res {
+        if let Ok(std::usize::MAX) = res {
             debug!("SSL upgrade succeeded!");
             self.read(buf)
         } else {
@@ -267,7 +267,7 @@ impl io::Write for TSocket {
             }
             TConn::SSLC(conn) => match conn.handshake() {
                 Ok(s) => {
-                    res = Ok(::std::usize::MAX);
+                    res = Ok(std::usize::MAX);
                     TConn::SSL(s)
                 }
                 Err(HandshakeError::WouldBlock(s)) => {
@@ -283,7 +283,7 @@ impl io::Write for TSocket {
             _ => return util::io_err("Socket in failed state!"),
         };
 
-        if let Ok(::std::usize::MAX) = res {
+        if let Ok(std::usize::MAX) = res {
             debug!("SSL upgrade succeeded!");
             self.write(buf)
         } else {

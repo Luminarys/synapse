@@ -86,7 +86,7 @@ macro_rules! log(
                        time.format("%x %X"), module_path!(), line!(), $level).ok();
                 write!(&mut msg, $fmt).ok();
                 write!(&mut msg, "\n").ok();
-                let stderr = ::std::io::stderr();
+                let stderr = std::io::stderr();
                 let mut handle = stderr.lock();
                 handle.write_all(&msg).ok();
             }
@@ -107,7 +107,7 @@ macro_rules! log(
                        time.format("%x %X"), module_path!(), line!(), $level).ok();
                 write!(&mut msg, $fmt, $($arg)*).ok();
                 write!(&mut msg, "\n").ok();
-                let stderr = ::std::io::stderr();
+                let stderr = std::io::stderr();
                 let mut handle = stderr.lock();
                 handle.write_all(&msg).ok();
             }

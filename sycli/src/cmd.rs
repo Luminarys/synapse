@@ -7,7 +7,7 @@ use base64;
 use prettytable::Table;
 use reqwest::Client as HClient;
 use serde_json as json;
-use sha1::{Sha1, Digest};
+use sha1::{Digest, Sha1};
 use url::Url;
 
 use rpc::criterion::{Criterion, Operation, Value};
@@ -426,7 +426,7 @@ pub fn watch(mut c: Client, id: &str, output: &str, completion: bool) -> Result<
     }
     let mut res = results.remove(0).into_owned();
     if let Resource::Torrent(ref t) = res {
-        if t.progress - 1.0 <= ::std::f32::EPSILON && completion {
+        if t.progress - 1.0 <= std::f32::EPSILON && completion {
             return Ok(());
         }
     }

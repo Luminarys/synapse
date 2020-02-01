@@ -235,7 +235,7 @@ impl<T: cio::CIO> Torrent<T> {
             None
         } else {
             status.state = StatusState::Magnet;
-            Some(::std::usize::MAX)
+            Some(std::usize::MAX)
         };
         let info_bytes = if info_idx.is_none() {
             info.to_bencode().encode_to_buf()
@@ -359,7 +359,7 @@ impl<T: cio::CIO> Torrent<T> {
         let info_idx = if info.complete() {
             None
         } else {
-            Some(::std::usize::MAX)
+            Some(std::usize::MAX)
         };
         let info_bytes = if info_idx.is_none() {
             info.to_bencode().encode_to_buf()
@@ -1123,7 +1123,7 @@ impl<T: cio::CIO> Torrent<T> {
                     .remove("metadata_size")
                     .and_then(|v| v.into_int())
                     .ok_or(())?;
-                if let Some(::std::usize::MAX) = self.info_idx {
+                if let Some(std::usize::MAX) = self.info_idx {
                     if size % 16_384 == 0 {
                         self.info_idx = Some(size as usize / 16_384 - 1);
                     } else {
