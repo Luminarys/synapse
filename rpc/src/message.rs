@@ -157,8 +157,8 @@ pub struct Error {
 impl Version {
     pub fn current() -> Version {
         Version {
-            major: ::MAJOR_VERSION,
-            minor: ::MINOR_VERSION,
+            major: crate::MAJOR_VERSION,
+            minor: crate::MINOR_VERSION,
         }
     }
 }
