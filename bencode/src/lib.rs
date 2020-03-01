@@ -140,8 +140,8 @@ impl BEncode {
         }
 
         let mut toks = vec![Token::B(self)];
-        while !toks.is_empty() {
-            match toks.pop().unwrap() {
+        while let Some(tok) = toks.pop() {
+            match tok {
                 Token::B(&BEncode::Int(i)) => {
                     write!(w, "i{}e", i)?;
                 }
