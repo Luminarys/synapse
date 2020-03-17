@@ -1,8 +1,7 @@
 use std::collections::BTreeMap;
 use std::error::Error;
-use std::fmt;
+use std::{cmp, fmt, str};
 use std::io::{self, Cursor};
-use std::str;
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum BEncode {
@@ -21,6 +20,10 @@ pub enum BError {
     EOF,
     IO,
 }
+
+/// This controls the maximum allocation size we'll perform
+/// at once. Needed for parsing strings without OOMing
+const MAX_ALLOC_LEN: usize = 4 * 1024 * 1024;
 
 impl fmt::Display for BError {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
@@ -256,8 +259,15 @@ fn do_decode<R: io::Read>(bytes: &mut R, first: bool) -> Result<BEncode, BError>
                 let mut slen = read_until(bytes, b':', &mut buf)?;
                 slen.insert(0, d);
                 let len = decode_int(slen)?;
-                let mut v = vec![0u8; len as usize];
-                bytes.read_exact(&mut v).map_err(|_| BError::EOF)?;
+                let mut v = vec![];
+                while v.len() < len as usize {
+                    let to_read = cmp::min(MAX_ALLOC_LEN, len as usize - v.len());
+                    v.resize(v.len() + to_read, 0u8);
+                    let read_start = v.len() - to_read;
+                    let read_end = v.len();
+                    bytes.read_exact(&mut v[read_start..read_end])
+                        .map_err(|_| BError::EOF)?;
+                }
                 vstack.push(BEncode::String(v));
             }
             Err(e) => return Err(e),
@@ -356,6 +366,7 @@ mod tests {
     #[test]
     fn test_invalid() {
         let badint = b"i-123.4e";
+        let badint_oom = b"7777777777777:";
         let twoint = b"i123ei123e";
         let badstr = b"5:eeeeeeeeeeee";
         let badstr2 = b"5:e";
@@ -368,6 +379,7 @@ mod tests {
         let baddict = b"d1:ae";
         let baddict2 = b"di123ei123ee";
         assert!(decode_buf(badint).is_err());
+        assert!(decode_buf(badint_oom).is_err());
         assert!(decode_buf(twoint).is_err());
         assert!(decode_buf(badstr).is_err());
         assert!(decode_buf(badstr2).is_err());
