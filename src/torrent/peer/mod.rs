@@ -240,7 +240,7 @@ impl<T: cio::CIO> Peer<T> {
             pieces_updated: false,
             rank: t.num_peers(),
         };
-        p.send_message(Message::handshake(&t.info));
+        p.send_message(Message::handshake(&t.info.hash));
         if t.info.complete() {
             p.send_message(Message::Bitfield(t.pieces.clone()));
         }
@@ -343,7 +343,7 @@ impl<T: cio::CIO> Peer<T> {
                 self.cid = Some(id);
                 self.send_rpc_info();
             }
-            Message::Piece { length, .. } | Message::SharedPiece { length, .. } => {
+            Message::Piece { length, .. } => {
                 self.stat.add_dl(u64::from(length));
                 self.downloaded += 1;
                 self.queued -= 1;
@@ -464,7 +464,7 @@ impl<T: cio::CIO> Peer<T> {
 
     pub fn send_message(&mut self, msg: Message) {
         match msg {
-            Message::SharedPiece { length, .. } | Message::Piece { length, .. } => {
+            Message::Piece { length, .. } => {
                 self.uploaded += 1;
                 self.stat.add_ul(u64::from(length));
             }

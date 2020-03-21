@@ -1,11 +1,9 @@
 use std::fmt;
 use std::io::{self, Write};
-use std::sync::Arc;
 
 use byteorder::{BigEndian, WriteBytesExt};
 
 use buffers::Buffer;
-use torrent::info::Info as TorrentInfo;
 use torrent::Bitfield;
 
 pub enum Message {
@@ -35,12 +33,6 @@ pub enum Message {
         begin: u32,
         length: u32,
         data: Buffer,
-    },
-    SharedPiece {
-        index: u32,
-        begin: u32,
-        length: u32,
-        data: Arc<Buffer>,
     },
     Cancel {
         index: u32,
@@ -78,9 +70,6 @@ impl fmt::Debug for Message {
             ),
             Message::Piece { index, begin, .. } => {
                 write!(f, "Message::Piece {{ idx: {}, begin: {} }}", index, begin)
-            }
-            Message::SharedPiece { index, begin, .. } => {
-                write!(f, "Message::SPiece {{ idx: {}, begin: {} }}", index, begin)
             }
             Message::Cancel {
                 index,
@@ -134,17 +123,6 @@ impl Clone for Message {
                     unreachable!("pieces should not be cloned outside of testing");
                 }
             }
-            Message::SharedPiece {
-                index,
-                begin,
-                length,
-                ref data,
-            } => Message::SharedPiece {
-                index,
-                begin,
-                length,
-                data: data.clone(),
-            },
             Message::Cancel {
                 index,
                 begin,
@@ -232,14 +210,14 @@ impl PartialEq for Message {
 }
 
 impl Message {
-    pub fn handshake(torrent: &TorrentInfo) -> Message {
+    pub fn handshake(hash: &[u8; 20]) -> Message {
         use {DHT_EXT, EXT_PROTO, PEER_ID};
         let mut rsv = [0u8; 8];
         rsv[DHT_EXT.0] |= DHT_EXT.1;
         rsv[EXT_PROTO.0] |= EXT_PROTO.1;
         Message::Handshake {
             rsv,
-            hash: torrent.hash,
+            hash: *hash,
             id: *PEER_ID,
         }
     }
@@ -252,8 +230,8 @@ impl Message {
         }
     }
 
-    pub fn s_piece(index: u32, begin: u32, length: u32, data: Arc<Buffer>) -> Message {
-        Message::SharedPiece {
+    pub fn piece(index: u32, begin: u32, length: u32, data: Buffer) -> Message {
+        Message::Piece {
             index,
             begin,
             data,
@@ -285,7 +263,6 @@ impl Message {
             Message::Bitfield(ref pf) => 5 + pf.bytes(),
             Message::Request { .. } | Message::Cancel { .. } => 17,
             Message::Piece { ref data, .. } => 13 + data.len(),
-            Message::SharedPiece { ref data, .. } => 13 + data.len(),
             Message::Extension { ref payload, .. } => 6 + payload.len(),
         }
     }
@@ -353,12 +330,6 @@ impl Message {
                 buf.write_u32::<BigEndian>(length)?;
             }
             Message::Piece {
-                index,
-                begin,
-                length,
-                ..
-            }
-            | Message::SharedPiece {
                 index,
                 begin,
                 length,

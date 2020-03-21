@@ -101,7 +101,7 @@ pub enum Request {
 }
 
 pub enum Response {
-    Read { context: Ctx, data: Arc<Buffer> },
+    Read { context: Ctx, data: Buffer },
     ValidationComplete { tid: usize, invalid: Vec<u32> },
     PieceValidated { tid: usize, piece: u32, valid: bool },
     ValidationUpdate { tid: usize, percent: f32 },
@@ -352,7 +352,6 @@ impl Request {
                     pb.push(loc.path());
                     fc.read_file_range(&pb, loc.offset, &mut data[loc.start..loc.end])?;
                 }
-                let data = Arc::new(data);
                 return Ok(JobRes::Resp(Response::read(context, data)));
             }
             Request::Move {
@@ -700,7 +699,7 @@ impl fmt::Debug for Location {
 }
 
 impl Response {
-    pub fn read(context: Ctx, data: Arc<Buffer>) -> Response {
+    pub fn read(context: Ctx, data: Buffer) -> Response {
         Response::Read { context, data }
     }
 

@@ -1,6 +1,5 @@
 use std::collections::VecDeque;
 use std::io::{self, ErrorKind, Write};
-use std::sync::Arc;
 
 use buffers::Buffer;
 use torrent::peer::Message;
@@ -29,7 +28,7 @@ enum WriteState {
     },
     WritingPiece {
         prefix: [u8; 17],
-        data: Arc<Buffer>,
+        data: Buffer,
         idx: u16,
     },
 }
@@ -69,7 +68,7 @@ impl Writer {
             // Should never go wrong
             msg.encode(&mut buf).unwrap();
             match msg {
-                Message::SharedPiece { data, .. } => WriteState::WritingPiece {
+                Message::Piece { data, .. } => WriteState::WritingPiece {
                     prefix: buf,
                     data,
                     idx: 0,
@@ -284,14 +283,13 @@ mod tests {
     fn test_write_piece() {
         use std::io::Cursor;
         let mut w = Writer::new();
-        let mut b = Buffer::get().expect("buffers should be present in tests");
+        let mut piece = Buffer::get().expect("buffers should be present in tests");
         for i in 0..b.len() {
-            b[i] = 1;
+            piece[i] = 1;
         }
-        let piece = Arc::new(b);
         let mut sbuf = [0u8; 16_384 + 13];
         let mut buf = Cursor::new(&mut sbuf[..]);
-        let m = Message::SharedPiece {
+        let m = Message::Piece {
             index: 1,
             begin: 1,
             length: 16_384,

@@ -708,7 +708,7 @@ impl<T: cio::CIO> Torrent<T> {
             disk::Response::Read { context, data } => {
                 trace!("Received piece from disk, uploading!");
                 if let Some(peer) = self.peers.get_mut(&context.pid) {
-                    let p = Message::s_piece(context.idx, context.begin, context.length, data);
+                    let p = Message::piece(context.idx, context.begin, context.length, data);
                     // This may not be 100% accurate, but close enough for now.
                     self.uploaded += u64::from(context.length);
                     self.stat.add_ul(u64::from(context.length));
@@ -1108,7 +1108,6 @@ impl<T: cio::CIO> Torrent<T> {
             // so just ignore here
             Message::KeepAlive | Message::Choke | Message::Cancel { .. } | Message::Port(_) => {}
 
-            Message::SharedPiece { .. } => unreachable!(),
         }
         Ok(())
     }
