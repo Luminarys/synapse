@@ -193,7 +193,6 @@ impl Writer {
 mod tests {
     use super::Writer;
     use buffers::Buffer;
-    use std::sync::Arc;
     use torrent::peer::Message;
 
     #[test]
@@ -284,7 +283,7 @@ mod tests {
         use std::io::Cursor;
         let mut w = Writer::new();
         let mut piece = Buffer::get().expect("buffers should be present in tests");
-        for i in 0..b.len() {
+        for i in 0..piece.len() {
             piece[i] = 1;
         }
         let mut sbuf = [0u8; 16_384 + 13];

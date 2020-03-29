@@ -12,7 +12,7 @@ path = "src/main.rs"
 name = "synapse"
 
 [workspace]
-members = ["sycli", "rpc", "session", "bencode", "adns"]
+members = ["sycli", "rpc", "session", "bencode", "adns", "protocol"]
 exclude = ["synulator"]
 
 [build-dependencies]
