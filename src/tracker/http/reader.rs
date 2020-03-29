@@ -38,10 +38,7 @@ impl Reader {
                 IOR::Complete => {
                     self.idx = self.data.len();
                     let new_len = (self.idx as f32 * 1.5) as usize;
-                    self.data.reserve(new_len);
-                    unsafe {
-                        self.data.set_len(new_len);
-                    }
+                    self.data.resize(new_len, 0u8);
                 }
                 IOR::Incomplete(a) => {
                     self.idx += a;

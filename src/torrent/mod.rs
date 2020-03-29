@@ -1128,10 +1128,8 @@ impl<T: cio::CIO> Torrent<T> {
                     } else {
                         self.info_idx = Some(size as usize / 16_384);
                     }
-                    self.info_bytes.reserve(size as usize);
-                    unsafe {
-                        self.info_bytes.set_len(size as usize);
-                    }
+                    // TODO: validate size
+                    self.info_bytes.resize(size as usize, 0u8);
                 }
                 if !self.info.complete() {
                     // Request the first index chunk to see if they have it

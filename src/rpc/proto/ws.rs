@@ -81,16 +81,8 @@ impl Message {
     }
 
     pub fn allocate(&mut self) {
-        let cl = self.data.len();
-        let len = self.len as usize;
-        if len > cl {
-            self.data.reserve_exact(len - cl);
-            unsafe {
-                self.data.set_len(len);
-            }
-        } else {
-            self.data.truncate(len);
-        }
+        // TODO: validate size
+        self.data.resize(self.len as usize, 0u8)
     }
 
     pub fn fin(&self) -> bool {

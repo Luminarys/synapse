@@ -129,6 +129,7 @@ impl Reader {
                             5 => {
                                 let mlen = BigEndian::read_u32(&self.prefix[0..4]);
                                 self.idx = 0;
+                                // TODO: validate size
                                 self.state = State::Bitfield {
                                     data: vec![0u8; mlen as usize - 1],
                                 };
@@ -187,6 +188,7 @@ impl Reader {
                     IOR::Complete => {
                         let plen = BigEndian::read_u32(&self.prefix[0..4]) - 9;
                         self.idx = 0;
+                        // TODO: validate size
                         self.state = State::Piece {
                             data: Buffer::get(),
                             len: plen,
@@ -257,10 +259,8 @@ impl Reader {
                         let id = self.prefix[5];
                         self.idx = 0;
                         let plen = BigEndian::read_u32(&self.prefix[0..4]) - 2;
-                        let mut payload = Vec::with_capacity(plen as usize);
-                        unsafe {
-                            payload.set_len(plen as usize);
-                        }
+                        // TODO: validate size
+                        let payload = vec![0u8; plen as usize];
                         self.state = State::Extension { id, payload };
                     }
                     IOR::Blocked => return RRes::Blocked,

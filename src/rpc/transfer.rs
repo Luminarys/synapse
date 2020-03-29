@@ -63,8 +63,8 @@ impl Transfers {
         import: bool,
     ) {
         let pos = data.len();
-        data.reserve(size as usize);
-        unsafe { data.set_len(size as usize) };
+        // TODO: validate size
+        data.resize(size as usize, 0u8);
         self.torrents.insert(
             id,
             TorrentTx {
