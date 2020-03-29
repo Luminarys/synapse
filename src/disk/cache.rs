@@ -55,11 +55,11 @@ pub struct TempBuf<'a> {
 
 impl<'a> TempBuf<'a> {
     pub fn get(&mut self, len: usize) -> &mut [u8] {
-        unsafe {
-            self.buf.reserve(len);
-            self.buf.set_len(len);
+        self.buf.reserve(len);
+        if self.buf.len() < len {
+            self.buf.resize(len, 0u8);
         }
-        &mut self.buf[..]
+        &mut self.buf[..len]
     }
 }
 
@@ -312,5 +312,21 @@ impl Drop for FileCache {
                 entry.mmap.flush().ok();
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_tempbuf() {
+        let mut data = vec![];
+        let mut buf = TempBuf { buf: &mut data };
+        assert_eq!(buf.get(10).len(), 10);
+        assert_eq!(buf.get(20).len(), 20);
+        assert_eq!(buf.get(10).len(), 10);
+        assert_eq!(buf.get(30).len(), 30);
+        assert_eq!(buf.get(10).len(), 10);
     }
 }
