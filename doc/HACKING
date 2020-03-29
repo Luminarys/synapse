@@ -16,8 +16,7 @@ There's quite a bit of cruft in here in particular and weird hacks that had to b
 
 Disk:
 Implements manually resumable jobs which effectively act as coroutines that yield after a fixed time slice.
-It also uses a lazy cache based on mmap'd files which are fallocate'd on creation.
-In the future, madvise should probably be used along with potentially directly transferring from peer buffers into the mmap'd buffers; see the mmap issue.
+It also uses a lazy cache based on fallocate'd files.
 
 RPC:
 Partially abstracted into its own crate which handles all de/serialization as well as many common ops.

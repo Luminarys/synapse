@@ -20,11 +20,4 @@ fn main() {
         .opt_level(3)
         .debug(debug)
         .compile("fallocate");
-
-    cc::Build::new()
-        .file("native/mmap.c")
-        .opt_level(3)
-        .debug(debug)
-        .warnings(false)
-        .compile("mmap");
 }

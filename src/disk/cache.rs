@@ -3,14 +3,8 @@ use std::{fs, io, mem, path};
 
 use std::os::unix::fs::MetadataExt;
 
-#[cfg(any(target_pointer_width = "32", not(feature = "mmap")))]
 use std::io::{Read, Seek, SeekFrom, Write};
 
-#[cfg(all(feature = "mmap", target_pointer_width = "64"))]
-use memmap::MmapMut;
-
-#[cfg(all(feature = "mmap", target_pointer_width = "64"))]
-use util::io_err;
 use util::{native, MHashMap};
 use CONFIG;
 
@@ -22,26 +16,15 @@ pub struct BufCache {
     buf: Vec<u8>,
 }
 
-/// Holds a file and mmap cache. Because 32 bit systems
-/// can't mmap large files, we load them as needed.
 pub struct FileCache {
     files: MHashMap<path::PathBuf, Entry>,
 }
 
-#[cfg(any(target_pointer_width = "32", not(feature = "mmap")))]
 pub struct Entry {
     used: bool,
     alloc_failed: bool,
     sparse: bool,
     file: fs::File,
-}
-
-#[cfg(all(feature = "mmap", target_pointer_width = "64"))]
-pub struct Entry {
-    mmap: MmapMut,
-    used: bool,
-    alloc_failed: bool,
-    sparse: bool,
 }
 
 pub struct TempPB<'a> {
@@ -125,34 +108,10 @@ impl FileCache {
         buf: &mut [u8],
     ) -> io::Result<()> {
         self.ensure_exists(path, Err(0))?;
-
-        #[cfg(any(target_pointer_width = "32", not(feature = "mmap")))]
-        {
-            let entry = self.files.get_mut(path).unwrap();
-            entry.file.seek(SeekFrom::Start(offset))?;
-            entry.file.read_exact(buf)?;
-            Ok(())
-        }
-
-        #[cfg(all(feature = "mmap", target_pointer_width = "64"))]
-        {
-            let len = buf.len();
-            let entry = self.files.get_mut(path).unwrap();
-            entry.used = true;
-            if entry.sparse {
-                let res = native::mmap_read(
-                    &entry.mmap[offset as usize..offset as usize + len],
-                    buf,
-                    len,
-                );
-                if res.is_err() {
-                    return io_err("Disk full!");
-                }
-            } else {
-                buf.copy_from_slice(&entry.mmap[offset as usize..offset as usize + len]);
-            };
-            Ok(())
-        }
+        let entry = self.files.get_mut(path).unwrap();
+        entry.file.seek(SeekFrom::Start(offset))?;
+        entry.file.read_exact(buf)?;
+        Ok(())
     }
 
     pub fn write_file_range(
@@ -163,52 +122,18 @@ impl FileCache {
         buf: &[u8],
     ) -> io::Result<()> {
         self.ensure_exists(path, size)?;
-
-        #[cfg(any(target_pointer_width = "32", not(feature = "mmap")))]
-        {
-            let entry = self.files.get_mut(path).unwrap();
-            entry.file.seek(SeekFrom::Start(offset))?;
-            entry.file.write_all(&buf)?;
-            Ok(())
-        }
-
-        #[cfg(all(feature = "mmap", target_pointer_width = "64"))]
-        {
-            let len = buf.len();
-            let entry = self.files.get_mut(path).unwrap();
-            entry.used = true;
-            if entry.sparse {
-                let res = native::mmap_write(
-                    &mut entry.mmap[offset as usize..offset as usize + len],
-                    &buf,
-                    len,
-                );
-                if res.is_err() {
-                    return io_err("Disk full!");
-                }
-            } else {
-                (&mut entry.mmap[offset as usize..offset as usize + len]).copy_from_slice(&buf);
-            };
-            Ok(())
-        }
+        let entry = self.files.get_mut(path).unwrap();
+        entry.file.seek(SeekFrom::Start(offset))?;
+        entry.file.write_all(&buf)?;
+        Ok(())
     }
 
     pub fn remove_file(&mut self, path: &path::Path) {
-        #[cfg(any(target_pointer_width = "32", not(feature = "mmap")))]
         self.files.remove(path);
-        #[cfg(all(feature = "mmap", target_pointer_width = "64"))]
-        self.files.remove(path).map(|f| f.mmap.flush_async().ok());
     }
 
     pub fn flush_file(&mut self, path: &path::Path) {
-        #[cfg(any(target_pointer_width = "32", not(feature = "mmap")))]
-        {
-            self.files.get_mut(path).map(|e| e.file.sync_all().ok());
-        }
-        #[cfg(all(feature = "mmap", target_pointer_width = "64"))]
-        {
-            self.files.get_mut(path).map(|f| f.mmap.flush_async().ok());
-        }
+        self.files.get_mut(path).map(|e| e.file.sync_all().ok());
     }
 
     fn ensure_exists(&mut self, path: &path::Path, len: Result<u64, u64>) -> io::Result<()> {
@@ -255,7 +180,6 @@ impl FileCache {
             let stat = file.metadata()?;
             let sparse = stat.blocks() * stat.blksize() < stat.size();
 
-            #[cfg(any(target_pointer_width = "32", not(feature = "mmap")))]
             self.files.insert(
                 path.to_path_buf(),
                 Entry {
@@ -265,24 +189,6 @@ impl FileCache {
                     alloc_failed,
                 },
             );
-
-            #[cfg(all(feature = "mmap", target_pointer_width = "64"))]
-            {
-                // Check if the file was never allocated
-                if stat.size() == 0 {
-                    return io_err("mmap attempted on 0 sized file");
-                }
-                let mmap = unsafe { MmapMut::map_mut(&file)? };
-                self.files.insert(
-                    path.to_path_buf(),
-                    Entry {
-                        mmap,
-                        sparse,
-                        used: true,
-                        alloc_failed,
-                    },
-                );
-            }
         } else if len.is_ok() {
             let entry = self.files.get_mut(path).unwrap();
             if entry.sparse && !entry.alloc_failed {
@@ -300,17 +206,8 @@ impl FileCache {
 
 impl Drop for FileCache {
     fn drop(&mut self) {
-        #[cfg(any(target_pointer_width = "32", not(feature = "mmap")))]
-        {
-            for (_, entry) in self.files.drain() {
-                entry.file.sync_all().ok();
-            }
-        }
-        #[cfg(all(feature = "mmap", target_pointer_width = "64"))]
-        {
-            for (_, entry) in self.files.drain() {
-                entry.mmap.flush().ok();
-            }
+        for (_, entry) in self.files.drain() {
+            entry.file.sync_all().ok();
         }
     }
 }
