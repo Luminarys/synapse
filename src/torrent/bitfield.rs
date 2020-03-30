@@ -1,3 +1,7 @@
+use std::fmt;
+
+use protocol;
+
 // Use u64 than usize because it conforms with bittorents network protocol
 // (4 byte big endian integers)
 #[derive(Clone)]
@@ -65,7 +69,7 @@ impl Bitfield {
         }
     }
 
-    pub fn into_data(self) -> Box<[u8]> {
+    fn into_data(self) -> Box<[u8]> {
         match self {
             Bitfield::I { data, .. } => data,
             Bitfield::C { len } => {
@@ -82,21 +86,6 @@ impl Bitfield {
         match self {
             Bitfield::I { len, .. } => *len = l,
             Bitfield::C { len } => *len = l,
-        }
-    }
-
-    pub fn bytes(&self) -> usize {
-        let mut size = self.len() / 8;
-        if self.len() % 8 != 0 {
-            size += 1;
-        }
-        size as usize
-    }
-
-    pub fn byte_at(&self, pos: u64) -> u8 {
-        match self {
-            Bitfield::I { data, .. } => data[pos as usize],
-            Bitfield::C { .. } => 255,
         }
     }
 
@@ -203,13 +192,28 @@ impl Bitfield {
     }
 }
 
+impl protocol::Bitfield for Bitfield {
+    fn bytes(&self) -> usize {
+        let mut size = self.len() / 8;
+        if self.len() % 8 != 0 {
+            size += 1;
+        }
+        size as usize
+    }
+
+    fn byte_at(&self, pos: usize) -> u8 {
+        match self {
+            Bitfield::I { data, .. } => data[pos],
+            Bitfield::C { .. } => 255,
+        }
+    }
+}
+
 impl Default for Bitfield {
     fn default() -> Bitfield {
         Bitfield::new(0)
     }
 }
-
-use std::fmt;
 
 impl fmt::Debug for Bitfield {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
@@ -223,6 +227,13 @@ impl fmt::Debug for Bitfield {
         }
         write!(f, " }}")?;
         Ok(())
+    }
+}
+
+impl From<Vec<u8>> for Bitfield {
+    fn from(data: Vec<u8>) -> Self {
+        let len = data.len() as u64 * 8;
+        Bitfield::from(data.into_boxed_slice(), len)
     }
 }
 

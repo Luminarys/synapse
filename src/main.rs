@@ -41,10 +41,10 @@ extern crate serde_json;
 extern crate shellexpand;
 extern crate toml;
 extern crate url;
-extern crate vecio;
 
 extern crate adns;
 extern crate synapse_bencode as bencode;
+extern crate synapse_protocol as protocol;
 extern crate synapse_rpc as rpc_lib;
 extern crate synapse_session as session;
 
@@ -71,10 +71,10 @@ use log::LogLevel;
 use std::process;
 use std::sync::atomic;
 
-pub const DHT_EXT: (usize, u8) = (7, 1);
-pub const EXT_PROTO: (usize, u8) = (5, 0x10);
-pub const UT_META_ID: u8 = 9;
-pub const UT_PEX_ID: u8 = 11;
+pub use protocol::DHT_EXT;
+pub use protocol::EXT_PROTO;
+pub use protocol::UT_META_ID;
+pub use protocol::UT_PEX_ID;
 
 /// Throttler max token amount
 pub const THROT_TOKS: usize = 2 * 1024 * 1024;

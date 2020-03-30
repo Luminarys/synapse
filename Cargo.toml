@@ -42,10 +42,10 @@ shellexpand = "1"
 synapse-rpc = { path = "rpc" }
 synapse-session = { path = "session" }
 synapse-bencode = { path = "bencode" }
+synapse-protocol = { path = "protocol" }
 adns = { path = "adns" }
 toml = "0.4"
 url = "1"
-vecio = "0.1"
 getopts = "0.2"
 
 [dependencies.amy]

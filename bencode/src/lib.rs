@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 use std::error::Error;
-use std::{cmp, fmt, str};
 use std::io::{self, Cursor};
+use std::{cmp, fmt, str};
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum BEncode {
@@ -265,7 +265,8 @@ fn do_decode<R: io::Read>(bytes: &mut R, first: bool) -> Result<BEncode, BError>
                     v.resize(v.len() + to_read, 0u8);
                     let read_start = v.len() - to_read;
                     let read_end = v.len();
-                    bytes.read_exact(&mut v[read_start..read_end])
+                    bytes
+                        .read_exact(&mut v[read_start..read_end])
                         .map_err(|_| BError::EOF)?;
                 }
                 vstack.push(BEncode::String(v));

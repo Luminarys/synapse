@@ -1,6 +1,8 @@
 use std::ops::{Deref, DerefMut};
 use std::sync::atomic;
 
+use protocol;
+
 const MAX_BUFS: usize = 4096;
 const BUF_SIZE: usize = 16_384;
 static BUF_COUNT: atomic::AtomicUsize = atomic::AtomicUsize::new(0);
@@ -23,18 +25,20 @@ impl Buffer {
 }
 
 impl Deref for Buffer {
-    type Target = [u8; BUF_SIZE];
+    type Target = [u8];
 
     fn deref(&self) -> &Self::Target {
-        &self.data
+        &*self.data
     }
 }
 
 impl DerefMut for Buffer {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.data
+        &mut *self.data
     }
 }
+
+impl protocol::Buffer for Buffer {}
 
 impl Drop for Buffer {
     fn drop(&mut self) {

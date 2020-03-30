@@ -1107,7 +1107,6 @@ impl<T: cio::CIO> Torrent<T> {
             // These messages are all handled at the peer level, not the torrent level,
             // so just ignore here
             Message::KeepAlive | Message::Choke | Message::Cancel { .. } | Message::Port(_) => {}
-
         }
         Ok(())
     }

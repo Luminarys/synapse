@@ -17,8 +17,8 @@ mod error;
 use std::process;
 
 use clap::{App, AppSettings, Arg, SubCommand};
-use url::Url;
 use error_chain::ChainedError;
+use url::Url;
 
 use self::client::Client;
 
@@ -353,7 +353,10 @@ fn main() {
     let client = match Client::new(url.clone()) {
         Ok(c) => c,
         Err(e) => {
-            eprintln!("Failed to connect to synapse, ensure your URI and password are correct, {}", e.display_chain());
+            eprintln!(
+                "Failed to connect to synapse, ensure your URI and password are correct, {}",
+                e.display_chain()
+            );
             process::exit(1);
         }
     };

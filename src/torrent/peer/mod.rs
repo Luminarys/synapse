@@ -1,4 +1,3 @@
-mod message;
 pub mod reader;
 pub mod writer;
 
@@ -18,7 +17,7 @@ use throttle::Throttle;
 use torrent::{Bitfield, Info, Torrent};
 use tracker;
 use util;
-use {CONFIG, DHT_EXT};
+use {CONFIG, DHT_EXT, PEER_ID};
 
 error_chain! {
     errors {
@@ -31,6 +30,14 @@ error_chain! {
 
 const INIT_MAX_QUEUE: u16 = 5;
 const MAX_QUEUE_CAP: u16 = 600;
+
+pub mod message {
+    use buffers;
+    use protocol;
+    use torrent;
+
+    pub type Message = protocol::Message<torrent::Bitfield, buffers::Buffer>;
+}
 
 /// Peer connection and associated metadata.
 pub struct Peer<T: cio::CIO> {
@@ -240,7 +247,7 @@ impl<T: cio::CIO> Peer<T> {
             pieces_updated: false,
             rank: t.num_peers(),
         };
-        p.send_message(Message::handshake(&t.info.hash));
+        p.send_message(Message::handshake(&*PEER_ID, &t.info.hash));
         if t.info.complete() {
             p.send_message(Message::Bitfield(t.pieces.clone()));
         }
