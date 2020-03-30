@@ -122,15 +122,11 @@ impl<BF: Bitfield, Buf: Buffer> Clone for Message<BF, Buf> {
                 length,
                 ref data,
             } => {
-                if cfg!(test) {
-                    Message::Piece {
-                        index,
-                        begin,
-                        length,
-                        data: data.clone(),
-                    }
-                } else {
-                    unreachable!("pieces should not be cloned outside of testing");
+                Message::Piece {
+                    index,
+                    begin,
+                    length,
+                    data: data.clone(),
                 }
             }
             Message::Cancel {
