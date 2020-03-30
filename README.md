@@ -18,7 +18,7 @@ A list of packages can be found on [this wiki page](https://github.com/Luminarys
 ### Compiling
 Install dependencies:
 
-- rustc >= 1.36.0
+- rustc >= 1.37.0
 - cargo >= 0.18
 - OpenSSL >= 1.0.2
 - pkg-config
