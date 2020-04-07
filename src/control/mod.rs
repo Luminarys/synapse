@@ -348,7 +348,7 @@ impl<T: cio::CIO> Control<T> {
             };
         } else {
             let h = msg.hash;
-            error!("Couldn't add peer, torrent with hash {:?} doesn't exist", h);
+            error!("Couldn't add peer, torrent {} doesn't exist", hash_to_id(&h));
         }
     }
 
