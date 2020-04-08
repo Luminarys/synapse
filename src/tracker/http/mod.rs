@@ -7,7 +7,7 @@ use std::time::{Duration, Instant};
 use std::{io, mem};
 
 use url::percent_encoding::percent_encode_byte;
-use url::Url;
+use url::{ParseError, Url};
 
 use self::reader::{ReadRes, Reader};
 use self::writer::Writer;
@@ -262,8 +262,16 @@ impl Handler {
         torrent: usize,
         dns: &mut dns::Resolver,
     ) -> Result<()> {
-        let url =
-            Url::parse(url).chain_err(|| ErrorKind::InvalidResponse("Malformed redirect!"))?;
+        let url = match Url::parse(url) {
+            Ok(url) => Ok(url),
+            Err(ParseError::RelativeUrlWithoutBase) => {
+                Ok(original_url.join(url).map_err(|_| ErrorKind::InvalidResponse("Invalid relative redirect URL"))?)
+            },
+            Err(e) => Err(e),
+        }.chain_err(|| {
+            error!("{} {}", original_url, url);
+            ErrorKind::InvalidResponse("Malformed redirect!")
+        })?;
         let mut http_req = Vec::with_capacity(50);
         http_req.extend_from_slice(b"GET ");
         http_req.extend_from_slice(url.path().as_bytes());
@@ -283,7 +291,10 @@ impl Handler {
         http_req.extend_from_slice(b"Host: ");
         let host = url
             .host_str()
-            .ok_or_else(|| Error::from(ErrorKind::InvalidResponse("Malformed redirect!")))?;
+            .ok_or_else(|| {
+                error!("{}", url);
+                Error::from(ErrorKind::InvalidResponse("Malformed redirect!"))
+            })?;
         let port = url.port().unwrap_or(80);
         http_req.extend_from_slice(host.as_bytes());
         http_req.extend_from_slice(b"\r\n\r\n");
