@@ -12,10 +12,7 @@ pub enum Bitfield {
 
 impl Bitfield {
     pub fn new(len: u64) -> Bitfield {
-        let mut size = len / 8;
-        if len % 8 != 0 {
-            size += 1;
-        }
+        let size = div_round_up!(len, 8);
 
         Bitfield::I {
             len,
@@ -25,20 +22,23 @@ impl Bitfield {
     }
 
     pub fn from(b: Box<[u8]>, len: u64) -> Bitfield {
+        let size = div_round_up!(len, 8);
+        let mut vec = b.to_vec();
+        vec.resize(size as usize, 0);
         let i = Bitfield::I {
             len,
-            data: b,
+            data: vec.into_boxed_slice(),
             set: 0,
         };
-        let set = i.iter().count() as u64;
-        if i.complete() {
+        let res = Bitfield::I {
+            len,
+            set: i.iter().count() as u64,
+            data: i.into_data(),
+        };
+        if res.complete() {
             Bitfield::C { len }
         } else {
-            Bitfield::I {
-                len,
-                data: i.into_data(),
-                set,
-            }
+            res
         }
     }
 
@@ -57,36 +57,64 @@ impl Bitfield {
     }
 
     pub fn data(&self) -> Box<[u8]> {
-        match self {
-            Bitfield::I { data, .. } => data.clone(),
-            Bitfield::C { len } => {
-                let mut size = len / 8;
-                if len % 8 != 0 {
-                    size += 1;
-                }
-                vec![255; size as usize].into_boxed_slice()
-            }
+        let size = protocol::Bitfield::bytes(self);
+        let mut vec = match self {
+            Bitfield::I { data, .. } => data.clone().to_vec(),
+            Bitfield::C { .. } => vec![255; size],
+        };
+
+        // zero bits beyond len
+        let num_bits = self.len() % 8;
+        if num_bits > 0 {
+            vec[size - 1] &= 0xff << (8 - num_bits);
         }
+
+        vec.into_boxed_slice()
     }
 
     fn into_data(self) -> Box<[u8]> {
         match self {
             Bitfield::I { data, .. } => data,
-            Bitfield::C { len } => {
-                let mut size = len / 8;
-                if len % 8 != 0 {
-                    size += 1;
-                }
-                vec![255; size as usize].into_boxed_slice()
+            Bitfield::C { len: _ } => {
+                let size = protocol::Bitfield::bytes(&self);
+                vec![255; size].into_boxed_slice()
             }
         }
     }
 
-    pub fn cap(&mut self, l: u64) {
-        match self {
-            Bitfield::I { len, .. } => *len = l,
-            Bitfield::C { len } => *len = l,
+    pub fn cap(&mut self, new_len: u64) -> bool {
+        // According to the BitTorrent spec, "Clients should drop the
+        // connection if they receive bitfields that are not of the
+        // correct size, or if the bitfield has any of the spare bits
+        // set."
+        if new_len > self.len() {
+            return false;
         }
+        let new_size = div_round_up!(new_len, 8) as usize;
+        if new_size != protocol::Bitfield::bytes(self) {
+            return false;
+        }
+        match self {
+            Bitfield::I { data, len, .. } => {
+                // check for set bits beyond new_len
+                let num_bits = new_len % 8;
+                if num_bits > 0 {
+                    if data[new_size - 1] & (0xff >> num_bits) > 0 {
+                        return false;
+                    }
+                }
+                *len = new_len;
+                if self.complete() {
+                    *self = Bitfield::C { len: new_len };
+                }
+            }
+            Bitfield::C { len, .. } => {
+                if new_len < *len {
+                    return false;
+                }
+            }
+        }
+        return true;
     }
 
     pub fn complete(&self) -> bool {
@@ -127,8 +155,10 @@ impl Bitfield {
                     let block_pos = pos / 8;
                     let index = 7 - (pos % 8);
                     let block = data[block_pos as usize];
-                    data[block_pos as usize] = block | (1 << index);
-                    *set += 1;
+                    if (block & (1 << index)) == 0 {
+                        data[block_pos as usize] = block | (1 << index);
+                        *set += 1;
+                    }
                 }
                 Bitfield::C { .. } => {}
             }
@@ -153,8 +183,10 @@ impl Bitfield {
                     let block_pos = pos / 8;
                     let index = 7 - (pos % 8);
                     let block = data[block_pos as usize];
-                    data[block_pos as usize] = block & !(1 << index);
-                    *set -= 1;
+                    if (block & (1 << index)) != 0 {
+                        data[block_pos as usize] = block & !(1 << index);
+                        *set -= 1;
+                    }
                 }
                 Bitfield::C { .. } => unreachable!(),
             }
@@ -194,18 +226,24 @@ impl Bitfield {
 
 impl protocol::Bitfield for Bitfield {
     fn bytes(&self) -> usize {
-        let mut size = self.len() / 8;
-        if self.len() % 8 != 0 {
-            size += 1;
-        }
+        let size = div_round_up!(self.len(), 8);
         size as usize
     }
 
     fn byte_at(&self, pos: usize) -> u8 {
-        match self {
+        let mut res = match self {
             Bitfield::I { data, .. } => data[pos],
             Bitfield::C { .. } => 255,
+        };
+        // According to the BitTorrent spec, "Spare bits at the end
+        // are set to zero"
+        let last_pos = self.bytes() - 1;
+        if pos == last_pos {
+            // zero bits beyond len
+            let num_bits = self.len() - (last_pos as u64) * 8;
+            res &= 0xff << (8 - num_bits);
         }
+        res
     }
 }
 
@@ -283,23 +321,101 @@ mod tests {
     }
 
     #[test]
+    fn test_data_empty() {
+        let pf = Bitfield::new(0);
+        assert!(pf.len() == 0);
+        assert!(pf.data().len() == 0);
+    }
+
+    #[test]
+    fn test_data_bits() {
+        let indata = vec![0xff; 5].into_boxed_slice();
+        let pf = Bitfield::from(indata, 11);
+        let outdata = pf.data();
+        assert!(outdata.len() == 2);
+        assert!(outdata[0] == 0xff);
+        assert!(outdata[1] == 0xe0);
+    }
+
+    #[test]
     fn test_has() {
         let pf = Bitfield::new(10);
         let res = pf.has_bit(9);
-        assert!(res == false);
+        assert!(!res);
     }
 
     #[test]
     fn test_set() {
         let mut pf = Bitfield::new(10);
 
-        let res = pf.has_bit(9);
-        assert!(res == false);
+        assert!(!pf.has_bit(9));
+        assert!(pf.set() == 0);
 
         pf.set_bit(9);
 
-        let res = pf.has_bit(9);
-        assert!(res == true);
+        assert!(pf.has_bit(9));
+        assert!(pf.set() == 1);
+
+        pf.set_bit(9); // set it again
+
+        assert!(pf.has_bit(9));
+        assert!(pf.set() == 1);
+    }
+
+    #[test]
+    fn test_set_i() {
+        let data = vec![0xff, 0xff, 0x7f].into_boxed_slice();
+        let mut bf = Bitfield::from(data, 21);
+        assert_matches!(bf, Bitfield::I { .. });
+
+        bf.set_bit(16);
+
+        assert_matches!(bf, Bitfield::C { len: 21 });
+    }
+
+    #[test]
+    fn test_unset() {
+        let mut pf = Bitfield::new(10);
+
+        assert!(!pf.has_bit(8));
+        assert!(!pf.has_bit(9));
+        assert!(pf.set() == 0);
+
+        pf.set_bit(9);
+        assert!(!pf.has_bit(8));
+        assert!(pf.has_bit(9));
+        assert!(pf.set() == 1);
+
+        pf.set_bit(8);
+        assert!(pf.has_bit(8));
+        assert!(pf.has_bit(9));
+        assert!(pf.set() == 2);
+
+        pf.unset_bit(9);
+        assert!(pf.has_bit(8));
+        assert!(!pf.has_bit(9));
+        assert!(pf.set() == 1);
+
+        pf.unset_bit(9); // unset it again
+        assert!(pf.has_bit(8));
+        assert!(!pf.has_bit(9));
+        assert!(pf.set() == 1);
+
+        pf.unset_bit(8);
+        assert!(!pf.has_bit(8));
+        assert!(!pf.has_bit(9));
+        assert!(pf.set() == 0);
+    }
+
+    #[test]
+    fn test_unset_c() {
+        let data = vec![0xff, 0xff, 0xff].into_boxed_slice();
+        let mut bf = Bitfield::from(data, 21);
+        assert_matches!(bf, Bitfield::C { .. });
+
+        bf.unset_bit(16);
+
+        assert_matches!(bf, Bitfield::I { len: 21, set: 20, .. });
     }
 
     #[test]
@@ -327,5 +443,86 @@ mod tests {
                 assert!(r > 3 && r < 7);
             })
             .collect::<Vec<_>>();
+    }
+
+    #[test]
+    fn test_c_from() {
+        let data = vec![0xff; 2].into_boxed_slice();
+        let bf = Bitfield::from(data, 11);
+        assert_matches!(bf, Bitfield::C { .. });
+    }
+
+    #[test]
+    fn test_byte_at_c() {
+        let data = vec![0xff, 0xff, 0xff].into_boxed_slice();
+        let bf = Bitfield::from(data, 21);
+        assert_matches!(bf, Bitfield::C { .. });
+
+        assert!(protocol::Bitfield::byte_at(&bf, 2) == 0xf8);
+    }
+
+    #[test]
+    fn test_byte_at_i() {
+        let data = vec![0xff, 0xff, 0x7f].into_boxed_slice();
+        let bf = Bitfield::from(data, 21);
+        assert_matches!(bf, Bitfield::I { .. });
+
+        assert!(protocol::Bitfield::byte_at(&bf, 2) == 0x78);
+    }
+
+    #[test]
+    fn test_cap_c_1() {
+        let data = vec![0xff; 5].into_boxed_slice();
+        let mut bf = Bitfield::from(data, 11);
+        assert_matches!(bf, Bitfield::C { .. });
+
+        assert!(!bf.cap(15));
+    }
+
+    #[test]
+    fn test_cap_c_2() {
+        let data = vec![0xff; 5].into_boxed_slice();
+        let mut bf = Bitfield::from(data, 11);
+        assert_matches!(bf, Bitfield::C { .. });
+
+        assert!(bf.cap(11));
+    }
+
+    #[test]
+    fn test_cap_c_3() {
+        let data = vec![0xff; 5].into_boxed_slice();
+        let mut bf = Bitfield::from(data, 11);
+        assert_matches!(bf, Bitfield::C { .. });
+
+        assert!(!bf.cap(10));
+    }
+
+    #[test]
+    fn test_cap_i_1() {
+        let data = vec![0xff, 0xff, 0xf8].into_boxed_slice();
+        let mut bf = Bitfield::from(data, 24);
+        assert_matches!(bf, Bitfield::I { .. });
+
+        assert!(bf.cap(21));
+
+        assert_matches!(bf, Bitfield::C { .. });
+    }
+
+    #[test]
+    fn test_cap_i_2() {
+        let data = vec![0xff, 0xff, 0xf8].into_boxed_slice();
+        let mut bf = Bitfield::from(data, 24);
+        assert_matches!(bf, Bitfield::I { .. });
+
+        assert!(!bf.cap(16));
+    }
+
+    #[test]
+    fn test_cap_i_3() {
+        let data = vec![0xff, 0xff, 0xf8].into_boxed_slice();
+        let mut bf = Bitfield::from(data, 24);
+        assert_matches!(bf, Bitfield::I { .. });
+
+        assert!(!bf.cap(25));
     }
 }

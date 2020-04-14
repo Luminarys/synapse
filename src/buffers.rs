@@ -4,7 +4,7 @@ use std::sync::atomic;
 use protocol;
 
 const MAX_BUFS: usize = 4096;
-const BUF_SIZE: usize = 16_384;
+pub const BUF_SIZE: usize = 16_384;
 static BUF_COUNT: atomic::AtomicUsize = atomic::AtomicUsize::new(0);
 
 #[derive(Clone)]

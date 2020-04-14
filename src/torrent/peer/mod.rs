@@ -255,12 +255,15 @@ impl<T: cio::CIO> Peer<T> {
         Ok(p)
     }
 
-    pub fn magnet_complete(&mut self, info: &Info) {
+    pub fn magnet_complete(&mut self, info: &Info) -> Result<()> {
         if self.pieces.len() == 0 {
             self.pieces = Bitfield::new(u64::from(info.pieces()));
         } else {
-            self.pieces.cap(u64::from(info.pieces()));
+            if !self.pieces.cap(u64::from(info.pieces())) {
+                return Err(ErrorKind::ProtocolError("Invalid pieces size").into());
+            }
         }
+        Ok(())
     }
 
     /// Returns whether or not the peer has received a handshake
@@ -390,7 +393,9 @@ impl<T: cio::CIO> Peer<T> {
                 // Set the correct length, then swap the pieces
                 // Don't do this with magnets though
                 if self.pieces.len() > 0 {
-                    pieces.cap(self.pieces.len());
+                    if !pieces.cap(self.pieces.len()) {
+                        return Err(ErrorKind::ProtocolError("Invalid pieces size").into());
+                    }
                 }
                 mem::swap(pieces, &mut self.pieces);
                 self.piece_count = self.pieces.iter().count();

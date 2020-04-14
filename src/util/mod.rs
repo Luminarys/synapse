@@ -157,6 +157,13 @@ pub fn find_subseq(haystack: &[u8], needle: &[u8]) -> Option<usize> {
         .position(|window| window == needle)
 }
 
+#[macro_export]
+macro_rules! div_round_up {
+    ($a:expr, $b:expr) => {
+        ($a + $b - 1) / $b
+    };
+}
+
 #[test]
 fn test_hash_enc() {
     let hash = [8u8; 20];
