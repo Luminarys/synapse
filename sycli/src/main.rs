@@ -90,7 +90,6 @@ fn main() {
                         .help("Delete files along with torrents.")
                         .short("f")
                         .long("files")
-                        .default_value("false"),
                 )
                 .arg(
                     Arg::with_name("torrents")
@@ -406,14 +405,10 @@ fn main() {
         }
         "del" => {
             let args = matches.subcommand_matches("del").unwrap();
-            let artifacts = match args.value_of("files").unwrap() {
-                "true" => true,
-                _ => false,
-            };
             let res = cmd::del(
                 client,
                 args.values_of("torrents").unwrap().collect(),
-                artifacts,
+                args.is_present("files"),
             );
             if let Err(e) = res {
                 eprintln!("Failed to delete torrents: {}", e.display_chain());
