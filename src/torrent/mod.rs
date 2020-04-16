@@ -1454,7 +1454,9 @@ impl<T: cio::CIO> Torrent<T> {
         self.pieces = Bitfield::new(u64::from(self.info.pieces()));
         self.priorities = Arc::new(vec![3; self.info.files.len()]);
         for peer in self.peers.values_mut() {
-            peer.magnet_complete(&self.info);
+            if !peer.magnet_complete(&self.info).is_ok() {
+                self.cio.remove_peer(peer.id());
+            }
         }
 
         let resources = self.rpc_rel_info();

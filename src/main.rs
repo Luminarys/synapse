@@ -42,6 +42,10 @@ extern crate shellexpand;
 extern crate toml;
 extern crate url;
 
+#[cfg(test)]
+#[macro_use]
+extern crate assert_matches;
+
 extern crate adns;
 extern crate synapse_bencode as bencode;
 extern crate synapse_protocol as protocol;
@@ -50,6 +54,8 @@ extern crate synapse_session as session;
 
 #[macro_use]
 mod log;
+#[macro_use]
+mod util;
 mod args;
 mod buffers;
 mod config;
@@ -64,7 +70,6 @@ mod stat;
 mod throttle;
 mod torrent;
 mod tracker;
-mod util;
 
 // We need to do this for the log macros
 use log::LogLevel;

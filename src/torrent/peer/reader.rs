@@ -3,7 +3,7 @@ use std::mem;
 
 use byteorder::{BigEndian, ByteOrder};
 
-use buffers::Buffer;
+use buffers::{Buffer, BUF_SIZE};
 use torrent::peer::Message;
 use torrent::Bitfield;
 use util::{aread, io_err_val, IOR};
@@ -128,8 +128,14 @@ impl Reader {
                             4 => self.state = State::Have,
                             5 => {
                                 let mlen = BigEndian::read_u32(&self.prefix[0..4]);
+                                if mlen as usize > BUF_SIZE {
+                                    // we'll check the exact length later
+                                    return RRes::Err(io::Error::new(
+                                        io::ErrorKind::Other,
+                                        format!("Invalid bitfield length {}", mlen),
+                                    ));
+                                }
                                 self.idx = 0;
-                                // TODO: validate size
                                 self.state = State::Bitfield {
                                     data: vec![0u8; mlen as usize - 1],
                                 };
@@ -187,8 +193,13 @@ impl Reader {
                 State::PiecePrefix => match aread(&mut self.prefix[self.idx..len], conn) {
                     IOR::Complete => {
                         let plen = BigEndian::read_u32(&self.prefix[0..4]) - 9;
+                        if plen as usize > BUF_SIZE {
+                            return RRes::Err(io::Error::new(
+                                io::ErrorKind::Other,
+                                format!("Invalid pieces length {}", plen),
+                            ));
+                        }
                         self.idx = 0;
-                        // TODO: validate size
                         self.state = State::Piece {
                             data: Buffer::get(),
                             len: plen,
