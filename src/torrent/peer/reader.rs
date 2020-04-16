@@ -9,8 +9,6 @@ use torrent::Bitfield;
 use util::{aread, io_err_val, IOR};
 
 pub struct Reader {
-    blocks_read: usize,
-
     state: State,
     prefix: [u8; 17],
     idx: usize,
@@ -52,7 +50,6 @@ impl RRes {
 impl Reader {
     pub fn new() -> Reader {
         Reader {
-            blocks_read: 0,
             prefix: [0u8; 17],
             idx: 0,
             state: State::Handshake { data: [0u8; 68] },
@@ -223,7 +220,6 @@ impl Reader {
                     }
                     match aread(&mut data.as_mut().unwrap()[self.idx..len], conn) {
                         IOR::Complete => {
-                            self.blocks_read += 1;
                             let index = BigEndian::read_u32(&self.prefix[5..9]);
                             let begin = BigEndian::read_u32(&self.prefix[9..13]);
                             return RRes::Success(Message::Piece {
