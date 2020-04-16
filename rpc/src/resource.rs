@@ -254,7 +254,7 @@ impl Server {
                 self.rate_up = rate_up;
                 self.rate_down = rate_down;
             }
-            _ => {}
+            _ => { }
         }
     }
 }
@@ -340,6 +340,9 @@ impl Torrent {
             SResourceUpdate::TorrentPieces { piece_field, .. } => {
                 self.piece_field = piece_field;
             }
+            SResourceUpdate::Resource(Cow::Borrowed(Resource::Torrent(t))) => *self = t.clone(),
+            SResourceUpdate::Resource(Cow::Owned(Resource::Torrent(mut t))) => mem::swap(self, &mut t),
+            SResourceUpdate::Resource(_) => panic!("Torrent should not be updated with invalid resource type"),
             _ => {}
         }
     }
