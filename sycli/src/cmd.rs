@@ -5,6 +5,7 @@ use std::{cmp, fs, mem};
 
 use base64;
 use prettytable::Table;
+use prettytable::format::consts::FORMAT_NO_LINESEP_WITH_TITLE as TABLE_FORMAT;
 use reqwest::Client as HClient;
 use serde_json as json;
 use sha1::{Digest, Sha1};
@@ -245,24 +246,25 @@ pub fn list(mut c: Client, kind: &str, crit: Vec<Criterion>, output: &str) -> Re
     let results = search(&mut c, k, crit)?;
     if output == "text" {
         let mut table = Table::new();
+        table.set_format(*TABLE_FORMAT);
         match k {
             ResourceKind::Torrent => {
-                table.add_row(row!["Name", "Done", "DL", "UL", "DL RT", "UL RT", "Peers"]);
+                table.set_titles(row!["Name", "Done", "DL", "UL", "DL RT", "UL RT", "Peers"]);
             }
             ResourceKind::Tracker => {
-                table.add_row(row!["URL", "Torrent", "Error"]);
+                table.set_titles(row!["URL", "Torrent", "Error"]);
             }
             ResourceKind::Peer => {
-                table.add_row(row!["IP", "Torrent", "DL RT", "UL RT"]);
+                table.set_titles(row!["IP", "Torrent", "DL RT", "UL RT"]);
             }
             ResourceKind::Piece => {
-                table.add_row(row!["Torrent", "DLd", "Avail"]);
+                table.set_titles(row!["Torrent", "DLd", "Avail"]);
             }
             ResourceKind::File => {
-                table.add_row(row!["Path", "Torrent", "Done", "Prio", "Avail"]);
+                table.set_titles(row!["Path", "Torrent", "Done", "Prio", "Avail"]);
             }
             ResourceKind::Server => {
-                table.add_row(row!["DL RT", "UL RT"]);
+                table.set_titles(row!["DL RT", "UL RT"]);
             }
         }
 
