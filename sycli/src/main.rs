@@ -221,6 +221,14 @@ fn main() {
                         .index(1),
                 )
                 .subcommands(vec![
+                    SubCommand::with_name("move")
+                        .about("Move a torrent to a new location")
+                        .arg(
+                            Arg::with_name("directory")
+                                .help("Directory to move the torrent to.")
+                                .index(1)
+                                .required(true),
+                        ),
                     SubCommand::with_name("tracker")
                         .about("Manipulate trackers for a torrent")
                         .subcommands(vec![
@@ -493,6 +501,17 @@ fn main() {
             let id = subcmd.value_of("torrent id").unwrap_or("none");
             let output = subcmd.value_of("output").unwrap();
             match subcmd.subcommand_name().unwrap() {
+                "move" => {
+                    let dir = subcmd
+                        .subcommand_matches("move")
+                        .unwrap()
+                        .value_of("directory")
+                        .unwrap();
+                    if let Err(e) = cmd::move_torrent(client, id, dir) {
+                        eprintln!("Failed to move torrent: {}", e.display_chain());
+                        process::exit(1);
+                    }
+                }
                 "tracker" => {
                     let sscmd = subcmd.subcommand_matches("tracker").unwrap();
                     match sscmd.subcommand_name().unwrap() {
