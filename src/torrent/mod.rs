@@ -296,7 +296,7 @@ impl<T: cio::CIO> Torrent<T> {
             info_idx,
             created: Utc::now(),
         };
-        t.start();
+        t.start(true);
         if import {
             t.cio.msg_disk(disk::Request::validate_piece(
                 t.id,
@@ -433,7 +433,7 @@ impl<T: cio::CIO> Torrent<T> {
             created: d.created,
         };
         t.status.error = None;
-        t.start();
+        t.start(false);
         if d.status.validating {
             t.validate();
         } else {
@@ -1380,7 +1380,7 @@ impl<T: cio::CIO> Torrent<T> {
         ]));
     }
 
-    fn start(&mut self) {
+    fn start(&mut self, serialize: bool) {
         debug!("Starting torrent");
         // Update RPC of the torrent, tracker, files, and peers
         let mut resources = Vec::new();
@@ -1393,7 +1393,9 @@ impl<T: cio::CIO> Torrent<T> {
         if self.info_idx.is_none() {
             self.update_rpc_transfer();
         }
-        self.serialize();
+        if serialize {
+            self.serialize();
+        }
     }
 
     fn announce_start(&mut self) {
