@@ -16,6 +16,7 @@ use rand::{self, Rng};
 pub type FHashMap<K, V> = fnv::FnvHashMap<K, V>;
 pub type FHashSet<T> = fnv::FnvHashSet<T>;
 pub type UHashMap<T> = FHashMap<usize, T>;
+pub type UHashSet = FHashSet<usize>;
 
 pub type MBuildHasher = BuildHasherDefault<MetroHash>;
 pub type MHashMap<K, V> = HashMap<K, V, MBuildHasher>;

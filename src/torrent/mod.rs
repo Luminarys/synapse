@@ -1744,33 +1744,33 @@ impl<T: cio::CIO> Torrent<T> {
         if self.peers.values().any(|p| p.addr() == conn.sock().addr()) {
             return None;
         }
-        if let Ok(p) = Peer::new(conn, self, None, None) {
-            let pid = p.id();
-            if self.info_idx.is_none() {
-                self.picker.add_peer(&p);
+        if let Ok(pid) = self.cio.add_peer(conn) {
+            if let Ok(p) = Peer::new(pid, self, None, None) {
+                if self.info_idx.is_none() {
+                    self.picker.add_peer(&p);
+                }
+                self.peers.insert(pid, p);
+                return Some(pid);
             }
-            self.peers.insert(pid, p);
-            Some(pid)
-        } else {
-            None
         }
+        None
     }
 
-    pub fn add_inc_peer(&mut self, conn: PeerConn, id: [u8; 20], rsv: [u8; 8]) -> Option<usize> {
-        if self.peers.values().any(|p| p.addr() == conn.sock().addr()) {
-            return None;
+    pub fn add_inc_peer(&mut self, pid: usize, id: [u8; 20], rsv: [u8; 8]) -> Option<usize> {
+        if let Some(addr) = self.cio.get_peer(pid, |pconn| pconn.sock().addr()) {
+            if self.peers.values().any(|p| p.addr() == addr) {
+                return None;
+            }
         }
-        if let Ok(p) = Peer::new(conn, self, Some(id), Some(rsv)) {
-            let pid = p.id();
-            debug!("Adding peer {:?}!", pid);
+        if let Ok(p) = Peer::new(pid, self, Some(id), Some(rsv)) {
+            debug!("{:?}: Adding peer {:?}!", self.rpc_id(), pid);
             if self.info_idx.is_none() {
                 self.picker.add_peer(&p);
             }
             self.peers.insert(pid, p);
-            Some(pid)
-        } else {
-            None
+            return Some(pid);
         }
+        None
     }
 
     pub fn announce_status(&mut self) {
