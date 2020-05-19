@@ -2,35 +2,24 @@ use std::io::{self, ErrorKind};
 use std::net::{Ipv4Addr, SocketAddrV4, TcpListener, TcpStream};
 use std::{fmt, thread};
 
-use amy::{self, Poller, Registrar};
+use amy::{self, Poller};
 
-use torrent::peer::reader::{RRes, Reader};
-use util::UHashMap;
 use {handle, CONFIG};
 
 pub struct Listener {
     listener: TcpListener,
     lid: usize,
-    incoming: UHashMap<(TcpStream, Reader)>,
     poll: Poller,
-    reg: Registrar,
     ch: handle::Handle<Request, Message>,
 }
 
 pub struct Message {
     pub conn: TcpStream,
-    pub reader: Reader,
-    pub id: [u8; 20],
-    pub hash: [u8; 20],
-    pub rsv: [u8; 8],
 }
 
 impl fmt::Debug for Message {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "listener msg for torrent: ")?;
-        for byte in &self.hash {
-            write!(f, "{:X}", byte)?;
-        }
+        write!(f, "listener msg")?;
         Ok(())
     }
 }
@@ -60,9 +49,7 @@ impl Listener {
             Listener {
                 listener,
                 lid,
-                incoming: UHashMap::default(),
                 poll,
-                reg,
                 ch: h,
             }
             .run()
@@ -85,7 +72,7 @@ impl Listener {
                                     _ => break,
                                 }
                             },
-                            _ => self.handle_peer(not),
+                            _ => unreachable!(),
                         }
                     }
                 }
@@ -102,10 +89,8 @@ impl Listener {
                     if conn.set_nonblocking(true).is_err() {
                         continue;
                     }
-                    if let Ok(pid) = self.reg.register(&conn, amy::Event::Read) {
-                        self.incoming.insert(pid, (conn, Reader::new()));
-                    } else {
-                        error!("IO poll error, dropping connection!");
+                    if self.ch.send(Message { conn: conn }).is_err() {
+                        error!("failed to send peer to ctrl");
                     }
                 }
                 Err(ref e) if e.kind() == ErrorKind::WouldBlock => {
@@ -114,45 +99,6 @@ impl Listener {
                 Err(e) => {
                     error!("Unexpected error occured during accept: {}!", e);
                 }
-            }
-        }
-    }
-
-    fn handle_peer(&mut self, not: amy::Notification) {
-        let pid = not.id;
-
-        let res = {
-            let &mut (ref mut conn, ref mut reader) = self.incoming.get_mut(&pid).unwrap();
-            reader.readable(conn)
-        };
-
-        match res {
-            RRes::Success(hs) => {
-                debug!("Completed handshake({:?}) with peer, transferring!", hs);
-                let (conn, reader) = self.incoming.remove(&pid).unwrap();
-                if self.reg.deregister(&conn).is_err() {
-                    error!("IO poll error, dropping connection!");
-                    return;
-                }
-                let hsd = hs.get_handshake_data();
-                if self
-                    .ch
-                    .send(Message {
-                        conn,
-                        reader,
-                        hash: hsd.0,
-                        id: hsd.1,
-                        rsv: hsd.2,
-                    })
-                    .is_err()
-                {
-                    error!("failed to send peer to ctrl");
-                }
-            }
-            RRes::Blocked => {}
-            RRes::Err(_) | RRes::Stalled => {
-                debug!("Peer connection failed!");
-                self.incoming.remove(&pid);
             }
         }
     }

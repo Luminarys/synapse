@@ -10,6 +10,7 @@ use throttle::Throttler;
 use torrent::{self, peer, Torrent};
 use util::{
     self, hash_to_id, id_to_hash, io_err, io_err_val, random_string, FHashSet, MHashMap, UHashMap,
+    UHashSet,
 };
 use {disk, listener, rpc, stat, tracker, CONFIG, DL_TOKEN, SHUTDOWN};
 
@@ -45,6 +46,7 @@ pub struct Control<T: cio::CIO> {
     torrents: UHashMap<Torrent<T>>,
     queue: Queue,
     peers: UHashMap<usize>,
+    incoming: UHashSet,
     hash_idx: MHashMap<[u8; 20], usize>,
     data: ServerData,
     db: amy::Sender<disk::Request>,
@@ -93,6 +95,7 @@ impl<T: cio::CIO> Control<T> {
     ) -> io::Result<Control<T>> {
         let torrents = UHashMap::default();
         let peers = UHashMap::default();
+        let incoming = UHashSet::default();
         let hash_idx = MHashMap::default();
         let mut jobs = JobManager::new();
 
@@ -125,6 +128,7 @@ impl<T: cio::CIO> Control<T> {
             jobs,
             torrents,
             peers,
+            incoming,
             hash_idx,
             stat: stat::EMA::new(),
             data: Default::default(),
@@ -336,30 +340,62 @@ impl<T: cio::CIO> Control<T> {
     }
 
     fn handle_lst_ev(&mut self, msg: listener::Message) {
-        debug!("Adding peer for torrent with hash {:?}!", msg.hash);
-        if let Some(tid) = self.hash_idx.get(&msg.hash).cloned() {
-            let id = msg.id;
-            let rsv = msg.rsv;
-            match peer::PeerConn::new_incoming(msg.conn, msg.reader) {
-                Ok(p) => self.add_inc_peer(tid, p, id, rsv),
-                Err(e) => {
-                    error!("Failed to create peer connection: {:?}", e);
+        match peer::PeerConn::new_incoming(msg.conn) {
+            Ok(pconn) => match self.cio.add_peer(pconn) {
+                Ok(pid) => {
+                    self.incoming.insert(pid);
                 }
-            };
-        } else {
-            let h = msg.hash;
-            error!("Couldn't add peer, torrent {} doesn't exist", hash_to_id(&h));
+                Err(e) => {
+                    error!("Failed to add peer connection: {:?}", e);
+                }
+            },
+            Err(e) => {
+                error!("Failed to create peer connection: {:?}", e);
+            }
         }
     }
 
-    fn handle_peer_ev(&mut self, peer: cio::PID, ev: cio::Result<torrent::Message>) {
-        let p = &mut self.peers;
-        let t = &mut self.torrents;
+    fn inc_handshake(
+        &mut self,
+        pid: cio::PID,
+        ev: cio::Result<torrent::Message>,
+    ) -> Result<(), ()> {
+        match ev {
+            Ok(msg) => match msg {
+                torrent::Message::Handshake { hash, id, rsv } => {
+                    debug!("Adding peer for torrent with hash {:?}!", hash_to_id(&hash));
+                    if let Some(tid) = self.hash_idx.get(&hash).cloned() {
+                        return self.add_inc_peer(tid, pid, id, rsv);
+                    } else {
+                        error!(
+                            "Couldn't add peer, torrent {} doesn't exist",
+                            hash_to_id(&hash)
+                        );
+                    }
+                }
+                // The Reader is instantiated in State::Handshake, so
+                // the first message must be a handshake.
+                _ => unreachable!(),
+            },
+            Err(_) => return Err(()),
+        }
+        Err(())
+    }
 
-        if let Some(torrent) = p.get(&peer).cloned().and_then(|id| t.get_mut(&id)) {
-            if torrent.peer_ev(peer, ev).is_err() {
-                p.remove(&peer);
-                torrent.update_rpc_peers();
+    fn handle_peer_ev(&mut self, pid: cio::PID, ev: cio::Result<torrent::Message>) {
+        let p = &mut self.peers;
+
+        if let Some(&tid) = p.get(&pid) {
+            let t = &mut self.torrents;
+            if let Some(torrent) = t.get_mut(&tid) {
+                if torrent.peer_ev(pid, ev).is_err() {
+                    p.remove(&pid);
+                    torrent.update_rpc_peers();
+                }
+            }
+        } else if self.incoming.remove(&pid) {
+            if self.inc_handshake(pid, ev).is_err() {
+                self.cio.remove_peer(pid);
             }
         }
     }
@@ -669,17 +705,25 @@ impl<T: cio::CIO> Control<T> {
         }
     }
 
-    fn add_inc_peer(&mut self, id: usize, peer: peer::PeerConn, cid: [u8; 20], rsv: [u8; 8]) {
+    fn add_inc_peer(
+        &mut self,
+        id: usize,
+        pid: usize,
+        cid: [u8; 20],
+        rsv: [u8; 8],
+    ) -> Result<(), ()> {
         trace!("Adding peer to torrent {:?}!", id);
         if let Some(torrent) = self.torrents.get_mut(&id) {
             if !self.queue.active_dl.contains(&id) && !torrent.status().completed() {
                 self.queue.add(id, torrent.priority());
-                return;
+                return Err(());
             }
-            if let Some(pid) = torrent.add_inc_peer(peer, cid, rsv) {
+            if let Some(pid) = torrent.add_inc_peer(pid, cid, rsv) {
                 self.peers.insert(pid, id);
+                return Ok(());
             }
         }
+        Err(())
     }
 
     fn update_rpc_space(&mut self) {

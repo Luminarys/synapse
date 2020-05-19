@@ -128,10 +128,8 @@ impl PeerConn {
 
     /// Creates a peer where we are acting as the server.
     /// Once the handshake is received, set_torrent should be called.
-    pub fn new_incoming(sock: TcpStream, reader: Reader) -> io::Result<PeerConn> {
-        let mut peer = PeerConn::new(Socket::from_stream(sock)?);
-        peer.reader = reader;
-        Ok(peer)
+    pub fn new_incoming(sock: TcpStream) -> io::Result<PeerConn> {
+        Ok(PeerConn::new(Socket::from_stream(sock)?))
     }
 
     pub fn writable(&mut self) -> io::Result<()> {
@@ -217,14 +215,13 @@ impl Peer<cio::test::TCIO> {
 
 impl<T: cio::CIO> Peer<T> {
     pub fn new(
-        mut conn: PeerConn,
+        id: usize,
         t: &mut Torrent<T>,
         cid: Option<[u8; 20]>,
         rsv: Option<[u8; 8]>,
     ) -> cio::Result<Peer<T>> {
-        let addr = conn.sock().addr();
-        conn.set_throttle(t.get_throttle(0));
-        let id = t.cio.add_peer(conn)?;
+        let throttle = t.get_throttle(0);
+        let addr = Peer::setup_conn(&mut t.cio, id, throttle)?;
         let mut p = Peer {
             id,
             addr,
@@ -253,6 +250,18 @@ impl<T: cio::CIO> Peer<T> {
         }
         p.send_rpc_info();
         Ok(p)
+    }
+
+    fn setup_conn(cio: &mut T, pid: usize, throttle: Throttle) -> cio::Result<SocketAddr> {
+        if let Some(addr) = cio.get_peer(pid, |pconn| {
+            pconn.set_throttle(throttle);
+            pconn.sock().addr()
+        }) {
+            Ok(addr)
+        } else {
+            debug!("pid {} not found", pid);
+            Err(cio::ErrorKind::IO.into())
+        }
     }
 
     pub fn magnet_complete(&mut self, info: &Info) -> Result<()> {
