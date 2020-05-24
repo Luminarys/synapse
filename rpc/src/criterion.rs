@@ -5,7 +5,7 @@ use regex::{self, Regex};
 
 use resource::ResourceKind;
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct Criterion {
     pub field: String,
