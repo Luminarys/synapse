@@ -9,6 +9,8 @@ extern crate serde_derive;
 extern crate synapse_rpc as rpc;
 extern crate tungstenite as ws;
 
+use rpc::criterion::Criterion;
+
 mod client;
 mod cmd;
 mod config;
@@ -459,13 +461,13 @@ fn main() {
         }
         "list" => {
             let args = matches.subcommand_matches("list").unwrap();
-            let crit = args
-                .value_of("filter")
-                .and_then(|f| {
-                    let single_crit = serde_json::from_str(f).map(|c| vec![c]).ok();
-                    single_crit.or_else(|| serde_json::from_str(f).ok())
-                })
-                .unwrap_or_else(Vec::new);
+
+            let crit = if let Some(searches) = args.value_of("filter") {
+                parse_filter(searches)
+            } else {
+                Vec::new()
+            };
+
             let kind = args.value_of("kind").unwrap();
             let output = args.value_of("output").unwrap();
             let res = cmd::list(client, kind, crit, output);
@@ -682,5 +684,214 @@ fn main() {
             }
         }
         _ => {}
+    }
+}
+
+/// Parse search criteria out of a filter string
+fn parse_filter(searches: &str) -> Vec<Criterion> {
+    use regex::Regex;
+    use rpc::criterion::{Operation, Value};
+
+    // return vector to hold found criterion
+    let mut criterion = Vec::new();
+
+    // regular expression for finding search criteria that take string types
+    let string_searches = Regex::new(
+        r#"(?x)
+        \b(name|path|status|tracker) # field name
+        (==|!=|::|:)                 # delimiter
+        ("(.+?)"                     # quoted argument
+        |([0-9.a-zA-Z]+))            # unquoted argument
+        "#,
+    )
+    .unwrap();
+
+    // regular expression for finding search criteria that take numeric types
+    let numeric_searches = Regex::new(
+        r#"(?x)
+        \b(size|progress|priority|availability
+           |rate_up|rate_down|throttle_up|throttle_down
+           |transferred_up|transferred_down
+           |peers|trackers|files)    # field name
+        (>=|<=|==|!=|>|<)            # delimiter
+        ("([0-9.]+?)"                # quoted argument
+        |([0-9.]+))                  # unquoted argument
+        "#,
+    )
+    .unwrap();
+
+    // find all string like searches and add to criterion
+    for cap in string_searches.captures_iter(searches) {
+        let field = cap[1].to_string();
+        let op = match &cap[2] {
+            "==" => Operation::Eq,
+            "!=" => Operation::Neq,
+            "::" => Operation::Like,
+            ":" => Operation::ILike,
+            _ => unreachable!(),
+        };
+        let arg = if let Some(quoted) = cap.get(4) {
+            quoted
+        } else {
+            // if quoted arg did not match, an unquoted arg must have matched
+            cap.get(5).unwrap()
+        }
+        .as_str();
+        let value = Value::S(arg.to_string());
+        criterion.push(Criterion { field, op, value });
+    }
+
+    // find all numeric searches and add to criterion
+    for cap in numeric_searches.captures_iter(searches) {
+        let field = cap[1].to_string();
+        let op = match &cap[2] {
+            ">=" => Operation::GTE,
+            "<=" => Operation::LTE,
+            "==" => Operation::Eq,
+            "!=" => Operation::Neq,
+            ">" => Operation::GT,
+            "<" => Operation::LT,
+            _ => unreachable!(),
+        };
+        let arg = if let Some(quoted) = cap.get(4) {
+            quoted
+        } else {
+            // if quoted arg did not match, an unquoted arg must have matched
+            cap.get(5).unwrap()
+        }
+        .as_str();
+        let value = Value::F(arg.parse().expect("Invalid numeric value"));
+        criterion.push(Criterion { field, op, value });
+    }
+
+    // if no matches found, assume a simple name query
+    if criterion.is_empty() {
+        criterion.push(Criterion {
+            field: "name".to_string(),
+            op: Operation::ILike,
+            value: Value::S(searches.to_string()),
+        });
+    }
+
+    criterion
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rpc::criterion::{Operation, Value};
+
+    #[test]
+    fn parse_filter_simple() {
+        let name_query = vec![Criterion {
+            field: "name".to_string(),
+            op: Operation::ILike,
+            value: Value::S("abcd".to_string()),
+        }];
+        assert_eq!(parse_filter("abcd"), name_query.clone());
+        assert_eq!(parse_filter("name:abcd"), name_query);
+    }
+
+    #[test]
+    fn parse_filter_simple_with_space() {
+        let name_query = vec![Criterion {
+            field: "name".to_string(),
+            op: Operation::ILike,
+            value: Value::S("abcd efgh ijkl".to_string()),
+        }];
+        assert_eq!(parse_filter("abcd efgh ijkl"), name_query);
+    }
+
+    #[test]
+    fn parse_filter_case_sensitive() {
+        let name_query = vec![Criterion {
+            field: "path".to_string(),
+            op: Operation::Like,
+            value: Value::S("ISOs Directory".to_string()),
+        }];
+        assert_eq!(parse_filter(r#"path::"ISOs Directory""#), name_query);
+    }
+
+    #[test]
+    fn parse_filter_quoted_with_space() {
+        let name_query = vec![Criterion {
+            field: "path".to_string(),
+            op: Operation::ILike,
+            value: Value::S("/Linux ISOs/".to_string()),
+        }];
+        assert_eq!(parse_filter(r#"path:"/Linux ISOs/""#), name_query);
+    }
+
+    #[test]
+    fn parse_filter_bad_field_name() {
+        let name_query = vec![Criterion {
+            field: "name".to_string(),
+            op: Operation::ILike,
+            value: Value::S("badfield==4".to_string()),
+        }];
+        assert_eq!(parse_filter("badfield==4"), name_query);
+    }
+
+    #[test]
+    fn parse_filter_bad_delimeter_after_valid() {
+        let name_query = vec![Criterion {
+            field: "name".to_string(),
+            op: Operation::ILike,
+            value: Value::S("foo".to_string()),
+        }];
+        assert_eq!(parse_filter("name:foo key~val"), name_query);
+    }
+
+    #[test]
+    fn parse_filter_bad_field_name_after_valid() {
+        let name_query = vec![Criterion {
+            field: "name".to_string(),
+            op: Operation::ILike,
+            value: Value::S("foo".to_string()),
+        }];
+        assert_eq!(parse_filter("name:foo badfield==4"), name_query);
+    }
+
+    #[test]
+    fn parse_filter_numbers() {
+        let gt_query = vec![Criterion {
+            field: "transferred_up".to_string(),
+            op: Operation::GT,
+            value: Value::F(500.23),
+        }];
+        assert_eq!(parse_filter("transferred_up>500.23"), gt_query);
+
+        let gte_query = vec![Criterion {
+            field: "transferred_up".to_string(),
+            op: Operation::GTE,
+            value: Value::F(500.23),
+        }];
+        assert_eq!(parse_filter("transferred_up>=500.23"), gte_query);
+    }
+
+    #[test]
+    fn parse_filter_multi_query() {
+        let multi_query = vec![
+            Criterion {
+                field: "transferred_up".to_string(),
+                op: Operation::GT,
+                value: Value::F(500.23),
+            },
+            Criterion {
+                field: "tracker".to_string(),
+                op: Operation::ILike,
+                value: Value::S("debian".to_string()),
+            },
+            Criterion {
+                field: "priority".to_string(),
+                op: Operation::Eq,
+                value: Value::F(4.0),
+            },
+        ];
+        let p = parse_filter("transferred_up>500.23 tracker:debian priority==4.0");
+        assert_eq!(p.len(), multi_query.len());
+        for q in &multi_query {
+            assert!(p.contains(&q));
+        }
     }
 }
