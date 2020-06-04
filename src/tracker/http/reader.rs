@@ -39,52 +39,14 @@ impl Reader {
                     self.idx = self.data.len();
                     let new_len = (self.idx as f32 * 1.5) as usize;
                     self.data.resize(new_len, 0u8);
+                    if let Some(result) = self.process_data()? {
+                        return Ok(result);
+                    }
                 }
                 IOR::Incomplete(a) => {
                     self.idx += a;
-                    let mut header_done = None;
-                    match self.state {
-                        ReadState::Header => {
-                            let mut headers = [httparse::EMPTY_HEADER; 16];
-                            let mut resp = httparse::Response::new(&mut headers);
-                            match resp.parse(&self.data[..self.idx]) {
-                                Ok(httparse::Status::Complete(i)) => {
-                                    // Redirect handling
-                                    let redirect_codes = [301, 302, 303, 307, 308];
-                                    if resp
-                                        .code
-                                        .as_ref()
-                                        .map(|c| redirect_codes.contains(c))
-                                        .unwrap_or(false)
-                                    {
-                                        let loc = resp
-                                            .headers
-                                            .iter()
-                                            .find(|h| h.name == "Location")
-                                            .and_then(|h| String::from_utf8(h.value.to_vec()).ok());
-                                        if loc.is_none() {
-                                            return Err(ErrorKind::InvalidResponse(
-                                                "malformed HTTP",
-                                            )
-                                            .into());
-                                        }
-                                        return Ok(ReadRes::Redirect(loc.unwrap()));
-                                    }
-                                    header_done = Some(i);
-                                }
-                                Ok(httparse::Status::Partial) => {}
-                                Err(_) => {
-                                    return Err(ErrorKind::InvalidResponse("malformed HTTP").into());
-                                }
-                            }
-                        }
-                        ReadState::Body => {}
-                    }
-                    if let Some(i) = header_done {
-                        let body = self.data.split_off(i);
-                        self.idx -= self.data.len();
-                        self.data = body;
-                        self.state = ReadState::Body;
+                    if let Some(result) = self.process_data()? {
+                        return Ok(result);
                     }
                 }
                 IOR::Blocked => return Ok(ReadRes::None),
@@ -99,5 +61,53 @@ impl Reader {
                 IOR::Err(_) => return Err(ErrorKind::IO.into()),
             }
         }
+    }
+
+    fn process_data(&mut self) -> Result<Option<ReadRes>> {
+        let mut header_done = None;
+        match self.state {
+            ReadState::Header => {
+                let mut headers = [httparse::EMPTY_HEADER; 16];
+                let mut resp = httparse::Response::new(&mut headers);
+                match resp.parse(&self.data[..self.idx]) {
+                    Ok(httparse::Status::Complete(i)) => {
+                        // Redirect handling
+                        let redirect_codes = [301, 302, 303, 307, 308];
+                        if resp
+                            .code
+                            .as_ref()
+                            .map(|c| redirect_codes.contains(c))
+                            .unwrap_or(false)
+                        {
+                            let loc = resp
+                                .headers
+                                .iter()
+                                .find(|h| h.name == "Location")
+                                .and_then(|h| String::from_utf8(h.value.to_vec()).ok());
+                            if loc.is_none() {
+                                return Err(ErrorKind::InvalidResponse(
+                                    "malformed HTTP",
+                                )
+                                .into());
+                            }
+                            return Ok(Some(ReadRes::Redirect(loc.unwrap())));
+                        }
+                        header_done = Some(i);
+                    }
+                    Ok(httparse::Status::Partial) => {}
+                    Err(_) => {
+                        return Err(ErrorKind::InvalidResponse("malformed HTTP").into());
+                    }
+                }
+            }
+            ReadState::Body => {}
+        }
+        if let Some(i) = header_done {
+            let body = self.data.split_off(i);
+            self.idx -= self.data.len();
+            self.data = body;
+            self.state = ReadState::Body;
+        }
+        Ok(None)
     }
 }
