@@ -1,7 +1,7 @@
 use std::ops::{Deref, DerefMut};
 use std::sync::atomic;
 
-use protocol;
+use crate::protocol;
 
 const MAX_BUFS: usize = 4096;
 pub const BUF_SIZE: usize = 16_384;

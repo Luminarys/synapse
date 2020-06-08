@@ -1,13 +1,9 @@
-extern crate bincode;
-extern crate chrono;
-extern crate serde;
 #[macro_use]
 extern crate serde_derive;
 
 pub mod torrent {
     pub use self::current::Session;
     pub use self::ver_fa1b6f as current;
-    use bincode;
 
     #[derive(Serialize, Deserialize, Clone)]
     pub struct Bitfield {

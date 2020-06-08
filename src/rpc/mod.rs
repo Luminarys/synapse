@@ -10,10 +10,8 @@ use std::io::Write;
 use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4, TcpListener};
 use std::{io, result, str, thread};
 
-use amy;
 use http_range::HttpRange;
 use openssl::ssl::{SslAcceptor, SslFiletype, SslMethod};
-use serde_json;
 use url::Url;
 
 use self::client::{Client, Incoming, IncomingStatus};
@@ -23,13 +21,13 @@ use self::proto::message::{self, SMessage};
 pub use self::proto::resource;
 use self::proto::ws;
 use self::transfer::{TransferResult, Transfers};
-use bencode;
-use disk;
-use handle;
-use socket::TSocket;
-use torrent;
-use util::UHashMap;
-use CONFIG;
+use crate::bencode;
+use crate::disk;
+use crate::handle;
+use crate::socket::TSocket;
+use crate::torrent;
+use crate::util::UHashMap;
+use crate::CONFIG;
 
 const POLL_INT_MS: usize = 1000;
 const CLEANUP_INT_MS: usize = 2000;
@@ -166,7 +164,6 @@ pub enum Message {
     PurgeDNS,
 }
 
-#[allow(dead_code)]
 pub struct RPC {
     poll: amy::Poller,
     reg: amy::Registrar,

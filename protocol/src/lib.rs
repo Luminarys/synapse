@@ -121,14 +121,12 @@ impl<BF: Bitfield, Buf: Buffer> Clone for Message<BF, Buf> {
                 begin,
                 length,
                 ref data,
-            } => {
-                Message::Piece {
-                    index,
-                    begin,
-                    length,
-                    data: data.clone(),
-                }
-            }
+            } => Message::Piece {
+                index,
+                begin,
+                length,
+                data: data.clone(),
+            },
             Message::Cancel {
                 index,
                 begin,

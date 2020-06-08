@@ -1,5 +1,5 @@
-use control::cio;
-use torrent::{Bitfield, Peer};
+use crate::control::cio;
+use crate::torrent::{Bitfield, Peer};
 
 #[derive(Clone, Debug)]
 pub struct Picker {
@@ -112,7 +112,7 @@ impl Picker {
 #[cfg(test)]
 mod tests {
     use super::Picker;
-    use torrent::{Bitfield, Peer};
+    use crate::torrent::{Bitfield, Peer};
 
     #[test]
     fn test_piece_pick_order() {

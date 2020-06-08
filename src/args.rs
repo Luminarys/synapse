@@ -3,7 +3,7 @@ use std::process;
 
 use getopts::Options;
 
-use log;
+use crate::log;
 
 pub struct Args {
     pub config: Option<String>,

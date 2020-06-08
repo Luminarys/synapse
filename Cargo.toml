@@ -6,6 +6,7 @@ authors = ["Luminarys <postmaster@gensok.io>"]
 build = "build.rs"
 license = "ISC"
 repository = "https://github.com/Luminarys/synapse"
+edition = "2018"
 
 [[bin]]
 path = "src/main.rs"

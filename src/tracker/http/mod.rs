@@ -7,16 +7,16 @@ use std::time::{Duration, Instant};
 use std::{io, mem};
 
 use url::percent_encoding::percent_encode_byte;
-use url::{ParseError, Url};
+use url::Url;
 
 use self::reader::{ReadRes, Reader};
 use self::writer::Writer;
-use socket::TSocket;
-use tracker::{
+use crate::socket::TSocket;
+use crate::tracker::{
     self, dns, Announce, Error, ErrorKind, Response, Result, ResultExt, TrackerResponse,
 };
-use util::UHashMap;
-use {amy, bencode, PEER_ID};
+use crate::util::UHashMap;
+use crate::{bencode, PEER_ID};
 
 const TIMEOUT_MS: u64 = 5_000;
 
@@ -75,7 +75,7 @@ impl TrackerState {
             TrackerState::Complete(r) => Ok(HTTPRes::Complete(r)),
             TrackerState::Redirect(l) => Ok(HTTPRes::Redirect(l)),
             n => {
-                mem::replace(self, n);
+                *self = n;
                 Ok(HTTPRes::None)
             }
         }
@@ -264,11 +264,12 @@ impl Handler {
     ) -> Result<()> {
         let url = match Url::parse(url) {
             Ok(url) => Ok(url),
-            Err(ParseError::RelativeUrlWithoutBase) => {
-                Ok(original_url.join(url).map_err(|_| ErrorKind::InvalidResponse("Invalid relative redirect URL"))?)
-            },
+            Err(url::ParseError::RelativeUrlWithoutBase) => Ok(original_url
+                .join(url)
+                .map_err(|_| ErrorKind::InvalidResponse("Invalid relative redirect URL"))?),
             Err(e) => Err(e),
-        }.chain_err(|| {
+        }
+        .chain_err(|| {
             error!("{} {}", original_url, url);
             ErrorKind::InvalidResponse("Malformed redirect!")
         })?;
@@ -289,12 +290,10 @@ impl Handler {
         http_req.extend_from_slice(user_agent.as_bytes());
         http_req.extend_from_slice(b"Connection: close\r\n");
         http_req.extend_from_slice(b"Host: ");
-        let host = url
-            .host_str()
-            .ok_or_else(|| {
-                error!("{}", url);
-                Error::from(ErrorKind::InvalidResponse("Malformed redirect!"))
-            })?;
+        let host = url.host_str().ok_or_else(|| {
+            error!("{}", url);
+            Error::from(ErrorKind::InvalidResponse("Malformed redirect!"))
+        })?;
         let port = url.port().unwrap_or(80);
         http_req.extend_from_slice(host.as_bytes());
         http_req.extend_from_slice(b"\r\n\r\n");

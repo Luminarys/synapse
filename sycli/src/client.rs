@@ -1,10 +1,8 @@
-use serde_json;
 use url::Url;
-use ws;
 use ws::client::AutoStream;
 use ws::protocol::Message as WSMessage;
 
-use rpc::message::{CMessage, SMessage, Version};
+use crate::rpc::message::{CMessage, SMessage, Version};
 
 use crate::error::{ErrorKind, Result, ResultExt};
 

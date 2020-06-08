@@ -5,8 +5,8 @@ use std::os::unix::fs::MetadataExt;
 
 use std::io::{Read, Seek, SeekFrom, Write};
 
-use util::{native, MHashMap};
-use CONFIG;
+use crate::util::{native, MHashMap};
+use crate::CONFIG;
 
 const PB_LEN: usize = 256;
 
@@ -46,7 +46,7 @@ impl<'a> TempBuf<'a> {
     }
 }
 
-fn get_pb(buf: &mut OsString) -> TempPB {
+fn get_pb(buf: &mut OsString) -> TempPB<'_> {
     debug_assert!(buf.capacity() >= PB_LEN);
     let path = mem::replace(buf, OsString::with_capacity(0)).into();
     TempPB { buf, path }
@@ -85,7 +85,7 @@ impl BufCache {
         }
     }
 
-    pub fn data(&mut self) -> (TempBuf, TempPB, TempPB) {
+    pub fn data(&mut self) -> (TempBuf<'_>, TempPB<'_>, TempPB<'_>) {
         (
             TempBuf { buf: &mut self.buf },
             get_pb(&mut self.path_a),

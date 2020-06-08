@@ -4,7 +4,7 @@ use std::{fmt, thread};
 
 use amy::{self, Poller};
 
-use {handle, CONFIG};
+use crate::{handle, CONFIG};
 
 pub struct Listener {
     listener: TcpListener,
@@ -18,7 +18,7 @@ pub struct Message {
 }
 
 impl fmt::Debug for Message {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "listener msg")?;
         Ok(())
     }

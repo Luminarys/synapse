@@ -3,7 +3,7 @@ use std::f32;
 use chrono::{DateTime, Utc};
 use regex::{self, Regex};
 
-use resource::ResourceKind;
+use crate::resource::ResourceKind;
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
@@ -70,7 +70,7 @@ pub enum Field<'a> {
 pub const FNULL: Field<'static> = Field::E(None);
 
 pub trait Queryable {
-    fn field(&self, field: &str) -> Option<Field>;
+    fn field(&self, field: &str) -> Option<Field<'_>>;
 }
 
 impl Criterion {
@@ -82,7 +82,7 @@ impl Criterion {
         }
     }
 
-    fn match_field(&self, field: &Field, op: Operation, value: &Value) -> bool {
+    fn match_field(&self, field: &Field<'_>, op: Operation, value: &Value) -> bool {
         match (field, value) {
             (&Field::V(ref items), &Value::V(ref vals)) => match op {
                 Operation::Eq => items
@@ -227,7 +227,7 @@ mod tests {
 
     struct Q;
     impl Queryable for Q {
-        fn field(&self, f: &str) -> Option<Field> {
+        fn field(&self, f: &str) -> Option<Field<'_>> {
             match f {
                 "s" => Some(Field::S("foo")),
                 "n" => Some(Field::N(1)),

@@ -4,8 +4,8 @@ use std::time;
 use super::proto::message::Error;
 use super::EMPTY_HTTP_RESP;
 
-use socket::TSocket;
-use util::{aread, UHashMap, IOR};
+use crate::socket::TSocket;
+use crate::util::{aread, UHashMap, IOR};
 
 pub struct Transfers {
     torrents: UHashMap<TorrentTx>,

@@ -1,8 +1,8 @@
 use std::time::{Duration, Instant};
 
-use control::cio;
-use torrent::Peer;
-use util::{random_sample, FHashSet, UHashMap};
+use crate::control::cio;
+use crate::torrent::Peer;
+use crate::util::{random_sample, FHashSet, UHashMap};
 
 pub struct Choker {
     unchoked: Vec<usize>,
@@ -136,9 +136,9 @@ impl Choker {
 #[cfg(test)]
 mod tests {
     use super::{Choker, SwapRes};
+    use crate::torrent::{Bitfield, Peer};
+    use crate::util::UHashMap;
     use std::time::{Duration, Instant};
-    use torrent::{Bitfield, Peer};
-    use util::UHashMap;
 
     #[test]
     fn test_add_peers() {

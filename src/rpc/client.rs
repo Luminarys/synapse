@@ -1,9 +1,6 @@
 use std::io::{self, Write};
 use std::{mem, result, str, time};
 
-use base64;
-use httparse;
-use serde_json;
 use url::Url;
 
 use super::proto::message::{SMessage, Version};
@@ -12,9 +9,9 @@ use super::reader::Reader;
 use super::writer::Writer;
 use super::{ErrorKind, Result, ResultExt};
 use super::{EMPTY_HTTP_RESP, UNAUTH_HTTP_RESP};
-use socket::TSocket;
-use util::{aread, sha1_hash, IOR};
-use {CONFIG, DL_TOKEN};
+use crate::socket::TSocket;
+use crate::util::{aread, sha1_hash, IOR};
+use crate::{CONFIG, DL_TOKEN};
 
 pub struct Client {
     pub conn: TSocket,
@@ -290,7 +287,7 @@ impl FragBuf {
     }
 }
 
-fn validate_dl(req: &httparse::Request) -> Option<(String, Option<String>)> {
+fn validate_dl(req: &httparse::Request<'_, '_>) -> Option<(String, Option<String>)> {
     req.path
         .and_then(|path| Url::parse(&format!("http://localhost{}", path)).ok())
         .and_then(|url| {
@@ -336,7 +333,7 @@ fn validate_dl(req: &httparse::Request) -> Option<(String, Option<String>)> {
 
 // TODO: We're not really checking HTTP semantics here, might be worth
 // considering.
-fn validate_tx(req: &httparse::Request) -> Option<String> {
+fn validate_tx(req: &httparse::Request<'_, '_>) -> Option<String> {
     for header in req.headers.iter() {
         if header.name.to_lowercase() == "authorization" {
             return str::from_utf8(header.value).ok().and_then(|v| {
@@ -352,7 +349,7 @@ fn validate_tx(req: &httparse::Request) -> Option<String> {
     None
 }
 
-fn validate_upgrade(req: &httparse::Request) -> result::Result<String, bool> {
+fn validate_upgrade(req: &httparse::Request<'_, '_>) -> result::Result<String, bool> {
     if !req.method.map(|m| m == "GET").unwrap_or(false) {
         return Err(false);
     }

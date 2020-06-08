@@ -1,7 +1,7 @@
 use super::proto::ws::Message;
+use crate::util::{awrite, IOR};
 use std::collections::VecDeque;
 use std::io;
-use util::{awrite, IOR};
 
 // TODO: Consider how to handle larger streamed messages(maybe)
 // may be better to just offer an http interface for chunked DL anyways

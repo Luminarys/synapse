@@ -3,13 +3,12 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::{cmp, fmt, mem};
 
-use base32;
 use rand::{self, Rng};
 use url::Url;
 
-use bencode::BEncode;
-use disk;
-use util::{hash_to_id, id_to_hash, sha1_hash};
+use crate::bencode::BEncode;
+use crate::disk;
+use crate::util::{hash_to_id, id_to_hash, sha1_hash};
 
 #[derive(Clone)]
 pub struct Info {
@@ -30,7 +29,7 @@ pub struct Info {
 }
 
 impl fmt::Debug for Info {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
             "Torrent Info {{

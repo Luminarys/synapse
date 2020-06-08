@@ -1,6 +1,6 @@
 use std::fmt;
 
-use protocol;
+use crate::protocol;
 
 // Use u64 than usize because it conforms with bittorents network protocol
 // (4 byte big endian integers)
@@ -219,7 +219,7 @@ impl Bitfield {
         base64::encode(&self.data())
     }
 
-    pub fn iter(&self) -> BitfieldIter {
+    pub fn iter(&self) -> BitfieldIter<'_> {
         BitfieldIter::new(self)
     }
 }
@@ -254,7 +254,7 @@ impl Default for Bitfield {
 }
 
 impl fmt::Debug for Bitfield {
-    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
         write!(f, "Bitfield {{ len: {}, pieces: ", self.len())?;
         for i in 0..self.len() {
             if self.has_bit(i) {
@@ -302,6 +302,7 @@ impl<'a> Iterator for BitfieldIter<'a> {
 
 #[cfg(test)]
 mod tests {
+    use super::protocol;
     use super::Bitfield;
 
     #[test]

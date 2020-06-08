@@ -1,10 +1,10 @@
 use super::{ID, VERSION};
-use bencode::{self, BEncode};
+use crate::bencode::{self, BEncode};
+use crate::util::{addr_to_bytes, bytes_to_addr};
+use crate::CONFIG;
 use num_bigint::BigUint;
 use std::collections::BTreeMap;
 use std::net::SocketAddr;
-use util::{addr_to_bytes, bytes_to_addr};
-use CONFIG;
 // use std::u16;
 
 error_chain! {

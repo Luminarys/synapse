@@ -2,9 +2,9 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time;
 
-use control::cio;
-use torrent::{Bitfield, Info, Peer};
-use util::FHashSet;
+use crate::control::cio;
+use crate::torrent::{Bitfield, Info, Peer};
+use crate::util::FHashSet;
 
 mod rarest;
 mod sequential;

@@ -2,9 +2,6 @@ use std::collections::HashMap;
 use std::io::Read;
 use std::{fs, process};
 
-use shellexpand;
-use toml;
-
 pub type Config = HashMap<String, ServerInfo>;
 
 #[derive(Deserialize)]
