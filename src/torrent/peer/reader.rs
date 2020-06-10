@@ -163,7 +163,7 @@ impl Reader {
                 State::Bitfield { ref mut data } => match aread(&mut data[self.idx..len], conn) {
                     IOR::Complete => {
                         let d = mem::replace(data, vec![]).into_boxed_slice();
-                        let bf = Bitfield::from(d, len as u64 * 8);
+                        let bf = Bitfield::from(&d, len as u64 * 8);
                         return RRes::Success(Message::Bitfield(bf));
                     }
                     IOR::Incomplete(a) => self.idx += a,

@@ -89,7 +89,7 @@ impl Listener {
                     if conn.set_nonblocking(true).is_err() {
                         continue;
                     }
-                    if self.ch.send(Message { conn: conn }).is_err() {
+                    if self.ch.send(Message { conn }).is_err() {
                         error!("failed to send peer to ctrl");
                     }
                 }

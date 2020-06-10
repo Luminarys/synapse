@@ -68,8 +68,8 @@ lazy_static! {
         pid[..prefix.len()].clone_from_slice(&prefix[..]);
 
         let mut rng = rand::thread_rng();
-        for i in prefix.len()..20 {
-            pid[i] = rng.gen::<u8>();
+        for p in pid.iter_mut().skip(prefix.len()) {
+            *p = rng.gen();
         }
         pid
     };

@@ -49,7 +49,6 @@ impl BEncode {
         BEncode::Int(i)
     }
 
-    #[cfg_attr(feature = "cargo-clippy", allow(should_implement_trait))]
     pub fn from_str(s: &str) -> BEncode {
         BEncode::String(Vec::from(s))
     }

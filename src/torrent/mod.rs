@@ -290,7 +290,7 @@ impl<T: cio::CIO> Torrent<T> {
             trackers,
             choker: choker::Choker::new(),
             dirty: true,
-            status: status.clone(),
+            status,
             info_bytes,
             info_idx,
             created: Utc::now(),
@@ -319,11 +319,7 @@ impl<T: cio::CIO> Torrent<T> {
         mut throttle: Throttle,
         cio: T,
     ) -> Option<Torrent<T>> {
-        let d = if let Some(d) = session::torrent::load(data) {
-            d
-        } else {
-            return None;
-        };
+        let d = session::torrent::load(data)?;
         debug!("Torrent data deserialized!");
         let peers = UHashMap::default();
         let leechers = FHashSet::default();
@@ -365,7 +361,7 @@ impl<T: cio::CIO> Torrent<T> {
         } else {
             vec![]
         };
-        let pieces = Bitfield::from(d.pieces.data, d.pieces.len);
+        let pieces = Bitfield::from(&d.pieces.data, d.pieces.len);
         let picker = picker::Picker::new(&info, &pieces, &d.priorities);
         throttle.set_ul_rate(d.throttle_ul);
         throttle.set_dl_rate(d.throttle_dl);
@@ -1152,24 +1148,24 @@ impl<T: cio::CIO> Torrent<T> {
             } else {
                 return Ok(());
             };
-            let b = bencode::decode_buf_first(&payload).map_err(|_| ())?;
-            let mut d = b.into_dict().ok_or(())?;
-            let t = d.remove("msg_type").and_then(|v| v.into_int()).ok_or(())?;
-            let p = d.remove("piece").and_then(|v| v.into_int()).ok_or(())? as usize;
-            if p * 16_384 >= self.info_bytes.len() {
+            let buf = bencode::decode_buf_first(&payload).map_err(|_| ())?;
+            let mut dict = buf.into_dict().ok_or(())?;
+            let msg = dict.remove("msg_type").and_then(|v| v.into_int()).ok_or(())?;
+            let piece_len = dict.remove("piece").and_then(|v| v.into_int()).ok_or(())? as usize;
+            if piece_len * 16_384 >= self.info_bytes.len() {
                 return Err(());
             }
             // Our metadata request strategy is as follows: after requesting the first
             // index chunk, we attempt to request every single subsequent chunk from
             // a peer which responds succesfully. This is slightly wasteful, but
             // simplifies logic (since we don't have to do "index piece picking").
-            match t {
+            match msg {
                 0 => {
                     let mut respb = BTreeMap::new();
                     if self.info_idx.is_none() {
                         respb.insert("msg_type".to_owned(), bencode::BEncode::Int(1));
-                        respb.insert("piece".to_owned(), bencode::BEncode::Int(p as i64));
-                        let size = if self.info_bytes.len() / 16_384 == p {
+                        respb.insert("piece".to_owned(), bencode::BEncode::Int(piece_len as i64));
+                        let size = if self.info_bytes.len() / 16_384 == piece_len {
                             self.info_bytes.len() % 16_384
                         } else {
                             16_384
@@ -1177,7 +1173,7 @@ impl<T: cio::CIO> Torrent<T> {
                         let total_size = self.info_bytes.len() as i64;
                         respb.insert("total_size".to_owned(), bencode::BEncode::Int(total_size));
                         let mut payload = bencode::BEncode::Dict(respb).encode_to_buf();
-                        let s = p * 16_384;
+                        let s = piece_len * 16_384;
                         payload.extend_from_slice(&self.info_bytes[s..s + size]);
                         peer.send_message(Message::Extension {
                             id: utm_id,
@@ -1185,7 +1181,7 @@ impl<T: cio::CIO> Torrent<T> {
                         });
                     } else {
                         respb.insert("msg_type".to_owned(), bencode::BEncode::Int(2));
-                        respb.insert("piece".to_owned(), bencode::BEncode::Int(p as i64));
+                        respb.insert("piece".to_owned(), bencode::BEncode::Int(piece_len as i64));
                         let payload = bencode::BEncode::Dict(respb).encode_to_buf();
                         peer.send_message(Message::Extension {
                             id: utm_id,
@@ -1196,22 +1192,22 @@ impl<T: cio::CIO> Torrent<T> {
                 1 => {
                     if let Some(idx) = self.info_idx {
                         let data_idx = util::find_subseq(&payload[..], b"ee").unwrap() + 2;
-                        if payload.len() - data_idx > self.info_bytes.len() - p * 16_384 {
+                        if payload.len() - data_idx > self.info_bytes.len() - piece_len * 16_384 {
                             debug!(
                                 "Metadata bounds invalid, goes to: {}, ibl: {}",
                                 payload.len() - data_idx,
-                                self.info_bytes.len() - p * 16_384,
+                                self.info_bytes.len() - piece_len * 16_384,
                             );
                             return Err(());
                         }
-                        let size = if p == idx {
-                            self.info_bytes.len() - p * 16_384
+                        let size = if piece_len == idx {
+                            self.info_bytes.len() - piece_len * 16_384
                         } else {
                             16_384
                         };
-                        (&mut self.info_bytes[p * 16_384..p * 16_384 + size])
+                        (&mut self.info_bytes[piece_len * 16_384..piece_len * 16_384 + size])
                             .copy_from_slice(&payload[data_idx..]);
-                        if p == idx {
+                        if piece_len == idx {
                             let mut b = BTreeMap::new();
                             let bni = bencode::decode_buf(&self.info_bytes).map_err(|_| ())?;
                             b.insert(
@@ -1237,7 +1233,7 @@ impl<T: cio::CIO> Torrent<T> {
                             } else {
                                 return Err(());
                             }
-                        } else if p == 0 {
+                        } else if piece_len == 0 {
                             for i in 1..=idx {
                                 let mut respb = BTreeMap::new();
                                 respb.insert("msg_type".to_owned(), bencode::BEncode::Int(0));
@@ -1455,7 +1451,7 @@ impl<T: cio::CIO> Torrent<T> {
         self.pieces = Bitfield::new(u64::from(self.info.pieces()));
         self.priorities = Arc::new(vec![3; self.info.files.len()]);
         for peer in self.peers.values_mut() {
-            if !peer.magnet_complete(&self.info).is_ok() {
+            if peer.magnet_complete(&self.info).is_err() {
                 self.cio.remove_peer(peer.id());
             }
         }
@@ -1824,7 +1820,7 @@ impl<T: cio::CIO> Torrent<T> {
         let id = self.rpc_id();
         let mut updates = Vec::new();
         updates.push(SResourceUpdate::TorrentTransfer {
-            id: id.clone(),
+            id,
             kind: resource::ResourceKind::Torrent,
             rate_up,
             rate_down,

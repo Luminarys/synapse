@@ -204,18 +204,24 @@ impl Picker {
 
     /// Attempts to pick the highest priority piece in the dl q
     fn pick_dl<T: cio::CIO>(&mut self, peer: &Peer<T>) -> Option<Block> {
-        let mut dl: Vec<_> = self
-            .downloading
+        self.downloading
             .iter_mut()
             .filter(|&(_, ref req)| req.num_reqd < MAX_DUP_REQS && !req.has_peer(peer.id()))
             .take(MAX_DL_REREQ)
-            .collect();
-        dl.sort_by_key(|&(_, ref req)| req.num_reqd);
-        for (block, req) in dl {
-            req.rereq(peer.id(), peer.rank);
-            return Some(*block);
-        }
-        None
+            .fold(None, |c: Option<(&Block, &mut Request)>, this| match &c {
+                Some(min) => {
+                    if this.1.num_reqd < min.1.num_reqd {
+                        Some(this)
+                    } else {
+                        c
+                    }
+                }
+                None => Some(this),
+            })
+            .and_then(|(block, req)| {
+                req.rereq(peer.id(), peer.rank);
+                Some(*block)
+            })
     }
 
     /// Marks a block as completed. Returns a result indicating if the block

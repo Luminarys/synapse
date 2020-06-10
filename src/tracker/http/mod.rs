@@ -247,7 +247,7 @@ impl Handler {
                 );
                 resp = Some(Response::Tracker {
                     tid: trk.torrent,
-                    url: trk.url.clone(),
+                    url: trk.url,
                     resp: Err(e),
                 });
             }

@@ -267,10 +267,8 @@ impl<T: cio::CIO> Peer<T> {
     pub fn magnet_complete(&mut self, info: &Info) -> Result<()> {
         if self.pieces.len() == 0 {
             self.pieces = Bitfield::new(u64::from(info.pieces()));
-        } else {
-            if !self.pieces.cap(u64::from(info.pieces())) {
-                return Err(ErrorKind::ProtocolError("Invalid pieces size").into());
-            }
+        } else if !self.pieces.cap(u64::from(info.pieces())) {
+            return Err(ErrorKind::ProtocolError("Invalid pieces size").into());
         }
         Ok(())
     }
@@ -401,10 +399,8 @@ impl<T: cio::CIO> Peer<T> {
             Message::Bitfield(ref mut pieces) => {
                 // Set the correct length, then swap the pieces
                 // Don't do this with magnets though
-                if self.pieces.len() > 0 {
-                    if !pieces.cap(self.pieces.len()) {
-                        return Err(ErrorKind::ProtocolError("Invalid pieces size").into());
-                    }
+                if self.pieces.len() > 0 && !pieces.cap(self.pieces.len()) {
+                    return Err(ErrorKind::ProtocolError("Invalid pieces size").into());
                 }
                 mem::swap(pieces, &mut self.pieces);
                 self.piece_count = self.pieces.iter().count();
@@ -484,12 +480,9 @@ impl<T: cio::CIO> Peer<T> {
     }
 
     pub fn send_message(&mut self, msg: Message) {
-        match msg {
-            Message::Piece { length, .. } => {
-                self.uploaded += 1;
-                self.stat.add_ul(u64::from(length));
-            }
-            _ => {}
+        if let Message::Piece { length, .. } = msg {
+            self.uploaded += 1;
+            self.stat.add_ul(u64::from(length));
         }
         self.cio.msg_peer(self.id, msg);
     }

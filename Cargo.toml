@@ -24,7 +24,6 @@ base32 = "0.3.1"
 base64 = "0.9.2"
 bincode = "1"
 byteorder = "1"
-clippy = {version = "*", optional = true}
 fnv = "1"
 fs_extra = "1"
 httparse = "1"
