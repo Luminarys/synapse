@@ -1,5 +1,5 @@
+use crate::tracker::errors::{ErrorKind, Result};
 use std::io;
-use tracker::errors::{ErrorKind, Result};
 
 pub struct Writer {
     data: Vec<u8>,

@@ -2,9 +2,9 @@ use std::collections::HashSet;
 use std::net::SocketAddr;
 use std::time;
 
-use control::cio;
-use torrent::Torrent;
-use util::UHashMap;
+use crate::control::cio;
+use crate::torrent::Torrent;
+use crate::util::UHashMap;
 
 pub trait Job<T: cio::CIO> {
     fn update(&mut self, torrents: &mut UHashMap<Torrent<T>>);

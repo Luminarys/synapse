@@ -173,9 +173,9 @@ fn default_false() -> bool {
 
 #[cfg(test)]
 mod tests {
-    extern crate serde_json;
     use super::super::{criterion, resource};
     use super::*;
+    use serde_json;
 
     #[test]
     fn test_json_repr() {

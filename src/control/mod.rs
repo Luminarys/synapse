@@ -4,15 +4,14 @@ use std::sync::atomic;
 use std::{fs, io, mem, process, time};
 
 use chrono::Utc;
-use {amy, bincode};
 
-use throttle::Throttler;
-use torrent::{self, peer, Torrent};
-use util::{
+use crate::throttle::Throttler;
+use crate::torrent::{self, peer, Torrent};
+use crate::util::{
     self, hash_to_id, id_to_hash, io_err, io_err_val, random_string, FHashSet, MHashMap, UHashMap,
     UHashSet,
 };
-use {disk, listener, rpc, stat, tracker, CONFIG, DL_TOKEN, SHUTDOWN};
+use crate::{disk, listener, rpc, stat, tracker, CONFIG, DL_TOKEN, SHUTDOWN};
 
 pub mod acio;
 pub mod cio;

@@ -3,19 +3,17 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::{cmp, fmt, fs, path, time};
 
-use amy;
-use fs_extra;
 use http_range::HttpRange;
 use nix::libc;
 use nix::sys::statvfs;
 use openssl::sha;
 
 use super::{BufCache, FileCache, JOB_TIME_SLICE};
-use buffers::Buffer;
-use socket::TSocket;
-use torrent::{Info, LocIter};
-use util::{awrite, hash_to_id, io_err, IOR};
-use CONFIG;
+use crate::buffers::Buffer;
+use crate::socket::TSocket;
+use crate::torrent::{Info, LocIter};
+use crate::util::{awrite, hash_to_id, io_err, IOR};
+use crate::CONFIG;
 
 static MP_BOUNDARY: &str = "qxyllcqgNchqyob";
 
@@ -657,7 +655,7 @@ impl Request {
 }
 
 impl fmt::Debug for Request {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "disk::Request")
     }
 }
@@ -689,7 +687,7 @@ impl Location {
 }
 
 impl fmt::Debug for Location {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
             "disk::Location {{ file: {}, off: {}, s: {}, e: {} }}",
@@ -729,7 +727,7 @@ impl Response {
 }
 
 impl fmt::Debug for Response {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "disk::Response")
     }
 }

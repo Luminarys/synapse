@@ -5,6 +5,7 @@ version = "0.1.0"
 authors = ["Luminarys <postmaster@gensok.io>"]
 license = "ISC"
 repository = "https://github.com/Luminarys/synapse"
+edition = "2018"
 
 [lib]
 name = "synapse_session"

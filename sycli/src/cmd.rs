@@ -3,17 +3,16 @@ use std::io::{self, Read};
 use std::path::Path;
 use std::{cmp, fs, mem};
 
-use base64;
-use prettytable::Table;
 use prettytable::format::consts::FORMAT_NO_LINESEP_WITH_TITLE as TABLE_FORMAT;
+use prettytable::Table;
 use reqwest::Client as HClient;
-use serde_json as json;
 use sha1::{Digest, Sha1};
 use url::Url;
 
 use rpc::criterion::{Criterion, Operation, Value};
 use rpc::message::{self, CMessage, SMessage};
 use rpc::resource::{CResourceUpdate, Resource, ResourceKind, SResourceUpdate, Server};
+use synapse_rpc as rpc;
 
 use crate::client::Client;
 use crate::error::{ErrorKind, Result, ResultExt};
@@ -595,8 +594,13 @@ pub fn add_tags(mut c: Client, id: &str, tags: Vec<&str>) -> Result<()> {
             tag_array.push(t);
         }
     }
-    let tag_obj = json::Value::Array(tag_array.into_iter().map(json::Value::String).collect());
-    resource.user_data = Some(json::json!({ "tags": tag_obj }));
+    let tag_obj = serde_json::Value::Array(
+        tag_array
+            .into_iter()
+            .map(serde_json::Value::String)
+            .collect(),
+    );
+    resource.user_data = Some(serde_json::json!({ "tags": tag_obj }));
     let msg = CMessage::UpdateResource {
         serial: c.next_serial(),
         resource,
@@ -609,8 +613,13 @@ pub fn remove_tags(mut c: Client, id: &str, tags: Vec<&str>) -> Result<()> {
     let (id, mut tag_array) = get_tags_(&mut c, id)?;
     resource.id = id;
     tag_array.retain(|t| !tags.contains(&t.as_str()));
-    let tag_obj = json::Value::Array(tag_array.into_iter().map(json::Value::String).collect());
-    resource.user_data = Some(json::json!({ "tags": tag_obj }));
+    let tag_obj = serde_json::Value::Array(
+        tag_array
+            .into_iter()
+            .map(serde_json::Value::String)
+            .collect(),
+    );
+    resource.user_data = Some(serde_json::json!({ "tags": tag_obj }));
     let msg = CMessage::UpdateResource {
         serial: c.next_serial(),
         resource,
@@ -630,13 +639,13 @@ fn get_tags_(c: &mut Client, id: &str) -> Result<(String, Vec<String>)> {
         bail!("Could not find appropriate torrent!");
     }
     let torrent = sres[0].as_torrent_mut();
-    let prev_data = mem::replace(&mut torrent.user_data, json::Value::Null);
+    let prev_data = mem::replace(&mut torrent.user_data, serde_json::Value::Null);
     Ok((
         torrent.id.clone(),
         match prev_data.pointer("/tags") {
-            Some(json::Value::Array(a)) => a
+            Some(serde_json::Value::Array(a)) => a
                 .iter()
-                .filter_map(json::Value::as_str)
+                .filter_map(serde_json::Value::as_str)
                 .map(|s| s.to_owned())
                 .collect(),
             _ => vec![],

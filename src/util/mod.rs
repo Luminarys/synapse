@@ -7,7 +7,6 @@ use std::hash::BuildHasherDefault;
 use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
 
 use byteorder::{BigEndian, ByteOrder};
-use fnv;
 use metrohash::MetroHash;
 use openssl::sha;
 use rand::distributions::Alphanumeric;

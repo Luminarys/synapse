@@ -4,7 +4,7 @@ use std::os::unix::io::AsRawFd;
 
 use nix::errno::Errno;
 
-use util::io::io_err;
+use crate::util::io::io_err;
 
 mod sys {
     use nix::libc::c_int;

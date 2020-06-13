@@ -216,7 +216,7 @@ pub struct Server {
 }
 
 impl Server {
-    pub fn update(&mut self, update: SResourceUpdate) {
+    pub fn update(&mut self, update: SResourceUpdate<'_>) {
         match update {
             SResourceUpdate::Throttle {
                 throttle_up,
@@ -254,7 +254,7 @@ impl Server {
                 self.rate_up = rate_up;
                 self.rate_down = rate_down;
             }
-            _ => { }
+            _ => {}
         }
     }
 }
@@ -294,7 +294,7 @@ pub struct Torrent {
 }
 
 impl Torrent {
-    pub fn update(&mut self, update: SResourceUpdate) {
+    pub fn update(&mut self, update: SResourceUpdate<'_>) {
         self.modified = Utc::now();
         match update {
             SResourceUpdate::Throttle {
@@ -341,8 +341,12 @@ impl Torrent {
                 self.piece_field = piece_field;
             }
             SResourceUpdate::Resource(Cow::Borrowed(Resource::Torrent(t))) => *self = t.clone(),
-            SResourceUpdate::Resource(Cow::Owned(Resource::Torrent(mut t))) => mem::swap(self, &mut t),
-            SResourceUpdate::Resource(_) => panic!("Torrent should not be updated with invalid resource type"),
+            SResourceUpdate::Resource(Cow::Owned(Resource::Torrent(mut t))) => {
+                mem::swap(self, &mut t)
+            }
+            SResourceUpdate::Resource(_) => {
+                panic!("Torrent should not be updated with invalid resource type")
+            }
             _ => {}
         }
     }
@@ -391,7 +395,7 @@ pub struct Piece {
 }
 
 impl Piece {
-    pub fn update(&mut self, update: SResourceUpdate) {
+    pub fn update(&mut self, update: SResourceUpdate<'_>) {
         match update {
             SResourceUpdate::PieceAvailable { available, .. } => {
                 self.available = available;
@@ -418,7 +422,7 @@ pub struct File {
 }
 
 impl File {
-    pub fn update(&mut self, update: SResourceUpdate) {
+    pub fn update(&mut self, update: SResourceUpdate<'_>) {
         match update {
             SResourceUpdate::FilePriority { priority, .. } => {
                 self.priority = priority;
@@ -445,7 +449,7 @@ pub struct Peer {
 }
 
 impl Peer {
-    pub fn update(&mut self, update: SResourceUpdate) {
+    pub fn update(&mut self, update: SResourceUpdate<'_>) {
         match update {
             SResourceUpdate::Rate {
                 rate_up, rate_down, ..
@@ -474,7 +478,7 @@ pub struct Tracker {
 }
 
 impl Tracker {
-    pub fn update(&mut self, update: SResourceUpdate) {
+    pub fn update(&mut self, update: SResourceUpdate<'_>) {
         match update {
             SResourceUpdate::TrackerStatus {
                 last_report, error, ..
@@ -607,7 +611,7 @@ impl Resource {
         }
     }
 
-    pub fn update(&mut self, update: SResourceUpdate) {
+    pub fn update(&mut self, update: SResourceUpdate<'_>) {
         match self {
             &mut Resource::Server(ref mut s) => {
                 s.update(update);
@@ -632,7 +636,7 @@ impl Resource {
 }
 
 impl fmt::Display for Resource {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             &Resource::Server(ref t) => {
                 write!(f, "Server {{")?;
@@ -809,7 +813,7 @@ where
 // TODO: Proc macros to remove this shit
 
 impl Queryable for Resource {
-    fn field(&self, f: &str) -> Option<Field> {
+    fn field(&self, f: &str) -> Option<Field<'_>> {
         match self {
             &Resource::Server(ref t) => t.field(f),
             &Resource::Torrent(ref t) => t.field(f),
@@ -822,7 +826,7 @@ impl Queryable for Resource {
 }
 
 impl Queryable for json::Value {
-    fn field(&self, f: &str) -> Option<Field> {
+    fn field(&self, f: &str) -> Option<Field<'_>> {
         match self.pointer(f) {
             Some(&json::Value::Null) => Some(FNULL),
             Some(&json::Value::Bool(b)) => Some(Field::B(b)),
@@ -844,7 +848,7 @@ impl Queryable for json::Value {
 }
 
 impl Queryable for Server {
-    fn field(&self, f: &str) -> Option<Field> {
+    fn field(&self, f: &str) -> Option<Field<'_>> {
         match f {
             "id" => Some(Field::S(&self.id)),
 
@@ -868,7 +872,7 @@ impl Queryable for Server {
 }
 
 impl Queryable for Torrent {
-    fn field(&self, f: &str) -> Option<Field> {
+    fn field(&self, f: &str) -> Option<Field<'_>> {
         match f {
             "id" => Some(Field::S(&self.id)),
             "name" => Some(
@@ -936,7 +940,7 @@ impl Queryable for Torrent {
 }
 
 impl Queryable for Piece {
-    fn field(&self, f: &str) -> Option<Field> {
+    fn field(&self, f: &str) -> Option<Field<'_>> {
         match f {
             "id" => Some(Field::S(&self.id)),
             "torrent_id" => Some(Field::S(&self.torrent_id)),
@@ -952,7 +956,7 @@ impl Queryable for Piece {
 }
 
 impl Queryable for File {
-    fn field(&self, f: &str) -> Option<Field> {
+    fn field(&self, f: &str) -> Option<Field<'_>> {
         match f {
             "id" => Some(Field::S(&self.id)),
             "torrent_id" => Some(Field::S(&self.torrent_id)),
@@ -970,7 +974,7 @@ impl Queryable for File {
 }
 
 impl Queryable for Peer {
-    fn field(&self, f: &str) -> Option<Field> {
+    fn field(&self, f: &str) -> Option<Field<'_>> {
         match f {
             "id" => Some(Field::S(&self.id)),
             "torrent_id" => Some(Field::S(&self.torrent_id)),
@@ -991,7 +995,7 @@ impl Queryable for Peer {
 }
 
 impl Queryable for Tracker {
-    fn field(&self, f: &str) -> Option<Field> {
+    fn field(&self, f: &str) -> Option<Field<'_>> {
         match f {
             "id" => Some(Field::S(&self.id)),
             "torrent_id" => Some(Field::S(&self.torrent_id)),

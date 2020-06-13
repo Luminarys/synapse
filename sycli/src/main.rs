@@ -1,12 +1,11 @@
-#![allow(unused_doc_comments)]
-
 #[macro_use]
 extern crate error_chain;
 #[macro_use]
 extern crate prettytable;
 #[macro_use]
 extern crate serde_derive;
-extern crate synapse_rpc as rpc;
+
+use synapse_rpc as rpc;
 extern crate tungstenite as ws;
 
 use rpc::criterion::Criterion;
@@ -91,7 +90,7 @@ fn main() {
                     Arg::with_name("files")
                         .help("Delete files along with torrents.")
                         .short("f")
-                        .long("files")
+                        .long("files"),
                 )
                 .arg(
                     Arg::with_name("torrents")

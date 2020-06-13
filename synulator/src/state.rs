@@ -1,13 +1,12 @@
+use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 use std::mem;
-use std::borrow::Cow;
 
-use json;
-use rand::{self, Rng};
+use rand::Rng;
 
-use rpc::message::{CMessage, Error, SMessage};
-use rpc::criterion::{self, Criterion, Operation};
-use rpc::resource::{self, merge_json, Resource, ResourceKind, SResourceUpdate};
+use synapse_rpc::criterion::{self, Criterion, Operation};
+use synapse_rpc::message::{CMessage, Error, SMessage};
+use synapse_rpc::resource::{self, merge_json, Resource, ResourceKind, SResourceUpdate};
 
 const TORRENTS: usize = 1000;
 const FILES: u32 = 140;
@@ -22,7 +21,7 @@ pub struct State {
     kinds: Vec<HashSet<String>>,
     // Index by torrent ID
     torrent_idx: HashMap<String, HashSet<String>>,
-    user_data: HashMap<String, json::Value>,
+    user_data: HashMap<String, serde_json::Value>,
 }
 
 struct Filter {
@@ -117,7 +116,7 @@ impl State {
             }
 
             if let Some(user_data) = self.user_data.get(&id) {
-                mem::replace(r.user_data(), user_data.clone());
+                *r.user_data() = user_data.clone();
             }
             self.resources.insert(id, r);
         }
@@ -162,9 +161,11 @@ impl State {
                     resources,
                 });
             }
-            CMessage::Unsubscribe { ids, .. } => for id in ids {
-                self.subs.get_mut(&id).map(|s| s.remove(&client));
-            },
+            CMessage::Unsubscribe { ids, .. } => {
+                for id in ids {
+                    self.subs.get_mut(&id).map(|s| s.remove(&client));
+                }
+            }
             CMessage::UpdateResource {
                 serial,
                 mut resource,
@@ -177,13 +178,11 @@ impl State {
                             .insert(res.id().to_owned(), res.user_data().clone());
                         resp.push(SMessage::UpdateResources {
                             serial: Some(serial),
-                            resources: vec![
-                                SResourceUpdate::UserData {
-                                    id: resource.id.clone(),
-                                    kind: res.kind(),
-                                    user_data: user_data,
-                                },
-                            ],
+                            resources: vec![SResourceUpdate::UserData {
+                                id: resource.id.clone(),
+                                kind: res.kind(),
+                                user_data: user_data,
+                            }],
                         });
                     }
                 }
@@ -213,7 +212,8 @@ impl State {
 
                 let get_matching = |f: &Filter| {
                     let mut added = HashSet::new();
-                    let crit_res = f.criteria
+                    let crit_res = f
+                        .criteria
                         .iter()
                         .find(|c| c.field == "torrent_id" && c.op == Operation::Eq)
                         .and_then(|c| match &c.value {

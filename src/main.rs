@@ -1,6 +1,3 @@
-#![allow(unknown_lints)]
-#![allow(unused_doc_comments)]
-#![cfg_attr(feature = "clippy", feature(plugin))]
 #![cfg_attr(
     feature = "allocator",
     feature(alloc_system, global_allocator, allocator_api)
@@ -13,44 +10,21 @@ use alloc_system::System;
 #[global_allocator]
 static A: System = System;
 
-extern crate amy;
-extern crate base32;
-extern crate base64;
-extern crate bincode;
-extern crate byteorder;
-extern crate chrono;
 #[macro_use]
 extern crate error_chain;
-extern crate fnv;
-extern crate fs_extra;
-extern crate getopts;
-extern crate http_range;
-extern crate httparse;
 #[macro_use]
 extern crate lazy_static;
-extern crate metrohash;
-extern crate net2;
-extern crate nix;
-extern crate num_bigint;
-extern crate openssl;
-extern crate rand;
-extern crate serde;
 #[macro_use]
 extern crate serde_derive;
-extern crate serde_json;
-extern crate shellexpand;
-extern crate toml;
-extern crate url;
 
 #[cfg(test)]
 #[macro_use]
 extern crate assert_matches;
 
-extern crate adns;
-extern crate synapse_bencode as bencode;
-extern crate synapse_protocol as protocol;
-extern crate synapse_rpc as rpc_lib;
-extern crate synapse_session as session;
+use synapse_bencode as bencode;
+use synapse_protocol as protocol;
+use synapse_rpc as rpc_lib;
+use synapse_session as session;
 
 #[macro_use]
 mod log;
@@ -71,15 +45,13 @@ mod throttle;
 mod torrent;
 mod tracker;
 
-// We need to do this for the log macros
-use log::LogLevel;
 use std::process;
 use std::sync::atomic;
 
-pub use protocol::DHT_EXT;
-pub use protocol::EXT_PROTO;
-pub use protocol::UT_META_ID;
-pub use protocol::UT_PEX_ID;
+pub use crate::protocol::DHT_EXT;
+pub use crate::protocol::EXT_PROTO;
+pub use crate::protocol::UT_META_ID;
+pub use crate::protocol::UT_PEX_ID;
 
 /// Throttler max token amount
 pub const THROT_TOKS: usize = 2 * 1024 * 1024;
@@ -87,21 +59,21 @@ pub const THROT_TOKS: usize = 2 * 1024 * 1024;
 pub static SHUTDOWN: atomic::AtomicBool = atomic::AtomicBool::new(false);
 
 lazy_static! {
-    pub static ref CONFIG: config::Config = { config::Config::load() };
+    pub static ref CONFIG: config::Config = config::Config::load();
     pub static ref PEER_ID: [u8; 20] = {
-        use rand::{self, Rng};
+        use rand::Rng;
 
         let mut pid = [0u8; 20];
         let prefix = b"-SY0010-";
         pid[..prefix.len()].clone_from_slice(&prefix[..]);
 
         let mut rng = rand::thread_rng();
-        for i in prefix.len()..20 {
-            pid[i] = rng.gen::<u8>();
+        for p in pid.iter_mut().skip(prefix.len()) {
+            *p = rng.gen();
         }
         pid
     };
-    pub static ref DL_TOKEN: String = { util::random_string(20) };
+    pub static ref DL_TOKEN: String = util::random_string(20);
 }
 
 fn main() {

@@ -3,10 +3,10 @@ use std::mem;
 
 use byteorder::{BigEndian, ByteOrder};
 
-use buffers::{Buffer, BUF_SIZE};
-use torrent::peer::Message;
-use torrent::Bitfield;
-use util::{aread, io_err_val, IOR};
+use crate::buffers::{Buffer, BUF_SIZE};
+use crate::torrent::peer::Message;
+use crate::torrent::Bitfield;
+use crate::util::{aread, io_err_val, IOR};
 
 pub struct Reader {
     state: State,
@@ -163,7 +163,7 @@ impl Reader {
                 State::Bitfield { ref mut data } => match aread(&mut data[self.idx..len], conn) {
                     IOR::Complete => {
                         let d = mem::replace(data, vec![]).into_boxed_slice();
-                        let bf = Bitfield::from(d, len as u64 * 8);
+                        let bf = Bitfield::from(&d, len as u64 * 8);
                         return RRes::Success(Message::Bitfield(bf));
                     }
                     IOR::Incomplete(a) => self.idx += a,
@@ -314,8 +314,8 @@ impl State {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::torrent::peer::Message;
     use std::io::{self, Read};
-    use torrent::peer::Message;
 
     /// Cursor to emulate a mio socket using readv.
     struct Cursor<'a> {
@@ -324,7 +324,7 @@ mod tests {
     }
 
     impl<'a> Cursor<'a> {
-        fn new(data: &'a [u8]) -> Cursor {
+        fn new(data: &'a [u8]) -> Cursor<'_> {
             Cursor { data, idx: 0 }
         }
     }
@@ -511,7 +511,7 @@ mod tests {
 
     #[test]
     fn test_read_handshake() {
-        use PEER_ID;
+        use crate::PEER_ID;
         let mut r = Reader::new();
         let m = Message::Handshake {
             rsv: [0; 8],

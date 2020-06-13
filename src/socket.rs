@@ -9,8 +9,8 @@ use openssl::ssl::{
     HandshakeError, MidHandshakeSslStream, SslAcceptor, SslConnector, SslMethod, SslStream,
 };
 
-use throttle::Throttle;
-use util;
+use crate::throttle::Throttle;
+use crate::util;
 
 /// Wrapper type over Mio sockets, allowing for use of UDP/TCP, encryption,
 /// rate limiting, etc.

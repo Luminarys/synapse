@@ -6,6 +6,7 @@ authors = ["Luminarys <postmaster@gensok.io>"]
 build = "build.rs"
 license = "ISC"
 repository = "https://github.com/Luminarys/synapse"
+edition = "2018"
 
 [[bin]]
 path = "src/main.rs"
@@ -23,7 +24,6 @@ base32 = "0.3.1"
 base64 = "0.9.2"
 bincode = "1"
 byteorder = "1"
-clippy = {version = "*", optional = true}
 fnv = "1"
 fs_extra = "1"
 httparse = "1"

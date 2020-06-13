@@ -1,7 +1,7 @@
 use super::proto::ws::Message;
+use crate::util::{aread, IOR};
 use byteorder::{BigEndian, ByteOrder};
 use std::{io, mem};
-use util::{aread, IOR};
 
 pub struct Reader {
     msg: Message,

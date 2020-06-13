@@ -2,5 +2,6 @@
 name = "synapse-bencode"
 version = "0.1.0"
 authors = ["Luminarys <postmaster@gensok.io>"]
+edition = "2018"
 
 [dependencies]

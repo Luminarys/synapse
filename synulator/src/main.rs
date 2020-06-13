@@ -1,10 +1,5 @@
-extern crate rand;
-extern crate serde_json as json;
-extern crate synapse_rpc as rpc;
-extern crate ws;
-
 use std::time::Instant;
-use rpc::message::CMessage;
+use synapse_rpc::message::CMessage;
 
 mod state;
 
@@ -27,10 +22,10 @@ impl ws::Handler for Client {
         match msg {
             ws::Message::Text(s) => {
                 let time = Instant::now();
-                let data: CMessage = json::from_str(&s).map_err(Box::new)?;
+                let data: CMessage = serde_json::from_str(&s).map_err(Box::new)?;
                 println!("Processing msg");
                 for resp in self.state.handle_client(0, data) {
-                    let rs = json::to_string(&resp).unwrap();
+                    let rs = serde_json::to_string(&resp).unwrap();
                     self.sender.send(ws::Message::Text(rs))?;
                 }
                 let dur = time.elapsed();

@@ -4,11 +4,11 @@ use std::time;
 
 use amy::{self, ChannelError};
 
-use control::cio::{self, Error, ErrorKind, Result, ResultExt};
-use torrent::peer::reader::RRes;
-use util::UHashMap;
-use CONFIG;
-use {disk, listener, rpc, torrent, tracker};
+use crate::control::cio::{self, Error, ErrorKind, Result, ResultExt};
+use crate::torrent::peer::reader::RRes;
+use crate::util::UHashMap;
+use crate::CONFIG;
+use crate::{disk, listener, rpc, torrent, tracker};
 
 const POLL_INT_MS: usize = 1000;
 const PRUNE_GOAL: usize = 50;

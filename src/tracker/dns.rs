@@ -1,9 +1,7 @@
 use std::io;
 use std::net::{IpAddr, UdpSocket};
 
-use {adns, amy};
-
-use tracker::{ErrorKind, Result};
+use crate::tracker::{ErrorKind, Result};
 
 #[derive(Debug)]
 pub struct QueryResponse {

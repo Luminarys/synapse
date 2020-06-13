@@ -1,10 +1,8 @@
 use std::io;
 use std::mem;
 
-use httparse;
-
-use tracker::errors::{ErrorKind, Result};
-use util::{aread, IOR};
+use crate::tracker::errors::{ErrorKind, Result};
+use crate::util::{aread, IOR};
 
 pub struct Reader {
     data: Vec<u8>,
@@ -85,10 +83,7 @@ impl Reader {
                                 .find(|h| h.name == "Location")
                                 .and_then(|h| String::from_utf8(h.value.to_vec()).ok());
                             if loc.is_none() {
-                                return Err(ErrorKind::InvalidResponse(
-                                    "malformed HTTP",
-                                )
-                                .into());
+                                return Err(ErrorKind::InvalidResponse("malformed HTTP").into());
                             }
                             return Ok(Some(ReadRes::Redirect(loc.unwrap())));
                         }

@@ -8,16 +8,16 @@ use std::{cmp, fmt, io, mem, time};
 pub use self::message::Message;
 use self::reader::{RRes, Reader};
 use self::writer::Writer;
-use bencode;
-use control::cio;
-use rpc::{self, resource};
-use socket::Socket;
-use stat;
-use throttle::Throttle;
-use torrent::{Bitfield, Info, Torrent};
-use tracker;
-use util;
-use {CONFIG, DHT_EXT, PEER_ID};
+use crate::bencode;
+use crate::control::cio;
+use crate::rpc::{self, resource};
+use crate::socket::Socket;
+use crate::stat;
+use crate::throttle::Throttle;
+use crate::torrent::{Bitfield, Info, Torrent};
+use crate::tracker;
+use crate::util;
+use crate::{CONFIG, DHT_EXT, PEER_ID};
 
 error_chain! {
     errors {
@@ -32,9 +32,9 @@ const INIT_MAX_QUEUE: u16 = 5;
 const MAX_QUEUE_CAP: u16 = 600;
 
 pub mod message {
-    use buffers;
-    use protocol;
-    use torrent;
+    use crate::buffers;
+    use crate::protocol;
+    use crate::torrent;
 
     pub type Message = protocol::Message<torrent::Bitfield, buffers::Buffer>;
 }
@@ -203,7 +203,7 @@ impl Peer<cio::test::TCIO> {
     }
 
     pub fn test_with_tcio(mut cio: cio::test::TCIO) -> Peer<cio::test::TCIO> {
-        use control::cio::CIO;
+        use crate::control::cio::CIO;
 
         let conn = PeerConn::test();
         let id = cio.add_peer(conn).unwrap();
@@ -267,10 +267,8 @@ impl<T: cio::CIO> Peer<T> {
     pub fn magnet_complete(&mut self, info: &Info) -> Result<()> {
         if self.pieces.len() == 0 {
             self.pieces = Bitfield::new(u64::from(info.pieces()));
-        } else {
-            if !self.pieces.cap(u64::from(info.pieces())) {
-                return Err(ErrorKind::ProtocolError("Invalid pieces size").into());
-            }
+        } else if !self.pieces.cap(u64::from(info.pieces())) {
+            return Err(ErrorKind::ProtocolError("Invalid pieces size").into());
         }
         Ok(())
     }
@@ -401,10 +399,8 @@ impl<T: cio::CIO> Peer<T> {
             Message::Bitfield(ref mut pieces) => {
                 // Set the correct length, then swap the pieces
                 // Don't do this with magnets though
-                if self.pieces.len() > 0 {
-                    if !pieces.cap(self.pieces.len()) {
-                        return Err(ErrorKind::ProtocolError("Invalid pieces size").into());
-                    }
+                if self.pieces.len() > 0 && !pieces.cap(self.pieces.len()) {
+                    return Err(ErrorKind::ProtocolError("Invalid pieces size").into());
                 }
                 mem::swap(pieces, &mut self.pieces);
                 self.piece_count = self.pieces.iter().count();
@@ -484,12 +480,9 @@ impl<T: cio::CIO> Peer<T> {
     }
 
     pub fn send_message(&mut self, msg: Message) {
-        match msg {
-            Message::Piece { length, .. } => {
-                self.uploaded += 1;
-                self.stat.add_ul(u64::from(length));
-            }
-            _ => {}
+        if let Message::Piece { length, .. } = msg {
+            self.uploaded += 1;
+            self.stat.add_ul(u64::from(length));
         }
         self.cio.msg_peer(self.id, msg);
     }
@@ -544,7 +537,7 @@ impl<T: cio::CIO> Drop for Peer<T> {
 }
 
 impl<T: cio::CIO> fmt::Debug for Peer<T> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
             "Peer {{ IP: {}, tid: {}, local_status: {:?}, remote_status: {:?} }}",
@@ -565,9 +558,9 @@ impl ExtIDs {
 #[cfg(test)]
 mod tests {
     use super::Peer;
-    use buffers::Buffer;
-    use control::cio::{test, CIO};
-    use torrent::Message;
+    use crate::buffers::Buffer;
+    use crate::control::cio::{test, CIO};
+    use crate::torrent::Message;
 
     #[test]
     fn test_cancel() {

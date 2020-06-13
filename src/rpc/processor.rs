@@ -5,10 +5,8 @@ use std::io::Read;
 use std::mem;
 use std::path::Path;
 
-use amy;
-use bincode;
+use crate::rpc_lib;
 use chrono::{DateTime, Duration, Utc};
-use rpc_lib;
 use serde_json as json;
 use url::Url;
 
@@ -16,10 +14,10 @@ use super::proto::criterion::{self, Criterion, Operation};
 use super::proto::message::{CMessage, Error, SMessage};
 use super::proto::resource::{merge_json, Resource, ResourceKind, SResourceUpdate};
 use super::{CtlMessage, Message};
-use disk;
-use torrent::info::Info;
-use util::{random_string, FHashMap, FHashSet, MHashSet, SHashMap};
-use CONFIG;
+use crate::disk;
+use crate::torrent::info::Info;
+use crate::util::{random_string, FHashMap, FHashSet, MHashSet, SHashMap};
+use crate::CONFIG;
 
 const USER_DATA_FILE: &str = "rpc_user_data";
 type RpcDiskFmt = SHashMap<Vec<u8>>;
@@ -160,7 +158,7 @@ impl Processor {
         &mut self,
         client: usize,
         msg: CMessage,
-    ) -> (Vec<SMessage>, Option<Message>) {
+    ) -> (Vec<SMessage<'_>>, Option<Message>) {
         let mut resp = Vec::new();
         let mut rmsg = None;
         match msg {
@@ -534,7 +532,7 @@ impl Processor {
         (resp, rmsg)
     }
 
-    pub fn handle_ctl(&mut self, msg: CtlMessage) -> Vec<(usize, SMessage)> {
+    pub fn handle_ctl(&mut self, msg: CtlMessage) -> Vec<(usize, SMessage<'_>)> {
         let mut msgs = Vec::new();
         match msg {
             CtlMessage::Extant(e) => {
@@ -566,7 +564,7 @@ impl Processor {
                     }
 
                     if let Some(user_data) = self.user_data.get(&id) {
-                        mem::replace(r.user_data(), user_data.clone());
+                        *r.user_data() = user_data.clone();
                     }
                     self.resources.insert(id, r);
                 }
@@ -720,7 +718,7 @@ impl Processor {
         matched
     }
 
-    fn new_transfer(&mut self, client: usize, serial: u64, kind: TransferKind) -> SMessage {
+    fn new_transfer(&mut self, client: usize, serial: u64, kind: TransferKind) -> SMessage<'_> {
         let expiration = Utc::now() + Duration::seconds(EXPIRATION_DUR);
         let tok = random_string(15);
         self.tokens.insert(
@@ -772,7 +770,7 @@ impl Filter {
 
         // Proxy queryable implementation to redirect subresource requests
         impl<'a> rpc_lib::criterion::Queryable for QueryProxy<'a> {
-            fn field(&self, field: &str) -> Option<rpc_lib::criterion::Field> {
+            fn field(&self, field: &str) -> Option<rpc_lib::criterion::Field<'_>> {
                 self.r.field(field).map(|f| match f {
                     rpc_lib::criterion::Field::R(k) => {
                         let torrent_resources = self.tidx.get(self.r.id()).unwrap();

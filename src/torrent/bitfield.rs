@@ -1,6 +1,6 @@
 use std::fmt;
 
-use protocol;
+use crate::protocol;
 
 // Use u64 than usize because it conforms with bittorents network protocol
 // (4 byte big endian integers)
@@ -21,7 +21,7 @@ impl Bitfield {
         }
     }
 
-    pub fn from(b: Box<[u8]>, len: u64) -> Bitfield {
+    pub fn from(b: &[u8], len: u64) -> Bitfield {
         let size = div_round_up!(len, 8);
         let mut vec = b.to_vec();
         vec.resize(size as usize, 0);
@@ -98,10 +98,8 @@ impl Bitfield {
             Bitfield::I { data, len, .. } => {
                 // check for set bits beyond new_len
                 let num_bits = new_len % 8;
-                if num_bits > 0 {
-                    if data[new_size - 1] & (0xff >> num_bits) > 0 {
-                        return false;
-                    }
+                if num_bits > 0 && data[new_size - 1] & (0xff >> num_bits) > 0 {
+                    return false;
                 }
                 *len = new_len;
                 if self.complete() {
@@ -114,7 +112,7 @@ impl Bitfield {
                 }
             }
         }
-        return true;
+        true
     }
 
     pub fn complete(&self) -> bool {
@@ -219,7 +217,7 @@ impl Bitfield {
         base64::encode(&self.data())
     }
 
-    pub fn iter(&self) -> BitfieldIter {
+    pub fn iter(&self) -> BitfieldIter<'_> {
         BitfieldIter::new(self)
     }
 }
@@ -254,7 +252,7 @@ impl Default for Bitfield {
 }
 
 impl fmt::Debug for Bitfield {
-    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
         write!(f, "Bitfield {{ len: {}, pieces: ", self.len())?;
         for i in 0..self.len() {
             if self.has_bit(i) {
@@ -271,7 +269,7 @@ impl fmt::Debug for Bitfield {
 impl From<Vec<u8>> for Bitfield {
     fn from(data: Vec<u8>) -> Self {
         let len = data.len() as u64 * 8;
-        Bitfield::from(data.into_boxed_slice(), len)
+        Bitfield::from(&data, len)
     }
 }
 
@@ -302,6 +300,7 @@ impl<'a> Iterator for BitfieldIter<'a> {
 
 #[cfg(test)]
 mod tests {
+    use super::protocol;
     use super::Bitfield;
 
     #[test]
@@ -329,8 +328,8 @@ mod tests {
 
     #[test]
     fn test_data_bits() {
-        let indata = vec![0xff; 5].into_boxed_slice();
-        let pf = Bitfield::from(indata, 11);
+        let indata = vec![0xff; 5];
+        let pf = Bitfield::from(&indata, 11);
         let outdata = pf.data();
         assert!(outdata.len() == 2);
         assert!(outdata[0] == 0xff);
@@ -364,8 +363,8 @@ mod tests {
 
     #[test]
     fn test_set_i() {
-        let data = vec![0xff, 0xff, 0x7f].into_boxed_slice();
-        let mut bf = Bitfield::from(data, 21);
+        let data = vec![0xff, 0xff, 0x7f];
+        let mut bf = Bitfield::from(&data, 21);
         assert_matches!(bf, Bitfield::I { .. });
 
         bf.set_bit(16);
@@ -409,8 +408,8 @@ mod tests {
 
     #[test]
     fn test_unset_c() {
-        let data = vec![0xff, 0xff, 0xff].into_boxed_slice();
-        let mut bf = Bitfield::from(data, 21);
+        let data = vec![0xff, 0xff, 0xff];
+        let mut bf = Bitfield::from(&data, 21);
         assert_matches!(bf, Bitfield::C { .. });
 
         bf.unset_bit(16);
@@ -447,15 +446,15 @@ mod tests {
 
     #[test]
     fn test_c_from() {
-        let data = vec![0xff; 2].into_boxed_slice();
-        let bf = Bitfield::from(data, 11);
+        let data = vec![0xff; 2];
+        let bf = Bitfield::from(&data, 11);
         assert_matches!(bf, Bitfield::C { .. });
     }
 
     #[test]
     fn test_byte_at_c() {
-        let data = vec![0xff, 0xff, 0xff].into_boxed_slice();
-        let bf = Bitfield::from(data, 21);
+        let data = vec![0xff, 0xff, 0xff];
+        let bf = Bitfield::from(&data, 21);
         assert_matches!(bf, Bitfield::C { .. });
 
         assert!(protocol::Bitfield::byte_at(&bf, 2) == 0xf8);
@@ -463,8 +462,8 @@ mod tests {
 
     #[test]
     fn test_byte_at_i() {
-        let data = vec![0xff, 0xff, 0x7f].into_boxed_slice();
-        let bf = Bitfield::from(data, 21);
+        let data = vec![0xff, 0xff, 0x7f];
+        let bf = Bitfield::from(&data, 21);
         assert_matches!(bf, Bitfield::I { .. });
 
         assert!(protocol::Bitfield::byte_at(&bf, 2) == 0x78);
@@ -472,8 +471,8 @@ mod tests {
 
     #[test]
     fn test_cap_c_1() {
-        let data = vec![0xff; 5].into_boxed_slice();
-        let mut bf = Bitfield::from(data, 11);
+        let data = vec![0xff; 5];
+        let mut bf = Bitfield::from(&data, 11);
         assert_matches!(bf, Bitfield::C { .. });
 
         assert!(!bf.cap(15));
@@ -481,8 +480,8 @@ mod tests {
 
     #[test]
     fn test_cap_c_2() {
-        let data = vec![0xff; 5].into_boxed_slice();
-        let mut bf = Bitfield::from(data, 11);
+        let data = vec![0xff; 5];
+        let mut bf = Bitfield::from(&data, 11);
         assert_matches!(bf, Bitfield::C { .. });
 
         assert!(bf.cap(11));
@@ -490,8 +489,8 @@ mod tests {
 
     #[test]
     fn test_cap_c_3() {
-        let data = vec![0xff; 5].into_boxed_slice();
-        let mut bf = Bitfield::from(data, 11);
+        let data = vec![0xff; 5];
+        let mut bf = Bitfield::from(&data, 11);
         assert_matches!(bf, Bitfield::C { .. });
 
         assert!(!bf.cap(10));
@@ -499,8 +498,8 @@ mod tests {
 
     #[test]
     fn test_cap_i_1() {
-        let data = vec![0xff, 0xff, 0xf8].into_boxed_slice();
-        let mut bf = Bitfield::from(data, 24);
+        let data = vec![0xff, 0xff, 0xf8];
+        let mut bf = Bitfield::from(&data, 24);
         assert_matches!(bf, Bitfield::I { .. });
 
         assert!(bf.cap(21));
@@ -510,8 +509,8 @@ mod tests {
 
     #[test]
     fn test_cap_i_2() {
-        let data = vec![0xff, 0xff, 0xf8].into_boxed_slice();
-        let mut bf = Bitfield::from(data, 24);
+        let data = vec![0xff, 0xff, 0xf8];
+        let mut bf = Bitfield::from(&data, 24);
         assert_matches!(bf, Bitfield::I { .. });
 
         assert!(!bf.cap(16));
@@ -519,8 +518,8 @@ mod tests {
 
     #[test]
     fn test_cap_i_3() {
-        let data = vec![0xff, 0xff, 0xf8].into_boxed_slice();
-        let mut bf = Bitfield::from(data, 24);
+        let data = vec![0xff, 0xff, 0xf8];
+        let mut bf = Bitfield::from(&data, 24);
         assert_matches!(bf, Bitfield::I { .. });
 
         assert!(!bf.cap(25));

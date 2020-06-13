@@ -4,7 +4,7 @@ use std::{fmt, thread};
 
 use amy::{self, Poller};
 
-use {handle, CONFIG};
+use crate::{handle, CONFIG};
 
 pub struct Listener {
     listener: TcpListener,
@@ -18,7 +18,7 @@ pub struct Message {
 }
 
 impl fmt::Debug for Message {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "listener msg")?;
         Ok(())
     }
@@ -89,7 +89,7 @@ impl Listener {
                     if conn.set_nonblocking(true).is_err() {
                         continue;
                     }
-                    if self.ch.send(Message { conn: conn }).is_err() {
+                    if self.ch.send(Message { conn }).is_err() {
                         error!("failed to send peer to ctrl");
                     }
                 }

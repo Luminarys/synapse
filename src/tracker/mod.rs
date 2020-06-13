@@ -9,17 +9,16 @@ use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
 use std::sync::Arc;
 use std::{io, result, thread};
 
-use amy;
 use byteorder::{BigEndian, ByteOrder};
 use url::Url;
 
 pub use self::errors::{Error, ErrorKind, Result, ResultExt};
-use bencode::BEncode;
-use control::cio;
-use disk;
-use handle;
-use torrent::Torrent;
-use CONFIG;
+use crate::bencode::BEncode;
+use crate::control::cio;
+use crate::disk;
+use crate::handle;
+use crate::torrent::Torrent;
+use crate::CONFIG;
 
 pub struct Tracker {
     poll: amy::Poller,
