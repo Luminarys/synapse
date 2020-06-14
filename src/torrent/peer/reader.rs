@@ -8,6 +8,8 @@ use crate::torrent::peer::Message;
 use crate::torrent::Bitfield;
 use crate::util::{aread, io_err_val, IOR};
 
+const MAX_EXT_MSG_BYTES: u32 = 100 * 1000 * 1000;
+
 pub struct Reader {
     state: State,
     prefix: [u8; 17],
@@ -266,7 +268,9 @@ impl Reader {
                         let id = self.prefix[5];
                         self.idx = 0;
                         let plen = BigEndian::read_u32(&self.prefix[0..4]) - 2;
-                        // TODO: validate size
+                        if plen > MAX_EXT_MSG_BYTES {
+                            return RRes::Err(io_err_val("Ext message too large"));
+                        }
                         let payload = vec![0u8; plen as usize];
                         self.state = State::Extension { id, payload };
                     }

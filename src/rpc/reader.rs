@@ -73,7 +73,7 @@ impl Reader {
                             if self.msg.masked() {
                                 self.state = State::MaskingKey;
                             } else {
-                                self.msg.allocate();
+                                self.msg.allocate()?;
                                 self.state = State::Payload(l as usize);
                             }
                         }
@@ -96,7 +96,7 @@ impl Reader {
                     if self.msg.masked() {
                         self.state = State::MaskingKey;
                     } else {
-                        self.msg.allocate();
+                        self.msg.allocate()?;
                         self.state = State::Payload(self.msg.len as usize);
                     }
 
@@ -108,7 +108,7 @@ impl Reader {
                     mask.copy_from_slice(&self.msg.data[start..end]);
                     self.msg.mask = Some(mask);
                     self.state = State::Payload(self.msg.len as usize);
-                    self.msg.allocate();
+                    self.msg.allocate()?;
 
                     self.pos = 0;
                 }

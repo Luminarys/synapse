@@ -1,4 +1,9 @@
 use byteorder::{BigEndian, ByteOrder};
+use std::io;
+
+// Since we never do large transfers of WS itself this should be
+// reasonable
+const MAX_MSG_BYTES: u64 = 5 * 1000 * 1000;
 
 #[derive(Debug)]
 pub enum Frame {
@@ -80,9 +85,12 @@ impl Message {
         }
     }
 
-    pub fn allocate(&mut self) {
-        // TODO: validate size
-        self.data.resize(self.len as usize, 0u8)
+    pub fn allocate(&mut self) -> io::Result<()> {
+        if self.len > MAX_MSG_BYTES {
+            return Err(io::ErrorKind::InvalidInput.into());
+        }
+        self.data.resize(self.len as usize, 0u8);
+        Ok(())
     }
 
     pub fn fin(&self) -> bool {

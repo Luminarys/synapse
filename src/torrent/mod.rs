@@ -1108,6 +1108,7 @@ impl<T: cio::CIO> Torrent<T> {
 
     fn handle_ext(&mut self, id: u8, payload: Vec<u8>, peer: &mut Peer<T>) -> Result<(), ()> {
         if id == 0 {
+            const MAX_INFO_BYTES: i64 = 100 * 1000 * 1000;
             let b = bencode::decode_buf(&payload).map_err(|_| ())?;
             let mut d = b.into_dict().ok_or(())?;
             let m = d.remove("m").and_then(|v| v.into_dict()).ok_or(())?;
@@ -1122,7 +1123,11 @@ impl<T: cio::CIO> Torrent<T> {
                     } else {
                         self.info_idx = Some(size as usize / 16_384);
                     }
-                    // TODO: validate size
+                    if size > MAX_INFO_BYTES {
+                        debug!("UT metadata too large, {} MBs",
+                              size / (1000 * 1000));
+                        return Err(());
+                    }
                     self.info_bytes.resize(size as usize, 0u8);
                 }
                 if !self.info.complete() {

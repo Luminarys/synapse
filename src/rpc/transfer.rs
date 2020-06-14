@@ -63,7 +63,8 @@ impl Transfers {
         import: bool,
     ) {
         let pos = data.len();
-        // TODO: validate size
+        // Given that this requires an authenticated connection
+        // we can safely assume this won't be abused
         data.resize(size as usize, 0u8);
         self.torrents.insert(
             id,
