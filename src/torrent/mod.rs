@@ -737,6 +737,8 @@ impl<T: cio::CIO> Torrent<T> {
                         info!("Invalid torrent imported, redownloading!");
                     }
                     self.announce_start();
+                    self.files.rebuild(&self.info, &self.pieces);
+                    self.update_rpc_transfer();
                     return;
                 }
                 if valid {
