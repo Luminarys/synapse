@@ -24,12 +24,13 @@ pub fn add(
     dir: Option<&str>,
     start: bool,
     import: bool,
+    output: &str,
 ) -> Result<()> {
     for file in files {
         if let Ok(magnet) = Url::parse(file) {
-            add_magnet(&mut c, magnet, dir, start)?;
+            add_magnet(&mut c, magnet, dir, start, output)?;
         } else {
-            add_file(&mut c, url, file, dir, start, import)?;
+            add_file(&mut c, url, file, dir, start, import, output)?;
         }
     }
     Ok(())
@@ -42,6 +43,7 @@ fn add_file(
     dir: Option<&str>,
     start: bool,
     import: bool,
+    output: &str,
 ) -> Result<()> {
     let mut torrent = Vec::new();
     let mut f = fs::File::open(file).chain_err(|| ErrorKind::FileIO)?;
@@ -70,7 +72,7 @@ fn add_file(
 
     match c.recv()? {
         SMessage::ResourcesExtant { ids, .. } => {
-            get_(c, ids[0].as_ref(), "text")?;
+            get_(c, ids[0].as_ref(), output)?;
         }
         SMessage::InvalidRequest(message::Error { reason, .. }) => {
             bail!("{}", reason);
@@ -85,7 +87,13 @@ fn add_file(
 
     Ok(())
 }
-fn add_magnet(c: &mut Client, magnet: Url, dir: Option<&str>, start: bool) -> Result<()> {
+fn add_magnet(
+    c: &mut Client,
+    magnet: Url,
+    dir: Option<&str>,
+    start: bool,
+    output: &str,
+) -> Result<()> {
     let msg = CMessage::UploadMagnet {
         serial: c.next_serial(),
         uri: magnet.as_str().to_owned(),
@@ -94,7 +102,7 @@ fn add_magnet(c: &mut Client, magnet: Url, dir: Option<&str>, start: bool) -> Re
     };
     match c.rr(msg)? {
         SMessage::ResourcesExtant { ids, .. } => {
-            get_(c, ids[0].as_ref(), "text")?;
+            get_(c, ids[0].as_ref(), output)?;
         }
         SMessage::InvalidRequest(message::Error { reason, .. }) => {
             bail!("{}", reason);
