@@ -224,8 +224,7 @@ impl Bitfield {
 
 impl protocol::Bitfield for Bitfield {
     fn bytes(&self) -> usize {
-        let size = div_round_up!(self.len(), 8);
-        size as usize
+        div_round_up!(self.len(), 8) as usize
     }
 
     fn byte_at(&self, pos: usize) -> u8 {

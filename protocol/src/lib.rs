@@ -1,6 +1,8 @@
+mod parser;
+
 use std::fmt;
 use std::io::{self, Write};
-use std::ops::Deref;
+use std::ops::{Deref, DerefMut};
 
 use byteorder::{BigEndian, WriteBytesExt};
 
@@ -14,7 +16,9 @@ pub trait Bitfield: Clone + From<Vec<u8>> {
     fn byte_at(&self, pos: usize) -> u8;
 }
 
-pub trait Buffer: Clone + Deref<Target = [u8]> {}
+pub trait Buffer: Clone + Deref<Target = [u8]> + DerefMut<Target = [u8]>{
+    fn get() -> Option<Self>;
+}
 
 pub enum Message<BF: Bitfield, Buf: Clone + Deref<Target = [u8]>> {
     // TODO: Consider moving this to the heap,
