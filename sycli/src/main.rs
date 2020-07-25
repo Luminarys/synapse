@@ -83,6 +83,14 @@ fn main() {
                         .long("files")
                         .required(true)
                         .index(1),
+                )
+                .arg(
+                    Arg::with_name("output")
+                        .help("Output the results in the specified format.")
+                        .short("o")
+                        .long("output")
+                        .possible_values(&["json", "text"])
+                        .default_value("text"),
                 ),
             SubCommand::with_name("del")
                 .about("Deletes torrents from synapse.")
@@ -399,6 +407,7 @@ fn main() {
             for file in args.values_of("files").unwrap() {
                 files.push(file)
             }
+            let output = args.value_of("output").unwrap();
             let res = cmd::add(
                 client,
                 url.as_str(),
@@ -406,6 +415,7 @@ fn main() {
                 args.value_of("directory"),
                 !args.is_present("pause"),
                 args.is_present("import"),
+                output,
             );
             if let Err(e) = res {
                 eprintln!("Failed to add torrents: {}", e.display_chain());
