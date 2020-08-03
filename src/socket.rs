@@ -153,7 +153,7 @@ impl TSocket {
                     Ok(name) => name,
                     Err(_) => return util::io_err("Invalid hostname used"),
                 };
-                info!("CONNECTING TO: {:?}", dns_name);
+                debug!("Initiating SSL connection to: {}", h);
                 let session = rustls::ClientSession::new(&Arc::new(config), dns_name);
                 TSocket {
                     conn: TConn::SSLC { conn, session },
