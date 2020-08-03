@@ -8,11 +8,12 @@ mod writer;
 
 use std::io::Write;
 use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4, TcpListener};
-use std::{io, result, str, thread};
+use std::{io, result, str, thread, fs};
+use std::sync::Arc;
 
 use http_range::HttpRange;
-use openssl::ssl::{SslAcceptor, SslFiletype, SslMethod};
 use url::Url;
+use rustls;
 
 use self::client::{Client, Incoming, IncomingStatus};
 pub use self::errors::{Error, ErrorKind, Result, ResultExt};
@@ -169,7 +170,7 @@ pub struct RPC {
     reg: amy::Registrar,
     ch: handle::Handle<CtlMessage, Message>,
     listener: TcpListener,
-    acceptor: Option<SslAcceptor>,
+    config: Option<Arc<rustls::ServerConfig>>,
     lid: usize,
     cleanup: usize,
     processor: Processor,
@@ -177,6 +178,34 @@ pub struct RPC {
     clients: UHashMap<Client>,
     incoming: UHashMap<Incoming>,
     disk: amy::Sender<disk::Request>,
+}
+
+fn load_certs(filename: &str) -> io::Result<Vec<rustls::Certificate>> {
+    let certfile = fs::File::open(filename)?;
+    let mut reader = io::BufReader::new(certfile);
+    Ok(rustls::internal::pemfile::certs(&mut reader).expect("Invalid cert file"))
+}
+
+fn load_private_key(filename: &str) -> io::Result<rustls::PrivateKey> {
+    let rsa_keys = {
+            let keyfile = fs::File::open(filename)?;
+            let mut reader = io::BufReader::new(keyfile);
+            rustls::internal::pemfile::rsa_private_keys(&mut reader).expect("Invalid private key")
+        };
+
+    let pkcs8_keys = {
+            let keyfile = fs::File::open(filename)?;
+            let mut reader = io::BufReader::new(keyfile);
+            rustls::internal::pemfile::pkcs8_private_keys(&mut reader).expect("Invalid private key")
+        };
+
+    // prefer to load pkcs8 keys
+    if !pkcs8_keys.is_empty() {
+        Ok(pkcs8_keys[0].clone())
+    } else {
+        assert!(!rsa_keys.is_empty(), "SSL private key must be non empty and decrypted!");
+        Ok(rsa_keys[0].clone())
+    }
 }
 
 impl RPC {
@@ -200,6 +229,23 @@ impl RPC {
         let lid = reg.register(&listener, amy::Event::Both)?;
 
         let disk = db.clone();
+
+        let config = match (CONFIG.rpc.ssl_cert.as_str(), CONFIG.rpc.ssl_key.as_str()) {
+            ("", "") => {
+                info!("RPC SSL parameters not specified, using insecure connections!");
+                None
+            },
+            (cert_file, key_file) => {
+                let mut config = rustls::ServerConfig::new(rustls::NoClientAuth::new());
+                let certs = load_certs(cert_file)?;
+                let key = load_private_key(key_file)?;
+                config.set_single_cert(certs, key).expect("Invalid ssl_cert and ssl_key");
+                info!("SSL initialized!");
+                Some(Arc::new(config))
+            }
+        };
+
+
         let th = dh.run("rpc", move |ch| {
             RPC {
                 ch,
@@ -213,7 +259,7 @@ impl RPC {
                 incoming: UHashMap::default(),
                 processor: Processor::new(db),
                 transfers: Transfers::new(),
-                acceptor: build_acceptor(&CONFIG.rpc.ssl_cert, &CONFIG.rpc.ssl_key),
+                config,
             }
             .run()
         })?;
@@ -375,8 +421,8 @@ impl RPC {
                 Ok((conn, ip)) => {
                     debug!("Accepted new connection from {:?}!", ip);
                     let id = self.reg.register(&conn, amy::Event::Both);
-                    let conn = if let Some(ref acceptor) = self.acceptor {
-                        TSocket::from_ssl(conn, acceptor)
+                    let conn = if let Some(ref config) = self.config {
+                        TSocket::from_ssl(conn, config)
                     } else {
                         TSocket::from_plain(conn)
                     };
@@ -593,33 +639,4 @@ impl RPC {
     fn remove_client(&mut self, id: usize, _client: Client) {
         self.processor.remove_client(id);
     }
-}
-
-fn build_acceptor(cert_file: &str, key_file: &str) -> Option<SslAcceptor> {
-    if cert_file == "" || key_file == "" {
-        info!("RPC SSL parameters not specified, using insecure connections!");
-        return None;
-    }
-
-    let mut builder = match SslAcceptor::mozilla_intermediate(SslMethod::tls()) {
-        Ok(b) => b,
-        Err(e) => {
-            error!("Failed to create SSL acceptor: {}", e);
-            return None;
-        }
-    };
-    if let Err(e) = builder.set_certificate_chain_file(cert_file) {
-        error!("Failed to load SSl certificate chain: {}", e);
-        return None;
-    }
-    if let Err(e) = builder.set_private_key_file(key_file, SslFiletype::PEM) {
-        error!("Failed to load SSl key: {}", e);
-        return None;
-    }
-    if let Err(e) = builder.check_private_key() {
-        error!("Failed to valdiate SSl key: {}", e);
-        return None;
-    }
-    info!("SSL initialized!");
-    Some(builder.build())
 }
