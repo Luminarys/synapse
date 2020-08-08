@@ -6,7 +6,7 @@ use std::{cmp, fmt, fs, path, time};
 use http_range::HttpRange;
 use nix::libc;
 use nix::sys::statvfs;
-use openssl::sha;
+use sha1::{Sha1, Digest};
 
 use super::{BufCache, FileCache, JOB_TIME_SLICE};
 use crate::buffers::Buffer;
@@ -437,7 +437,7 @@ impl Request {
                 piece,
             } => {
                 let buf = tb.get(info.piece_len as usize);
-                let mut ctx = sha::Sha1::new();
+                let mut ctx = Sha1::new();
                 let locs = Info::piece_disk_locs(&info, piece);
                 for loc in locs {
                     let pb = tpb.get(path.as_ref().unwrap_or(dd));
@@ -446,7 +446,7 @@ impl Request {
                         .map(|_| ctx.update(&buf[loc.start..loc.end]))
                         .ok();
                 }
-                let digest = ctx.finish();
+                let digest = ctx.finalize();
                 return Ok(JobRes::Resp(Response::PieceValidated {
                     tid,
                     piece,
@@ -467,7 +467,7 @@ impl Request {
                     && start.elapsed() < time::Duration::from_millis(JOB_TIME_SLICE)
                 {
                     let mut valid = true;
-                    let mut ctx = sha::Sha1::new();
+                    let mut ctx = Sha1::new();
                     let locs = Info::piece_disk_locs(&info, idx);
                     for loc in locs {
                         if !valid {
@@ -480,7 +480,7 @@ impl Request {
                             .map(|_| ctx.update(&buf[loc.start..loc.end]))
                             .is_ok();
                     }
-                    let digest = ctx.finish();
+                    let digest = ctx.finalize();
                     if !valid || digest[..] != info.hashes[idx as usize][..] {
                         invalid.push(idx);
                     }

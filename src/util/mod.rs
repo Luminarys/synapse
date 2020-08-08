@@ -8,7 +8,7 @@ use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
 
 use byteorder::{BigEndian, ByteOrder};
 use metrohash::MetroHash;
-use openssl::sha;
+use sha1::{Sha1, Digest};
 use rand::distributions::Alphanumeric;
 use rand::{self, Rng};
 
@@ -48,9 +48,9 @@ pub fn random_string(len: usize) -> String {
 }
 
 pub fn sha1_hash(data: &[u8]) -> [u8; 20] {
-    let mut ctx = sha::Sha1::new();
+    let mut ctx = Sha1::new();
     ctx.update(data);
-    ctx.finish()
+    ctx.finalize().into()
 }
 
 pub fn peer_rpc_id(torrent: &[u8; 20], peer: u64) -> String {
@@ -58,29 +58,29 @@ pub fn peer_rpc_id(torrent: &[u8; 20], peer: u64) -> String {
     let mut idx = [0u8; 8];
     BigEndian::write_u64(&mut idx[..], peer);
 
-    let mut ctx = sha::Sha1::new();
+    let mut ctx = Sha1::new();
     ctx.update(torrent);
     ctx.update(PEER_ID);
     ctx.update(&idx[..]);
-    hash_to_id(&ctx.finish())
+    hash_to_id(&ctx.finalize())
 }
 
 pub fn file_rpc_id(torrent: &[u8; 20], file: &str) -> String {
     const FILE_ID: &[u8] = b"FILE";
-    let mut ctx = sha::Sha1::new();
+    let mut ctx = Sha1::new();
     ctx.update(torrent);
     ctx.update(FILE_ID);
     ctx.update(file.as_bytes());
-    hash_to_id(&ctx.finish())
+    hash_to_id(&ctx.finalize())
 }
 
 pub fn trk_rpc_id(torrent: &[u8; 20], url: &str) -> String {
     const TRK_ID: &[u8] = b"TRK";
-    let mut ctx = sha::Sha1::new();
+    let mut ctx = Sha1::new();
     ctx.update(torrent);
     ctx.update(TRK_ID);
     ctx.update(url.as_bytes());
-    hash_to_id(&ctx.finish())
+    hash_to_id(&ctx.finalize())
 }
 
 pub fn hash_to_id(hash: &[u8]) -> String {

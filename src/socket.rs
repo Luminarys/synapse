@@ -1,13 +1,13 @@
 use std::io::{self, ErrorKind};
-use std::mem;
 use std::net::{SocketAddr, TcpStream};
 use std::os::unix::io::{AsRawFd, RawFd};
+use std::sync::Arc;
 
 use net2::{TcpBuilder, TcpStreamExt};
 use nix::libc;
-use openssl::ssl::{
-    HandshakeError, MidHandshakeSslStream, SslAcceptor, SslConnector, SslMethod, SslStream,
-};
+use rustls::{self, Session};
+use webpki;
+use webpki_roots;
 
 use crate::throttle::Throttle;
 use crate::util;
@@ -135,13 +135,9 @@ pub struct TSocket {
 }
 
 enum TConn {
-    Empty,
     Plain(TcpStream),
-    // SSL Preconnection state
-    SSLP { host: String, conn: TcpStream },
-    // SSL Connecting state
-    SSLC(MidHandshakeSslStream<TcpStream>),
-    SSL(SslStream<TcpStream>),
+    SSLC { conn: TcpStream, session: rustls::ClientSession },
+    SSLS { conn: TcpStream, session: rustls::ServerSession },
 }
 
 impl TSocket {
@@ -150,9 +146,19 @@ impl TSocket {
         conn.set_nonblocking(true)?;
         let fd = conn.as_raw_fd();
         let sock = match host {
-            Some(h) => TSocket {
-                conn: TConn::SSLP { host: h, conn },
-                fd,
+            Some(h) => {
+                let mut config = rustls::ClientConfig::new();
+                config.root_store.add_server_trust_anchors(&webpki_roots::TLS_SERVER_ROOTS);
+                let dns_name = match webpki::DNSNameRef::try_from_ascii_str(&h) {
+                    Ok(name) => name,
+                    Err(_) => return util::io_err("Invalid hostname used"),
+                };
+                debug!("Initiating SSL connection to: {}", h);
+                let session = rustls::ClientSession::new(&Arc::new(config), dns_name);
+                TSocket {
+                    conn: TConn::SSLC { conn, session },
+                    fd,
+                }
             },
             None => TSocket {
                 conn: TConn::Plain(conn),
@@ -160,6 +166,21 @@ impl TSocket {
             },
         };
         Ok(sock)
+    }
+
+    pub fn connect(&mut self, addr: SocketAddr) -> io::Result<()> {
+        info!("Connecting to: {}", addr);
+        match self.conn {
+            TConn::Plain(ref mut c) | TConn::SSLC { conn: ref mut c, .. } => {
+                if let Err(e) = c.connect(addr) {
+                    if Some(libc::EINPROGRESS) != e.raw_os_error() {
+                        return Err(e);
+                    }
+                }
+                Ok(())
+            }
+            TConn::SSLS { .. } => unreachable!("Server side TLS connect"),
+        }
     }
 
     pub fn from_plain(stream: TcpStream) -> io::Result<TSocket> {
@@ -171,131 +192,87 @@ impl TSocket {
         })
     }
 
-    pub fn from_ssl(stream: TcpStream, acceptor: &SslAcceptor) -> io::Result<TSocket> {
-        stream.set_nonblocking(true)?;
-        let fd = stream.as_raw_fd();
-
-        let conn = match acceptor.accept(stream) {
-            Ok(c) => TConn::SSL(c),
-            Err(HandshakeError::WouldBlock(s)) => TConn::SSLC(s),
-            Err(_) => return util::io_err("SSL Connection failed!"),
-        };
-        Ok(TSocket { conn, fd })
-    }
-
-    pub fn connect(&mut self, addr: SocketAddr) -> io::Result<()> {
-        let c = mem::replace(&mut self.conn, TConn::Empty);
-        self.conn = match c {
-            TConn::Plain(c) => {
-                if let Err(e) = c.connect(addr) {
-                    if Some(libc::EINPROGRESS) != e.raw_os_error() {
-                        return Err(e);
-                    }
-                }
-                TConn::Plain(c)
-            }
-            TConn::SSLP { host, conn } => {
-                if let Err(e) = conn.connect(addr) {
-                    if Some(libc::EINPROGRESS) != e.raw_os_error() {
-                        return Err(e);
-                    }
-                }
-                let connector = if let Ok(b) = SslConnector::builder(SslMethod::tls()) {
-                    b.build()
-                } else {
-                    return util::io_err("SSL Connection failed!");
-                };
-                match connector.connect(&host, conn) {
-                    Ok(s) => TConn::SSL(s),
-                    Err(HandshakeError::WouldBlock(s)) => TConn::SSLC(s),
-                    Err(_) => return util::io_err("SSL Connection failed!"),
-                }
-            }
-            _ => return util::io_err("Socket in failed state!"),
-        };
-        Ok(())
+    pub fn from_ssl(conn: TcpStream, config: &Arc<rustls::ServerConfig>) -> io::Result<TSocket> {
+        conn.set_nonblocking(true)?;
+        let fd = conn.as_raw_fd();
+        let session = rustls::ServerSession::new(config);
+        Ok(TSocket {
+            conn: TConn::SSLS { conn, session },
+            fd,
+        })
     }
 }
 
 impl io::Read for TSocket {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        let c = mem::replace(&mut self.conn, TConn::Empty);
-        let res;
-        self.conn = match c {
-            TConn::Plain(mut c) => {
-                res = c.read(buf);
-                TConn::Plain(c)
+        match self.conn {
+            TConn::Plain(ref mut c) => c.read(buf),
+            TConn::SSLC { ref mut conn, ref mut session } => {
+                // Attempt to call complete_io as many times as necessary
+                // to complete handshaking. Once handshaking is complete
+                // session.read should begin returning results which we
+                // can then use. complete_io returning 0, 0 indicates that
+                // EOF has been reached, but we still need to read out
+                // the remaining bytes, propagating EOF. Prior to this
+                // reading 0 bytes simply indicates the TLS session buffer
+                // has no data
+                loop {
+                    match session.complete_io(conn)? {
+                        (0, 0) => return session.read(buf),
+                        _ => {
+                            let res = session.read(buf)?;
+                            if res > 0 {
+                                return Ok(res)
+                            }
+                        }
+                    }
+                }
             }
-            TConn::SSLC(conn) => match conn.handshake() {
-                Ok(s) => {
-                    res = Ok(std::usize::MAX);
-                    TConn::SSL(s)
+            TConn::SSLS { ref mut conn, ref mut session } => {
+                loop {
+                    match session.complete_io(conn)? {
+                        (0, 0) => return session.read(buf),
+                        _ => {
+                            let res = session.read(buf)?;
+                            if res > 0 {
+                                return Ok(res)
+                            }
+                        }
+                    }
                 }
-                Err(HandshakeError::WouldBlock(s)) => {
-                    res = Err(io::Error::from(io::ErrorKind::WouldBlock));
-                    TConn::SSLC(s)
-                }
-                Err(_) => {
-                    res = util::io_err("SSL Connection failed!");
-                    TConn::Empty
-                }
-            },
-            TConn::SSL(mut conn) => {
-                res = conn.read(buf);
-                TConn::SSL(conn)
             }
-            _ => return util::io_err("Socket in failed state!"),
-        };
-
-        if let Ok(std::usize::MAX) = res {
-            debug!("SSL upgrade succeeded!");
-            self.read(buf)
-        } else {
-            res
         }
     }
 }
 
 impl io::Write for TSocket {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        let c = mem::replace(&mut self.conn, TConn::Empty);
-        let res;
-        self.conn = match c {
-            TConn::Plain(mut c) => {
-                res = c.write(buf);
-                TConn::Plain(c)
+        match self.conn {
+            TConn::Plain(ref mut c) => c.write(buf),
+            TConn::SSLC { ref mut conn, ref mut session } => {
+                let result = session.write(buf);
+                session.complete_io(conn)?;
+                result
             }
-            TConn::SSLC(conn) => match conn.handshake() {
-                Ok(s) => {
-                    res = Ok(std::usize::MAX);
-                    TConn::SSL(s)
-                }
-                Err(HandshakeError::WouldBlock(s)) => {
-                    res = Err(io::Error::from(io::ErrorKind::WouldBlock));
-                    TConn::SSLC(s)
-                }
-                Err(_) => return util::io_err("SSL Connection failed!"),
-            },
-            TConn::SSL(mut conn) => {
-                res = conn.write(buf);
-                TConn::SSL(conn)
+            TConn::SSLS { ref mut conn, ref mut session } => {
+                let result = session.write(buf);
+                session.complete_io(conn)?;
+                result
             }
-            _ => return util::io_err("Socket in failed state!"),
-        };
-
-        if let Ok(std::usize::MAX) = res {
-            debug!("SSL upgrade succeeded!");
-            self.write(buf)
-        } else {
-            res
         }
     }
 
     fn flush(&mut self) -> io::Result<()> {
         match self.conn {
             TConn::Plain(ref mut c) => c.flush(),
-            TConn::SSL(ref mut c) => c.flush(),
-            _ => Ok(()),
+            TConn::SSLC { ref mut conn, ref mut session } => {
+                session.flush()?;
+                conn.flush()
+            }
+            TConn::SSLS { ref mut conn, ref mut session } => {
+                session.flush()?;
+                conn.flush()
+            }
         }
     }
 }
