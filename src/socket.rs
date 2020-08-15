@@ -4,7 +4,6 @@ use std::os::unix::io::{AsRawFd, RawFd};
 use std::sync::Arc;
 
 use net2::{TcpBuilder, TcpStreamExt};
-use nix::libc;
 use rustls::{self, Session};
 use webpki;
 use webpki_roots;
@@ -20,6 +19,8 @@ pub struct Socket {
     pub throttle: Option<Throttle>,
 }
 
+const EINPROGRESS: i32 = 115;
+
 impl Socket {
     pub fn new(addr: &SocketAddr) -> io::Result<Socket> {
         let sock = (match *addr {
@@ -30,7 +31,7 @@ impl Socket {
         conn.set_nonblocking(true)?;
         if let Err(e) = conn.connect(addr) {
             // OSX gives the AddrNotAvailable error sometimes
-            if Some(libc::EINPROGRESS) != e.raw_os_error()
+            if Some(EINPROGRESS) != e.raw_os_error()
                 && e.kind() != ErrorKind::AddrNotAvailable
             {
                 return Err(e);
@@ -136,8 +137,14 @@ pub struct TSocket {
 
 enum TConn {
     Plain(TcpStream),
-    SSLC { conn: TcpStream, session: rustls::ClientSession },
-    SSLS { conn: TcpStream, session: rustls::ServerSession },
+    SSLC {
+        conn: TcpStream,
+        session: rustls::ClientSession,
+    },
+    SSLS {
+        conn: TcpStream,
+        session: rustls::ServerSession,
+    },
 }
 
 impl TSocket {
@@ -148,7 +155,9 @@ impl TSocket {
         let sock = match host {
             Some(h) => {
                 let mut config = rustls::ClientConfig::new();
-                config.root_store.add_server_trust_anchors(&webpki_roots::TLS_SERVER_ROOTS);
+                config
+                    .root_store
+                    .add_server_trust_anchors(&webpki_roots::TLS_SERVER_ROOTS);
                 let dns_name = match webpki::DNSNameRef::try_from_ascii_str(&h) {
                     Ok(name) => name,
                     Err(_) => return util::io_err("Invalid hostname used"),
@@ -159,7 +168,7 @@ impl TSocket {
                     conn: TConn::SSLC { conn, session },
                     fd,
                 }
-            },
+            }
             None => TSocket {
                 conn: TConn::Plain(conn),
                 fd,
@@ -171,9 +180,12 @@ impl TSocket {
     pub fn connect(&mut self, addr: SocketAddr) -> io::Result<()> {
         info!("Connecting to: {}", addr);
         match self.conn {
-            TConn::Plain(ref mut c) | TConn::SSLC { conn: ref mut c, .. } => {
+            TConn::Plain(ref mut c)
+            | TConn::SSLC {
+                conn: ref mut c, ..
+            } => {
                 if let Err(e) = c.connect(addr) {
-                    if Some(libc::EINPROGRESS) != e.raw_os_error() {
+                    if Some(EINPROGRESS) != e.raw_os_error() {
                         return Err(e);
                     }
                 }
@@ -207,7 +219,10 @@ impl io::Read for TSocket {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         match self.conn {
             TConn::Plain(ref mut c) => c.read(buf),
-            TConn::SSLC { ref mut conn, ref mut session } => {
+            TConn::SSLC {
+                ref mut conn,
+                ref mut session,
+            } => {
                 // Attempt to call complete_io as many times as necessary
                 // to complete handshaking. Once handshaking is complete
                 // session.read should begin returning results which we
@@ -222,25 +237,26 @@ impl io::Read for TSocket {
                         _ => {
                             let res = session.read(buf)?;
                             if res > 0 {
-                                return Ok(res)
+                                return Ok(res);
                             }
                         }
                     }
                 }
             }
-            TConn::SSLS { ref mut conn, ref mut session } => {
-                loop {
-                    match session.complete_io(conn)? {
-                        (0, 0) => return session.read(buf),
-                        _ => {
-                            let res = session.read(buf)?;
-                            if res > 0 {
-                                return Ok(res)
-                            }
+            TConn::SSLS {
+                ref mut conn,
+                ref mut session,
+            } => loop {
+                match session.complete_io(conn)? {
+                    (0, 0) => return session.read(buf),
+                    _ => {
+                        let res = session.read(buf)?;
+                        if res > 0 {
+                            return Ok(res);
                         }
                     }
                 }
-            }
+            },
         }
     }
 }
@@ -249,12 +265,18 @@ impl io::Write for TSocket {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         match self.conn {
             TConn::Plain(ref mut c) => c.write(buf),
-            TConn::SSLC { ref mut conn, ref mut session } => {
+            TConn::SSLC {
+                ref mut conn,
+                ref mut session,
+            } => {
                 let result = session.write(buf);
                 session.complete_io(conn)?;
                 result
             }
-            TConn::SSLS { ref mut conn, ref mut session } => {
+            TConn::SSLS {
+                ref mut conn,
+                ref mut session,
+            } => {
                 let result = session.write(buf);
                 session.complete_io(conn)?;
                 result
@@ -265,11 +287,17 @@ impl io::Write for TSocket {
     fn flush(&mut self) -> io::Result<()> {
         match self.conn {
             TConn::Plain(ref mut c) => c.flush(),
-            TConn::SSLC { ref mut conn, ref mut session } => {
+            TConn::SSLC {
+                ref mut conn,
+                ref mut session,
+            } => {
                 session.flush()?;
                 conn.flush()
             }
-            TConn::SSLS { ref mut conn, ref mut session } => {
+            TConn::SSLS {
+                ref mut conn,
+                ref mut session,
+            } => {
                 session.flush()?;
                 conn.flush()
             }

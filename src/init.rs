@@ -1,15 +1,11 @@
-use std::os::unix::io::RawFd;
 use std::sync::{atomic, mpsc};
 use std::{io, process, thread};
 
-use nix::sys::signal;
-use nix::{fcntl, libc, unistd};
+use ctrlc;
 
 use crate::control::acio;
 use crate::{args, control, disk, listener, log, rpc, throttle, tracker};
 use crate::{CONFIG, SHUTDOWN, THROT_TOKS};
-
-static mut PIPE: (RawFd, RawFd) = (-1, -1);
 
 pub fn init(args: args::Args) -> Result<(), ()> {
     if let Some(level) = args.level {
@@ -91,50 +87,14 @@ fn init_threads() -> io::Result<Vec<thread::JoinHandle<()>>> {
     Ok(vec![chj, dhj, lhj, rhj, thj])
 }
 
-fn init_signals() -> nix::Result<()> {
-    unsafe {
-        PIPE = unistd::pipe2(fcntl::OFlag::O_CLOEXEC)?;
-        fcntl::fcntl(PIPE.1, fcntl::FcntlArg::F_SETFL(fcntl::OFlag::O_NONBLOCK))?;
-    }
-
-    let handler = signal::SigHandler::Handler(sig_handler);
-    let sigset = signal::SigSet::empty();
-    let sigflags = signal::SaFlags::SA_RESTART;
-    let sigact = signal::SigAction::new(handler, sigflags, sigset);
-    unsafe {
-        signal::sigaction(signal::Signal::SIGINT, &sigact)?;
-        signal::sigaction(signal::Signal::SIGTERM, &sigact)?;
-        signal::sigaction(signal::Signal::SIGHUP, &sigact)?;
-    }
-    thread::Builder::new()
-        .name("sighandler".to_string())
-        .spawn(move || {
-            let mut buf = [0u8];
-
-            loop {
-                loop {
-                    match unsafe { unistd::read(PIPE.0, &mut buf[..]) } {
-                        Ok(1) => break,
-                        Ok(_) => error!("Signal handler error"),
-                        Err(nix::Error::Sys(nix::errno::Errno::EINTR)) => {}
-                        Err(e) => error!("Signal handler error {}", e),
-                    }
-                }
-                if SHUTDOWN.load(atomic::Ordering::SeqCst) {
-                    info!("Terminating process!");
-                    process::abort();
-                } else {
-                    info!("Shutting down cleanly. Interrupt again to shut down immediately.");
-                    SHUTDOWN.store(true, atomic::Ordering::SeqCst);
-                }
-            }
-        })
-        .expect("Coudln't spawn thread");
-    Ok(())
-}
-
-extern "C" fn sig_handler(_: libc::c_int) {
-    unsafe {
-        unistd::write(PIPE.1, &[0u8]).ok();
-    }
+fn init_signals() -> Result<(), ctrlc::Error> {
+    ctrlc::set_handler(move || {
+        if SHUTDOWN.load(atomic::Ordering::SeqCst) {
+            info!("Terminating process!");
+            process::abort();
+        } else {
+            info!("Shutting down cleanly. Interrupt again to shut down immediately.");
+            SHUTDOWN.store(true, atomic::Ordering::SeqCst);
+        }
+    })
 }
