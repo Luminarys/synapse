@@ -8,9 +8,9 @@ use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
 
 use byteorder::{BigEndian, ByteOrder};
 use metrohash::MetroHash;
-use sha1::{Sha1, Digest};
 use rand::distributions::Alphanumeric;
 use rand::{self, Rng};
+use sha1::{Digest, Sha1};
 
 pub type FHashMap<K, V> = fnv::FnvHashMap<K, V>;
 pub type FHashSet<T> = fnv::FnvHashSet<T>;

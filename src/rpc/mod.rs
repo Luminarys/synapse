@@ -8,12 +8,12 @@ mod writer;
 
 use std::io::Write;
 use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4, TcpListener};
-use std::{io, result, str, thread, fs};
 use std::sync::Arc;
+use std::{fs, io, result, str, thread};
 
 use http_range::HttpRange;
-use url::Url;
 use rustls;
+use url::Url;
 
 use self::client::{Client, Incoming, IncomingStatus};
 pub use self::errors::{Error, ErrorKind, Result, ResultExt};
@@ -188,22 +188,25 @@ fn load_certs(filename: &str) -> io::Result<Vec<rustls::Certificate>> {
 
 fn load_private_key(filename: &str) -> io::Result<rustls::PrivateKey> {
     let rsa_keys = {
-            let keyfile = fs::File::open(filename)?;
-            let mut reader = io::BufReader::new(keyfile);
-            rustls::internal::pemfile::rsa_private_keys(&mut reader).expect("Invalid private key")
-        };
+        let keyfile = fs::File::open(filename)?;
+        let mut reader = io::BufReader::new(keyfile);
+        rustls::internal::pemfile::rsa_private_keys(&mut reader).expect("Invalid private key")
+    };
 
     let pkcs8_keys = {
-            let keyfile = fs::File::open(filename)?;
-            let mut reader = io::BufReader::new(keyfile);
-            rustls::internal::pemfile::pkcs8_private_keys(&mut reader).expect("Invalid private key")
-        };
+        let keyfile = fs::File::open(filename)?;
+        let mut reader = io::BufReader::new(keyfile);
+        rustls::internal::pemfile::pkcs8_private_keys(&mut reader).expect("Invalid private key")
+    };
 
     // prefer to load pkcs8 keys
     if !pkcs8_keys.is_empty() {
         Ok(pkcs8_keys[0].clone())
     } else {
-        assert!(!rsa_keys.is_empty(), "SSL private key must be non empty and decrypted!");
+        assert!(
+            !rsa_keys.is_empty(),
+            "SSL private key must be non empty and decrypted!"
+        );
         Ok(rsa_keys[0].clone())
     }
 }
@@ -234,17 +237,18 @@ impl RPC {
             ("", "") => {
                 info!("RPC SSL parameters not specified, using insecure connections!");
                 None
-            },
+            }
             (cert_file, key_file) => {
                 let mut config = rustls::ServerConfig::new(rustls::NoClientAuth::new());
                 let certs = load_certs(cert_file)?;
                 let key = load_private_key(key_file)?;
-                config.set_single_cert(certs, key).expect("Invalid ssl_cert and ssl_key");
+                config
+                    .set_single_cert(certs, key)
+                    .expect("Invalid ssl_cert and ssl_key");
                 info!("SSL initialized!");
                 Some(Arc::new(config))
             }
         };
-
 
         let th = dh.run("rpc", move |ch| {
             RPC {

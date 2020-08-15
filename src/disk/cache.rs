@@ -1,8 +1,6 @@
 use std::ffi::OsString;
 use std::{fs, io, mem, path};
 
-use std::os::unix::fs::MetadataExt;
-
 use std::io::{Read, Seek, SeekFrom, Write};
 
 use crate::util::{native, MHashMap};
@@ -177,8 +175,7 @@ impl FileCache {
                 false
             };
 
-            let stat = file.metadata()?;
-            let sparse = stat.blocks() * stat.blksize() < stat.size();
+            let sparse = native::is_sparse(&file)?;
 
             self.files.insert(
                 path.to_path_buf(),

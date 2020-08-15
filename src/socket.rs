@@ -31,9 +31,7 @@ impl Socket {
         conn.set_nonblocking(true)?;
         if let Err(e) = conn.connect(addr) {
             // OSX gives the AddrNotAvailable error sometimes
-            if Some(EINPROGRESS) != e.raw_os_error()
-                && e.kind() != ErrorKind::AddrNotAvailable
-            {
+            if Some(EINPROGRESS) != e.raw_os_error() && e.kind() != ErrorKind::AddrNotAvailable {
                 return Err(e);
             }
         }

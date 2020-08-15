@@ -1126,8 +1126,7 @@ impl<T: cio::CIO> Torrent<T> {
                         self.info_idx = Some(size as usize / 16_384);
                     }
                     if size > MAX_INFO_BYTES {
-                        debug!("UT metadata too large, {} MBs",
-                              size / (1000 * 1000));
+                        debug!("UT metadata too large, {} MBs", size / (1000 * 1000));
                         return Err(());
                     }
                     self.info_bytes.resize(size as usize, 0u8);
@@ -1157,7 +1156,10 @@ impl<T: cio::CIO> Torrent<T> {
             };
             let buf = bencode::decode_buf_first(&payload).map_err(|_| ())?;
             let mut dict = buf.into_dict().ok_or(())?;
-            let msg = dict.remove("msg_type").and_then(|v| v.into_int()).ok_or(())?;
+            let msg = dict
+                .remove("msg_type")
+                .and_then(|v| v.into_int())
+                .ok_or(())?;
             let piece_len = dict.remove("piece").and_then(|v| v.into_int()).ok_or(())? as usize;
             if piece_len * 16_384 >= self.info_bytes.len() {
                 return Err(());

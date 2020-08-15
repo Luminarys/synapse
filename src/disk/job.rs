@@ -3,10 +3,9 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::{cmp, fmt, fs, path, time};
 
+use fs2;
 use http_range::HttpRange;
-use nix::libc;
-use nix::sys::statvfs;
-use sha1::{Sha1, Digest};
+use sha1::{Digest, Sha1};
 
 use super::{BufCache, FileCache, JOB_TIME_SLICE};
 use crate::buffers::Buffer;
@@ -16,6 +15,7 @@ use crate::util::{awrite, hash_to_id, io_err, IOR};
 use crate::CONFIG;
 
 static MP_BOUNDARY: &str = "qxyllcqgNchqyob";
+const EXDEV: i32 = 18;
 
 pub struct Location {
     /// Info file index
@@ -286,12 +286,8 @@ impl Request {
         match self {
             Request::Ping => {}
             Request::FreeSpace => {
-                if let Ok(stat) = statvfs::statvfs(dd.as_str()) {
-                    let space = stat.fragment_size() as u64 * stat.blocks_available() as u64;
-                    return Ok(JobRes::Resp(Response::FreeSpace(space)));
-                } else {
-                    return io_err("couldn't stat fs");
-                }
+                let free_space = fs2::free_space(dd.as_str())?;
+                return Ok(JobRes::Resp(Response::FreeSpace(free_space)));
             }
             Request::WriteFile { path, data } => {
                 let p = tpb.get(path.iter());
@@ -365,7 +361,7 @@ impl Request {
                 match fs::rename(&fp, &tp) {
                     Ok(_) => {}
                     // Cross filesystem move, try to copy then delete
-                    Err(ref e) if e.raw_os_error() == Some(libc::EXDEV) => {
+                    Err(ref e) if e.raw_os_error() == Some(EXDEV) => {
                         match fs_extra::dir::copy(&fp, &tp, &fs_extra::dir::CopyOptions::new()) {
                             Ok(_) => {
                                 fs::remove_dir_all(&fp)?;

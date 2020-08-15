@@ -1,5 +1,6 @@
 use std::fs::File;
 use std::io;
+use std::os::unix::fs::MetadataExt;
 use std::os::unix::io::AsRawFd;
 
 use nix::errno::Errno;
@@ -13,6 +14,11 @@ mod sys {
     extern "C" {
         pub fn native_fallocate(fd: c_int, len: u64) -> c_int;
     }
+}
+
+pub fn is_sparse(f: &File) -> io::Result<bool> {
+    let stat = f.metadata()?;
+    Ok(stat.blocks() * stat.blksize() < stat.size())
 }
 
 pub fn fallocate(f: &File, len: u64) -> io::Result<bool> {
