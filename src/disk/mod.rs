@@ -11,7 +11,6 @@ use std::{fs, io, thread};
 
 use self::cache::{BufCache, FileCache};
 use self::job::JobRes;
-use crate::util::UHashMap;
 use crate::{handle, CONFIG};
 
 const POLL_INT_MS: usize = 1000;
@@ -19,33 +18,28 @@ const JOB_TIME_SLICE: u64 = 150;
 
 pub struct Disk {
     poll: amy::Poller,
-    reg: amy::Registrar,
     ch: handle::Handle<Request, Response>,
     jobs: amy::Receiver<Request>,
     files: FileCache,
     active: VecDeque<Request>,
     sequential: VecDeque<Request>,
-    blocked: UHashMap<Request>,
     bufs: BufCache,
 }
 
 impl Disk {
     pub fn new(
         poll: amy::Poller,
-        reg: amy::Registrar,
         ch: handle::Handle<Request, Response>,
         jobs: amy::Receiver<Request>,
     ) -> Disk {
         Disk {
             poll,
-            reg,
             ch,
             jobs,
             files: FileCache::new(),
             bufs: BufCache::new(),
             active: VecDeque::new(),
             sequential: VecDeque::new(),
-            blocked: UHashMap::default(),
         }
     }
 
@@ -55,14 +49,9 @@ impl Disk {
 
         loop {
             match self.poll.wait(POLL_INT_MS) {
-                Ok(v) => {
+                Ok(_) => {
                     if self.handle_events() {
                         break;
-                    }
-                    for ev in v {
-                        if let Some(r) = self.blocked.remove(&ev.id) {
-                            self.enqueue_req(r);
-                        }
                     }
                 }
                 Err(e) => {
@@ -116,9 +105,6 @@ impl Disk {
                         self.active.push_front(s);
                     }
                 }
-                Ok(JobRes::Blocked((id, s))) => {
-                    self.blocked.insert(id, s);
-                }
                 Ok(JobRes::Done) => {
                     done = true;
                 }
@@ -137,14 +123,9 @@ impl Disk {
                 }
             }
             match self.poll.wait(0) {
-                Ok(v) => {
+                Ok(_) => {
                     if self.handle_events() {
                         return true;
-                    }
-                    for ev in v {
-                        if let Some(r) = self.blocked.remove(&ev.id) {
-                            self.enqueue_req(r);
-                        }
                     }
                 }
                 Err(e) => {
@@ -165,7 +146,7 @@ impl Disk {
                 Ok(mut r) => {
                     trace!("Handling disk job!");
                     let tid = r.tid();
-                    if let Err(e) = r.register(&self.reg) {
+                    if let Err(e) = r.setup() {
                         if let Some(t) = tid {
                             self.ch.send(Response::error(t, e)).ok();
                         }
@@ -176,7 +157,7 @@ impl Disk {
             }
         }
         while let Ok(mut r) = self.jobs.try_recv() {
-            if r.register(&self.reg).is_err() {
+            if r.setup().is_err() {
                 continue;
             }
             self.enqueue_req(r);
@@ -196,6 +177,6 @@ pub fn start(
     let mut reg = poll.get_registrar();
     let (ch, dh) = handle::Handle::new(creg, &mut reg)?;
     let (tx, rx) = reg.channel()?;
-    let h = dh.run("disk", move |h| Disk::new(poll, reg, h, rx).run())?;
+    let h = dh.run("disk", move |h| Disk::new(poll, h, rx).run())?;
     Ok((ch, tx, h))
 }

@@ -211,6 +211,14 @@ impl TSocket {
             fd,
         })
     }
+
+    pub fn get_stream(&self) -> &TcpStream {
+        match self.conn {
+            TConn::Plain(ref c) => c,
+            TConn::SSLC { ref conn, .. } => conn,
+            TConn::SSLS { ref conn, .. } => conn,
+        }
+    }
 }
 
 impl io::Read for TSocket {

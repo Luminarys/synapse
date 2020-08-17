@@ -11,7 +11,7 @@ use super::{BufCache, FileCache, JOB_TIME_SLICE};
 use crate::buffers::Buffer;
 use crate::socket::TSocket;
 use crate::torrent::{Info, LocIter};
-use crate::util::{awrite, hash_to_id, io_err, IOR};
+use crate::util::{hash_to_id, io_err};
 use crate::CONFIG;
 
 static MP_BOUNDARY: &str = "qxyllcqgNchqyob";
@@ -82,16 +82,12 @@ pub enum Request {
     },
     Download {
         client: TSocket,
-        path: String,
-        range_idx: usize,
-        id: usize,
         ranges: Vec<HttpRange>,
-        ranged: bool,
-        writing: bool,
-        buf_idx: usize,
-        buf_max: usize,
-        buf: Box<[u8; 16_384]>,
+        multipart: bool,
         file_len: u64,
+        file_path: String,
+        buf: Vec<u8>,
+        buf_idx: usize,
     },
     FreeSpace,
     Ping,
@@ -121,7 +117,6 @@ pub enum JobRes {
     Update(Request, Response),
     Done,
     Paused(Request),
-    Blocked((usize, Request)),
 }
 
 impl Request {
@@ -187,84 +182,87 @@ impl Request {
         }
     }
 
-    pub fn download(
+    pub fn download2(
         client: TSocket,
-        path: String,
         mut ranges: Vec<HttpRange>,
-        mut ranged: bool,
-        len: u64,
+        file_path: String,
+        file_len: u64,
     ) -> Request {
-        let lines = if ranged {
-            if ranges.len() == 1 {
-                ranged = false;
-                vec![
-                    format!("HTTP/1.1 206 Partial Content"),
-                    format!("Content-Length: {}", ranges[0].length),
-                    format!(
-                        "Content-Range: bytes {}-{}/{}",
-                        ranges[0].start,
-                        ranges[0].start + ranges[0].length - 1,
-                        len
-                    ),
-                    format!("Accept-Ranges: {}", "bytes"),
-                    format!("Content-Type: {};", "application/octet-stream"),
-                    format!("Connection: {}", "Close"),
-                    "\r\n".to_string(),
-                ]
-            } else {
-                vec![
-                    format!("HTTP/1.1 206 Partial Content"),
-                    format!("Accept-Ranges: {}", "bytes"),
-                    format!(
-                        "Content-Type: {}; boundary={}",
-                        "multipart/byteranges", MP_BOUNDARY
-                    ),
-                    format!("Connection: {}", "Close"),
-                    "\r\n".to_string(),
-                ]
-            }
-        } else {
-            vec![
+        let http_lines = match ranges.len() {
+            0 => vec![
                 format!("HTTP/1.1 200 OK"),
-                format!("Accept-Ranges: {}", "bytes"),
-                format!("Content-Length: {}", len),
-                format!("Content-Type: {}", "application/octet-stream"),
+                format!("Accept-Ranges: bytes"),
+                format!("Content-Length: {}", file_len),
+                format!("Content-Type: application/octet-stream"),
                 format!(
                     "Content-Disposition: attachment; filename=\"{}\"",
-                    path::Path::new(&path)
+                    path::Path::new(&file_path)
                         .file_name()
                         .unwrap()
                         .to_string_lossy()
                 ),
-                format!("Connection: {}", "Close"),
-                "\r\n".to_string(),
-            ]
+                format!("Connection: Close"),
+                format!("\r\n"),
+            ],
+            1 => vec![
+                format!("HTTP/1.1 206 Partial Content"),
+                format!("Content-Length: {}", ranges[0].length),
+                format!(
+                    "Content-Range: bytes {}-{}/{}",
+                    ranges[0].start,
+                    ranges[0].start + ranges[0].length - 1,
+                    file_len
+                ),
+                format!("Accept-Ranges: bytes"),
+                format!("Content-Type: application/octet-stream"),
+                format!("Connection: Close"),
+                format!("\r\n"),
+            ],
+            _ => vec![
+                format!("HTTP/1.1 206 Partial Content"),
+                format!("Accept-Ranges: bytes"),
+                format!(
+                    "Content-Type: {}; boundary={}",
+                    "multipart/byteranges", MP_BOUNDARY
+                ),
+                format!("Connection: Close"),
+                // Add the first multipart boundary here manually.
+                // Because the job processing code only writes boundaries
+                // when ranges are complete we can either add a fake range
+                // which immediately triggers this write or we can manully
+                // add the boundary here since I find it less confusing.
+                format!("\r\n--{}", MP_BOUNDARY),
+                format!("Content-Type: application/octet-stream"),
+                format!(
+                    "Content-Range: bytes {}-{}/{}",
+                    ranges[0].start,
+                    ranges[0].start + ranges[0].length - 1,
+                    file_len
+                ),
+                format!("\r\n"),
+            ],
         };
-        let data = lines.join("\r\n");
-        let mut buf = Box::new([0u8; 16_384]);
-        (&mut buf[..data.len()]).copy_from_slice(data.as_bytes());
-        // Hack to make sure first mutlipart range gets written
-        if ranged {
-            ranges.insert(
-                0,
-                HttpRange {
-                    start: 0,
-                    length: 0,
-                },
-            );
+        let buf = http_lines.join("\r\n").into_bytes();
+        // Add a single range containing the single file if this is
+        // a plain http request.
+        if ranges.is_empty() {
+            ranges = vec![HttpRange {
+                start: 0,
+                length: file_len,
+            }];
         }
+        // Because we process ranges by popping them once complete,
+        // we reverse the ranges initially so that we can pop them
+        // from the end cheaply.
+        ranges.reverse();
         Request::Download {
             client,
-            path,
+            multipart: ranges.len() > 1,
             ranges,
-            ranged,
-            range_idx: 0,
-            id: 0,
-            writing: true,
+            file_path,
+            file_len,
             buf,
             buf_idx: 0,
-            buf_max: data.len(),
-            file_len: len,
         }
     }
 
@@ -504,113 +502,78 @@ impl Request {
             }
             Request::Download {
                 mut client,
-                path,
-                id,
-                ranged,
+                file_path,
                 file_len,
                 mut ranges,
-                mut range_idx,
-                mut writing,
-                mut buf_idx,
-                mut buf_max,
                 mut buf,
+                mut buf_idx,
+                multipart,
             } => {
                 let start = time::Instant::now();
-                while start.elapsed() < time::Duration::from_millis(JOB_TIME_SLICE) {
-                    if writing {
-                        loop {
-                            // Need the mod here because after the first 16 KiBs complete
-                            // no will be too big
-                            match awrite(&buf[buf_idx..buf_max], &mut client) {
-                                IOR::Complete => {
-                                    writing = false;
-                                    break;
-                                }
-                                IOR::Incomplete(w) => buf_idx += w,
-                                IOR::Blocked => {
-                                    return Ok(JobRes::Blocked((
-                                        id,
-                                        Request::Download {
-                                            client,
-                                            path,
-                                            range_idx,
-                                            id,
-                                            ranges,
-                                            ranged,
-                                            writing,
-                                            buf_idx,
-                                            buf_max,
-                                            buf,
-                                            file_len,
-                                        },
-                                    )))
-                                }
-                                IOR::EOF => return io_err("EOF"),
-                                IOR::Err(e) => return Err(e),
+                'outer: while start.elapsed() < time::Duration::from_millis(JOB_TIME_SLICE) {
+                    // First write out all remaining data in buf
+                    while buf_idx != buf.len() {
+                        match client.write(&buf[buf_idx..]) {
+                            Ok(n) => buf_idx += n,
+                            Err(ref e) if e.kind() == io::ErrorKind::Interrupted => continue,
+                            Err(ref e)
+                                if e.kind() == io::ErrorKind::WouldBlock
+                                    || e.kind() == io::ErrorKind::TimedOut =>
+                            {
+                                break 'outer
                             }
+                            Err(e) => return Err(e),
                         }
-                    } else if range_idx == ranges.len() {
-                        // Done writing the final bit
-                        return Ok(JobRes::Done);
-                    } else if ranges[range_idx].length == 0 {
-                        range_idx += 1;
-                        // Write the closer if needed
-                        if range_idx == ranges.len() {
-                            if ranged {
-                                let closer = format!("\r\n--{}--", MP_BOUNDARY);
-                                (&mut buf[..closer.len()]).copy_from_slice(closer.as_bytes());
-                                buf_idx = 0;
-                                buf_max = closer.len();
-                                writing = true;
-                            }
-                        } else {
-                            let lines = vec![
-                                format!("\r\n--{}", MP_BOUNDARY),
-                                format!("Content-Type: {}", "application/octet-stream"),
-                                // Subtract because it's inclusive
-                                format!(
-                                    "Content-Range: bytes {}-{}/{}",
-                                    ranges[range_idx].start,
-                                    ranges[range_idx].start + ranges[range_idx].length - 1,
-                                    file_len
-                                ),
-                                "\r\n".to_string(),
-                            ];
-                            let data = lines.join("\r\n");
-                            (&mut buf[..data.len()]).copy_from_slice(data.as_bytes());
-                            buf_idx = 0;
-                            buf_max = data.len();
-                            writing = true;
-                        }
-                    } else {
-                        let offset = ranges[range_idx].start;
-                        let len = ranges[range_idx].length;
-                        let amnt = cmp::min(len, 16_384);
+                    }
 
-                        fc.read_file_range(
-                            path::Path::new(&path),
-                            offset,
-                            &mut buf[0..amnt as usize],
-                        )?;
-                        ranges[range_idx].length -= amnt;
-                        ranges[range_idx].start += amnt;
-                        buf_max = amnt as usize;
-                        buf_idx = 0;
-                        writing = true;
+                    // If we've run out of ranges to write out, we're done
+                    if ranges.is_empty() {
+                        return Ok(JobRes::Done);
+                    }
+                    // Now try to read out the next chunk of the current range, updating
+                    // buf and the current range appropriately
+                    let cur_range = ranges.last_mut().unwrap();
+                    // Either read 128 KiB or the rest of the range
+                    let chunk_len = cmp::min(1024 * 128, cur_range.length) as usize;
+                    buf.resize(chunk_len, 0);
+                    buf_idx = 0;
+                    fc.read_file_range(path::Path::new(&file_path), cur_range.start, &mut buf)?;
+                    cur_range.length -= buf.len() as u64;
+                    cur_range.start += buf.len() as u64;
+
+                    // Process the next range if the current is complete
+                    if cur_range.length == 0 {
+                        ranges.pop();
+                        // If it's multipart write out either the boundary header
+                        // or the final boundary if we're done with all chunks
+                        if multipart {
+                            let http_lines = match ranges.last() {
+                                Some(cur_range) => vec![
+                                    format!("\r\n--{}", MP_BOUNDARY),
+                                    format!("Content-Type: application/octet-stream"),
+                                    format!(
+                                        "Content-Range: bytes {}-{}/{}",
+                                        cur_range.start,
+                                        cur_range.start + cur_range.length - 1,
+                                        file_len
+                                    ),
+                                    format!("\r\n"),
+                                ]
+                                .join("\r\n"),
+                                None => format!("\r\n--{}--", MP_BOUNDARY),
+                            };
+                            buf.extend(http_lines.into_bytes());
+                        }
                     }
                 }
                 return Ok(JobRes::Paused(Request::Download {
                     client,
-                    path,
-                    range_idx,
-                    id,
+                    file_path,
                     file_len,
                     ranges,
-                    ranged,
-                    writing,
-                    buf_idx,
-                    buf_max,
                     buf,
+                    buf_idx,
+                    multipart,
                 }));
             }
             Request::Shutdown => unreachable!(),
@@ -618,15 +581,13 @@ impl Request {
         Ok(JobRes::Done)
     }
 
-    pub fn register(&mut self, reg: &amy::Registrar) -> io::Result<()> {
+    pub fn setup(&mut self) -> io::Result<()> {
         match *self {
-            Request::Download {
-                ref client,
-                ref mut id,
-                ..
-            } => {
-                *id = reg.register(client, amy::Event::Write)?;
-                Ok(())
+            Request::Download { ref mut client, .. } => {
+                client.get_stream().set_nonblocking(false)?;
+                client
+                    .get_stream()
+                    .set_write_timeout(Some(time::Duration::from_millis(JOB_TIME_SLICE)))
             }
             _ => Ok(()),
         }

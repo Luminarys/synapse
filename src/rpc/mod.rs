@@ -501,6 +501,7 @@ impl RPC {
                             return;
                         }
 
+                        /*
                         let mut ranged = false;
                         let r = if let Some(r) = range {
                             if let Ok(ranges) = HttpRange::parse(&r, size) {
@@ -520,6 +521,20 @@ impl RPC {
                         debug!("Initiating DL");
                         self.disk
                             .send(disk::Request::download(conn, path, r, ranged, size))
+                            .ok();
+                        */
+                        let ranges = match range.map(|r| HttpRange::parse(&r, size)) {
+                            Some(Ok(parsed_ranges)) => parsed_ranges,
+                            Some(Err(_)) => {
+                                debug!("Ranges {} invalid, stopping DL", id);
+                                conn.write(&BAD_HTTP_RANGE).ok();
+                                return;
+                            }
+                            None => vec![],
+                        };
+                        debug!("Initiating DL");
+                        self.disk
+                            .send(disk::Request::download2(conn, ranges, path, size))
                             .ok();
                     } else {
                         debug!("ID {} invalid, stopping DL", id);
