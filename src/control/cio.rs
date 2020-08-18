@@ -1,4 +1,5 @@
-use crate::{disk, listener, rpc, torrent, tracker};
+use crate::{disk, rpc, torrent, tracker};
+use std::net::TcpStream;
 
 error_chain! {
     errors {
@@ -31,7 +32,7 @@ pub enum Event {
     RPC(Result<rpc::Message>),
     Tracker(Result<tracker::Response>),
     Disk(Result<disk::Response>),
-    Listener(Result<Box<listener::Message>>),
+    Incoming(TcpStream),
 }
 
 /// Control IO trait used as an abstraction boundary between
@@ -71,9 +72,6 @@ pub trait CIO {
     /// Sends a message to the disk worker
     fn msg_disk(&mut self, msg: disk::Request);
 
-    /// Sends a message to the listener worker
-    fn msg_listener(&mut self, msg: listener::Request);
-
     /// Sets a timer in milliseconds
     fn set_timer(&mut self, interval: usize) -> Result<TID>;
 
@@ -84,7 +82,7 @@ pub trait CIO {
 #[cfg(test)]
 pub mod test {
     use super::{Event, Result, CIO, PID, TID};
-    use crate::{disk, listener, rpc, torrent, tracker};
+    use crate::{disk, rpc, torrent, tracker};
     use std::collections::HashMap;
     use std::sync::{Arc, Mutex};
 
@@ -100,7 +98,6 @@ pub mod test {
         pub rpc_msgs: Vec<rpc::CtlMessage>,
         pub trk_msgs: Vec<tracker::Request>,
         pub disk_msgs: Vec<disk::Request>,
-        pub listener_msgs: Vec<listener::Request>,
         pub timers: usize,
         pub peer_cnt: usize,
     }
@@ -114,7 +111,6 @@ pub mod test {
                 rpc_msgs: Vec::new(),
                 trk_msgs: Vec::new(),
                 disk_msgs: Vec::new(),
-                listener_msgs: Vec::new(),
                 timers: 0,
                 peer_cnt: 0,
             };
@@ -183,11 +179,6 @@ pub mod test {
         fn msg_disk(&mut self, msg: disk::Request) {
             let mut d = self.data.lock().unwrap();
             d.disk_msgs.push(msg);
-        }
-
-        fn msg_listener(&mut self, msg: listener::Request) {
-            let mut d = self.data.lock().unwrap();
-            d.listener_msgs.push(msg);
         }
 
         fn set_timer(&mut self, _: usize) -> Result<TID> {

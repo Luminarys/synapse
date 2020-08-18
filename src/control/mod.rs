@@ -1,4 +1,5 @@
 use std::io::Read;
+use std::net::TcpStream;
 use std::path::PathBuf;
 use std::sync::atomic;
 use std::{fs, io, mem, process, time};
@@ -11,7 +12,7 @@ use crate::util::{
     self, hash_to_id, id_to_hash, io_err, io_err_val, random_string, FHashSet, MHashMap, UHashMap,
     UHashSet,
 };
-use crate::{disk, listener, rpc, stat, tracker, CONFIG, DL_TOKEN, SHUTDOWN};
+use crate::{disk, rpc, stat, tracker, CONFIG, DL_TOKEN, SHUTDOWN};
 
 pub mod acio;
 pub mod cio;
@@ -259,12 +260,8 @@ impl<T: cio::CIO> Control<T> {
                 error!("rpc error: {}", e);
                 trace!("rpc error: {:?}", e.backtrace());
             }
-            cio::Event::Listener(Ok(e)) => {
-                self.handle_lst_ev(*e);
-            }
-            cio::Event::Listener(Err(e)) => {
-                error!("listener error: {}", e);
-                trace!("listener error: {:?}", e.backtrace());
+            cio::Event::Incoming(conn) => {
+                self.handle_incoming_conn(conn);
             }
             cio::Event::Timer(t) => {
                 if t == self.throttler.id() {
@@ -338,8 +335,8 @@ impl<T: cio::CIO> Control<T> {
         }
     }
 
-    fn handle_lst_ev(&mut self, msg: listener::Message) {
-        match peer::PeerConn::new_incoming(msg.conn) {
+    fn handle_incoming_conn(&mut self, conn: TcpStream) {
+        match peer::PeerConn::new_incoming(conn) {
             Ok(pconn) => match self.cio.add_peer(pconn) {
                 Ok(pid) => {
                     self.incoming.insert(pid);
@@ -780,7 +777,6 @@ impl<T: cio::CIO> Drop for Control<T> {
         self.torrents.drain().last();
         self.cio.msg_rpc(rpc::CtlMessage::Shutdown);
         self.cio.msg_trk(tracker::Request::Shutdown);
-        self.cio.msg_listener(listener::Request::Shutdown);
         self.cio.msg_disk(disk::Request::shutdown());
     }
 }

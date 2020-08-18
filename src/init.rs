@@ -4,7 +4,7 @@ use std::{io, process, thread};
 use ctrlc;
 
 use crate::control::acio;
-use crate::{args, control, disk, listener, log, rpc, throttle, tracker};
+use crate::{args, control, disk, log, rpc, throttle, tracker};
 use crate::{CONFIG, SHUTDOWN, THROT_TOKS};
 
 pub fn init(args: args::Args) -> Result<(), ()> {
@@ -51,7 +51,6 @@ fn init_threads() -> io::Result<Vec<thread::JoinHandle<()>>> {
     let cpoll = amy::Poller::new()?;
     let mut creg = cpoll.get_registrar();
     let (dh, disk_broadcast, dhj) = disk::start(&mut creg)?;
-    let (lh, lhj) = listener::Listener::start(&mut creg)?;
     let (rh, rhj) = rpc::RPC::start(&mut creg, disk_broadcast.clone())?;
     let (th, thj) = tracker::Tracker::start(&mut creg, disk_broadcast.clone())?;
     let chans = acio::ACChans {
@@ -61,8 +60,6 @@ fn init_threads() -> io::Result<Vec<thread::JoinHandle<()>>> {
         rpc_rx: rh.rx,
         trk_tx: th.tx,
         trk_rx: th.rx,
-        lst_tx: lh.tx,
-        lst_rx: lh.rx,
     };
     let (tx, rx) = mpsc::channel();
     let cdb = disk_broadcast.clone();
@@ -70,7 +67,7 @@ fn init_threads() -> io::Result<Vec<thread::JoinHandle<()>>> {
         .name("control".to_string())
         .spawn(move || {
             let throttler = throttle::Throttler::new(None, None, THROT_TOKS, &creg).unwrap();
-            let acio = acio::ACIO::new(cpoll, creg, chans);
+            let acio = acio::ACIO::new(cpoll, creg, chans).expect("Could not initialize IO");
             match control::Control::new(acio, throttler, cdb) {
                 Ok(mut c) => {
                     tx.send(Ok(())).unwrap();
@@ -84,7 +81,7 @@ fn init_threads() -> io::Result<Vec<thread::JoinHandle<()>>> {
         .unwrap();
     rx.recv().unwrap()?;
 
-    Ok(vec![chj, dhj, lhj, rhj, thj])
+    Ok(vec![chj, dhj, rhj, thj])
 }
 
 fn init_signals() -> Result<(), ctrlc::Error> {

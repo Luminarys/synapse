@@ -1,6 +1,7 @@
 use std::cell::RefCell;
+use std::net::{Ipv4Addr, SocketAddrV4, TcpListener};
 use std::rc::Rc;
-use std::time;
+use std::{io, time};
 
 use amy::{self, ChannelError};
 
@@ -8,7 +9,7 @@ use crate::control::cio::{self, Error, ErrorKind, Result, ResultExt};
 use crate::torrent::peer::reader::RRes;
 use crate::util::UHashMap;
 use crate::CONFIG;
-use crate::{disk, listener, rpc, torrent, tracker};
+use crate::{disk, rpc, torrent, tracker};
 
 const POLL_INT_MS: usize = 1000;
 const PRUNE_GOAL: usize = 50;
@@ -27,9 +28,6 @@ pub struct ACChans {
 
     pub trk_tx: amy::Sender<tracker::Request>,
     pub trk_rx: amy::Receiver<tracker::Response>,
-
-    pub lst_tx: amy::Sender<listener::Request>,
-    pub lst_rx: amy::Receiver<listener::Message>,
 }
 
 struct ACIOData {
@@ -39,21 +37,32 @@ struct ACIOData {
     events: Vec<cio::Event>,
     chans: ACChans,
     crashed: bool,
+    listener: TcpListener,
+    lid: usize,
 }
 
 impl ACIO {
-    pub fn new(poll: amy::Poller, reg: amy::Registrar, chans: ACChans) -> ACIO {
+    pub fn new(poll: amy::Poller, reg: amy::Registrar, chans: ACChans) -> io::Result<ACIO> {
+        let ip = Ipv4Addr::new(0, 0, 0, 0);
+        let port = CONFIG.port;
+        let listener = TcpListener::bind(SocketAddrV4::new(ip, port))?;
+        listener.set_nonblocking(true)?;
+        let lid = reg.register(&listener, amy::Event::Both)?;
+
         let data = ACIOData {
             poll,
             reg,
             chans,
+            listener,
+            lid,
             peers: UHashMap::default(),
             events: Vec::new(),
             crashed: false,
         };
-        ACIO {
+
+        Ok(ACIO {
             data: Rc::new(RefCell::new(data)),
-        }
+        })
     }
 
     fn process_event(&self, not: amy::Notification, events: &mut Vec<cio::Event>) {
@@ -73,10 +82,6 @@ impl ACIO {
             while let Ok(t) = d.chans.trk_rx.try_recv() {
                 events.push(cio::Event::Tracker(Ok(t)));
             }
-        } else if d.chans.lst_rx.get_id() == id {
-            while let Ok(t) = d.chans.lst_rx.try_recv() {
-                events.push(cio::Event::Listener(Ok(Box::new(t))));
-            }
         } else if d.peers.contains_key(&id) {
             if let Err(e) = self.process_peer_ev(not, events, &mut d.peers) {
                 d.remove_peer(id);
@@ -84,6 +89,24 @@ impl ACIO {
                     peer: id,
                     event: Err(e),
                 });
+            }
+        } else if d.lid == id {
+            loop {
+                match d.listener.accept() {
+                    Ok((conn, ip)) => {
+                        debug!("Accepted new connection from {:?}!", ip);
+                        if conn.set_nonblocking(true).is_err() {
+                            continue;
+                        }
+                        events.push(cio::Event::Incoming(conn));
+                    }
+                    Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
+                        break;
+                    }
+                    Err(e) => {
+                        error!("Unexpected error occured during accept: {}!", e);
+                    }
+                }
             }
         } else {
             // Timer event
@@ -101,11 +124,6 @@ impl ACIO {
                 Err(e) => error!("Unknown error sending to channel: {:?}", e),
             }
             match d.chans.trk_tx.send(tracker::Request::Ping) {
-                Ok(_) => {}
-                Err(ChannelError::SendError(_)) => d.crashed = true,
-                Err(e) => error!("Unknown error sending to channel: {:?}", e),
-            }
-            match d.chans.lst_tx.send(listener::Request::Ping) {
                 Ok(_) => {}
                 Err(ChannelError::SendError(_)) => d.crashed = true,
                 Err(e) => error!("Unknown error sending to channel: {:?}", e),
@@ -246,6 +264,7 @@ impl cio::CIO for ACIO {
                 event: amy::Event::Both,
             };
             if let Err(e) = self.process_peer_ev(not, &mut events, &mut d.peers) {
+                debug!("Removing peer due to error: {}", e);
                 d.remove_peer(peer);
                 events.push(cio::Event::Peer {
                     peer,
@@ -299,15 +318,6 @@ impl cio::CIO for ACIO {
         if d.chans.disk_tx.send(msg).is_err() && !d.crashed {
             d.crashed = true;
             error!("disk thread crashed, shutting down!");
-        }
-    }
-
-    fn msg_listener(&mut self, msg: listener::Request) {
-        let mut d = self.data.borrow_mut();
-
-        if d.chans.lst_tx.send(msg).is_err() && !d.crashed {
-            d.crashed = true;
-            error!("listener thread crashed, shutting down!");
         }
     }
 

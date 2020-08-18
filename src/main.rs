@@ -37,7 +37,6 @@ mod control;
 mod disk;
 mod handle;
 mod init;
-mod listener;
 mod rpc;
 mod socket;
 mod stat;
