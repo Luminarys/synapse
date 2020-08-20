@@ -1,6 +1,7 @@
 use std::io::{self, Write};
 use std::{mem, result, str, time};
 
+use sstream::SStream;
 use url::Url;
 
 use super::proto::message::{SMessage, Version};
@@ -9,12 +10,11 @@ use super::reader::Reader;
 use super::writer::Writer;
 use super::{ErrorKind, Result, ResultExt};
 use super::{EMPTY_HTTP_RESP, UNAUTH_HTTP_RESP};
-use crate::socket::TSocket;
 use crate::util::{aread, sha1_hash, IOR};
 use crate::{CONFIG, DL_TOKEN};
 
 pub struct Client {
-    pub conn: TSocket,
+    pub conn: SStream,
     r: Reader,
     w: Writer,
     buf: FragBuf,
@@ -22,7 +22,7 @@ pub struct Client {
 }
 
 pub struct Incoming {
-    pub conn: TSocket,
+    pub conn: SStream,
     key: Option<String>,
     buf: [u8; 1024],
     pos: usize,
@@ -120,8 +120,8 @@ impl Client {
     }
 }
 
-impl Into<TSocket> for Client {
-    fn into(self) -> TSocket {
+impl Into<SStream> for Client {
+    fn into(self) -> SStream {
         self.conn
     }
 }
@@ -157,14 +157,14 @@ impl Into<Client> for Incoming {
     }
 }
 
-impl Into<TSocket> for Incoming {
-    fn into(self) -> TSocket {
+impl Into<SStream> for Incoming {
+    fn into(self) -> SStream {
         self.conn
     }
 }
 
 impl Incoming {
-    pub fn new(conn: TSocket) -> Incoming {
+    pub fn new(conn: SStream) -> Incoming {
         Incoming {
             conn,
             buf: [0; 1024],

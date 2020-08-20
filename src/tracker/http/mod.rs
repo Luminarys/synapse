@@ -6,12 +6,12 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 use std::{io, mem};
 
+use sstream::SStream;
 use url::percent_encoding::percent_encode_byte;
 use url::Url;
 
 use self::reader::{ReadRes, Reader};
 use self::writer::Writer;
-use crate::socket::TSocket;
 use crate::tracker::{
     self, dns, Announce, Error, ErrorKind, Response, Result, ResultExt, TrackerResponse,
 };
@@ -42,16 +42,16 @@ struct Tracker {
 enum TrackerState {
     Error,
     ResolvingDNS {
-        sock: TSocket,
+        sock: SStream,
         req: Vec<u8>,
         port: u16,
     },
     Writing {
-        sock: TSocket,
+        sock: SStream,
         writer: Writer,
     },
     Reading {
-        sock: TSocket,
+        sock: SStream,
         reader: Reader,
     },
     Redirect(String),
@@ -65,7 +65,7 @@ enum HTTPRes {
 }
 
 impl TrackerState {
-    fn new(sock: TSocket, req: Vec<u8>, port: u16) -> TrackerState {
+    fn new(sock: SStream, req: Vec<u8>, port: u16) -> TrackerState {
         TrackerState::ResolvingDNS { sock, req, port }
     }
 
@@ -305,7 +305,7 @@ impl Handler {
         };
 
         // Setup actual connection and start DNS query
-        let sock = TSocket::new_v4(ohost).chain_err(|| ErrorKind::IO)?;
+        let sock = SStream::new_v4(ohost).chain_err(|| ErrorKind::IO)?;
         let id = self
             .reg
             .register(&sock, amy::Event::Both)
@@ -418,7 +418,7 @@ impl Handler {
         };
 
         // Setup actual connection and start DNS query
-        let sock = TSocket::new_v4(ohost).chain_err(|| ErrorKind::IO)?;
+        let sock = SStream::new_v4(ohost).chain_err(|| ErrorKind::IO)?;
         let id = self
             .reg
             .register(&sock, amy::Event::Both)

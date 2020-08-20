@@ -13,6 +13,7 @@ use std::{fs, io, result, str, thread};
 
 use http_range::HttpRange;
 use rustls;
+use sstream::SStream;
 use url::Url;
 
 use self::client::{Client, Incoming, IncomingStatus};
@@ -25,7 +26,6 @@ use self::transfer::{TransferResult, Transfers};
 use crate::bencode;
 use crate::disk;
 use crate::handle;
-use crate::socket::TSocket;
 use crate::torrent;
 use crate::util::UHashMap;
 use crate::CONFIG;
@@ -426,9 +426,9 @@ impl RPC {
                     debug!("Accepted new connection from {:?}!", ip);
                     let id = self.reg.register(&conn, amy::Event::Both);
                     let conn = if let Some(ref config) = self.config {
-                        TSocket::from_ssl(conn, config)
+                        SStream::from_ssl(conn, config)
                     } else {
-                        TSocket::from_plain(conn)
+                        SStream::from_plain(conn)
                     };
                     if let (Ok(id), Ok(conn)) = (id, conn) {
                         self.incoming.insert(id, Incoming::new(conn));
@@ -494,35 +494,13 @@ impl RPC {
                 }
                 Ok(IncomingStatus::DL { id, range }) => {
                     debug!("Attempting DL of {}", id);
-                    let mut conn: TSocket = i.into();
+                    let mut conn: SStream = i.into();
                     if let Some((path, size)) = self.processor.get_dl(&id) {
                         if size == 0 {
                             conn.write(&EMPTY_HTTP_RESP).ok();
                             return;
                         }
 
-                        /*
-                        let mut ranged = false;
-                        let r = if let Some(r) = range {
-                            if let Ok(ranges) = HttpRange::parse(&r, size) {
-                                ranged = true;
-                                ranges
-                            } else {
-                                debug!("Ranges {} invalid, stopping DL", id);
-                                conn.write(&BAD_HTTP_RANGE).ok();
-                                return;
-                            }
-                        } else {
-                            vec![HttpRange {
-                                start: 0,
-                                length: size,
-                            }]
-                        };
-                        debug!("Initiating DL");
-                        self.disk
-                            .send(disk::Request::download(conn, path, r, ranged, size))
-                            .ok();
-                        */
                         let ranges = match range.map(|r| HttpRange::parse(&r, size)) {
                             Some(Ok(parsed_ranges)) => parsed_ranges,
                             Some(Err(_)) => {

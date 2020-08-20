@@ -6,10 +6,10 @@ use std::{cmp, fmt, fs, path, time};
 use fs2;
 use http_range::HttpRange;
 use sha1::{Digest, Sha1};
+use sstream::SStream;
 
 use super::{BufCache, FileCache, JOB_TIME_SLICE};
 use crate::buffers::Buffer;
-use crate::socket::TSocket;
 use crate::torrent::{Info, LocIter};
 use crate::util::{hash_to_id, io_err};
 use crate::CONFIG;
@@ -81,7 +81,7 @@ pub enum Request {
         path: PathBuf,
     },
     Download {
-        client: TSocket,
+        client: SStream,
         ranges: Vec<HttpRange>,
         multipart: bool,
         file_len: u64,
@@ -183,7 +183,7 @@ impl Request {
     }
 
     pub fn download2(
-        client: TSocket,
+        client: SStream,
         mut ranges: Vec<HttpRange>,
         file_path: String,
         file_len: u64,

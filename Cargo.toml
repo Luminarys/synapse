@@ -13,7 +13,7 @@ path = "src/main.rs"
 name = "synapse"
 
 [workspace]
-members = ["sycli", "rpc", "session", "bencode", "adns", "protocol"]
+members = ["sycli", "rpc", "session", "bencode", "adns", "protocol", "sstream"]
 exclude = ["synulator"]
 
 [build-dependencies]
@@ -35,8 +35,6 @@ net2 = "0.2"
 nix = "0.11"
 rand = "0.5.3"
 rustls = "0.18.0"
-webpki-roots = "0.20"
-webpki = "0.21.0"
 sha-1 = "0.9.1"
 serde = "1"
 serde_derive = "1"
@@ -46,6 +44,7 @@ synapse-rpc = { path = "rpc" }
 synapse-session = { path = "session" }
 synapse-bencode = { path = "bencode" }
 synapse-protocol = { path = "protocol" }
+sstream = { path = "sstream" }
 adns = { path = "adns" }
 toml = "0.4"
 url = "1"

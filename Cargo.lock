@@ -1577,6 +1577,16 @@ version = "0.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 
 [[package]]
+name = "sstream"
+version = "0.1.0"
+dependencies = [
+ "net2 0.2.34 (registry+https://github.com/rust-lang/crates.io-index)",
+ "rustls 0.18.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "webpki 0.21.3 (registry+https://github.com/rust-lang/crates.io-index)",
+ "webpki-roots 0.20.0 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
 name = "string"
 version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1659,14 +1669,13 @@ dependencies = [
  "serde_json 1.0.53 (registry+https://github.com/rust-lang/crates.io-index)",
  "sha-1 0.9.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "shellexpand 1.1.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "sstream 0.1.0",
  "synapse-bencode 0.1.0",
  "synapse-protocol 0.1.0",
  "synapse-rpc 0.1.21",
  "synapse-session 0.1.0",
  "toml 0.4.10 (registry+https://github.com/rust-lang/crates.io-index)",
  "url 1.7.2 (registry+https://github.com/rust-lang/crates.io-index)",
- "webpki 0.21.3 (registry+https://github.com/rust-lang/crates.io-index)",
- "webpki-roots 0.20.0 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
