@@ -5,8 +5,8 @@ use std::{cmp, fs, mem};
 
 use prettytable::format::consts::FORMAT_NO_LINESEP_WITH_TITLE as TABLE_FORMAT;
 use prettytable::Table;
-use reqwest::Client as HClient;
 use sha1::{Digest, Sha1};
+use ureq;
 use url::Url;
 
 use rpc::criterion::{Criterion, Operation, Value};
@@ -62,13 +62,12 @@ fn add_file(
     } else {
         bail!("Failed to receieve transfer offer from synapse!");
     };
-    let client = HClient::new();
-    client
-        .post(url)
-        .bearer_auth(token)
-        .body(torrent)
-        .send()
-        .chain_err(|| ErrorKind::HTTP)?;
+    let resp = ureq::post(url)
+        .set("Authorization", &format!("Bearer {}", token))
+        .send_bytes(&torrent);
+    if resp.error() {
+        bail!("Could not POST to synapse: {:?}", resp);
+    }
 
     match c.recv()? {
         SMessage::ResourcesExtant { ids, .. } => {
@@ -195,20 +194,17 @@ pub fn dl(mut c: Client, url: &str, name: &str) -> Result<()> {
             .push(file.id());
         let digest = Sha1::digest(format!("{}{}", file.id(), token).as_bytes());
         let dl_token = base64::encode(&digest.as_slice());
-        dl_url.set_query(Some(&format!("token={}", dl_token)));
-
-        let client = HClient::new();
-        let mut resp = client
-            .get(dl_url.as_str())
-            .send()
-            .chain_err(|| ErrorKind::HTTP)?;
+        let resp = ureq::get(dl_url.as_str()).query("token", &dl_token).call();
+        if resp.error() {
+            bail!("Failed to download from synapse: {:?}", resp);
+        }
         if let Resource::File(f) = file {
             let p = Path::new(&f.path);
             if let Some(par) = p.parent() {
                 fs::create_dir_all(par).chain_err(|| ErrorKind::FileIO)?;
             }
             let mut f = fs::File::create(p).chain_err(|| ErrorKind::FileIO)?;
-            io::copy(&mut resp, &mut f).chain_err(|| ErrorKind::FileIO)?;
+            io::copy(&mut resp.into_reader(), &mut f).chain_err(|| ErrorKind::FileIO)?;
         } else {
             bail!("Expected a file resource");
         }

@@ -18,18 +18,9 @@ install_targets() {
     fi
 }
 
-install_openssl() {
-    if ! is_osx; then
-        return
-    fi
-
-    brew install openssl
-}
-
 main() {
     install_rustup
     install_targets
-    install_openssl
 }
 
 main

@@ -21,7 +21,6 @@ Install dependencies:
 - rustc >= 1.38.0
 - cargo >= 0.18
 - gcc | clang
-- OpenSSL/LibreSSL + pkg-config (sycli only)
 
 Synapse and sycli can be installed with:
 ```
