@@ -18,7 +18,7 @@ A list of packages can be found on [this wiki page](https://github.com/Luminarys
 ### Compiling
 Install dependencies:
 
-- rustc >= 1.38.0
+- rustc >= 1.39.0
 - cargo >= 0.18
 - gcc | clang
 

@@ -8,7 +8,7 @@ matrix:
   fast_finish: true
   include:
     - os: linux
-      rust: 1.38.0
+      rust: 1.39.0
       env:
         - TARGET=x86_64-unknown-linux-gnu
     - os: linux
