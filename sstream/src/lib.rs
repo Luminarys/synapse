@@ -29,8 +29,17 @@ enum SConn {
 }
 
 impl SStream {
+    pub fn new_v6(host: Option<String>) -> io::Result<SStream> {
+        let conn = TcpBuilder::new_v6()?.to_tcp_stream()?;
+        SStream::new(conn, host)
+    }
+
     pub fn new_v4(host: Option<String>) -> io::Result<SStream> {
         let conn = TcpBuilder::new_v4()?.to_tcp_stream()?;
+        SStream::new(conn, host)
+    }
+
+    fn new(conn: TcpStream, host: Option<String>) -> io::Result<SStream> {
         conn.set_nonblocking(true)?;
         let fd = conn.as_raw_fd();
         let sock = match host {

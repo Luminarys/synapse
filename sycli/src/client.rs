@@ -1,5 +1,5 @@
+use sstream::SStream;
 use url::Url;
-use ws::client::AutoStream;
 use ws::protocol::Message as WSMessage;
 
 use crate::rpc::message::{CMessage, SMessage, Version};
@@ -7,25 +7,58 @@ use crate::rpc::message::{CMessage, SMessage, Version};
 use crate::error::{ErrorKind, Result, ResultExt};
 
 pub struct Client {
-    ws: ws::WebSocket<AutoStream>,
+    ws: ws::WebSocket<SStream>,
     version: Version,
     serial: u64,
 }
 
 impl Client {
     pub fn new(url: Url) -> Result<Client> {
-        let client = ws::connect(url).chain_err(|| ErrorKind::Websocket)?.0;
-        let mut c = Client {
-            ws: client,
-            serial: 0,
-            version: Version { major: 0, minor: 0 },
-        };
-        if let SMessage::RpcVersion(v) = c.recv()? {
-            c.version = v;
-            Ok(c)
-        } else {
-            bail!("Expected a version message on start!");
+        if !url.has_host() {
+            bail!("Invalid websocket URL!");
         }
+        for addr in url
+            .socket_addrs(|| None)
+            .chain_err(|| ErrorKind::Websocket)?
+        {
+            let mut stream = match url.scheme() {
+                "ws" => {
+                    if addr.is_ipv4() {
+                        SStream::new_v4(None)
+                    } else {
+                        SStream::new_v6(None)
+                    }
+                }
+                "wss" => {
+                    if addr.is_ipv4() {
+                        SStream::new_v4(Some(url.host_str().unwrap().to_owned()))
+                    } else {
+                        SStream::new_v6(Some(url.host_str().unwrap().to_owned()))
+                    }
+                }
+                _ => bail!(""),
+            }
+            .chain_err(|| ErrorKind::Websocket)?;
+            stream.connect(addr).chain_err(|| ErrorKind::Websocket)?;
+            stream
+                .get_stream()
+                .set_nonblocking(false)
+                .chain_err(|| ErrorKind::Websocket)?;
+            if let Ok((client, _response)) = ws::client(url.clone(), stream) {
+                let mut c = Client {
+                    ws: client,
+                    serial: 0,
+                    version: Version { major: 0, minor: 0 },
+                };
+                if let SMessage::RpcVersion(v) = c.recv()? {
+                    c.version = v;
+                    return Ok(c);
+                } else {
+                    bail!("Expected a version message on start!");
+                }
+            }
+        }
+        bail!("Could not connect to provided url!");
     }
 
     pub fn version(&self) -> &Version {
