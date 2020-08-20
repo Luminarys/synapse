@@ -284,7 +284,7 @@ impl Request {
         match self {
             Request::Ping => {}
             Request::FreeSpace => {
-                let free_space = fs2::free_space(dd.as_str())?;
+                let free_space = fs2::available_space(dd.as_str())?;
                 return Ok(JobRes::Resp(Response::FreeSpace(free_space)));
             }
             Request::WriteFile { path, data } => {
