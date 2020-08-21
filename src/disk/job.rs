@@ -182,7 +182,7 @@ impl Request {
         }
     }
 
-    pub fn download2(
+    pub fn download(
         client: SStream,
         mut ranges: Vec<HttpRange>,
         file_path: String,

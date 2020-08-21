@@ -512,7 +512,7 @@ impl RPC {
                         };
                         debug!("Initiating DL");
                         self.disk
-                            .send(disk::Request::download2(conn, ranges, path, size))
+                            .send(disk::Request::download(conn, ranges, path, size))
                             .ok();
                     } else {
                         debug!("ID {} invalid, stopping DL", id);
