@@ -1,0 +1,207 @@
+[decode announce]
+[dht_msg]
+d1:ad2:id20:abcdefghij012345678912:implied_porti1e9:info_hash20:mnopqrstuvwxyz1234564:porti6881e5:token8:aoeusnthe1:q13:announce_peer1:t2:aa1:y1:qe
+-----------
+[decoded]
+Ok(
+    Request {
+        transaction: [
+            97,
+            97,
+        ],
+        version: None,
+        kind: AnnouncePeer {
+            id: BigUint {
+                data: [
+                    909588537,
+                    842216501,
+                    1768566833,
+                    1701209960,
+                    1633837924,
+                ],
+            },
+            hash: [
+                109,
+                110,
+                111,
+                112,
+                113,
+                114,
+                115,
+                116,
+                117,
+                118,
+                119,
+                120,
+                121,
+                122,
+                49,
+                50,
+                51,
+                52,
+                53,
+                54,
+            ],
+            token: [
+                97,
+                111,
+                101,
+                117,
+                115,
+                110,
+                116,
+                104,
+            ],
+            port: 6881,
+            implied_port: true,
+        },
+    },
+)
+-----------
+===========
+
+[decode find]
+[dht_msg]
+d1:ad2:id20:abcdefghij01234567896:target20:mnopqrstuvwxyz123456e1:q9:find_node1:t2:aa1:y1:qe
+-----------
+[decoded]
+Ok(
+    Request {
+        transaction: [
+            97,
+            97,
+        ],
+        version: None,
+        kind: FindNode {
+            id: BigUint {
+                data: [
+                    909588537,
+                    842216501,
+                    1768566833,
+                    1701209960,
+                    1633837924,
+                ],
+            },
+            target: BigUint {
+                data: [
+                    859059510,
+                    2038051122,
+                    1970698104,
+                    1903326068,
+                    1835954032,
+                ],
+            },
+        },
+    },
+)
+-----------
+===========
+
+[decode ping]
+[dht_msg]
+d1:ad2:id20:abcdefghij0123456789e1:q4:ping1:t2:aa1:y1:qe
+-----------
+[decoded]
+Ok(
+    Request {
+        transaction: [
+            97,
+            97,
+        ],
+        version: None,
+        kind: Ping(
+            BigUint {
+                data: [
+                    909588537,
+                    842216501,
+                    1768566833,
+                    1701209960,
+                    1633837924,
+                ],
+            },
+        ),
+    },
+)
+-----------
+===========
+
+[decode_get]
+[dht_msg]
+d1:ad2:id20:abcdefghij01234567899:info_hash20:mnopqrstuvwxyz123456e1:q9:get_peers1:t2:aa1:y1:qe
+-----------
+[decoded]
+Ok(
+    Request {
+        transaction: [
+            97,
+            97,
+        ],
+        version: None,
+        kind: GetPeers {
+            id: BigUint {
+                data: [
+                    909588537,
+                    842216501,
+                    1768566833,
+                    1701209960,
+                    1633837924,
+                ],
+            },
+            hash: [
+                109,
+                110,
+                111,
+                112,
+                113,
+                114,
+                115,
+                116,
+                117,
+                118,
+                119,
+                120,
+                121,
+                122,
+                49,
+                50,
+                51,
+                52,
+                53,
+                54,
+            ],
+        },
+    },
+)
+-----------
+===========
+
+[decode id]
+[response]
+true
+-----------
+[dht_msg]
+d1:rd2:id20:mnopqrstuvwxyz123456e1:t2:aa1:y1:re
+-----------
+[decoded]
+Ok(
+    Response {
+        transaction: [
+            97,
+            97,
+        ],
+        kind: ID(
+            BigUint {
+                data: [
+                    859059510,
+                    2038051122,
+                    1970698104,
+                    1903326068,
+                    1835954032,
+                ],
+            },
+        ),
+    },
+)
+-----------
+===========
+

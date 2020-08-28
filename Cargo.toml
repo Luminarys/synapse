@@ -73,6 +73,9 @@ version = "0.2.0"
 default-features = false
 features = ["serde", "std"]
 
+[dev-dependencies]
+platina = "0.1.0"
+
 [profile.bench]
 opt-level = 3
 debug = true

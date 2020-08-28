@@ -598,58 +598,40 @@ impl Node {
 
 #[cfg(test)]
 mod tests {
-    use super::{Request, Response, ResponseKind};
-    use num_bigint::BigUint;
+    use super::{Request, Response};
+    use platina;
 
-    #[test]
-    fn test_decode_id_resp() {
-        let r = Vec::from(&include_bytes!("test/id")[..]);
-        let d = Response::decode(&r).unwrap();
-        assert_eq!(d.transaction, b"aa");
-        match d.kind {
-            ResponseKind::ID(id) => {
-                assert_eq!(id, BigUint::from_bytes_be(b"mnopqrstuvwxyz123456"));
+    struct DhtProtoTest;
+
+    impl platina::Testable for DhtProtoTest {
+        fn run_testcase(&mut self, case: &mut platina::TestCase) {
+            let encoded = case.get_param("dht_msg").unwrap();
+            let reencoded;
+            if let Some(_) = case.get_param("response") {
+                let decoded = Response::decode(encoded.as_bytes());
+                case.compare_and_update_param("decoded", &format!("{:#?}", decoded));
+                reencoded = decoded.map(Response::encode);
+            } else {
+                let decoded = Request::decode(encoded.as_bytes());
+                case.compare_and_update_param("decoded", &format!("{:#?}", decoded));
+                reencoded = decoded.map(Request::encode);
             }
-            _ => panic!("Should decode to ID!"),
+            if let Ok(bytes) = reencoded {
+                assert_eq!(&bytes[..], encoded.as_bytes());
+            }
         }
     }
 
     #[test]
-    fn test_encode_decode_resp() {
-        let r = Vec::from(&include_bytes!("test/id")[..]);
-        let d = Response::decode(&r).unwrap();
-        let e = d.encode();
-        assert_eq!(e, r);
+    fn test_diff() {
+      let mut t = DhtProtoTest;
+      platina::TestFile::new("src/tracker/dht/test/proto_test.plat").run_tests(&mut t).unwrap();
     }
 
     #[test]
-    fn test_encode_decode_req_ping() {
-        let r = Vec::from(&include_bytes!("test/ping")[..]);
-        let d = Request::decode(&r).unwrap();
-        assert_eq!(d.encode(), r);
-    }
-
-    #[test]
-    fn test_encode_decode_req_find() {
-        let r = Vec::from(&include_bytes!("test/find")[..]);
-        let d = Request::decode(&r).unwrap();
-        assert_eq!(d.encode(), r);
-    }
-
-    #[test]
-    fn test_encode_decode_req_get() {
-        let r = Vec::from(&include_bytes!("test/get")[..]);
-        let d = Request::decode(&r).unwrap();
-        assert_eq!(d.encode(), r);
-    }
-
-    #[test]
-    fn test_encode_decode_req_annnounce() {
-        let r = Vec::from(&include_bytes!("test/announce")[..]);
-        let d = Request::decode(&r).unwrap();
-        assert_eq!(
-            String::from_utf8(d.encode()).unwrap(),
-            String::from_utf8(r).unwrap()
-        );
+    #[ignore]
+    fn test_update() {
+      let mut t = DhtProtoTest;
+      platina::TestFile::new("src/tracker/dht/test/proto_test.plat").run_tests_and_update(&mut t).unwrap();
     }
 }
