@@ -1,3 +1,4 @@
+pub mod http;
 mod io;
 pub mod native;
 
@@ -164,9 +165,14 @@ macro_rules! div_round_up {
     };
 }
 
-#[test]
-fn test_hash_enc() {
-    let hash = [8u8; 20];
-    let s = hash_to_id(&hash);
-    assert_eq!(id_to_hash(&s).unwrap(), hash);
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn test_hash_enc() {
+        let hash = [8u8; 20];
+        let s = hash_to_id(&hash);
+        assert_eq!(id_to_hash(&s).unwrap(), hash);
+    }
 }

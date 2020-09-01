@@ -7,7 +7,6 @@ use std::time::{Duration, Instant};
 use std::{io, mem};
 
 use sstream::SStream;
-use url::percent_encoding::percent_encode_byte;
 use url::Url;
 
 use self::reader::{ReadRes, Reader};
@@ -15,7 +14,7 @@ use self::writer::Writer;
 use crate::tracker::{
     self, dns, Announce, Error, ErrorKind, Response, Result, ResultExt, TrackerResponse,
 };
-use crate::util::UHashMap;
+use crate::util::{http, UHashMap};
 use crate::{bencode, PEER_ID};
 
 const TIMEOUT_MS: u64 = 5_000;
@@ -273,30 +272,16 @@ impl Handler {
             error!("{} {}", original_url, url);
             ErrorKind::InvalidResponse("Malformed redirect!")
         })?;
-        let mut http_req = Vec::with_capacity(50);
-        http_req.extend_from_slice(b"GET ");
-        http_req.extend_from_slice(url.path().as_bytes());
-        if let Some(q) = url.query() {
-            http_req.extend_from_slice(b"?");
-            http_req.extend_from_slice(q.as_bytes());
-        }
-
-        http_req.extend_from_slice(b" HTTP/1.1\r\n");
-        let user_agent = format!(
-            "User-Agent: {}/{}\r\n",
-            "synapse",
-            env!("CARGO_PKG_VERSION")
-        );
-        http_req.extend_from_slice(user_agent.as_bytes());
-        http_req.extend_from_slice(b"Connection: close\r\n");
-        http_req.extend_from_slice(b"Host: ");
         let host = url.host_str().ok_or_else(|| {
             error!("{}", url);
             Error::from(ErrorKind::InvalidResponse("Malformed redirect!"))
         })?;
-        let port = url.port().unwrap_or(80);
-        http_req.extend_from_slice(host.as_bytes());
-        http_req.extend_from_slice(b"\r\n\r\n");
+        let mut http_req = Vec::with_capacity(512);
+        http::RequestBuilder::new("GET", url.path(), url.query())
+            .header("User-agent", concat!("synapse/", env!("CARGO_PKG_VERSION")))
+            .header("Connection", "close")
+            .header("Host", host)
+            .encode(&mut http_req);
 
         let ohost = if url.scheme() == "https" {
             Some(host.to_owned())
@@ -310,6 +295,7 @@ impl Handler {
             .reg
             .register(&sock, amy::Event::Both)
             .chain_err(|| ErrorKind::IO)?;
+        let port = url.port().unwrap_or(80);
         self.connections.insert(
             id,
             Tracker {
@@ -352,64 +338,39 @@ impl Handler {
 
     pub fn new_announce(&mut self, req: Announce, dns: &mut dns::Resolver) -> Result<()> {
         debug!("Received a new announce req for {:?}", req.url);
-        let mut http_req = Vec::with_capacity(50);
-        // Encode GET req
-        http_req.extend_from_slice(b"GET ");
-
-        // Encode the URL
-        http_req.extend_from_slice(req.url.path().as_bytes());
-        http_req.extend_from_slice(b"?");
-        append_query_pair(&mut http_req, "info_hash", &encode_param(&req.hash));
-        append_query_pair(&mut http_req, "peer_id", &encode_param(&PEER_ID[..]));
-        append_query_pair(&mut http_req, "uploaded", &req.uploaded.to_string());
-        append_query_pair(&mut http_req, "downloaded", &req.downloaded.to_string());
-        append_query_pair(&mut http_req, "left", &req.left.to_string());
-        append_query_pair(&mut http_req, "compact", "1");
-        append_query_pair(&mut http_req, "port", &req.port.to_string());
-        if let Some(nw) = req.num_want {
-            append_query_pair(&mut http_req, "numwant", &nw.to_string());
-        }
-        match req.event {
-            Some(tracker::Event::Started) => {
-                append_query_pair(&mut http_req, "event", "started");
-            }
-            Some(tracker::Event::Stopped) => {
-                append_query_pair(&mut http_req, "event", "stopped");
-            }
-            Some(tracker::Event::Completed) => {
-                append_query_pair(&mut http_req, "event", "completed");
-            }
-            None => {}
-        }
-        for (k, v) in req.url.query_pairs() {
-            append_query_pair(&mut http_req, &k, &v);
-        }
-
-        // Encode HTTP protocol
-        http_req.extend_from_slice(b" HTTP/1.1\r\n");
-        let user_agent = format!(
-            "User-Agent: {}/{}\r\n",
-            "synapse",
-            env!("CARGO_PKG_VERSION")
-        );
-        http_req.extend_from_slice(user_agent.as_bytes());
-        // Don't keep alive
-        http_req.extend_from_slice(b"Connection: close\r\n");
-        // Encode host header
-        http_req.extend_from_slice(b"Host: ");
         let host = req.url.host_str().ok_or_else(|| {
             Error::from(ErrorKind::InvalidRequest(
                 "Tracker announce url has no host!".to_owned(),
             ))
         })?;
+
+        let mut http_req = Vec::with_capacity(512);
+        let num_want = req.num_want.map(|nw| nw.to_string());
+        let event = match req.event {
+            Some(tracker::Event::Started) => Some("started"),
+            Some(tracker::Event::Stopped) => Some("stopped"),
+            Some(tracker::Event::Completed) => Some("completed"),
+            None => None,
+        };
+        http::RequestBuilder::new("GET", req.url.path(), req.url.query())
+            .query("info_hash", &req.hash)
+            .query("peer_id", &PEER_ID[..])
+            .query("uploaded", req.uploaded.to_string().as_bytes())
+            .query("downloaded", req.downloaded.to_string().as_bytes())
+            .query("left", req.left.to_string().as_bytes())
+            .query("compact", b"1")
+            .query("port", req.port.to_string().as_bytes())
+            .query_opt("numwant", num_want.as_ref().map(|nw| nw.as_bytes()))
+            .query_opt("event", event.map(|e| e.as_bytes()))
+            .header("User-agent", concat!("synapse/", env!("CARGO_PKG_VERSION")))
+            .header("Connection", "close")
+            .header("Host", host)
+            .encode(&mut http_req);
+
         let port =
             req.url
                 .port()
                 .unwrap_or_else(|| if req.url.scheme() == "https" { 443 } else { 80 });
-        http_req.extend_from_slice(host.as_bytes());
-        http_req.extend_from_slice(b"\r\n");
-        // Encode empty line to terminate request
-        http_req.extend_from_slice(b"\r\n");
 
         let ohost = if req.url.scheme() == "https" {
             Some(host.to_owned())
@@ -445,24 +406,4 @@ impl Handler {
 
         Ok(())
     }
-}
-
-fn append_query_pair(s: &mut Vec<u8>, k: &str, v: &str) {
-    s.extend_from_slice(k.as_bytes());
-    s.extend_from_slice(b"=");
-    s.extend_from_slice(v.as_bytes());
-    s.extend_from_slice(b"&");
-}
-
-fn encode_param(data: &[u8]) -> String {
-    let mut resp = String::new();
-    for byte in data {
-        let c = char::from(*byte);
-        if (*byte > 0x20 && *byte < 0x7E) && (c.is_numeric() || c.is_alphabetic() || c == '-') {
-            resp.push(c);
-        } else {
-            resp += percent_encode_byte(*byte);
-        }
-    }
-    resp
 }

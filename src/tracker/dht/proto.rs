@@ -624,14 +624,18 @@ mod tests {
 
     #[test]
     fn test_diff() {
-      let mut t = DhtProtoTest;
-      platina::TestFile::new("src/tracker/dht/test/proto_test.plat").run_tests(&mut t).unwrap();
+        let mut t = DhtProtoTest;
+        platina::TestFile::new("src/tracker/dht/test/proto_test.plat")
+            .run_tests(&mut t)
+            .unwrap();
     }
 
     #[test]
     #[ignore]
     fn test_update() {
-      let mut t = DhtProtoTest;
-      platina::TestFile::new("src/tracker/dht/test/proto_test.plat").run_tests_and_update(&mut t).unwrap();
+        let mut t = DhtProtoTest;
+        platina::TestFile::new("src/tracker/dht/test/proto_test.plat")
+            .run_tests_and_update(&mut t)
+            .unwrap();
     }
 }
