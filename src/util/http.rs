@@ -1,146 +1,89 @@
 use url::percent_encoding::percent_encode_byte;
 
 #[derive(Debug)]
-pub struct RequestBuilder<'a, T, Q> {
+pub struct RequestBuilder<'a> {
     method: &'a str,
     path: &'a str,
-    query: Q,
-    headers: T,
+    base_query: Option<&'a str>,
+    query_pairs: Vec<QueryPair<'a>>,
+    headers: Vec<HttpHeader<'a>>,
 }
 
 #[derive(Debug)]
-pub struct HttpHeader<'a, T> {
+pub struct HttpHeader<'a> {
     name: &'a str,
     value: &'a str,
-    headers: T,
 }
 
 #[derive(Debug)]
-pub struct QueryPair<'a, T> {
+pub struct QueryPair<'a> {
     name: &'a str,
     value: &'a [u8],
-    pairs: T,
 }
-
-#[derive(Debug)]
-pub struct EmptyHeader {}
-
-#[derive(Debug)]
-pub struct BaseQuery<'a>(&'a str);
 
 pub trait EncodeToBuf {
     fn encode(&self, buf: &mut Vec<u8>);
 }
 
-impl<'a> RequestBuilder<'a, EmptyHeader, BaseQuery<'a>> {
-    pub fn new(
-        method: &'a str,
-        path: &'a str,
-        query: Option<&'a str>,
-    ) -> RequestBuilder<'a, EmptyHeader, BaseQuery<'a>> {
+impl<'a> RequestBuilder<'a> {
+    pub fn new(method: &'a str, path: &'a str, query: Option<&'a str>) -> RequestBuilder<'a> {
         RequestBuilder {
             method,
             path,
-            query: BaseQuery(query.unwrap_or("")),
-            headers: EmptyHeader {},
+            base_query: query,
+            query_pairs: Vec::with_capacity(10),
+            headers: Vec::with_capacity(10),
         }
     }
 }
 
-impl<'a, 'b, 'c, T, Q> RequestBuilder<'a, T, Q> {
-    pub fn query(self, name: &'c str, value: &'c [u8]) -> RequestBuilder<'a, T, QueryPair<'c, Q>> {
-        RequestBuilder {
-            method: self.method,
-            path: self.path,
-            query: QueryPair {
-                name,
-                value,
-                pairs: self.query,
-            },
-            headers: self.headers,
-        }
+impl<'a> RequestBuilder<'a> {
+    pub fn query(&mut self, name: &'a str, value: &'a [u8]) -> &mut RequestBuilder<'a> {
+        self.query_pairs.push(QueryPair { name, value });
+        self
     }
 
-    pub fn query_opt(
-        self,
-        name: &'c str,
-        value: Option<&'c [u8]>,
-    ) -> RequestBuilder<'a, T, QueryPair<'c, Q>> {
-        RequestBuilder {
-            method: self.method,
-            path: self.path,
-            query: QueryPair {
-                name: if value.is_some() { name } else { "" },
-                value: value.unwrap_or(b""),
-                pairs: self.query,
-            },
-            headers: self.headers,
+    pub fn query_opt(&mut self, name: &'a str, value: Option<&'a [u8]>) -> &mut RequestBuilder<'a> {
+        if let Some(v) = value {
+            self.query_pairs.push(QueryPair { name, value: v });
         }
+        self
     }
 
-    pub fn header(self, name: &'b str, value: &'b str) -> RequestBuilder<'a, HttpHeader<'b, T>, Q> {
-        RequestBuilder {
-            method: self.method,
-            path: self.path,
-            query: self.query,
-            headers: HttpHeader {
-                name,
-                value,
-                headers: self.headers,
-            },
-        }
+    pub fn header(&mut self, name: &'a str, value: &'a str) -> &mut RequestBuilder<'a> {
+        self.headers.push(HttpHeader { name, value });
+        self
     }
 }
 
-impl<'a, T: EncodeToBuf, Q: EncodeToBuf> RequestBuilder<'a, T, Q> {
+impl<'a> RequestBuilder<'a> {
     pub fn encode(&self, buf: &mut Vec<u8>) {
         buf.extend_from_slice(self.method.as_bytes());
         buf.extend_from_slice(b" ");
         buf.extend_from_slice(self.path.as_bytes());
+
+        buf.extend_from_slice(b"?");
+        if let Some(q) = self.base_query {
+            buf.extend_from_slice(q.as_bytes());
+            buf.extend_from_slice(b"&");
+        }
+        for pair in &self.query_pairs {
+            buf.extend_from_slice(pair.name.as_bytes());
+            buf.extend_from_slice(b"=");
+            encode_param(pair.value, buf);
+            buf.extend_from_slice(b"&");
+        }
         // The query either encodes an extra ? or an extra &, pop either off
-        self.query.encode(buf);
         buf.pop();
         buf.extend_from_slice(b" HTTP/1.1");
         buf.extend_from_slice(b"\r\n");
-        self.headers.encode(buf);
-        buf.extend_from_slice(b"\r\n");
-    }
-}
-
-impl<'a, T: EncodeToBuf> EncodeToBuf for HttpHeader<'a, T> {
-    fn encode(&self, buf: &mut Vec<u8>) {
-        self.headers.encode(buf);
-        buf.extend_from_slice(self.name.as_bytes());
-        buf.extend_from_slice(b": ");
-        buf.extend_from_slice(self.value.as_bytes());
-        buf.extend_from_slice(b"\r\n");
-    }
-}
-
-impl EncodeToBuf for EmptyHeader {
-    fn encode(&self, _: &mut Vec<u8>) {}
-}
-
-impl<'a, T: EncodeToBuf> EncodeToBuf for QueryPair<'a, T> {
-    fn encode(&self, buf: &mut Vec<u8>) {
-        self.pairs.encode(buf);
-        if self.name != "" {
-            buf.extend_from_slice(self.name.as_bytes());
-            buf.extend_from_slice(b"=");
-            encode_param(self.value, buf);
-            buf.extend_from_slice(b"&");
+        for header in &self.headers {
+            buf.extend_from_slice(header.name.as_bytes());
+            buf.extend_from_slice(b": ");
+            buf.extend_from_slice(header.value.as_bytes());
+            buf.extend_from_slice(b"\r\n");
         }
-    }
-}
-
-impl<'a> EncodeToBuf for BaseQuery<'a> {
-    fn encode(&self, buf: &mut Vec<u8>) {
-        buf.extend_from_slice(b"?");
-        buf.extend_from_slice(self.0.as_bytes());
-        // Add an & if it the base query didn't contain it.
-        if !self.0.is_empty() && !self.0.ends_with("&") {
-            buf.extend_from_slice(b"&");
-        }
+        buf.extend_from_slice(b"\r\n");
     }
 }
 
@@ -163,12 +106,12 @@ mod test {
 
     #[test]
     fn test_encode_http_request() {
-        let req = RequestBuilder::new("GET", "/foobar/baz", Some("a=b"))
+        let mut encoded = Vec::new();
+        RequestBuilder::new("GET", "/foobar/baz", Some("a=b"))
             .query("b", "c".as_bytes())
             .header("header1", "value1")
-            .header("header2", "value2");
-        let mut encoded = Vec::new();
-        req.encode(&mut encoded);
+            .header("header2", "value2")
+            .encode(&mut encoded);
         assert_eq!(
             String::from_utf8(encoded).unwrap(),
             vec![
@@ -183,11 +126,11 @@ mod test {
 
     #[test]
     fn test_encode_opt_param() {
-        let req = RequestBuilder::new("GET", "/foobar/baz", Some("a=b"))
-            .query_opt("a", None)
-            .query_opt("b", Some(b"c"));
         let mut encoded = Vec::new();
-        req.encode(&mut encoded);
+        RequestBuilder::new("GET", "/foobar/baz", Some("a=b"))
+            .query_opt("a", None)
+            .query_opt("b", Some(b"c"))
+            .encode(&mut encoded);
         assert_eq!(
             String::from_utf8(encoded).unwrap(),
             vec!["GET /foobar/baz?a=b&b=c HTTP/1.1", "\r\n",].join("\r\n")
@@ -196,9 +139,10 @@ mod test {
 
     #[test]
     fn test_percent_encode_query() {
-        let req = RequestBuilder::new("GET", "/foobar/baz", None).query("a", "&".as_bytes());
         let mut encoded = Vec::new();
-        req.encode(&mut encoded);
+        let req = RequestBuilder::new("GET", "/foobar/baz", None)
+            .query("a", "&".as_bytes())
+            .encode(&mut encoded);
         assert_eq!(
             String::from_utf8(encoded).unwrap(),
             vec!["GET /foobar/baz?a=%26 HTTP/1.1", "\r\n",].join("\r\n")
