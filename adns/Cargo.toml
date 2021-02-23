@@ -5,5 +5,5 @@ authors = ["Luminarys <postmaster@gensok.io>"]
 edition = "2018"
 
 [dependencies]
-resolv-conf = "0.6"
+resolv-conf = "0.7"
 dns-parser = "0.7"
