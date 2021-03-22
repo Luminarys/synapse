@@ -481,6 +481,19 @@ pub fn move_torrent(mut c: Client, id: &str, dir: &str) -> Result<()> {
     Ok(())
 }
 
+pub fn verify_torrent(mut c: Client, id: &str) -> Result<()> {
+    let torrent = search_torrent_name(&mut c, id)?;
+    if torrent.len() != 1 {
+        bail!("Could not find appropriate torrent!");
+    }
+    let msg = CMessage::ValidateResources {
+        serial: c.next_serial(),
+        ids: vec![torrent[0].id().to_owned()],
+    };
+    c.send(msg)?;
+    Ok(())
+}
+
 pub fn add_trackers(mut c: Client, id: &str, trackers: Vec<&str>) -> Result<()> {
     let torrent = search_torrent_name(&mut c, id)?;
     if torrent.len() != 1 {

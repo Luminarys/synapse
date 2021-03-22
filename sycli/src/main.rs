@@ -328,6 +328,7 @@ fn main() {
                     SubCommand::with_name("peers").about("Prints a torrent's peers"),
                     SubCommand::with_name("tags").about("Prints a torrent's tags"),
                     SubCommand::with_name("files").about("Prints a torrent's files"),
+                    SubCommand::with_name("verify").about("Verify integrity of downloaded files"),
                 ])
                 .arg(
                     Arg::with_name("output")
@@ -520,6 +521,12 @@ fn main() {
                         .unwrap();
                     if let Err(e) = cmd::move_torrent(client, id, dir) {
                         eprintln!("Failed to move torrent: {}", e.display_chain());
+                        process::exit(1);
+                    }
+                }
+                "verify" => {
+                    if let Err(e) = cmd::verify_torrent(client, id) {
+                        eprintln!("Failed to verify integrity: {}", e.display_chain());
                         process::exit(1);
                     }
                 }
