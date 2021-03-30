@@ -43,6 +43,23 @@ These defaults are given in `example_config.toml`.
 
 Sycli can be configured in a similar manner, using `sycli.toml`.
 
+### Desktop application
+
+Copy [`share/synapse/applications/synapse.desktop`] to `$XDG_DATA_HOME/applications` or `~/.local/share/applications`.
+
+[`share/synapse/applications/synapse.desktop`]: share/synapse/applications/synapse.desktop
+
+[XDG MIME Applications] example configuration:
+
+`~/.config/mimeapps.list`
+
+``` ini
+[Default Applications]
+x-scheme-handler/magnet=synapse.desktop
+```
+
+[XDG MIME Applications]: https://wiki.archlinux.org/index.php/XDG_MIME_Applications
+
 ## Development
 Please see [this issue](https://github.com/Luminarys/synapse/issues/1) for details on development status.
 If you're interested in developing a client for synapse, see `doc/RPC` for the current RPC spec.

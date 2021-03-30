@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=synapse
+GenericName=BitTorrent Client
+Comment=Download and share files over BitTorrent
+Icon=synapse
+TryExec=sycli
+Exec=sycli add %U
+Terminal=false
+StartupNotify=true
+Categories=Network;FileTransfer;P2P;
+MimeType=x-scheme-handler/magnet;
