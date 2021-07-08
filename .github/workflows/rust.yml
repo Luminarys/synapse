@@ -40,7 +40,7 @@ jobs:
     - name: Upload Artifact Linux
       uses: actions/upload-artifact@v2.2.4
       with:
-        name: synapse and sycli
+        name: synapse_sycli
         path: |
           target/release/synapse
           target/release/sycli
