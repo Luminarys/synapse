@@ -1,0 +1,52 @@
+name: Rust
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    runs-on: ubuntu-18.04
+
+    steps:
+    - uses: actions/checkout@v2
+    #caches all dependencies so you don't have to redownload/recompile everything from scratch
+    - name: Rust Cache
+      uses: Swatinem/rust-cache@v1.3.0
+
+    - name: Version of Rust and Cargo
+      run: rustc --version && cargo --version
+             
+    - name: Install cargo-deb
+      uses: actions-rs/cargo@v1.0.1
+      with: 
+        command: install
+        args: cargo-deb
+      
+    - name: Build
+      run: cargo build --locked --release --all -v
+      
+    - name: Package as deb file
+      uses: actions-rs/cargo@v1.0.1
+      with:
+        command: deb
+        args: --no-build -v          
+      
+    - name: Upload Artifact Linux
+      uses: actions/upload-artifact@v2.2.4
+      with:
+        name: synapse_sycli
+        path: |
+          target/release/synapse
+          target/release/sycli
+        
+    - name: Upload Artifact Linux as .deb package
+      uses: actions/upload-artifact@v2.2.4
+      with:
+        name: synapse_deb
+        path: target/debian/*.deb
