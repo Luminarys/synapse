@@ -1,5 +1,6 @@
 # synapse
-[![Build Status](https://travis-ci.org/Luminarys/synapse.svg?branch=master)](https://travis-ci.org/Luminarys/synapse)
+![Rust Build](https://github.com/Luminarys/synapse/actions/workflows/rust.yml/badge.svg)
+
 
 Synapse is a flexible and fast BitTorrent daemon.
 
