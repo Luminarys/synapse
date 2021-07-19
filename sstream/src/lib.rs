@@ -1,4 +1,4 @@
-use std::io;
+use std::io::{self, Read};
 use std::net::{SocketAddr, TcpStream};
 use std::os::unix::io::{AsRawFd, RawFd};
 use std::sync::Arc;
@@ -114,10 +114,8 @@ impl SStream {
             SConn::SSLS { ref conn, .. } => conn,
         }
     }
-}
 
-impl io::Read for SStream {
-    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+    fn read_(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         match self.conn {
             SConn::Plain(ref mut c) => c.read(buf),
             SConn::SSLC {
@@ -158,6 +156,20 @@ impl io::Read for SStream {
                     }
                 }
             },
+        }
+    }
+}
+
+impl io::Read for SStream {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        match self.read_(buf) {
+            Ok(n) => Ok(n),
+            Err(e) => {
+                if e.kind() == io::ErrorKind::ConnectionAborted {
+                    return Ok(0);
+                }
+                return Err(e);
+            }
         }
     }
 }
