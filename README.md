@@ -1,5 +1,5 @@
 # synapse
-![Rust Build](https://github.com/Luminarys/synapse/actions/workflows/rust.yml/badge.svg)
+[![Rust Build](https://github.com/Luminarys/synapse/actions/workflows/rust.yml/badge.svg)](https://github.com/Luminarys/synapse/actions/workflows/rust.yml)
 
 
 Synapse is a flexible and fast BitTorrent daemon.
