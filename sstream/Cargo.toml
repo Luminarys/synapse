@@ -5,7 +5,7 @@ authors = ["Luminarys <postmaster@gensok.io>"]
 edition = "2018"
 
 [dependencies]
-rustls = "0.18.0"
+rustls = { version = "0.19", features = ["default", "dangerous_configuration"] }
 webpki-roots = "0.20"
 webpki = "0.21.0"
 net2 = "0.2"

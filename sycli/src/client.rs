@@ -24,16 +24,16 @@ impl Client {
             let mut stream = match url.scheme() {
                 "ws" => {
                     if addr.is_ipv4() {
-                        SStream::new_v4(None)
+                        SStream::new_v4(None, None)
                     } else {
-                        SStream::new_v6(None)
+                        SStream::new_v6(None, None)
                     }
                 }
                 "wss" => {
                     if addr.is_ipv4() {
-                        SStream::new_v4(Some(url.host_str().unwrap().to_owned()))
+                        SStream::new_v4(Some(url.host_str().unwrap().to_owned()), None)
                     } else {
-                        SStream::new_v6(Some(url.host_str().unwrap().to_owned()))
+                        SStream::new_v6(Some(url.host_str().unwrap().to_owned()), None)
                     }
                 }
                 _ => bail!(""),

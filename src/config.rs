@@ -81,6 +81,8 @@ pub struct RpcConfig {
 pub struct TrkConfig {
     #[serde(default = "default_trk_port")]
     pub port: u16,
+    #[serde(default = "default_verify_certificates")]
+    pub verify_certificates: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -254,6 +256,10 @@ fn default_prune_timeout() -> u64 {
     15
 }
 
+fn default_verify_certificates() -> bool {
+    true
+}
+
 impl Default for Config {
     fn default() -> Self {
         Config {
@@ -286,6 +292,7 @@ impl Default for TrkConfig {
     fn default() -> TrkConfig {
         TrkConfig {
             port: default_trk_port(),
+            verify_certificates: default_verify_certificates(),
         }
     }
 }
