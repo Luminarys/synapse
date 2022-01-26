@@ -26,7 +26,7 @@ Install dependencies:
 Synapse and sycli can be installed with:
 ```
 cargo build --release --all
-cargo install
+cargo install --path .
 cargo install --path ./sycli/
 ```
 
