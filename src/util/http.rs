@@ -75,7 +75,7 @@ impl<'a> RequestBuilder<'a> {
         }
         // The query either encodes an extra ? or an extra &, pop either off
         buf.pop();
-        buf.extend_from_slice(b" HTTP/1.1");
+        buf.extend_from_slice(b" HTTP/1.0");
         buf.extend_from_slice(b"\r\n");
         for header in &self.headers {
             buf.extend_from_slice(header.name.as_bytes());
