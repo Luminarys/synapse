@@ -65,7 +65,7 @@ impl Reader {
         let mut header_done = None;
         match self.state {
             ReadState::Header => {
-                let mut headers = [httparse::EMPTY_HEADER; 16];
+                let mut headers = [httparse::EMPTY_HEADER; 32];
                 let mut resp = httparse::Response::new(&mut headers);
                 match resp.parse(&self.data[..self.idx]) {
                     Ok(httparse::Status::Complete(i)) => {
