@@ -948,19 +948,19 @@ impl<T: cio::CIO> Torrent<T> {
                     let mut m = BTreeMap::new();
 
                     m.insert(
-                        "ut_metadata".to_owned(),
+                        b"ut_metadata".to_vec(),
                         bencode::BEncode::Int(i64::from(UT_META_ID)),
                     );
                     if !self.info.private {
                         m.insert(
-                            "ut_pex".to_owned(),
+                            b"ut_pex".to_vec(),
                             bencode::BEncode::Int(i64::from(UT_PEX_ID)),
                         );
                     }
 
-                    ed.insert("m".to_owned(), bencode::BEncode::Dict(m));
+                    ed.insert(b"m".to_vec(), bencode::BEncode::Dict(m));
                     ed.insert(
-                        "metadata_size".to_owned(),
+                        b"metadata_size".to_vec(),
                         bencode::BEncode::Int(self.info_bytes.len() as i64),
                     );
                     let payload = bencode::BEncode::Dict(ed).encode_to_buf();
@@ -1113,10 +1113,13 @@ impl<T: cio::CIO> Torrent<T> {
             const MAX_INFO_BYTES: i64 = 100 * 1000 * 1000;
             let b = bencode::decode_buf(&payload).map_err(|_| ())?;
             let mut d = b.into_dict().ok_or(())?;
-            let m = d.remove("m").and_then(|v| v.into_dict()).ok_or(())?;
-            if m.contains_key("ut_metadata") {
+            let m = d
+                .remove(b"m".as_ref())
+                .and_then(|v| v.into_dict())
+                .ok_or(())?;
+            if m.contains_key(b"ut_metadata".as_ref()) {
                 let size = d
-                    .remove("metadata_size")
+                    .remove(b"metadata_size".as_ref())
                     .and_then(|v| v.into_int())
                     .ok_or(())?;
                 if let Some(std::usize::MAX) = self.info_idx {
@@ -1134,8 +1137,8 @@ impl<T: cio::CIO> Torrent<T> {
                 if !self.info.complete() {
                     // Request the first index chunk to see if they have it
                     let mut respb = BTreeMap::new();
-                    respb.insert("msg_type".to_owned(), bencode::BEncode::Int(0));
-                    respb.insert("piece".to_owned(), bencode::BEncode::Int(0));
+                    respb.insert(b"msg_type".to_vec(), bencode::BEncode::Int(0));
+                    respb.insert(b"piece".to_vec(), bencode::BEncode::Int(0));
                     let payload = bencode::BEncode::Dict(respb).encode_to_buf();
                     let utm_id = if let Some(i) = peer.exts().ut_meta {
                         i
@@ -1157,10 +1160,13 @@ impl<T: cio::CIO> Torrent<T> {
             let buf = bencode::decode_buf_first(&payload).map_err(|_| ())?;
             let mut dict = buf.into_dict().ok_or(())?;
             let msg = dict
-                .remove("msg_type")
+                .remove(b"msg_type".as_ref())
                 .and_then(|v| v.into_int())
                 .ok_or(())?;
-            let piece_len = dict.remove("piece").and_then(|v| v.into_int()).ok_or(())? as usize;
+            let piece_len = dict
+                .remove(b"piece".as_ref())
+                .and_then(|v| v.into_int())
+                .ok_or(())? as usize;
             if piece_len * 16_384 >= self.info_bytes.len() {
                 return Err(());
             }
@@ -1172,15 +1178,15 @@ impl<T: cio::CIO> Torrent<T> {
                 0 => {
                     let mut respb = BTreeMap::new();
                     if self.info_idx.is_none() {
-                        respb.insert("msg_type".to_owned(), bencode::BEncode::Int(1));
-                        respb.insert("piece".to_owned(), bencode::BEncode::Int(piece_len as i64));
+                        respb.insert(b"msg_type".to_vec(), bencode::BEncode::Int(1));
+                        respb.insert(b"piece".to_vec(), bencode::BEncode::Int(piece_len as i64));
                         let size = if self.info_bytes.len() / 16_384 == piece_len {
                             self.info_bytes.len() % 16_384
                         } else {
                             16_384
                         };
                         let total_size = self.info_bytes.len() as i64;
-                        respb.insert("total_size".to_owned(), bencode::BEncode::Int(total_size));
+                        respb.insert(b"total_size".to_vec(), bencode::BEncode::Int(total_size));
                         let mut payload = bencode::BEncode::Dict(respb).encode_to_buf();
                         let s = piece_len * 16_384;
                         payload.extend_from_slice(&self.info_bytes[s..s + size]);
@@ -1189,8 +1195,8 @@ impl<T: cio::CIO> Torrent<T> {
                             payload,
                         });
                     } else {
-                        respb.insert("msg_type".to_owned(), bencode::BEncode::Int(2));
-                        respb.insert("piece".to_owned(), bencode::BEncode::Int(piece_len as i64));
+                        respb.insert(b"msg_type".to_vec(), bencode::BEncode::Int(2));
+                        respb.insert(b"piece".to_vec(), bencode::BEncode::Int(piece_len as i64));
                         let payload = bencode::BEncode::Dict(respb).encode_to_buf();
                         peer.send_message(Message::Extension {
                             id: utm_id,
@@ -1220,7 +1226,7 @@ impl<T: cio::CIO> Torrent<T> {
                             let mut b = BTreeMap::new();
                             let bni = bencode::decode_buf(&self.info_bytes).map_err(|_| ())?;
                             b.insert(
-                                "announce".to_owned(),
+                                b"announce".to_vec(),
                                 bencode::BEncode::String(
                                     self.info
                                         .announce
@@ -1231,7 +1237,7 @@ impl<T: cio::CIO> Torrent<T> {
                                         .to_vec(),
                                 ),
                             );
-                            b.insert("info".to_owned(), bni);
+                            b.insert(b"info".to_vec(), bni);
                             let ni =
                                 Info::from_bencode(bencode::BEncode::Dict(b)).map_err(|_| ())?;
                             if ni.hash == self.info.hash {
@@ -1245,8 +1251,8 @@ impl<T: cio::CIO> Torrent<T> {
                         } else if piece_len == 0 {
                             for i in 1..=idx {
                                 let mut respb = BTreeMap::new();
-                                respb.insert("msg_type".to_owned(), bencode::BEncode::Int(0));
-                                respb.insert("piece".to_owned(), bencode::BEncode::Int(i as i64));
+                                respb.insert(b"msg_type".to_vec(), bencode::BEncode::Int(0));
+                                respb.insert(b"piece".to_vec(), bencode::BEncode::Int(i as i64));
                                 let payload = bencode::BEncode::Dict(respb).encode_to_buf();
                                 peer.send_message(Message::Extension {
                                     id: utm_id,
@@ -1274,10 +1280,10 @@ impl<T: cio::CIO> Torrent<T> {
             let mut d = b.into_dict().ok_or(())?;
             let mut peers = vec![];
             let flags = d
-                .remove("added.f")
+                .remove(b"added.f".as_ref())
                 .and_then(bencode::BEncode::into_bytes)
                 .unwrap_or_else(|| vec![0; 50]);
-            if let Some(bencode::BEncode::String(ref data)) = d.remove("added") {
+            if let Some(bencode::BEncode::String(ref data)) = d.remove(b"added".as_ref()) {
                 for (p, flag) in data.chunks(6).zip(flags) {
                     if (flag & PEX_SEED != 0) && self.complete() {
                         continue;
@@ -1950,10 +1956,10 @@ impl<T: cio::CIO> Torrent<T> {
             }
         }
         let mut dict = BTreeMap::new();
-        dict.insert("added".to_string(), BEncode::String(a));
-        dict.insert("added6".to_string(), BEncode::String(a6));
-        dict.insert("removed".to_string(), BEncode::String(r));
-        dict.insert("removed6".to_string(), BEncode::String(r6));
+        dict.insert(b"added".to_vec(), BEncode::String(a));
+        dict.insert(b"added6".to_vec(), BEncode::String(a6));
+        dict.insert(b"removed".to_vec(), BEncode::String(r));
+        dict.insert(b"removed6".to_vec(), BEncode::String(r6));
         let payload = BEncode::Dict(dict).encode_to_buf();
 
         for peer in self.peers.values_mut() {

@@ -8,7 +8,7 @@ pub enum BEncode {
     Int(i64),
     String(Vec<u8>),
     List(Vec<BEncode>),
-    Dict(BTreeMap<String, BEncode>),
+    Dict(BTreeMap<Vec<u8>, BEncode>),
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -81,7 +81,7 @@ impl BEncode {
         }
     }
 
-    pub fn into_dict(self) -> Option<BTreeMap<String, BEncode>> {
+    pub fn into_dict(self) -> Option<BTreeMap<Vec<u8>, BEncode>> {
         match self {
             BEncode::Dict(v) => Some(v),
             _ => None,
@@ -116,7 +116,7 @@ impl BEncode {
         }
     }
 
-    pub fn as_dict(&self) -> Option<&BTreeMap<String, BEncode>> {
+    pub fn as_dict(&self) -> Option<&BTreeMap<Vec<u8>, BEncode>> {
         match *self {
             BEncode::Dict(ref v) => Some(v),
             _ => None,
@@ -132,7 +132,7 @@ impl BEncode {
     pub fn encode<W: io::Write>(&self, w: &mut W) -> io::Result<()> {
         enum Token<'a> {
             B(&'a BEncode),
-            OS(&'a str),
+            OS(&'a Vec<u8>),
             E,
         }
 
@@ -161,7 +161,7 @@ impl BEncode {
                 }
                 Token::OS(s) => {
                     write!(w, "{}:", s.len())?;
-                    w.write_all(s.as_bytes())?;
+                    w.write_all(s)?;
                 }
                 Token::E => {
                     write!(w, "e")?;
@@ -235,7 +235,7 @@ fn do_decode<R: io::Read>(bytes: &mut R, first: bool) -> Result<BEncode, BError>
                     }
                     while vstack.len() > i {
                         let val = vstack.pop().unwrap();
-                        match vstack.pop().and_then(BEncode::into_string) {
+                        match vstack.pop().and_then(BEncode::into_bytes) {
                             Some(key) => {
                                 d.insert(key, val);
                             }
@@ -333,8 +333,8 @@ mod tests {
         assert_eq!(v, b"li-10e4:asdfe");
 
         let mut map = BTreeMap::new();
-        map.insert(String::from("asdf"), i.clone());
-        map.insert(String::from("qwerty"), i.clone());
+        map.insert(b"asdf".to_vec(), i.clone());
+        map.insert(b"qwerty".to_vec(), i.clone());
         let d = BEncode::Dict(map);
         v = Vec::new();
         d.encode(&mut v).unwrap();
@@ -399,5 +399,11 @@ mod tests {
         let dec = decode_buf(d).unwrap();
         dec.encode(&mut v).unwrap();
         assert_eq!(d, &v[..]);
+    }
+
+    #[test]
+    fn test_non_utf8_dict_key() {
+        let content = b"d2:\x80\x811:ae";
+        decode_buf(content).unwrap();
     }
 }

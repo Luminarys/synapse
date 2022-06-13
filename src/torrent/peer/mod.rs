@@ -435,15 +435,18 @@ impl<T: cio::CIO> Peer<T> {
                     let mut d = b.into_dict().ok_or_else(|| {
                         ErrorKind::ProtocolError("Invalid bencode type in ext handshake")
                     })?;
-                    let mut m = d.remove("m").and_then(|v| v.into_dict()).ok_or_else(|| {
-                        ErrorKind::ProtocolError("Invalid metadata in in ext handshake")
-                    })?;
+                    let mut m = d
+                        .remove(b"m".as_ref())
+                        .and_then(|v| v.into_dict())
+                        .ok_or_else(|| {
+                            ErrorKind::ProtocolError("Invalid metadata in in ext handshake")
+                        })?;
                     self.ext_ids.ut_meta = m
-                        .remove("ut_metadata")
+                        .remove(b"ut_metadata".as_ref())
                         .and_then(|v| v.into_int())
                         .map(|v| v as u8);
                     self.ext_ids.ut_pex = m
-                        .remove("ut_pex")
+                        .remove(b"ut_pex".as_ref())
                         .and_then(|v| v.into_int())
                         .map(|v| v as u8);
                 }

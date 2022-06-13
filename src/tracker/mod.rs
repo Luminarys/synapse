@@ -386,13 +386,13 @@ impl TrackerResponse {
         let mut d = data.into_dict().ok_or(ErrorKind::InvalidResponse(
             "Tracker response must be a dictionary type!",
         ))?;
-        if let Some(BEncode::String(data)) = d.remove("failure reason") {
+        if let Some(BEncode::String(data)) = d.remove(b"failure reason".as_ref()) {
             let reason = String::from_utf8(data)
                 .chain_err(|| ErrorKind::InvalidResponse("Failure reason must be UTF8!"))?;
             return Err(ErrorKind::TrackerError(reason).into());
         }
         let mut resp = TrackerResponse::empty();
-        if let Some(BEncode::String(ref data)) = d.remove("peers") {
+        if let Some(BEncode::String(ref data)) = d.remove(b"peers".as_ref()) {
             for p in data.chunks(6) {
                 if p.len() != 6 {
                     debug!("Unusual trailing bytes received for tracker!");
@@ -403,7 +403,7 @@ impl TrackerResponse {
                 resp.peers.push(SocketAddr::V4(socket));
             }
         }
-        match d.remove("interval") {
+        match d.remove(b"interval".as_ref()) {
             Some(BEncode::Int(ref i)) => {
                 resp.interval = *i as u32;
             }
