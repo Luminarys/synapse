@@ -59,7 +59,11 @@ pub struct File {
 impl File {
     fn from_bencode(data: BEncode) -> Result<File, &'static str> {
         let mut d = data.into_dict().ok_or("File must be a dictionary type!")?;
-        match (d.remove("name"), d.remove("path"), d.remove("length")) {
+        match (
+            d.remove(b"name".as_ref()),
+            d.remove(b"path".as_ref()),
+            d.remove(b"length".as_ref()),
+        ) {
             (Some(v), None, Some(l)) => {
                 let f = File {
                     path: PathBuf::from(v.into_string().ok_or("Path must be a valid string.")?),
@@ -153,34 +157,34 @@ impl Info {
         let info = self.to_bencode();
         self.announce.as_ref().map(|url| {
             torrent.insert(
-                "announce".to_owned(),
+                b"announce".to_vec(),
                 BEncode::String(url.as_str().as_bytes().to_owned()),
             )
         });
-        torrent.insert("info".to_owned(), info);
+        torrent.insert(b"info".to_vec(), info);
         BEncode::Dict(torrent)
     }
 
     pub fn to_bencode(&self) -> BEncode {
         let mut info = BTreeMap::new();
         if let Some(ref n) = self.be_name {
-            info.insert("name".to_owned(), BEncode::String(n.clone()));
+            info.insert(b"name".to_vec(), BEncode::String(n.clone()));
         }
         if self.private {
-            info.insert("private".to_owned(), BEncode::Int(1));
+            info.insert(b"private".to_vec(), BEncode::Int(1));
         }
         info.insert(
-            "piece length".to_owned(),
+            b"piece length".to_vec(),
             BEncode::Int(i64::from(self.piece_len)),
         );
         let mut pieces = Vec::with_capacity(self.hashes.len() * 20);
         for h in &self.hashes {
             pieces.extend_from_slice(h);
         }
-        info.insert("pieces".to_owned(), BEncode::String(pieces));
+        info.insert(b"pieces".to_vec(), BEncode::String(pieces));
         if self.files.len() == 1 {
             info.insert(
-                "length".to_owned(),
+                b"length".to_vec(),
                 BEncode::Int(self.files[0].length as i64),
             );
         } else {
@@ -189,9 +193,9 @@ impl Info {
                 .iter()
                 .map(|f| {
                     let mut fb = BTreeMap::new();
-                    fb.insert("length".to_owned(), BEncode::Int(f.length as i64));
+                    fb.insert(b"length".to_vec(), BEncode::Int(f.length as i64));
                     fb.insert(
-                        "path".to_owned(),
+                        b"path".to_vec(),
                         BEncode::String(
                             f.path
                                 .clone()
@@ -204,14 +208,18 @@ impl Info {
                     BEncode::Dict(fb)
                 })
                 .collect();
-            info.insert("files".to_owned(), BEncode::List(files));
+            info.insert(b"files".to_vec(), BEncode::List(files));
         }
         BEncode::Dict(info)
     }
 
     pub fn from_bencode(data: BEncode) -> Result<Info, &'static str> {
         data.into_dict()
-            .and_then(|mut d| d.remove("info").and_then(|i| i.into_dict()).map(|i| (d, i)))
+            .and_then(|mut d| {
+                d.remove(b"info".as_ref())
+                    .and_then(|i| i.into_dict())
+                    .map(|i| (d, i))
+            })
             .ok_or("invalid info field")
             .and_then(|(mut d, mut i)| {
                 let mut info_bytes = Vec::new();
@@ -219,17 +227,19 @@ impl Info {
                 let hash = sha1_hash(&info_bytes);
 
                 let announce = d
-                    .remove("announce")
+                    .remove(b"announce".as_ref())
                     .and_then(BEncode::into_string)
                     .and_then(|a| Url::parse(&a).ok().map(Arc::new));
-                let comment = d.remove("comment").and_then(|b| b.into_string());
-                let creator = d.remove("created by").and_then(|b| b.into_string());
+                let comment = d.remove(b"comment".as_ref()).and_then(|b| b.into_string());
+                let creator = d
+                    .remove(b"created by".as_ref())
+                    .and_then(|b| b.into_string());
                 let pl = i
-                    .remove("piece length")
+                    .remove(b"piece length".as_ref())
                     .and_then(|i| i.into_int())
                     .ok_or("Info must specify piece length")? as u64;
                 let hashes = i
-                    .remove("pieces")
+                    .remove(b"pieces".as_ref())
                     .and_then(|p| p.into_bytes())
                     .and_then(|p| {
                         let mut v = Vec::new();
@@ -247,7 +257,7 @@ impl Info {
                     })
                     .ok_or("Info must provide valid hashes")?;
 
-                let private = if let Some(v) = i.remove("private") {
+                let private = if let Some(v) = i.remove(b"private".as_ref()) {
                     v.into_int()
                         .and_then(|p| {
                             if p == 0 {
@@ -263,7 +273,7 @@ impl Info {
                     false
                 };
 
-                let be_name = if let Some(v) = i.get("name").cloned() {
+                let be_name = if let Some(v) = i.get(b"name".as_ref()).cloned() {
                     Some(v.into_bytes().ok_or("name field must be a bitstring!")?)
                 } else {
                     None
@@ -294,7 +304,7 @@ impl Info {
                 let piece_idx = Info::generate_piece_idx(hashes.len(), pl, &files);
 
                 let url_list: Vec<_> = d
-                    .remove("announce-list")
+                    .remove(b"announce-list".as_ref())
                     .and_then(BEncode::into_list)
                     .unwrap_or_else(Vec::new)
                     .into_iter()
@@ -546,12 +556,12 @@ impl Iterator for LocIter {
     }
 }
 
-fn parse_bencode_files(mut data: BTreeMap<String, BEncode>) -> Result<Vec<File>, &'static str> {
-    match data.remove("files").and_then(|l| l.into_list()) {
+fn parse_bencode_files(mut data: BTreeMap<Vec<u8>, BEncode>) -> Result<Vec<File>, &'static str> {
+    match data.remove(b"files".as_ref()).and_then(|l| l.into_list()) {
         Some(fs) => {
             let mut path = PathBuf::new();
             path.push(
-                data.remove("name")
+                data.remove(b"name".as_ref())
                     .and_then(|v| v.into_string())
                     .ok_or("Multifile mode must have a name field")?,
             );
