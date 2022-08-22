@@ -10,3 +10,4 @@ perf*
 *.bk
 rr.sh
 *.vi
+.idea/

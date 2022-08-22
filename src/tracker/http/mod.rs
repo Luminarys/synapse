@@ -6,8 +6,10 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 use std::{io, mem};
 
-use sstream::SStream;
+use sstream::{SStream, SStreamConfig};
 use url::Url;
+
+use crate::CONFIG;
 
 use self::reader::{ReadRes, Reader};
 use self::writer::Writer;
@@ -289,8 +291,12 @@ impl Handler {
             None
         };
 
+        let sstream_config =
+            SStreamConfig::default()
+                .with_tls_check_certificates(!CONFIG.trk.verify_certificates);
+
         // Setup actual connection and start DNS query
-        let sock = SStream::new_v4(ohost).chain_err(|| ErrorKind::IO)?;
+        let sock = SStream::new_v4(ohost, Some(sstream_config)).chain_err(|| ErrorKind::IO)?;
         let id = self
             .reg
             .register(&sock, amy::Event::Both)
@@ -378,8 +384,12 @@ impl Handler {
             None
         };
 
+        let sstream_config =
+            SStreamConfig::default()
+                .with_tls_check_certificates(!CONFIG.trk.verify_certificates);
+
         // Setup actual connection and start DNS query
-        let sock = SStream::new_v4(ohost).chain_err(|| ErrorKind::IO)?;
+        let sock = SStream::new_v4(ohost, Some(sstream_config)).chain_err(|| ErrorKind::IO)?;
         let id = self
             .reg
             .register(&sock, amy::Event::Both)

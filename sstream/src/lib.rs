@@ -1,3 +1,5 @@
+mod no_verify_tls;
+
 use std::io::{self, Read};
 use std::net::{SocketAddr, TcpStream};
 use std::os::unix::io::{AsRawFd, RawFd};
@@ -7,6 +9,7 @@ use net2::{TcpBuilder, TcpStreamExt};
 use rustls::{self, Session};
 use webpki;
 use webpki_roots;
+use crate::no_verify_tls::NoVerifyTLS;
 
 const EINPROGRESS: i32 = 115;
 
@@ -28,26 +31,65 @@ enum SConn {
     },
 }
 
+#[derive(Copy, Clone)]
+pub struct SStreamConfig {
+    tls_check_certificates: bool,
+}
+
+impl SStreamConfig {
+    pub fn with_tls_check_certificates(
+        &self,
+        tls_no_verify: bool,
+    ) -> SStreamConfig {
+        SStreamConfig {
+            tls_check_certificates: tls_no_verify,
+
+            ..self.clone()
+        }
+    }
+}
+
+impl Default for SStreamConfig {
+    fn default() -> Self {
+        SStreamConfig {
+            tls_check_certificates: true,
+        }
+    }
+}
+
 impl SStream {
-    pub fn new_v6(host: Option<String>) -> io::Result<SStream> {
+    pub fn new_v6(host: Option<String>, config: Option<SStreamConfig>) -> io::Result<SStream> {
         let conn = TcpBuilder::new_v6()?.to_tcp_stream()?;
-        SStream::new(conn, host)
+        SStream::new(conn, host, config)
     }
 
-    pub fn new_v4(host: Option<String>) -> io::Result<SStream> {
+    pub fn new_v4(host: Option<String>, config: Option<SStreamConfig>) -> io::Result<SStream> {
         let conn = TcpBuilder::new_v4()?.to_tcp_stream()?;
-        SStream::new(conn, host)
+        SStream::new(conn, host, config)
     }
 
-    fn new(conn: TcpStream, host: Option<String>) -> io::Result<SStream> {
+    fn new(conn: TcpStream, host: Option<String>, config: Option<SStreamConfig>) -> io::Result<SStream> {
         conn.set_nonblocking(true)?;
         let fd = conn.as_raw_fd();
         let sock = match host {
             Some(h) => {
-                let mut config = rustls::ClientConfig::new();
-                config
+                let tls_check_certificates =
+                    if let Some(config) = config {
+                        config.tls_check_certificates
+                    } else {
+                        true
+                    };
+
+                let mut tls_config = rustls::ClientConfig::new();
+
+                tls_config
                     .root_store
                     .add_server_trust_anchors(&webpki_roots::TLS_SERVER_ROOTS);
+
+                if !tls_check_certificates {
+                    tls_config.client_auth_cert_resolver = Arc::new(NoVerifyTLS);
+                }
+
                 let dns_name = match webpki::DNSNameRef::try_from_ascii_str(&h) {
                     Ok(name) => name,
                     Err(_) => {
@@ -57,7 +99,12 @@ impl SStream {
                         ))
                     }
                 };
-                let session = rustls::ClientSession::new(&Arc::new(config), dns_name);
+
+                let session = rustls::ClientSession::new(
+                    &Arc::new(tls_config),
+                    dns_name,
+                );
+
                 SStream {
                     conn: SConn::SSLC { conn, session },
                     fd,

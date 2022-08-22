@@ -23,6 +23,8 @@ ssl_key = "./key.pem"
 [tracker]
 # UDP port used for UDP tracker interaction
 port = 16362
+# Whether to check certificates of trackers when connecting via http/TLS
+verify_certificates = true
 
 [dht]
 # UDP port used for DHT interaction
