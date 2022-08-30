@@ -50,3 +50,12 @@ max_open_announces = 50
 # a connection is eligible for forced pruning
 # when the max socket limit is reached
 prune_timeout = 15
+
+[ip_filter]
+# 1 - block prefix
+# 2..255 - accept connections from/to prefix
+# Allow all
+"::/0" = 254
+"0.0.0.0/0" = 254
+# Block 1.1.1.1
+#"1.1.1.1/32" = 1
