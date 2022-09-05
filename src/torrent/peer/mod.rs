@@ -136,7 +136,7 @@ impl PeerConn {
     /// Creates a peer where we are acting as the server.
     /// Once the handshake is received, set_torrent should be called.
     pub fn new_incoming(sock: TcpStream) -> io::Result<PeerConn> {
-        let peer_ip = sock.peer_addr().unwrap().ip();
+        let peer_ip = sock.peer_addr()?.ip();
         if let Some((_, 1)) = IP_FILTER.longest_match(peer_ip) {
             debug!(
                 "Incoming connection from peer {} blocked by ip_filter",
