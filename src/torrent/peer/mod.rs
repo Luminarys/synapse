@@ -124,11 +124,12 @@ impl PeerConn {
     /// Once created, set_torrent should be called.
     pub fn new_outgoing(ip: &SocketAddr) -> io::Result<PeerConn> {
         if let Some((_, 1)) = IP_FILTER.longest_match(ip.ip()) {
-            debug!(
+            let msg = format!(
                 "Outgoing connection to peer {} blocked by ip_filter",
                 ip.ip()
             );
-            return Err(io::Error::from_raw_os_error(13));
+            debug!("{msg}");
+            return Err(io::Error::new(io::ErrorKind::PermissionDenied, msg));
         }
         Ok(PeerConn::new(Socket::new(ip)?))
     }
@@ -138,11 +139,12 @@ impl PeerConn {
     pub fn new_incoming(sock: TcpStream) -> io::Result<PeerConn> {
         let peer_ip = sock.peer_addr()?.ip();
         if let Some((_, 1)) = IP_FILTER.longest_match(peer_ip) {
-            debug!(
+            let msg = format!(
                 "Incoming connection from peer {} blocked by ip_filter",
                 peer_ip
             );
-            return Err(io::Error::from_raw_os_error(13));
+            debug!("{msg}");
+            return Err(io::Error::new(io::ErrorKind::PermissionDenied, msg));
         }
         Ok(PeerConn::new(Socket::from_stream(sock)?))
     }
