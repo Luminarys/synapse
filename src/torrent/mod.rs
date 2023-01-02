@@ -1123,6 +1123,10 @@ impl<T: cio::CIO> Torrent<T> {
                     .and_then(|v| v.into_int())
                     .ok_or(())?;
                 if let Some(std::usize::MAX) = self.info_idx {
+                    if size == 0 {
+                        debug!("UT metadata size is 0");
+                        return Err(());
+                    }
                     if size % 16_384 == 0 {
                         self.info_idx = Some(size as usize / 16_384 - 1);
                     } else {
