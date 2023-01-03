@@ -52,10 +52,9 @@ max_open_announces = 50
 prune_timeout = 15
 
 [ip_filter]
-# 1 - block prefix
-# 2..255 - accept connections from/to prefix
-# Allow all
-"::/0" = 254
-"0.0.0.0/0" = 254
-# Block 1.1.1.1
-#"1.1.1.1/32" = 1
+# Assign IP prefix filter rules. Valid value range is 0..255
+# 0 - block prefix
+# 1..255 - accept connections from/to prefix (in future value can set priority for prefix, but now it hasn't implemented yet)
+# by default all IPv4 and IPv6 address space allowed and assigned to value 127
+"::/0" = 127
+"0.0.0.0/0" = 127
