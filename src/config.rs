@@ -1,3 +1,5 @@
+use ip_network::IpNetwork;
+use std::collections::HashMap;
 use std::io::Read;
 use std::net::{SocketAddr, ToSocketAddrs};
 use std::{fs, process};
@@ -33,6 +35,7 @@ pub struct Config {
     pub disk: DiskConfig,
     pub net: NetConfig,
     pub peer: PeerConfig,
+    pub ip_filter: HashMap<IpNetwork, u8>,
 }
 
 #[derive(Debug, Clone)]
@@ -59,6 +62,8 @@ pub struct ConfigFile {
     pub net: NetConfig,
     #[serde(default)]
     pub peer: PeerConfig,
+    #[serde(default = "default_ip_filter")]
+    pub ip_filter: HashMap<IpNetwork, u8>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -196,6 +201,7 @@ impl Config {
             net: file.net,
             peer: file.peer,
             dht,
+            ip_filter: file.ip_filter,
         }
     }
 }
@@ -253,6 +259,12 @@ fn default_max_announces() -> usize {
 fn default_prune_timeout() -> u64 {
     15
 }
+fn default_ip_filter() -> HashMap<IpNetwork, u8> {
+    HashMap::from([
+        (IpNetwork::from_str_truncate("0.0.0.0/0").unwrap(), 127),
+        (IpNetwork::from_str_truncate("::/0").unwrap(), 127),
+    ])
+}
 
 impl Default for Config {
     fn default() -> Self {
@@ -265,6 +277,7 @@ impl Default for Config {
             net: Default::default(),
             dht: Default::default(),
             peer: Default::default(),
+            ip_filter: default_ip_filter(),
         }
     }
 }

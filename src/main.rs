@@ -44,6 +44,7 @@ mod throttle;
 mod torrent;
 mod tracker;
 
+use ip_network_table::IpNetworkTable;
 use std::process;
 use std::sync::atomic;
 
@@ -73,6 +74,18 @@ lazy_static! {
         pid
     };
     pub static ref DL_TOKEN: String = util::random_string(20);
+    pub static ref IP_FILTER: IpNetworkTable<u8> = {
+        let mut table = IpNetworkTable::new();
+
+        for k in CONFIG.ip_filter.keys() {
+            table.insert(k.clone(), CONFIG.ip_filter[k]);
+            debug!(
+                "Add ip_filter entry: prefix={}, weight={}",
+                k, CONFIG.ip_filter[k]
+            );
+        }
+        table
+    };
 }
 
 fn main() {
