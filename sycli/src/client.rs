@@ -6,6 +6,8 @@ use crate::rpc::message::{CMessage, SMessage, Version};
 
 use crate::error::{ErrorKind, Result, ResultExt};
 
+const OS_IN_PROGRESS_ERROR: i32 = 36;
+
 pub struct Client {
     ws: ws::WebSocket<SStream>,
     version: Version,
@@ -39,7 +41,11 @@ impl Client {
                 _ => bail!(""),
             }
             .chain_err(|| ErrorKind::Websocket)?;
-            stream.connect(addr).chain_err(|| ErrorKind::Websocket)?;
+            let connect_err = stream.connect(addr);
+            match connect_err {
+                Err(e) if e.raw_os_error() == Some(OS_IN_PROGRESS_ERROR) => {}
+                other => other.chain_err(|| ErrorKind::Websocket)?,
+            };
             stream
                 .get_stream()
                 .set_nonblocking(false)
