@@ -3,6 +3,7 @@ use std::net::{SocketAddr, TcpStream};
 use std::os::unix::io::{AsRawFd, RawFd};
 
 use net2::{TcpBuilder, TcpStreamExt};
+use nix::errno::Errno::EINPROGRESS;
 
 use crate::throttle::Throttle;
 
@@ -14,8 +15,6 @@ pub struct Socket {
     pub throttle: Option<Throttle>,
 }
 
-const EINPROGRESS: i32 = 115;
-
 impl Socket {
     pub fn new(addr: &SocketAddr) -> io::Result<Socket> {
         let sock = (match *addr {
@@ -25,8 +24,11 @@ impl Socket {
         let conn = sock.to_tcp_stream()?;
         conn.set_nonblocking(true)?;
         if let Err(e) = conn.connect(addr) {
-            // OSX gives the AddrNotAvailable error sometimes
-            if Some(EINPROGRESS) != e.raw_os_error() && e.kind() != ErrorKind::AddrNotAvailable {
+            // OSX gives the AddrNotAvailable error sometimes, as well as a different kind
+            // of EINPROGRESS.
+            if Some(EINPROGRESS as i32) != e.raw_os_error()
+                && e.kind() != ErrorKind::AddrNotAvailable
+            {
                 return Err(e);
             }
         }

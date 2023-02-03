@@ -309,15 +309,17 @@ impl<T: cio::CIO> Control<T> {
         };
         for ip in &peers {
             trace!("Adding peer({:?})!", ip);
-            if let Ok(peer) = peer::PeerConn::new_outgoing(ip) {
-                trace!("Added peer({:?})!", ip);
-                self.add_peer(id, peer);
+            match peer::PeerConn::new_outgoing(ip) {
+                Ok(peer) => {
+                  trace!("Added peer({:?})!", ip);
+                  self.add_peer(id, peer);
+                }
+                Err(e) => { trace!("Failed to add peer: {:?}", e); }
             }
         }
     }
 
     fn update_jobs(&mut self) {
-        trace!("Handling job timer");
         let mut jobs = mem::replace(&mut self.jobs, JobManager::new());
         jobs.update(self);
         self.jobs = jobs;
@@ -397,7 +399,6 @@ impl<T: cio::CIO> Control<T> {
     }
 
     fn flush_blocked_peers(&mut self) {
-        trace!("Flushing blocked peers!");
         self.cio.flush_peers(self.throttler.flush_dl());
         self.cio.flush_peers(self.throttler.flush_ul());
     }

@@ -144,7 +144,6 @@ impl Disk {
                     return true;
                 }
                 Ok(mut r) => {
-                    trace!("Handling disk job!");
                     let tid = r.tid();
                     if let Err(e) = r.setup() {
                         if let Some(t) = tid {

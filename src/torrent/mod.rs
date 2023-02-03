@@ -536,7 +536,7 @@ impl<T: cio::CIO> Torrent<T> {
         match *resp {
             Ok(ref r) => {
                 if let Some(tracker) = self.trackers.iter_mut().find(|t| &*t.url == url) {
-                    debug!("Got valid response for {}", tracker.url);
+                    debug!("Got valid response for {}, peers: {}", tracker.url, r.peers.len());
                     time += Duration::from_secs(u64::from(r.interval));
                     tracker.status = TrackerStatus::Ok {
                         seeders: r.seeders,
