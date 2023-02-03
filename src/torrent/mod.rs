@@ -34,6 +34,7 @@ use crate::util::{FHashSet, UHashMap};
 use crate::{bencode, disk, rpc, util, CONFIG, EXT_PROTO, UT_META_ID, UT_PEX_ID};
 use crate::{session, stat};
 
+const MAX_INFO_BYTES: i64 = 100 * 1000 * 1000;
 const MAX_PEERS: usize = 50;
 
 #[derive(Clone, Debug, PartialEq)]
@@ -1110,7 +1111,6 @@ impl<T: cio::CIO> Torrent<T> {
 
     fn handle_ext(&mut self, id: u8, payload: Vec<u8>, peer: &mut Peer<T>) -> Result<(), ()> {
         if id == 0 {
-            const MAX_INFO_BYTES: i64 = 100 * 1000 * 1000;
             let b = bencode::decode_buf(&payload).map_err(|_| ())?;
             let mut d = b.into_dict().ok_or(())?;
             let m = d
@@ -1219,8 +1219,24 @@ impl<T: cio::CIO> Torrent<T> {
                             );
                             return Err(());
                         }
+                        let total_size = dict
+                            .remove(b"total_size".as_ref())
+                            .and_then(|v| v.into_int())
+                            .ok_or(())? as usize;
+                        if total_size != self.info_bytes.len() {
+                            if total_size > MAX_INFO_BYTES as usize {
+                                debug!("UT metadata too large, {} MBs", total_size / (1000 * 1000));
+                                return Err(());
+                            };
+                            debug!(
+                                "metadata_size {} != total_size {} will use total_size",
+                                self.info_bytes.len(),
+                                total_size
+                            );
+                            self.info_bytes.resize(total_size, 0);
+                        }
                         let size = if piece_len == idx {
-                            self.info_bytes.len() - piece_len * 16_384
+                            total_size % 16_384
                         } else {
                             16_384
                         };
