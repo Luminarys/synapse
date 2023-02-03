@@ -234,7 +234,12 @@ fn default_ssl() -> String {
     "".to_owned()
 }
 fn default_bootstrap_node() -> Option<String> {
-    None
+    Some("router.bittorrent.com:6881".to_owned())
+}
+fn default_bootstrap_node_addr() -> Option<SocketAddr> {
+    default_bootstrap_node()
+       .and_then(|n| n.to_socket_addrs().ok())
+       .and_then(|mut a| a.next())
 }
 fn default_session_dir() -> String {
     shellexpand::full("$XDG_DATA_HOME/synapse")
@@ -316,7 +321,7 @@ impl Default for DhtConfig {
     fn default() -> DhtConfig {
         DhtConfig {
             port: default_dht_port(),
-            bootstrap_node: None,
+            bootstrap_node: default_bootstrap_node_addr(),
         }
     }
 }

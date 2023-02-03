@@ -53,10 +53,10 @@ impl Manager {
             rt::RoutingTable::new()
         };
         if !table.is_bootstrapped() {
-            info!("Attempting DHT bootstrap!");
+            info!("Attempting DHT bootstrap with node: {:?}!", CONFIG.dht.bootstrap_node);
             if let Some(addr) = CONFIG.dht.bootstrap_node {
                 let (msg, _) = table.add_addr(addr);
-                sock.send_to(&msg.encode(), addr).ok();
+                let bootstrap_result = sock.send_to(&msg.encode(), addr);
             }
         }
 
