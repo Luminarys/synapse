@@ -24,8 +24,8 @@ impl Socket {
         let conn = sock.to_tcp_stream()?;
         conn.set_nonblocking(true)?;
         if let Err(e) = conn.connect(addr) {
-            // OSX gives the AddrNotAvailable error sometimes, as well as a different kind
-            // of EINPROGRESS.
+            // OSX gives the AddrNotAvailable error sometimes, and generic
+            // unix systems may give EINPROGRESS
             if Some(EINPROGRESS as i32) != e.raw_os_error()
                 && e.kind() != ErrorKind::AddrNotAvailable
             {
