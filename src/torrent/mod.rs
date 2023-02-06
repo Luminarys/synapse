@@ -1216,7 +1216,7 @@ impl<T: cio::CIO> Torrent<T> {
                     }
                 }
                 1 => {
-                    if let Some(idx) = self.info_idx {
+                    if let Some(last_idx) = self.info_idx {
                         let data_idx = util::find_subseq(&payload[..], b"ee").unwrap() + 2;
                         if payload.len() - data_idx > self.info_bytes.len() - piece_len * 16_384 {
                             debug!(
@@ -1235,6 +1235,18 @@ impl<T: cio::CIO> Torrent<T> {
                                 debug!("UT metadata too large, {} MBs", total_size / (1000 * 1000));
                                 return Err(());
                             };
+                            // To be safe, we should ensure that the new total_size matches the number of index pieces.
+                            // Otherwise we may request the wrong number of pieces.
+                            let implied_last_info_idx = if total_size % 16_384 == 0 {
+                                total_size / 16_384 - 1
+                            } else {
+                                total_size / 16_384
+                            };
+                            if implied_last_info_idx != last_idx {
+                                debug!("metadata_size {} and total_size {} differ in count of index pieces",
+                                self.info_bytes.len(), total_size);
+                                return Err(());
+                            }
                             debug!(
                                 "metadata_size {} != total_size {} will use total_size",
                                 self.info_bytes.len(),
@@ -1242,14 +1254,14 @@ impl<T: cio::CIO> Torrent<T> {
                             );
                             self.info_bytes.resize(total_size, 0);
                         }
-                        let size = if piece_len == idx {
+                        let size = if piece_len == last_idx {
                             total_size % 16_384
                         } else {
                             16_384
                         };
                         (&mut self.info_bytes[piece_len * 16_384..piece_len * 16_384 + size])
                             .copy_from_slice(&payload[data_idx..]);
-                        if piece_len == idx {
+                        if piece_len == last_idx {
                             let mut b = BTreeMap::new();
                             let bni = bencode::decode_buf(&self.info_bytes).map_err(|_| ())?;
                             b.insert(
@@ -1276,7 +1288,7 @@ impl<T: cio::CIO> Torrent<T> {
                                 return Err(());
                             }
                         } else if piece_len == 0 {
-                            for i in 1..=idx {
+                            for i in 1..=last_idx {
                                 let mut respb = BTreeMap::new();
                                 respb.insert(b"msg_type".to_vec(), bencode::BEncode::Int(0));
                                 respb.insert(b"piece".to_vec(), bencode::BEncode::Int(i as i64));
