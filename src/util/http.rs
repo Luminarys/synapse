@@ -115,7 +115,7 @@ mod test {
         assert_eq!(
             String::from_utf8(encoded).unwrap(),
             vec![
-                "GET /foobar/baz?a=b&b=c HTTP/1.1",
+                "GET /foobar/baz?a=b&b=c HTTP/1.0",
                 "header1: value1",
                 "header2: value2",
                 "\r\n",
@@ -133,7 +133,7 @@ mod test {
             .encode(&mut encoded);
         assert_eq!(
             String::from_utf8(encoded).unwrap(),
-            vec!["GET /foobar/baz?a=b&b=c HTTP/1.1", "\r\n",].join("\r\n")
+            vec!["GET /foobar/baz?a=b&b=c HTTP/1.0", "\r\n",].join("\r\n")
         );
     }
 
@@ -145,7 +145,7 @@ mod test {
             .encode(&mut encoded);
         assert_eq!(
             String::from_utf8(encoded).unwrap(),
-            vec!["GET /foobar/baz?a=%26 HTTP/1.1", "\r\n",].join("\r\n")
+            vec!["GET /foobar/baz?a=%26 HTTP/1.0", "\r\n",].join("\r\n")
         );
     }
 }
