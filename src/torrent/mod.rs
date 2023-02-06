@@ -70,7 +70,14 @@ pub struct Torrent<T: cio::CIO> {
     choker: choker::Choker,
     dirty: bool,
     path: Option<String>,
+    // Stored info-dictionary bytes for use in BEP9 (Peer metadata transfer)
     info_bytes: Vec<u8>,
+    // The maximum index of 16KiB pieces used in peer metadata transfer.
+    // Has three states:
+    // None: We've succesfully downloaded info-dictionary from a peer.
+    // Some(USIZE::MAX): We need to download info-dictionary and have not
+    // yet recieved the size of the info-dictionary.
+    // Some(i): We need to download i pieces to complete the info-dictionary.
     info_idx: Option<usize>,
     created: DateTime<Utc>,
 }
