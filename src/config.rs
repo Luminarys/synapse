@@ -234,7 +234,7 @@ fn default_ssl() -> String {
     "".to_owned()
 }
 fn default_bootstrap_node() -> Option<String> {
-    Some("router.bittorrent.com:6881".to_owned())
+    None
 }
 fn default_bootstrap_node_addr() -> Option<SocketAddr> {
     default_bootstrap_node()
