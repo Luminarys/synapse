@@ -21,7 +21,7 @@ Our peer ID is `SY`.
 
 ## RPC Clients
 
-- [receptor](https://github.com/SirCmpwn/receptor): web client
+- [receptor](https://github.com/luminarys/receptor): web client
 - [axon](https://github.com/ParadoxSpiral/axon): curses client
 - [broca](https://broca.synapse-bt.org): translates synapse RPC to transmission RPC
 
