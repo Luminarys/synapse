@@ -1255,7 +1255,11 @@ impl<T: cio::CIO> Torrent<T> {
                             self.info_bytes.resize(total_size, 0);
                         }
                         let size = if piece_len == last_idx {
-                            total_size % 16_384
+                            if total_size > 16_384 {
+                                total_size % 16_384
+                            } else {
+                                total_size
+                            }
                         } else {
                             16_384
                         };
